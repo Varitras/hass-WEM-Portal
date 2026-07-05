@@ -64,14 +64,27 @@ class WemPortalDataMapper:
 
                 final_value = numeric_val if numeric_val is not None else string_val
 
+                is_writeable = parameter.get("IsWriteable", False)
+                data_type = parameter.get("DataType")
+
                 if parameter.get("EnumValues"):
-                    final_value = sanitize_value(string_val, value.get("Unit"), name)
+                    if data_type == WemDataType.SWITCH:
+                        # Only normalize true booleans (on/off) here. Other
+                        # enum-valued parameters - e.g. a SELECT dropdown
+                        # like a 0-240 minute push duration, where one
+                        # option happens to be "Aus"/"Off" - must keep
+                        # their exact original string, so they still match
+                        # the literal option names built from this same
+                        # parameter's EnumValues a few lines below
+                        # (select.py matches the raw value against those
+                        # names verbatim). Rewriting "Aus" to "Off"/0.0
+                        # here would silently break that match.
+                        final_value = sanitize_value(string_val, value.get("Unit"), name)
+                    else:
+                        final_value = string_val
                 else:
                     if isinstance(final_value, str):
                         final_value = sanitize_value(final_value, value.get("Unit"), name)
-
-                is_writeable = parameter.get("IsWriteable", False)
-                data_type = parameter.get("DataType")
 
                 translated_name = translate(
                     language,

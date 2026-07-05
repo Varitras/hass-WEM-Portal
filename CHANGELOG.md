@@ -4,6 +4,37 @@ Alle nennenswerten Änderungen an diesem Fork werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.7.3] – 2026-07-05
+
+### Behoben
+- **SELECT-Optionen passten wegen Sprach-Mismatch der API nicht:** Auch
+  nach dem 1.7.1-Fix trat "Value Off not found in options [...] (names:
+  ['Aus', ...])" weiterhin auf. Ursache diesmal: Der **live von der API
+  gelesene Wert** kam als `"Off"` (Englisch) zurück, während die aus der
+  Parameter-Definition (`EnumValues`) ermittelte Optionsliste `"Aus"`
+  (Deutsch) enthielt – unabhängig vom sanitize_value-Fix aus 1.7.1. Das
+  bestehende Fuzzy-String-Matching konnte das nicht auffangen, da `"Off"`
+  und `"Aus"` keine gemeinsamen Buchstaben haben und der Ähnlichkeits-Score
+  weit unter dem Schwellwert von 75 lag. `select.py` erkennt jetzt
+  explizit deutsch/englische On/Off-Synonyme (`"Off"`↔`"Aus"`,
+  `"On"`↔`"Ein"`) und matcht sie unabhängig von der jeweiligen Sprache
+  gegen die tatsächlich vorhandene Optionsliste. Mit Tests für beide
+  Richtungen sowie einem Sanity-Check gegen False-Positives abgesichert.
+
+## [1.7.2] – 2026-07-05
+
+### Behoben
+- **Leere Fehlermeldungen bei fehlgeschlagenen API-Calls:** `get_response_details()`
+  prüfte `if response:` – bei `requests.Response` ist das bei Statuscodes
+  ≥ 400 immer `False` (`Response.__bool__`), also genau dann, wenn ein
+  Fehler vorliegt. Dadurch wurde die vom Server mitgeschickte
+  Fehlerbeschreibung (Status/Message) nie ausgelesen, Log-Meldungen wie
+  „Server returned status code: and message:" blieben leer. Betrifft nur
+  die Diagnose-Qualität der Logs, nicht die Funktion selbst (der
+  bestehende Resilienz-Mechanismus – einzelne fehlgeschlagene
+  Statistik-Gruppen werden übersprungen, alles andere läuft normal weiter
+  – war davon nicht betroffen).
+
 ## [1.7.1] – 2026-07-05
 
 ### Behoben

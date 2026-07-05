@@ -405,7 +405,12 @@ class WemPortalApi:
     def get_response_details(self, response: reqs.Response):
         server_status = ""
         server_message = ""
-        if response:
+        # Use "is not None" rather than a plain truthiness check: a
+        # requests.Response object is falsy whenever status_code >= 400
+        # (see Response.__bool__), i.e. exactly when there's an error to
+        # diagnose. The previous check silently skipped reading the body
+        # in that case, discarding the server's own error details.
+        if response is not None:
             try:
                 response_data = response.json()
                 _LOGGER.debug(response_data)
