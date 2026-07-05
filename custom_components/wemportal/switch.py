@@ -13,6 +13,14 @@ from .const import _LOGGER, DOMAIN
 from . import get_wemportal_unique_id
 from .utils import (fix_value_and_uom)
 
+# Recognized "on" values, covering both the numeric form (API path) and the
+# German/English text forms a value may arrive in (e.g. depending on the
+# configured portal language, or whether it came via web scraping vs. the
+# API). Previously only `1.0`/`"on"` (lowercase) were recognized, which
+# meant a switch reporting "Ein" or "On" (capitalized) would silently and
+# incorrectly show as "off" in Home Assistant.
+WEM_SWITCH_ON_VALUES = (1, 1.0, "On", "on", "Ein", "ein")
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -27,7 +35,9 @@ async def async_setup_entry(
         for unique_id, values in entity_data.items():
             if isinstance(values, int):
                 continue
-            if values["platform"] == "switch":
+            # .get() instead of direct indexing: one malformed data point
+            # should not crash setup for every switch entity on this device.
+            if values.get("platform") == "switch":
                 entities.append(
                     WemPortalSwitch(
                         coordinator, config_entry, device_id, unique_id, values
@@ -66,7 +76,7 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         self._data_key = _unique_id
         self._attr_icon = entity_data["icon"]
         self._attr_unit = uom
-        self._attr_is_on = (val == 1.0 or val == "on")
+        self._attr_is_on = val in WEM_SWITCH_ON_VALUES
         self._attr_should_poll = False
         self._attr_device_class = "switch"  # type: ignore
         self._module_index = entity_data["ModuleIndex"]
@@ -120,7 +130,7 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         """Handle updated data from the coordinator."""
         try:
             temp_val = self.coordinator.data[self._device_id][self._data_key]["value"]
-            self._attr_is_on = (temp_val == 1)
+            self._attr_is_on = temp_val in WEM_SWITCH_ON_VALUES
             
             _LOGGER.debug('Update switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
 

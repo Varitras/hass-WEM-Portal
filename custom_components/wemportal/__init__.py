@@ -23,8 +23,9 @@ from .const import (
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
 )
-from .coordinator import WemPortalDataUpdateCoordinator
+from .coordinator import WemPortalDataUpdateCoordinator, get_modules_store
 from .wemportalapi import WemPortalApi
+from .utils import deserialize_modules
 import homeassistant.helpers.entity_registry as entity_registry
 from homeassistant.helpers import device_registry as device_registry
 
@@ -140,11 +141,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         _LOGGER.info("Found devices for %s: %s", DOMAIN, device_ids)
 
+    # Load any previously persisted device/module/parameter metadata, so we
+    # can skip the slow, rate-limited per-module discovery in
+    # get_parameters() on this restart (see coordinator.py / wemportalapi.py
+    # for where this cache is used and re-saved).
+    modules_store = get_modules_store(hass, entry.entry_id)
+    cached_modules_raw = await modules_store.async_load()
+    cached_modules = deserialize_modules(cached_modules_raw) if cached_modules_raw else None
+    if cached_modules:
+        _LOGGER.info(
+            "Loaded cached module/parameter definitions for %s devices. "
+            "Skipping full discovery for this restart.",
+            len(cached_modules),
+        )
+
     # Creating API object
     api = WemPortalApi(
         entry.data.get(CONF_USERNAME),
         entry.data.get(CONF_PASSWORD),
-        config=entry.options
+        config=entry.options,
+        cached_modules=cached_modules,
     )
     # Create custom coordinator
     coordinator = WemPortalDataUpdateCoordinator(

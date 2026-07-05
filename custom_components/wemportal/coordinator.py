@@ -10,12 +10,34 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
+from homeassistant.helpers.storage import Store
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from .exceptions import ForbiddenError, ServerError, WemPortalError, AuthError
 from .const import _LOGGER, DEFAULT_CONF_SCAN_INTERVAL_API_VALUE, DEFAULT_TIMEOUT, DOMAIN
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from .wemportalapi import WemPortalApi
+from .utils import serialize_modules
+
+# Version of the on-disk format used to persist discovered device/module/
+# parameter metadata (see get_modules_store()). Bump this if the structure
+# of the cached data ever changes in a backwards-incompatible way.
+MODULES_STORAGE_VERSION = 1
+
+# A safety cap on how long the coordinator will ever wait between retries
+# after repeated failures (see the backoff logic in _async_update_data).
+MAX_BACKOFF_SECONDS = 6 * 3600  # 6 hours
+
+
+def get_modules_store(hass: HomeAssistant, entry_id: str) -> Store:
+    """Return the Store used to persist discovered module/parameter metadata.
+
+    Used both by __init__.py (to load the cache before creating the
+    WemPortalApi instance) and by the coordinator itself (to save it after
+    a successful update), so both sides always agree on the same file.
+    """
+    return Store(hass, MODULES_STORAGE_VERSION, f"{DOMAIN}_{entry_id}_modules")
+
 
 class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
     """DataUpdateCoordinator for wemportal component"""
@@ -39,13 +61,44 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         self.config_entry = config_entry
         self.last_try = None
         self.num_failed = 0
+        self._modules_store = get_modules_store(hass, config_entry.entry_id)
 
+
+    async def _async_save_modules_cache(self) -> None:
+        """Persist discovered device/module/parameter metadata to disk.
+
+        This is what lets a future Home Assistant restart skip the slow,
+        rate-limited per-module parameter discovery in
+        WemPortalApi.get_parameters() (see get_devices()/fetch_data() in
+        wemportalapi.py). This is purely a "nice to have" cache: any
+        failure to save it is logged and otherwise ignored, since losing
+        it only costs a slower next startup, never incorrect data.
+        """
+        if not self.api.modules:
+            return
+        try:
+            await self._modules_store.async_save(serialize_modules(self.api.modules))
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.debug("Could not persist WEM Portal module cache: %s", exc)
 
     async def _async_update_data(self):
         """Fetch data from the wemportal api"""
-        if self.num_failed > 2 and monotonic() - self.last_try < DEFAULT_CONF_SCAN_INTERVAL_API_VALUE:
-            raise UpdateFailed("Waiting for more time to pass before retrying")
-            
+        if self.num_failed > 2:
+            # Wait longer than the plain scan interval before retrying,
+            # and wait progressively longer the more consecutive failures
+            # we've seen (capped at MAX_BACKOFF_SECONDS). This is a purely
+            # additive safety margin on top of the existing, already
+            # rate-limit-aware pacing inside wemportalapi.py itself (which
+            # is intentionally left untouched here) - it only ever waits
+            # *at least* as long as before, never less, to avoid adding any
+            # extra risk of triggering a server-side block.
+            required_wait = min(
+                DEFAULT_CONF_SCAN_INTERVAL_API_VALUE * (self.num_failed - 2),
+                MAX_BACKOFF_SECONDS,
+            )
+            if self.last_try is not None and monotonic() - self.last_try < required_wait:
+                raise UpdateFailed("Waiting for more time to pass before retrying")
+
         device_registry = dr.async_get(self.hass)
         enabled_devices = []
         for device_id in self.api.data.keys():
@@ -59,6 +112,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             try:
                 x = await self.hass.async_add_executor_job(self.api.fetch_data, enabled_devices)
                 self.num_failed = 0
+                await self._async_save_modules_cache()
                 return x
             except AuthError as exc:
                 self.num_failed += 1
@@ -72,7 +126,13 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                         self.config_entry.data.get(CONF_USERNAME),
                         self.config_entry.data.get(CONF_PASSWORD),
                         config=self.config_entry.options,
-                        existing_data=self.api.data
+                        existing_data=self.api.data,
+                        # Keep any already-discovered module/parameter metadata
+                        # so re-instantiating the API (to recover from a
+                        # corrupted session) doesn't also throw away
+                        # everything get_parameters() already learned and
+                        # force a full, slow rediscovery.
+                        cached_modules=self.api.modules,
                     )
                 raise UpdateFailed(f"Error fetching data from wemportal: {exc}") from exc
             finally:

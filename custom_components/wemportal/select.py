@@ -27,7 +27,9 @@ async def async_setup_entry(
         for unique_id, values in entity_data.items():
             if isinstance(values, int):
                 continue
-            if values["platform"] == "select":
+            # .get() instead of direct indexing: one malformed data point
+            # should not crash setup for every select entity on this device.
+            if values.get("platform") == "select":
                 entities.append(
                     WemPortalSelect(
                         coordinator, config_entry, device_id, unique_id, values

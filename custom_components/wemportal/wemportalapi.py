@@ -47,12 +47,24 @@ from .const import (
 class WemPortalApi:
     """Wrapper class for Weishaupt WEM Portal"""
 
-    def __init__(self, username, password, config=None, existing_data=None) -> None:
+    def __init__(self, username, password, config=None, existing_data=None, cached_modules=None) -> None:
         if config is None:
             config = {}
         self.data = copy.deepcopy(existing_data) if existing_data else {}
         self.username = username
         self.password = password
+        # Previously-discovered device/module/parameter metadata, if any
+        # (e.g. persisted across Home Assistant restarts, see __init__.py).
+        # When present, this lets fetch_data() skip the slow, rate-limited
+        # per-module parameter discovery in get_parameters() and go
+        # straight to normal polling. `None` means "no cache available" and
+        # preserves the original behavior of doing a full discovery.
+        self.modules = copy.deepcopy(cached_modules) if cached_modules else None
+        # Tracks whether get_devices() has already run once during the
+        # lifetime of this WemPortalApi instance (i.e. once per Home
+        # Assistant session/restart), so it isn't repeated on every single
+        # coordinator update - only the initial discovery/refresh needs it.
+        self._devices_fetched_this_session = False
         self.mode = config.get(CONF_MODE, DEFAULT_CONF_MODE_VALUE)
         self.update_interval = timedelta(
             seconds=min(
@@ -73,7 +85,6 @@ class WemPortalApi:
         self.valid_login = False
         self.language = config.get(CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE)
         self.session = None
-        self.modules = None
         self.webscraping_cookie = {}
         self.last_scraping_update = None
         # Headers used for all API calls
@@ -98,20 +109,33 @@ class WemPortalApi:
                 # Login and get device info
                 if not self.valid_login:
                     self.api_login()
-                # Fetch device and parameter data only at start, or recover missing metadata
-                if self.modules is None:
+                # Refresh the device/module list once per session (cheap).
+                # This intentionally runs whether or not we started with a
+                # module cache: it's what discovers devices on a fresh
+                # install, and what picks up newly added devices/modules on
+                # an existing one - while preserving any cached parameter
+                # definitions (see get_devices()).
+                if not self._devices_fetched_this_session:
                     self.get_devices()
+                    self._devices_fetched_this_session = True
+
+                # Only run the slow, rate-limited per-module parameter
+                # discovery (get_parameters(), ~5 sec sleep per module) if
+                # something is actually missing its parameter definitions -
+                # e.g. a brand new install, a newly added module, or a
+                # previous discovery attempt that got interrupted/rate
+                # limited. With a valid persisted cache, this is skipped
+                # entirely after a restart, which is what makes Home
+                # Assistant startup fast again.
+                needs_recovery = False
+                for _, modules in self.modules.items():
+                    for module in modules.values():
+                        if "parameters" not in module:
+                            needs_recovery = True
+                            break
+                if needs_recovery:
+                    _LOGGER.info("Attempting to recover missing parameter definitions...")
                     self.get_parameters()
-                else:
-                    needs_recovery = False
-                    for _, modules in self.modules.items():
-                        for module in modules.values():
-                            if "parameters" not in module:
-                                needs_recovery = True
-                                break
-                    if needs_recovery:
-                        _LOGGER.info("Attempting to recover missing parameter definitions...")
-                        self.get_parameters()
 
             # Select data source based on mode
             if self.mode == "web":
@@ -180,11 +204,21 @@ class WemPortalApi:
                 
                 # Preserve the old unit if the current scrape is missing it (e.g. value is "--")
                 # This prevents Home Assistant from complaining about unit changes.
-                if new_val.get("unit") is None:
+                if new_val.get("unit") in (None, ""):
                     old_val = self.data[str(device_id)].get(key)
-                    if isinstance(old_val, dict) and old_val.get("unit") is not None:
+                    if isinstance(old_val, dict) and old_val.get("unit") not in (None, ""):
                         new_val["unit"] = old_val.get("unit")
-                        
+
+                # Preserve the old value if the current scrape returned no
+                # value at all. Without this, a single missed/garbled read
+                # would make the sensor drop to "Unknown" and create a gap
+                # in its history, even though the previous value is still
+                # very likely accurate until the next successful update.
+                if new_val.get("value") is None:
+                    old_val = self.data[str(device_id)].get(key)
+                    if isinstance(old_val, dict) and old_val.get("value") is not None:
+                        new_val["value"] = old_val.get("value")
+
             self.data[str(device_id)][key] = new_val
 
     def fetch_webscraping_data(self):
@@ -391,7 +425,12 @@ class WemPortalApi:
 
         for attempt in range(attempts):
             time.sleep(1)  # Wait 1 sec between requests to be graceful to the API.
-            current_headers = headers or self.headers.copy()
+            # Merge any call-specific headers on top of the default headers,
+            # instead of replacing them outright. Previously, passing e.g.
+            # headers={"X-Api-Version": "2.0.0.0"} (as get_statistics() does)
+            # would silently drop "Host", "User-Agent" and "Accept" for that
+            # call, which could cause it to be rejected by the server.
+            current_headers = {**self.headers, **(headers or {})}
 
             try:
                 if not data:
@@ -438,12 +477,20 @@ class WemPortalApi:
         return response
 
     def get_devices(self):
-        # Check if device data is already present
-        if self.data and self.modules:
-            _LOGGER.debug("Device data is already cached.")
-            return
+        """Fetch the current device/module list from the API.
 
+        This refreshes the device list, module list and connection status
+        (one relatively cheap API call) every time it's called. Crucially,
+        it does NOT discard already-known "parameters" for modules that
+        still exist (e.g. loaded from a persisted cache, or discovered
+        earlier this session) - only get_parameters() populates/refreshes
+        those, and that step is comparatively slow/rate-limited (a sleep
+        per module). Preserving cached parameters here is what allows
+        fetch_data() to skip that slow discovery after a Home Assistant
+        restart when a valid cache exists.
+        """
         _LOGGER.debug("Fetching api device data")
+        previously_known_modules = self.modules or {}
         self.modules = {}
         self.data = {}
         data = self.make_api_call(API_DEVICE_READ_URL, do_retry=True).json()
@@ -452,12 +499,18 @@ class WemPortalApi:
             device_id_str = str(device["ID"])
             self.data[device_id_str] = {}
             self.modules[device_id_str] = {}
+            previously_known_device_modules = previously_known_modules.get(device_id_str, {})
             for module in device["Modules"]:
-                self.modules[device_id_str][(module["Index"], module["Type"])] = {
+                module_key = (module["Index"], module["Type"])
+                module_entry = {
                     "Index": module["Index"],
                     "Type": module["Type"],
                     "Name": module["Name"],
                 }
+                cached_module = previously_known_device_modules.get(module_key)
+                if cached_module and "parameters" in cached_module:
+                    module_entry["parameters"] = cached_module["parameters"]
+                self.modules[device_id_str][module_key] = module_entry
             self.data[device_id_str]["ConnectionStatus"] = device["ConnectionStatus"]
 
     def get_parameters(self):
@@ -834,11 +887,23 @@ class WemPortalApi:
                             
                         # The last value in the array is the current day's consumption
                         latest_stat = values[-1]
-                        current_value = latest_stat.get("Value", 0.0)
-                        unit = stats_resp.get("Unit", "kWh")
-                        
+                        current_value = latest_stat.get("Value")
+
                         sensor_name = f"Energy_{group_id}"
-                        
+
+                        if current_value is None:
+                            # Missing reading this cycle - keep the last known
+                            # value instead of falling back to 0.0, which would
+                            # otherwise show up as a false drop/spike on the
+                            # Energy Dashboard.
+                            old_sensor = self.data.get(device_id, {}).get(f"{device_id}-{sensor_name}")
+                            if isinstance(old_sensor, dict) and old_sensor.get("value") is not None:
+                                current_value = old_sensor.get("value")
+                            else:
+                                current_value = 0.0
+
+                        unit = stats_resp.get("Unit", "kWh")
+
                         self.data[device_id][f"{device_id}-{sensor_name}"] = {
                             "friendlyName": group_name,
                             "ParameterID": sensor_name,

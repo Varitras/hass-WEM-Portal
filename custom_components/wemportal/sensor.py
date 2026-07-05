@@ -2,7 +2,7 @@
 Sensor platform for wemportal component
 """
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, RestoreSensor
 from homeassistant.config_entries import ConfigEntry
 
 from homeassistant.core import HomeAssistant, callback
@@ -29,7 +29,12 @@ async def async_setup_entry(
         for unique_id, values in entity_data.items():
             if isinstance(values, int):
                 continue
-            if values["platform"] == "sensor":
+            # Use .get() rather than values["platform"] here: if a single
+            # data point is ever missing this key (e.g. an unexpected API
+            # response shape), we want to skip just that one entry instead
+            # of raising a KeyError that would abort setup for every
+            # sensor on this device.
+            if values.get("platform") == "sensor":
                 entities.append(
                     WemPortalSensor(
                         coordinator, config_entry, device_id, unique_id, values
@@ -38,7 +43,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class WemPortalSensor(CoordinatorEntity, SensorEntity):
+class WemPortalSensor(CoordinatorEntity, RestoreSensor):
     """Representation of a WEM Portal Sensor."""
 
     def _validated_native_value(self, val, uom):
@@ -85,9 +90,13 @@ class WemPortalSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = get_wemportal_unique_id(
             self._config_entry.entry_id, str(self._device_id), str(_unique_id)
         )
-        self._parameter_id = entity_data["ParameterID"]
+        # .get() with a sensible fallback rather than direct indexing: an
+        # unexpected/malformed data point should degrade gracefully (skip
+        # this one entity's optional metadata) instead of raising a
+        # KeyError that would abort setup for every sensor on this device.
+        self._parameter_id = entity_data.get("ParameterID", _unique_id)
         self._data_key = _unique_id
-        self._attr_icon = entity_data["icon"]
+        self._attr_icon = entity_data.get("icon", "mdi:flash")
         self._attr_native_unit_of_measurement = uom
         self._attr_native_value = self._validated_native_value(val, uom)
         self._attr_should_poll = False
@@ -101,6 +110,26 @@ class WemPortalSensor(CoordinatorEntity, SensorEntity):
             self._attr_native_value,
             self._attr_native_unit_of_measurement
         )
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the unit of measurement from the last known state, if needed.
+
+        On a fresh Home Assistant restart, the very first coordinator
+        update might briefly report a value without a unit (e.g. "--" from
+        the portal). Without this, that would flash the sensor's unit as
+        blank/unknown for one cycle. RestoreSensor lets us fall back to
+        whatever unit was last recorded, avoiding that.
+        """
+        await super().async_added_to_hass()
+        if self._attr_native_unit_of_measurement in (None, ""):
+            last_sensor_data = await self.async_get_last_sensor_data()
+            if last_sensor_data is not None and last_sensor_data.native_unit_of_measurement:
+                self._attr_native_unit_of_measurement = last_sensor_data.native_unit_of_measurement
+                _LOGGER.debug(
+                    "Restored unit %s for %s from previous session",
+                    self._attr_native_unit_of_measurement,
+                    self._attr_name,
+                )
 
     @property
     def device_info(self) -> DeviceInfo:
