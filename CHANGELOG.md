@@ -4,6 +4,21 @@ Alle nennenswerten Änderungen an diesem Fork werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.7.1] – 2026-07-05
+
+### Behoben
+- **Regression aus 1.7.0:** SELECT-Entitäten, bei denen eine Option
+  wörtlich `"Aus"` heißt (z. B. "Hot Water Push" mit den Optionen
+  `Aus, 5, 10, ..., 240` Minuten), schlugen fehl mit
+  `Value Off not found in options [...]`. Ursache war, dass die neue,
+  gemeinsame `sanitize_value()` (siehe 1.7.0) auf **alle**
+  EnumValues-Parameter angewendet wurde, nicht nur auf echte
+  SWITCH-Booleans – dabei wurde `"Aus"` zu `"Off"` umgeschrieben und
+  passte danach nicht mehr zur eigenen Optionsliste. Die Normalisierung
+  läuft jetzt nur noch für Parameter mit `DataType == SWITCH`; andere
+  Enum-Werte (SELECT) behalten ihren Original-String. Mit
+  Regressionstest abgesichert (reproduziert exakt den gemeldeten Fall).
+
 ## [1.7.0] – 2026-07-05
 
 ### Hinzugefügt
