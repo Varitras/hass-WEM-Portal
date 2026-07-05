@@ -41,6 +41,9 @@ from .const import (
     DEFAULT_CONF_MODE_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+    FORBIDDEN_COOLDOWN_SECONDS,
+    CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
+    STATISTICS_REFRESH_INTERVAL_SECONDS,
 )
 
 
@@ -86,6 +89,14 @@ class WemPortalApi:
         self.language = config.get(CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE)
         self.session = None
         self.webscraping_cookie = {}
+        # Persistent scraper instance, kept across coordinator cycles so
+        # its underlying HTTP session (TCP connection + TLS handshake) is
+        # reused instead of being torn down and re-established on every
+        # single scrape. Created lazily on first use in
+        # fetch_webscraping_data(). Note: the session-cookie reuse (which
+        # skips the login *requests*) is separate from this - keeping the
+        # instance also skips the per-cycle connection setup itself.
+        self._scraper = None
         self.last_scraping_update = None
         # Headers used for all API calls
         self.headers = {
@@ -96,6 +107,19 @@ class WemPortalApi:
         }
         self.scraping_mapper = {}
         self.last_statistics_fetch = 0.0
+        # Timestamp (per device+parameter) of the last time a heating
+        # schedule (CircuitTimes) was actually fetched, so it can be
+        # refreshed at most every CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
+        # instead of on every single coordinator cycle - these rarely
+        # change and this integration doesn't allow editing them anyway.
+        self._last_circuit_times_fetch = {}
+        # Monotonic timestamp until which ALL outbound requests are
+        # paused, activated after receiving a 403 (rate limit/forbidden)
+        # from the server anywhere in a cycle. This is a strictly
+        # additive safety measure: it only ever makes the integration
+        # quieter after the server has already signaled distress, never
+        # more aggressive. See _check_cooldown()/_activate_cooldown().
+        self._blocked_until = 0.0
 
         # Used to keep track of how many update intervals to wait before retrying spider
         self.spider_wait_interval = 0
@@ -103,7 +127,43 @@ class WemPortalApi:
         self.spider_retry_count = 0
         self.api_version = None
 
+    def _activate_cooldown(self, seconds=FORBIDDEN_COOLDOWN_SECONDS):
+        """Pause ALL further outbound requests for a while after being
+        rate-limited (HTTP 403) by the WEM Portal server.
+
+        This intentionally affects every subsequent make_api_call(), not
+        just the one that got the 403 - continuing to hit *other*
+        endpoints (statistics, circuit times, ...) right after the server
+        already signaled it's unhappy would defeat the purpose. Never
+        shortens an existing cooldown, only extends it.
+        """
+        new_blocked_until = time.monotonic() + seconds
+        if new_blocked_until > self._blocked_until:
+            self._blocked_until = new_blocked_until
+            _LOGGER.warning(
+                "WEM Portal returned a rate-limit/forbidden (403) response. "
+                "Pausing ALL requests for %s minutes to avoid making it worse.",
+                seconds // 60,
+            )
+
+    def _check_cooldown(self):
+        """Raise ForbiddenError immediately, without making any request,
+        if we're still within a cooldown period from a previous 403."""
+        if self._blocked_until and time.monotonic() < self._blocked_until:
+            remaining = int(self._blocked_until - time.monotonic())
+            raise ForbiddenError(
+                f"Still cooling down after a previous rate-limit response "
+                f"({remaining}s remaining). Skipping requests until then."
+            )
+
     def fetch_data(self, enabled_devices=None):
+        # Fail fast, without any network activity at all, if we're still
+        # within a cooldown window from a previous 403 (see
+        # _activate_cooldown). This is checked again inside
+        # make_api_call() for every individual call too, but checking
+        # once up front avoids even starting a cycle (login attempts,
+        # etc.) that we already know will be aborted immediately.
+        self._check_cooldown()
         try:
             if self.mode != "web":
                 # Login and get device info
@@ -221,6 +281,15 @@ class WemPortalApi:
 
             self.data[str(device_id)][key] = new_val
 
+    def _reset_scraper(self):
+        """Discard the persistent scraper instance (closing its HTTP
+        session) so the next scraping cycle starts with a completely
+        fresh connection - used after auth/session errors where reusing
+        the old connection state could keep failing."""
+        if self._scraper is not None:
+            self._scraper.close()
+            self._scraper = None
+
     def fetch_webscraping_data(self):
         """
         Call scraper to crawl WEM Portal.
@@ -229,12 +298,25 @@ class WemPortalApi:
         """
         from .scraper import WemPortalScraper
 
-        # Set up the web scraping job with necessary parameters
-        scraper = WemPortalScraper(
-            self.username, 
-            self.password, 
-            self.webscraping_cookie
-        )
+        # Respect an active rate-limit cooldown for the scraping path too,
+        # not just the API path - a 403 from either frontend means the
+        # server wants us to back off everywhere.
+        self._check_cooldown()
+
+        # Reuse the existing scraper (and with it, its warm HTTP
+        # connection) across cycles; only create a new one on first use
+        # or after it was deliberately discarded (see _reset_scraper).
+        if self._scraper is None:
+            self._scraper = WemPortalScraper(
+                self.username,
+                self.password,
+                self.webscraping_cookie
+            )
+        else:
+            # Keep the scraper's cookie view in sync with ours (ours may
+            # have been cleared after an auth error since the last cycle).
+            self._scraper.cookie = self.webscraping_cookie or {}
+        scraper = self._scraper
 
         try:
             # Attempt to run the scraping job and extract the first result
@@ -248,20 +330,44 @@ class WemPortalApi:
             self.spider_wait_interval = self.spider_retry_count
             raise WemPortalError(DATA_GATHERING_ERROR) from exc
 
+        except ForbiddenError:
+            # The web frontend rate-limited us (403). Activate the same
+            # global cooldown the API path uses, discard the scraper
+            # (fresh connection once the cooldown expires), and let the
+            # error propagate so the coordinator's backoff kicks in too.
+            self._activate_cooldown()
+            self._reset_scraper()
+            raise
+
         except AuthError as exc:
-            # Handle authentication errors
+            # Handle authentication errors. Also discard the persistent
+            # scraper: its connection/cookie state just failed to
+            # authenticate, so the next attempt should start fresh.
             self.webscraping_cookie = None
+            self._reset_scraper()
             raise AuthError(
                 "AuthenticationError: Could not login with provided username and password. "
                 "Check if your config contains the right credentials"
             ) from exc
 
         except ExpiredSessionError as exc:
-            # Handle errors due to expired session
+            # Handle errors due to expired session (fresh start next cycle).
             self.webscraping_cookie = None
+            self._reset_scraper()
             raise ExpiredSessionError(
                 "ExpiredSessionError: Session expired. Next update will try to login again."
             ) from exc
+
+        except Exception as exc:
+            # Catch-all for anything else (e.g. a plain network failure -
+            # connection reset, DNS issue, timeout - during the scraping
+            # login/request sequence). Previously these weren't caught
+            # here at all, so a simple network hiccup skipped the same
+            # retry-count/backoff bookkeeping that IndexError gets above,
+            # even though it's just as recoverable.
+            self.spider_retry_count += 1
+            self.spider_wait_interval = self.spider_retry_count
+            raise WemPortalError(f"{DATA_GATHERING_ERROR} ({exc})") from exc
 
         try:
             # Attempt to update the cookie from the scraped data
@@ -311,19 +417,26 @@ class WemPortalApi:
             _LOGGER.warning("API login failed for %s. Received HTML instead of JSON.", self.username)
             self.valid_login = False
             raise WemPortalError("API login failed: received HTML instead of JSON (Possible rate limit or WAF block)") from exc
-        except reqs.exceptions.HTTPError as exc:
-            _LOGGER.warning("API login failed for %s with HTTPError.", self.username)
+        except reqs.exceptions.RequestException as exc:
+            # Broader than just HTTPError: also covers ConnectionError,
+            # Timeout, etc. - genuine network failures that aren't tied to
+            # a specific HTTP status code, which previously weren't caught
+            # here at all and would fall through to the generic
+            # "unexpected error" wrapper in fetch_data() instead of a
+            # clear, specific error message.
+            _LOGGER.warning("API login failed for %s with a network/HTTP error.", self.username)
             self.valid_login = False
             response_status, response_message = self.get_response_details(response)
             if response is None:
                 raise UnknownAuthError(
-                    "Authentication Error: Encountered an unknown authentication error."
+                    f"Authentication Error: Could not reach WEM Portal ({exc})."
                 ) from exc
             elif response.status_code == 400:
                 raise AuthError(
                     f"Authentication Error: Check if your login credentials are correct. Received response code: {response.status_code}, response: {response.content}. Server returned internal status code: {response_status} and message: {response_message}"
                 ) from exc
             elif response.status_code == 403:
+                self._activate_cooldown()
                 raise ForbiddenError(
                     f"WemPortal forbidden error: Server returned internal status code: {response_status} and message: {response_message}"
                 ) from exc
@@ -364,8 +477,8 @@ class WemPortalApi:
         try:
             initial_response = session.get(login_url, headers=headers)
             initial_response.raise_for_status()
-        except reqs.exceptions.HTTPError as exc:
-            raise UnknownAuthError("Failed to load the login page.") from exc
+        except reqs.exceptions.RequestException as exc:
+            raise UnknownAuthError(f"Failed to load the login page: {exc}") from exc
 
         # Step 2: Parse the login page and extract hidden form fields
         soup = BeautifulSoup(initial_response.text, "html.parser")
@@ -380,6 +493,7 @@ class WemPortalApi:
         form_data["ctl00$content$btnLogin"] = "Anmelden"  # Login button value
 
         # Step 3: Submit the login form
+        response = None
         try:
             response = session.post(
                 login_url,
@@ -397,10 +511,11 @@ class WemPortalApi:
                 return
             else:
                 raise AuthError("Login failed: Invalid username or password.")
-        except reqs.exceptions.HTTPError as exc:
-            if response.status_code == 403:
+        except reqs.exceptions.RequestException as exc:
+            if response is not None and response.status_code == 403:
+                self._activate_cooldown()
                 raise ForbiddenError("Access forbidden during login.") from exc
-            raise UnknownAuthError("Failed to submit the login form.") from exc
+            raise UnknownAuthError(f"Failed to submit the login form: {exc}") from exc
 
     def get_response_details(self, response: reqs.Response):
         server_status = ""
@@ -429,6 +544,11 @@ class WemPortalApi:
         response = None
 
         for attempt in range(attempts):
+            # Fail fast if we're still cooling down from a previous 403 -
+            # applies to every single call site that goes through here,
+            # not just the one that originally triggered it.
+            self._check_cooldown()
+
             time.sleep(1)  # Wait 1 sec between requests to be graceful to the API.
             # Merge any call-specific headers on top of the default headers,
             # instead of replacing them outright. Previously, passing e.g.
@@ -455,13 +575,36 @@ class WemPortalApi:
                 return response
 
             except (reqs.exceptions.RequestException, ExpiredSessionError) as exc:
-                is_auth_error = isinstance(exc, ExpiredSessionError) or (
-                    isinstance(exc, reqs.exceptions.RequestException)
-                    and response
-                    and response.status_code in (401, 403)
+                status_code = (
+                    response.status_code
+                    if isinstance(exc, reqs.exceptions.RequestException) and response is not None
+                    else None
                 )
 
-                if is_auth_error and attempt < attempts - 1:
+                if status_code == 403:
+                    # A 403 means the server is already unhappy with our
+                    # request rate - immediately retrying with a fresh
+                    # login (as we do for a plain expired session below)
+                    # would itself be an extra request at exactly the
+                    # wrong time. Back off hard instead: no retry, pause
+                    # everything for a while, and surface it as
+                    # ForbiddenError so callers' existing 403-handling
+                    # (e.g. get_parameters()'s forbidden_count) still works.
+                    self._activate_cooldown()
+                    server_status, server_message = self.get_response_details(response)
+                    self.valid_login = False
+                    raise ForbiddenError(
+                        f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
+                    ) from exc
+
+                # A genuinely expired session (401, or a stealthy redirect
+                # to the login page) is worth one immediate retry with a
+                # fresh login - unlike a 403, this isn't a sign we're
+                # sending too many requests, just that the current session
+                # is no longer valid.
+                is_session_error = isinstance(exc, ExpiredSessionError) or status_code == 401
+
+                if is_session_error and attempt < attempts - 1:
                     _LOGGER.info("Session expired for %s. Re-authenticating...", url)
                     self.api_login()
                     time.sleep(delay)
@@ -519,9 +662,11 @@ class WemPortalApi:
             self.data[device_id_str]["ConnectionStatus"] = device["ConnectionStatus"]
 
     def get_parameters(self):
-        assert self.modules is not None
+        if self.modules is None:
+            _LOGGER.debug("get_parameters() called with no module data available yet; skipping.")
+            return
         for device_id, device_data in self.data.items():
-            if device_data["ConnectionStatus"] != 0:
+            if device_data.get("ConnectionStatus") != 0:
                 continue
             _LOGGER.debug("Fetching api parameters data for device %s", device_id)
             _LOGGER.debug(self.data)
@@ -557,6 +702,7 @@ class WemPortalApi:
                                     "for device %s. Aborting.",
                                     device_id
                                 )
+                                self._activate_cooldown()
                                 raise ForbiddenError("Rate limited during get_parameters") from exc
                             
                             _LOGGER.warning(
@@ -586,7 +732,12 @@ class WemPortalApi:
                         self.modules[device_id][(values["Index"], values["Type"])][
                             "parameters"
                         ] = parameters
-                except KeyError:
+                except (KeyError, ValueError):
+                    # ValueError also covers a JSON-decode failure (e.g. an
+                    # HTML error page returned instead of JSON) - without
+                    # it, a single malformed response here would abort
+                    # discovery for every remaining module on this device,
+                    # not just skip this one.
                     _LOGGER.warning(
                         "An error occurred while gathering parameters data for module %s. Skipping this module. "
                         "If this problem persists, open an issue at "
@@ -761,6 +912,17 @@ class WemPortalApi:
                     if "parameters" in module:
                         for param_id, param_data in module["parameters"].items():
                             if param_data.get("DataType") == 6:  # WemDataType.PROGRAM
+                                # Heating schedules rarely change (only via
+                                # the WEM Portal app directly - this
+                                # integration only ever shows them
+                                # read-only), so refetching them on every
+                                # single coordinator cycle is unnecessary
+                                # load. Skip if we already fetched this
+                                # specific schedule recently enough.
+                                cache_key = (device_id, param_id)
+                                last_fetch = self._last_circuit_times_fetch.get(cache_key, 0)
+                                if time.time() - last_fetch < CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS:
+                                    continue
                                 try:
                                     refresh_payload = {
                                         "DeviceID": int(device_id),
@@ -814,6 +976,7 @@ class WemPortalApi:
                                     self.data[device_id][sensor_name]["CircuitTimesDay"] = schedule_resp.get("CircuitTimesDay", [])
                                     self.data[device_id][sensor_name]["PossibleValues"] = schedule_resp.get("PossibleValues", [])
                                     self.data[device_id][sensor_name]["value"] = "Active"
+                                    self._last_circuit_times_fetch[cache_key] = time.time()
 
                                 except Exception as exc:
                                     _LOGGER.warning("Failed to fetch CircuitTimes for %s: %s", param_id, exc)
@@ -826,7 +989,7 @@ class WemPortalApi:
     def get_statistics(self, enabled_devices=None):
         """Fetch historical statistics from the API, rate limited to once per hour."""
         now = time.time()
-        if self.last_statistics_fetch is not None and (now - self.last_statistics_fetch) < 3600:
+        if self.last_statistics_fetch is not None and (now - self.last_statistics_fetch) < STATISTICS_REFRESH_INTERVAL_SECONDS:
             return
             
         self.last_statistics_fetch = now

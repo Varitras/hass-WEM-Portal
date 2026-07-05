@@ -31,10 +31,8 @@ def sanitize_value(value_str, unit=None, name=""):
     Args:
         value_str: The raw string value coming from the portal (or already
             a non-string value, in which case it is returned unchanged).
-        unit: The unit of measurement associated with this value, if any.
-            Used to decide whether a boolean-like reading should be
-            represented as 0.0/1.0 (numeric sensor) or as "Off"/"On"
-            (text sensor) - see below.
+        unit: Currently unused for the boolean branches below (see note),
+            kept for call-site/signature stability.
         name: The (internal) sensor name, used to detect energy/power
             sensors so that a "missing data" placeholder becomes None
             instead of a misleading 0.0 (which would show up as a false
@@ -43,6 +41,19 @@ def sanitize_value(value_str, unit=None, name=""):
     Returns:
         A float for numeric/boolean values, or the original string if it
         can't be interpreted as a number or known boolean placeholder.
+
+    Note on boolean handling: "Ein"/"On"/"Aus"/"Off" are ALWAYS mapped to
+    1.0/0.0 here, never to text, regardless of `unit`. An earlier version
+    of this function returned text ("On"/"Off") when no unit was present,
+    to make plain status sensors read more naturally - but the same raw
+    value/name can also belong to a genuinely numeric sensor (e.g. a
+    "power" sensor reading "Aus" while idle, with device_class="power"
+    and a real unit like "kW" that simply isn't attached to *this*
+    particular string). Home Assistant requires a numeric state whenever
+    state_class/device_class/unit are set, so returning text there
+    crashes entity setup entirely. Always-numeric matches this
+    component's original, crash-free behavior and is what switch.py's
+    WEM_SWITCH_ON_VALUES already accepts alongside the text forms.
     """
     if not isinstance(value_str, str):
         return value_str
@@ -58,9 +69,9 @@ def sanitize_value(value_str, unit=None, name=""):
         return 0.0
 
     if val_lower in BOOLEAN_OFF_STRINGS:
-        return 0.0 if unit else "Off"
+        return 0.0
     if val_lower in BOOLEAN_ON_STRINGS:
-        return 1.0 if unit else "On"
+        return 1.0
 
     try:
         return float(value_str)

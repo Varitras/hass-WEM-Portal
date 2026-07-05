@@ -40,6 +40,39 @@ API_CIRCUIT_TIMES_READ_URL: Final = "https://www.wemportal.com/app/CircuitTimes/
 API_STATISTICS_REFRESH_URL: Final = "https://www.wemportal.com/app/Statistics/Refresh"
 API_STATISTICS_READ_URL: Final = "https://www.wemportal.com/app/Statistics/Read"
 
+# How long to pause ALL outbound requests after the server responds with a
+# 403 (rate limit / forbidden), before trying again. This is intentionally
+# generous: a 403 means the server is already unhappy with our request
+# rate, so backing off hard (rather than continuing to poll other
+# endpoints in the same cycle) is the safer choice.
+FORBIDDEN_COOLDOWN_SECONDS: Final = 30 * 60  # 30 minutes
+
+# Per-request timeout for the web scraper's HTTP calls. Without one, a
+# slow/hanging WEM Portal response would block the executor thread until
+# the coordinator-wide DEFAULT_TIMEOUT (360s) fires; failing the single
+# request after this many seconds instead lets the existing retry/backoff
+# logic take over much sooner.
+SCRAPER_REQUEST_TIMEOUT_SECONDS: Final = 30
+
+# Heating schedules (CircuitTimes) rarely change - only when a user edits
+# them directly in the WEM Portal app (this integration only ever shows
+# them as read-only sensors). Refetching them every single coordinator
+# cycle is unnecessary load; this caps how often they're refreshed.
+CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS: Final = 4 * 3600  # 4 hours
+
+# Energy statistics are daily aggregates - they don't need hourly
+# refreshes. Widening this beyond the original 1 hour further reduces
+# steady-state load without any meaningful loss of freshness.
+STATISTICS_REFRESH_INTERVAL_SECONDS: Final = 4 * 3600  # 4 hours
+
+# Expert write access (web) - disabled by default. Only when enabled are
+# the wemportal.set_expert_parameter service and (if entityvalues are
+# configured) the two Leistungsbegrenzung number entities registered.
+CONF_EXPERT_WRITE: Final = "expert_write_enabled"
+CONF_EXPERT_ENTITY_HEATING: Final = "expert_entityvalue_heating"
+CONF_EXPERT_ENTITY_COOLING: Final = "expert_entityvalue_cooling"
+SERVICE_SET_EXPERT_PARAMETER: Final = "set_expert_parameter"
+
 # Scraper Constants
 MISSING_DATA_STRINGS: Final = ["--", "label ist null", "label ist null "]
 BOOLEAN_OFF_STRINGS: Final = ["off", "aus"]

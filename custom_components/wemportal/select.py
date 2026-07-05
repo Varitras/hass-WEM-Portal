@@ -116,19 +116,24 @@ class WemPortalSelect(CoordinatorEntity, SelectEntity):
         self._attr_unique_id = get_wemportal_unique_id(
             self._config_entry.entry_id, str(self._device_id), str(_unique_id)
         )
-        self._parameter_id = entity_data["ParameterID"]
+        # .get() with sensible fallbacks rather than direct indexing: an
+        # unexpected/malformed data point should degrade gracefully
+        # (skip this one entity's optional metadata) instead of raising a
+        # KeyError that would abort setup for every select entity on this
+        # device.
+        self._parameter_id = entity_data.get("ParameterID", _unique_id)
         self._data_key = _unique_id
-        self._attr_icon = entity_data["icon"]
-        self._options = entity_data["options"]
-        self._options_names = entity_data["optionsNames"]
-        self._module_index = entity_data["ModuleIndex"]
-        self._module_type = entity_data["ModuleType"]
+        self._attr_icon = entity_data.get("icon", "mdi:flash")
+        self._options = entity_data.get("options", [])
+        self._options_names = entity_data.get("optionsNames", [])
+        self._module_index = entity_data.get("ModuleIndex")
+        self._module_type = entity_data.get("ModuleType")
 
         try:
-            self._attr_current_option = self._resolve_option(entity_data["value"])
+            self._attr_current_option = self._resolve_option(entity_data.get("value"))
         except (ValueError, TypeError):
             self._attr_current_option = None
-            _LOGGER.warning("Value %s not found in options %s (names: %s) for select %s", entity_data["value"], self._options, self._options_names, self._attr_name)
+            _LOGGER.warning("Value %s not found in options %s (names: %s) for select %s", entity_data.get("value"), self._options, self._options_names, self._attr_name)
         _LOGGER.debug('Init select: %s: "%s"', self._attr_name, self._attr_current_option)
 
     async def async_select_option(self, option: str) -> None:

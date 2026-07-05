@@ -61,7 +61,12 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
 
-        val, uom = fix_value_and_uom(entity_data["value"], entity_data["unit"])
+        # .get() with sensible fallbacks rather than direct indexing: an
+        # unexpected/malformed data point should degrade gracefully
+        # (skip this one entity's optional metadata) instead of raising a
+        # KeyError that would abort setup for every switch entity on this
+        # device.
+        val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
 
         self._last_updated = None
         self._config_entry = config_entry
@@ -72,15 +77,15 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
             self._config_entry.entry_id, str(self._device_id), str(_unique_id)
         )
 
-        self._parameter_id = entity_data["ParameterID"]
+        self._parameter_id = entity_data.get("ParameterID", _unique_id)
         self._data_key = _unique_id
-        self._attr_icon = entity_data["icon"]
+        self._attr_icon = entity_data.get("icon", "mdi:flash")
         self._attr_unit = uom
         self._attr_is_on = val in WEM_SWITCH_ON_VALUES
         self._attr_should_poll = False
         self._attr_device_class = "switch"  # type: ignore
-        self._module_index = entity_data["ModuleIndex"]
-        self._module_type = entity_data["ModuleType"]
+        self._module_index = entity_data.get("ModuleIndex")
+        self._module_type = entity_data.get("ModuleType")
 
         _LOGGER.debug('Init switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
 

@@ -22,6 +22,8 @@ from .const import (
     _LOGGER,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+    CONF_EXPERT_WRITE,
+    SERVICE_SET_EXPERT_PARAMETER,
 )
 from .coordinator import WemPortalDataUpdateCoordinator, get_modules_store
 from .wemportalapi import WemPortalApi
@@ -45,6 +47,13 @@ async def migrate_unique_ids(
     hass: HomeAssistant, config_entry: ConfigEntry, coordinator
 ):
     er = entity_registry.async_get(hass)
+    # Nothing to migrate yet if the first refresh came back empty (e.g. no
+    # devices found, or every device failed this cycle) - guard against
+    # this instead of crashing with an IndexError on an empty keys() list,
+    # which would otherwise abort the entire integration setup.
+    if not coordinator.data:
+        _LOGGER.debug("Skipping unique_id migration: coordinator has no data yet.")
+        return
     # Do migration for first device if we have multiple
     device_id = list(coordinator.data.keys())[0]
     data = coordinator.data[device_id]
@@ -145,9 +154,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # can skip the slow, rate-limited per-module discovery in
     # get_parameters() on this restart (see coordinator.py / wemportalapi.py
     # for where this cache is used and re-saved).
-    modules_store = get_modules_store(hass, entry.entry_id)
-    cached_modules_raw = await modules_store.async_load()
-    cached_modules = deserialize_modules(cached_modules_raw) if cached_modules_raw else None
+    cached_modules = None
+    try:
+        modules_store = get_modules_store(hass, entry.entry_id)
+        cached_modules_raw = await modules_store.async_load()
+        cached_modules = deserialize_modules(cached_modules_raw) if cached_modules_raw else None
+    except Exception as exc:  # pylint: disable=broad-except
+        # A corrupted/unreadable cache file must never prevent the
+        # integration from starting - worst case, we just lose the
+        # startup-time optimization for this one restart and fall back to
+        # a full discovery, exactly like a first-ever install.
+        _LOGGER.warning(
+            "Could not load cached WEM Portal module data, falling back to full "
+            "discovery for this restart: %s", exc
+        )
     if cached_modules:
         _LOGGER.info(
             "Loaded cached module/parameter definitions for %s devices. "
@@ -171,7 +191,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Is there an on_update function that we can add listener to?
     _LOGGER.info("Migrating entity names for wemportal")
-    await migrate_unique_ids(hass, entry, coordinator)
+    try:
+        await migrate_unique_ids(hass, entry, coordinator)
+    except Exception as exc:  # pylint: disable=broad-except
+        # Migration is a best-effort cleanup step (renames old unique_ids
+        # to the new format). A failure here should never prevent the
+        # integration from loading - worst case, some entities keep their
+        # old unique_id until the next successful migration attempt.
+        _LOGGER.warning("Unique_id migration failed, continuing without it: %s", exc)
 
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
@@ -191,7 +218,53 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
+    # Expert write access (web): register the service only while the
+    # option is enabled. Everything lives in expert_writer.py - the
+    # polling paths (scraper/API/coordinator) are untouched.
+    if entry.options.get(CONF_EXPERT_WRITE, False):
+        _async_register_expert_service(hass, entry, api)
+
     return True
+
+
+def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api) -> None:
+    """Register wemportal.set_expert_parameter (idempotent)."""
+    from .expert_writer import WemPortalExpertClient
+
+    if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
+        return
+
+    async def _handle_set_expert_parameter(call):
+        entityvalue = call.data["entityvalue"]
+        value = call.data["value"]
+
+        def _do_write():
+            # Own short-lived session per write; honors the global 403
+            # cooldown via the api object's check.
+            client = WemPortalExpertClient(
+                entry.data.get(CONF_USERNAME),
+                entry.data.get(CONF_PASSWORD),
+                cooldown_check=api._check_cooldown,
+            )
+            return client.write_parameter(entityvalue, value)
+
+        state = await hass.async_add_executor_job(_do_write)
+        _LOGGER.info(
+            "Expert parameter %s set to %s (allowed range %s..%s)",
+            entityvalue, state.current, state.min_value, state.max_value,
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_EXPERT_PARAMETER,
+        _handle_set_expert_parameter,
+        schema=vol.Schema(
+            {
+                vol.Required("entityvalue"): config_validation.string,
+                vol.Required("value"): vol.Coerce(float),
+            }
+        ),
+    )
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -203,10 +276,15 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
 async def _async_entry_updated(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """Handle entry updates."""
-    _LOGGER.info("Migrating entity names for wemportal because of config entry update")
-    await migrate_unique_ids(
-        hass, config_entry, hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
-    )
+    entry_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
+    if entry_data is None or "coordinator" not in entry_data:
+        _LOGGER.debug("No coordinator found for %s during entry update; skipping migration.", config_entry.entry_id)
+    else:
+        _LOGGER.info("Migrating entity names for wemportal because of config entry update")
+        try:
+            await migrate_unique_ids(hass, config_entry, entry_data["coordinator"])
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.warning("Unique_id migration failed, continuing without it: %s", exc)
     await hass.config_entries.async_reload(config_entry.entry_id)
 
 
@@ -216,6 +294,10 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )
     if unload_ok:
-        hass.data[DOMAIN].pop(config_entry.entry_id)
+        hass.data.get(DOMAIN, {}).pop(config_entry.entry_id, None)
+        # Remove the expert service (if registered) so a reload with the
+        # option disabled doesn't leave a stale service behind.
+        if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
+            hass.services.async_remove(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
 
     return unload_ok

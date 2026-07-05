@@ -51,7 +51,21 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
         effective_uom = uom
         if effective_uom in (None, ""):
             effective_uom = getattr(self, "_attr_native_unit_of_measurement", None)
-        is_numeric_sensor = effective_uom not in (None, "")
+        # A sensor is "numeric" if it has a real unit OR if it's tagged
+        # with a device_class/state_class that requires a numeric state
+        # (Home Assistant enforces this - see the entity's own state
+        # property). Checking device_class/state_class too, not just
+        # uom, closes a gap where fix_value_and_uom() can legitimately
+        # return an empty/None uom for a given reading (e.g. a boolean
+        # placeholder string with no unit attached) even though the
+        # entity itself is declared as a numeric power/energy/etc.
+        # sensor - which would otherwise let a non-numeric string like
+        # "Off" slip through uncaught and crash entity setup entirely.
+        is_numeric_sensor = (
+            effective_uom not in (None, "")
+            or getattr(self, "_attr_device_class", None) is not None
+            or getattr(self, "_attr_state_class", None) is not None
+        )
 
         if val is None:
             _LOGGER.warning('Invalid sensor value for "%s": %r -> set to None', self._attr_name, val)
@@ -98,11 +112,14 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
         self._data_key = _unique_id
         self._attr_icon = entity_data.get("icon", "mdi:flash")
         self._attr_native_unit_of_measurement = uom
-        self._attr_native_value = self._validated_native_value(val, uom)
-        self._attr_should_poll = False
-        
+        # Set device_class/state_class BEFORE validating the native value:
+        # _validated_native_value() uses them (in addition to uom) to
+        # decide whether a numeric value is required, so they must already
+        # be in place the first time it runs, not just on later updates.
         self._attr_device_class = entity_data.get("device_class")
         self._attr_state_class = entity_data.get("state_class")
+        self._attr_native_value = self._validated_native_value(val, uom)
+        self._attr_should_poll = False
 
         _LOGGER.debug(
             'Init sensor: %s: "%s" [%s]',

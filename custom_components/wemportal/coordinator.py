@@ -122,6 +122,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 self.num_failed += 1
                 if self.num_failed >= 2:
                     _LOGGER.info("API errors persistent. Re-instantiating WemPortalApi to recover from potentially corrupted session/state.")
+                    old_session = getattr(self.api, "session", None)
                     self.api = WemPortalApi(
                         self.config_entry.data.get(CONF_USERNAME),
                         self.config_entry.data.get(CONF_PASSWORD),
@@ -134,6 +135,27 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                         # force a full, slow rediscovery.
                         cached_modules=self.api.modules,
                     )
+                    # Best-effort cleanup of the old HTTP session so it
+                    # doesn't linger with an open connection after being
+                    # discarded.
+                    if old_session is not None:
+                        try:
+                            old_session.close()
+                        except Exception:  # pylint: disable=broad-except
+                            pass
                 raise UpdateFailed(f"Error fetching data from wemportal: {exc}") from exc
+            except Exception as exc:  # pylint: disable=broad-except
+                # Catch-all safety net: covers cases that don't come from
+                # fetch_data() itself (which already wraps its own
+                # unexpected errors as WemPortalError) - most notably
+                # asyncio.TimeoutError raised by the async_timeout.timeout()
+                # context above when a very large installation's discovery
+                # genuinely takes longer than DEFAULT_TIMEOUT. Without this,
+                # such an error would propagate out of the coordinator
+                # unwrapped, without the same retry/backoff bookkeeping as
+                # every other failure mode gets.
+                self.num_failed += 1
+                _LOGGER.warning("Unexpected error updating WEM Portal data: %s", exc)
+                raise UpdateFailed(f"Unexpected error fetching data from wemportal: {exc}") from exc
             finally:
                 self.last_try = monotonic()
