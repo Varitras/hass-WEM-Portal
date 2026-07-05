@@ -4,6 +4,43 @@ Alle nennenswerten Änderungen an diesem Fork werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.7.9] – 2026-07-05
+
+Neues Feature (freigegeben, Design A+B): **Experten-Schreibzugriff über
+das Web-Portal** für Fachmann-Parameter, die die Mobile-API nicht
+ausliefert (nachgewiesen anhand der Cache-Daten: API liefert nur 18
+Benutzer-Parameter, die Fachmann-Ansicht zeigt 100+ Werte – z. B. die
+Leistungsbegrenzung der Wärmepumpe).
+
+### Hinzugefügt
+- **Neues, eigenständiges Modul `expert_writer.py`** – komplett getrennt
+  von Scraper/API/Coordinator (diese Dateien sind unangetastet, `number.py`
+  nur minimal angedockt). Eigene Kurzzeit-Session pro Vorgang, nur bei
+  explizitem Aufruf – **kein zyklisches Polling**. Der globale 403-Cooldown
+  gilt auch hier.
+- **Option „Expert write access (web)"** im Konfigurieren-Dialog –
+  **standardmäßig AUS**. Solange aus: kein Service, keine Entitäten,
+  Verhalten identisch zu 1.7.8.
+- **Service `wemportal.set_expert_parameter`** (entityvalue + value):
+  Formular holen → Wert gegen die Live-Optionsliste der Anlage validieren
+  (der echte erlaubte Bereich, wird nie umgangen) → „Senden"-Postback →
+  erneut lesen und **verifizieren**. Nicht bestätigte Schreibvorgänge
+  werfen `ParameterWriteError`.
+- **Zwei optionale Number-Entitäten** (`wp_leistungsbegrenzung_heizen`/
+  `_kuehlen`) über entityvalue-Felder in den Optionen. Wert wird nur beim
+  Schreiben aktualisiert (verifizierter Ist-Zustand) bzw. nach Neustart
+  wiederhergestellt (RestoreNumber). Min/Max ziehen sich nach dem ersten
+  erfolgreichen Schreiben auf den echten Anlagen-Bereich zusammen.
+
+### Empfohlener Erst-Test
+Schalter aktivieren, nur die Heizen-ID eintragen, dann den **identischen
+Ist-Wert** schreiben (z. B. 30 → 30) und im Portal gegenprüfen, bevor
+echte Änderungen erfolgen.
+
+Mit Tests gegen die echten, gespeicherten Edit-Dialoge der Anlage
+verifiziert (Payload-Aufbau, Bereichs-Ablehnung vor jedem POST,
+Fehler bei unbestätigtem Schreiben, Options-Gating). 12 Testsuiten grün.
+
 ## [1.7.8] – 2026-07-05
 
 Härtung und Effizienzsteigerung des Web-Scrapers (auf Anfrage,

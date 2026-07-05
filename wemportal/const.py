@@ -65,6 +65,14 @@ CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS: Final = 4 * 3600  # 4 hours
 # steady-state load without any meaningful loss of freshness.
 STATISTICS_REFRESH_INTERVAL_SECONDS: Final = 4 * 3600  # 4 hours
 
+# Expert write access (web) - disabled by default. Only when enabled are
+# the wemportal.set_expert_parameter service and (if entityvalues are
+# configured) the two Leistungsbegrenzung number entities registered.
+CONF_EXPERT_WRITE: Final = "expert_write_enabled"
+CONF_EXPERT_ENTITY_HEATING: Final = "expert_entityvalue_heating"
+CONF_EXPERT_ENTITY_COOLING: Final = "expert_entityvalue_cooling"
+SERVICE_SET_EXPERT_PARAMETER: Final = "set_expert_parameter"
+
 # Scraper Constants
 MISSING_DATA_STRINGS: Final = ["--", "label ist null", "label ist null "]
 BOOLEAN_OFF_STRINGS: Final = ["off", "aus"]

@@ -22,6 +22,8 @@ from .const import (
     _LOGGER,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+    CONF_EXPERT_WRITE,
+    SERVICE_SET_EXPERT_PARAMETER,
 )
 from .coordinator import WemPortalDataUpdateCoordinator, get_modules_store
 from .wemportalapi import WemPortalApi
@@ -216,7 +218,53 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
+    # Expert write access (web): register the service only while the
+    # option is enabled. Everything lives in expert_writer.py - the
+    # polling paths (scraper/API/coordinator) are untouched.
+    if entry.options.get(CONF_EXPERT_WRITE, False):
+        _async_register_expert_service(hass, entry, api)
+
     return True
+
+
+def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api) -> None:
+    """Register wemportal.set_expert_parameter (idempotent)."""
+    from .expert_writer import WemPortalExpertClient
+
+    if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
+        return
+
+    async def _handle_set_expert_parameter(call):
+        entityvalue = call.data["entityvalue"]
+        value = call.data["value"]
+
+        def _do_write():
+            # Own short-lived session per write; honors the global 403
+            # cooldown via the api object's check.
+            client = WemPortalExpertClient(
+                entry.data.get(CONF_USERNAME),
+                entry.data.get(CONF_PASSWORD),
+                cooldown_check=api._check_cooldown,
+            )
+            return client.write_parameter(entityvalue, value)
+
+        state = await hass.async_add_executor_job(_do_write)
+        _LOGGER.info(
+            "Expert parameter %s set to %s (allowed range %s..%s)",
+            entityvalue, state.current, state.min_value, state.max_value,
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_EXPERT_PARAMETER,
+        _handle_set_expert_parameter,
+        schema=vol.Schema(
+            {
+                vol.Required("entityvalue"): config_validation.string,
+                vol.Required("value"): vol.Coerce(float),
+            }
+        ),
+    )
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -247,5 +295,9 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     )
     if unload_ok:
         hass.data.get(DOMAIN, {}).pop(config_entry.entry_id, None)
+        # Remove the expert service (if registered) so a reload with the
+        # option disabled doesn't leave a stale service behind.
+        if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
+            hass.services.async_remove(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
 
     return unload_ok

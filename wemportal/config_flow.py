@@ -23,7 +23,10 @@ from .const import (
     CONF_SCAN_INTERVAL_API,
     DEFAULT_MODE,
     AVAILABLE_MODES,
-    DEFAULT_CONF_LANGUAGE_VALUE
+    DEFAULT_CONF_LANGUAGE_VALUE,
+    CONF_EXPERT_WRITE,
+    CONF_EXPERT_ENTITY_HEATING,
+    CONF_EXPERT_ENTITY_COOLING,
 )
 from .exceptions import AuthError
 
@@ -142,6 +145,22 @@ class WemportalOptionsFlow(OptionsFlow):
                     vol.Optional(
                         CONF_MODE, default=self.config_entry.options.get(CONF_MODE, DEFAULT_MODE)
                         ): vol.In(AVAILABLE_MODES),
+                    # Expert write access (web) - off by default. Entities/
+                    # service only exist while this is enabled.
+                    vol.Optional(
+                        CONF_EXPERT_WRITE,
+                        default=self.config_entry.options.get(CONF_EXPERT_WRITE, False),
+                    ): config_validation.boolean,
+                    # entityvalue hex IDs from the portal's edit dialogs
+                    # (empty = no number entity for that parameter).
+                    vol.Optional(
+                        CONF_EXPERT_ENTITY_HEATING,
+                        default=self.config_entry.options.get(CONF_EXPERT_ENTITY_HEATING, ""),
+                    ): config_validation.string,
+                    vol.Optional(
+                        CONF_EXPERT_ENTITY_COOLING,
+                        default=self.config_entry.options.get(CONF_EXPERT_ENTITY_COOLING, ""),
+                    ): config_validation.string,
                 }
             ),
         )

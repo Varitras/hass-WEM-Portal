@@ -37,6 +37,14 @@ async def async_setup_entry(
 
     async_add_entities(entities)
 
+    # Expert write access (web): add the configured expert numbers.
+    # Returns [] unless the option is enabled - lazy import keeps the
+    # expert module out of the load path while disabled.
+    from .expert_writer import create_expert_number_entities
+    expert_entities = create_expert_number_entities(config_entry)
+    if expert_entities:
+        async_add_entities(expert_entities)
+
 
 class WemPortalNumber(CoordinatorEntity, NumberEntity):
     """Representation of a WEM Portal number."""

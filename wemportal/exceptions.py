@@ -35,3 +35,7 @@ class ParameterChangeError(WemPortalError):
     """
     Custom exception for parameter change errors
     """
+
+
+class ParameterWriteError(WemPortalError):
+    """Raised when an expert-parameter write is not confirmed by the portal."""
