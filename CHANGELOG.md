@@ -4,6 +4,82 @@ Alle nennenswerten Änderungen an diesem Fork werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.7.6] – 2026-07-05
+
+Vollständiger Codebase-Review über alle Dateien hinweg (auf Wunsch), Fokus
+auf nicht abgefangene Exceptions und Robustheitslücken. Keine funktionale
+Verhaltensänderung für den Normalbetrieb – ausschließlich Absicherung
+gegen Rand- und Fehlerfälle.
+
+### Behoben
+- **`number.py`/`select.py`/`switch.py`:** dieselbe Absturzgefahr durch
+  direkten Key-Zugriff (`ParameterID`, `icon`, `ModuleIndex`, `ModuleType`,
+  `min_value`/`max_value`/`step`), die in `sensor.py` schon länger behoben
+  war, jetzt auch in den drei Geschwisterdateien behoben. Ein einzelner
+  unerwarteter Datensatz kann nicht mehr das Setup der kompletten Plattform
+  für alle Geräte crashen lassen.
+- **`number.py`:** numerische Validierung verschärft – `NumberEntity` hat
+  keinen gültigen Text-Zustand, daher wird jetzt immer auf eine Zahl
+  geprüft, nicht nur wenn zufällig eine Einheit vorhanden ist (dieselbe
+  Fehlerklasse wie beim Leistungs-Sensor-Crash aus 1.7.5, hier präventiv
+  geschlossen).
+- **`mapper.py::process_api_values`:** verarbeitet jetzt jeden Datenpunkt
+  einzeln abgesichert – ein einzelner fehlerhafter Wert bricht nicht mehr
+  die Verarbeitung für den Rest des kompletten Geräte-Updates ab. Dabei
+  auch einen fehlenden `_LOGGER`-Import behoben (hätte selbst zu einem
+  `NameError` geführt).
+- **`__init__.py`:** `migrate_unique_ids()` crasht nicht mehr bei leerem
+  `coordinator.data`; ein beschädigtes Discovery-Cache-File verhindert
+  nicht mehr den kompletten Start; die Migration selbst ist jetzt
+  fehlertolerant abgesichert; kleinere defensive `.get()`/Default-Fixes.
+- **`coordinator.py`:** catch-all Exception-Handler ergänzt (fängt u. a.
+  `asyncio.TimeoutError` bei sehr großen Anlagen ab, die den Timeout
+  genuine überschreiten); alte HTTP-Session wird bei Re-Instanziierung
+  jetzt sauber geschlossen statt nur verworfen.
+- **`wemportalapi.py`:** `get_parameters()` fängt jetzt auch `ValueError`
+  (kaputtes JSON) statt nur `KeyError` ab; `assert` durch expliziten Check
+  ersetzt; `api_login()`/`web_login()` fangen jetzt die breitere
+  `RequestException` statt nur `HTTPError` ab (konsistent zu
+  `make_api_call`); dabei einen latenten `NameError` in `web_login()`
+  behoben (Zugriff auf `response`, bevor sicher war, dass es zugewiesen
+  wurde); `fetch_webscraping_data()` behandelt reine Netzwerkfehler jetzt
+  mit demselben Backoff wie andere Fehlerarten.
+
+Mit 7 Testsuiten (inkl. neuer, gezielter Tests für jeden der obigen
+Punkte) verifiziert.
+
+## [1.7.5] – 2026-07-05
+
+### Behoben
+- **Absturz bei numerischen Sensoren durch Text-Werte:** `sanitize_value()`
+  lieferte für erkannte Boolean-Werte Text (`"Off"`/`"On"`) statt einer
+  Zahl, wenn dem aktuellen Messwert keine Einheit anhing (z. B. reines
+  `"Aus"` ohne Zahl). Bei Sensoren, die grundsätzlich numerisch sind
+  (`device_class: power`, `state_class: measurement`) und deren Einheit
+  (z. B. `"kW"`) aus einem vorherigen Zyklus beibehalten wurde (siehe
+  Wert-Lücken-Schutz aus 1.7.0), führte das zu: reale Einheit + nicht-
+  numerischer Text-Wert – Home Assistant lehnt das strikt ab und der
+  Sensor konnte gar nicht erst angelegt werden
+  (`ValueError: [...] has the non-numeric value: 'Off'`). Betroffen u. a.
+  `sensor.warmepumpe_soll_leistung` und `sensor.warmepumpe_ist_leistung`.
+  `sanitize_value()` liefert jetzt für Boolean-Werte immer `0.0`/`1.0`,
+  nie Text – wie im Original-Code, bevor diese Fallunterscheidung
+  eingeführt wurde. Zusätzlich als zweite Sicherheitsebene: `sensor.py`
+  erkennt jetzt auch anhand von `device_class`/`state_class` (nicht nur
+  der Einheit des aktuellen Zyklus), dass ein numerischer Wert
+  erforderlich ist, und `device_class`/`state_class` werden jetzt **vor**
+  der Wert-Validierung gesetzt, damit dieses Sicherheitsnetz auch beim
+  allerersten Anlegen der Entität greift.
+
+## [1.7.4] – 2026-07-05
+
+### Behoben
+- **`fuzzywuzzy`-Performance-Warnung im Log:** `python-Levenshtein` zu
+  den Requirements hinzugefügt, damit die schnelle C-Erweiterung für das
+  Fuzzy-Matching in `select.py` automatisch mitinstalliert wird, statt
+  auf die langsamere reine Python-Implementierung zurückzufallen. Rein
+  kosmetisch/Performance – die Funktionalität war davon nicht betroffen.
+
 ## [1.7.3] – 2026-07-05
 
 ### Behoben
