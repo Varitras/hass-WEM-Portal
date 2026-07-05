@@ -4,6 +4,72 @@ Alle nennenswerten Änderungen an diesem Fork werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.7.8] – 2026-07-05
+
+Härtung und Effizienzsteigerung des Web-Scrapers (auf Anfrage,
+freigegebene Punkte). Fokus: schnelleres Scheitern bei lahmem Server,
+lückenloser Sperr-Schutz, weniger Verbindungsaufbau-Overhead.
+
+### Hinzugefügt
+- **30s-Timeout auf allen Scraper-Requests:** Ein hängender/lahmer
+  WEM-Server blockierte den Update-Zyklus bisher bis zum
+  Coordinator-Timeout (360 s). Jetzt schlägt der einzelne Request nach
+  30 s fehl und das bestehende Retry/Backoff übernimmt deutlich früher.
+- **403-Cooldown gilt jetzt auch für den Scraping-Pfad:** Der globale
+  Cooldown (seit 1.7.7 im API-Pfad) wird jetzt auch vor jedem
+  Scraping-Durchlauf geprüft, und ein 403 vom Web-Frontend aktiviert ihn
+  ebenfalls. Hintergrund: Weishaupts Rate-Limit wirkt auf IP/Account,
+  nicht pro Endpunkt – ein 403 von einer Seite bedeutet daher Pause für
+  beide. Gilt ausschließlich für 403; alle anderen Fehler bleiben wie
+  bisher pfad-getrennt behandelt (Scraper-Fehler ≠ API-Pause und
+  umgekehrt).
+- **Scraper-Verbindung wird über Zyklen wiederverwendet:** Die
+  Scraper-Instanz (inkl. TCP-Verbindung/TLS-Session) bleibt jetzt
+  bestehen, statt bei jedem Zyklus neu aufgebaut zu werden – spart pro
+  Zyklus einen kompletten Verbindungs-Handshake. Nach Auth-Fehlern oder
+  einem 403 wird sie gezielt verworfen und sauber geschlossen, damit die
+  Erholung mit frischer Verbindung startet.
+
+### Geändert
+- Code-Hygiene im Scraper: `ICON_MAPPER` einmalig auf Modulebene statt
+  pro Tabellenzeile; toter Else-Zweig in `parse_expert_page` entfernt;
+  Login-Fehlerbehandlung entwirrt (eigene Fehler werden nicht mehr vom
+  Netzwerkfehler-Handler neu verpackt).
+
+### Unverändert (bewusst)
+- Die 2-Sekunden-Pause nach dem Login-POST bleibt bestehen
+  (Risiko/Nutzen einer Entfernung unklar, daher nicht angefasst).
+
+Mit 4 neuen Tests abgesichert (Instanz-Wiederverwendung über 3 Zyklen,
+403 → Cooldown + Scraper-Verwurf + Fail-Fast ohne Netzaktivität,
+Auth-Fehler → Scraper-Verwurf, Timeout auf allen HTTP-Calls) plus der
+kompletten bestehenden Suite (9 Testdateien).
+
+## [1.7.7] – 2026-07-05
+
+Weitere, gezielt konservative Maßnahmen zur Reduktion der Serverlast bei
+Weishaupt (auf Anfrage). Alle Änderungen sind rein additiv/vorsichtiger –
+nichts pollt jemals häufiger oder aggressiver als vorher, nur seltener.
+
+### Hinzugefügt
+- **403 vs. 401 getrennt behandelt:** Ein 403 (Rate-Limit/Sperre) löst
+  nicht mehr automatisch einen erneuten Login-Versuch aus (das wäre eine
+  zusätzliche Anfrage genau im falschen Moment). Stattdessen wird eine
+  30-minütige Cool-down-Phase aktiviert: **alle** weiteren Anfragen
+  (auch an völlig andere Endpunkte) schlagen bis dahin sofort fehl, ganz
+  ohne Netzwerkzugriff. Ein 401 (abgelaufene Session) verhält sich
+  weiterhin wie bisher (ein Retry mit neuem Login).
+- **Heizprogramme (CircuitTimes) werden gecacht:** Nur noch alle 4 Stunden
+  pro Heizkreis neu abgefragt statt bei jedem einzelnen Update-Zyklus –
+  sie ändern sich nur bei manueller Bearbeitung in der Weishaupt-App
+  (über HA ohnehin nicht editierbar).
+- **Statistik-Intervall auf 4 Stunden gestreckt** (vorher 1 Stunde) – es
+  sind Tages-Summen, die sich nicht stündlich ändern.
+
+Mit 4 neuen, gezielten Tests abgesichert (kein Retry bei 403, Cool-down
+blockiert Folgeanfragen ganz ohne Netzwerkzugriff, 401 verhält sich
+unverändert, CircuitTimes werden im zweiten Zyklus übersprungen).
+
 ## [1.7.6] – 2026-07-05
 
 Vollständiger Codebase-Review über alle Dateien hinweg (auf Wunsch), Fokus
