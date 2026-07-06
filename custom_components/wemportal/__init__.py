@@ -248,7 +248,11 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             )
             return client.write_parameter(entityvalue, value)
 
-        state = await hass.async_add_executor_job(_do_write)
+        try:
+            state = await hass.async_add_executor_job(_do_write)
+        except Exception as exc:
+            from homeassistant.exceptions import HomeAssistantError
+            raise HomeAssistantError(f"Expert write failed: {exc}") from exc
         _LOGGER.info(
             "Expert parameter %s set to %s (allowed range %s..%s)",
             entityvalue, state.current, state.min_value, state.max_value,

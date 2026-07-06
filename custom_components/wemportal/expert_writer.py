@@ -20,6 +20,7 @@ from .exceptions import AuthError, ForbiddenError, ParameterWriteError
 from .const import (
     _LOGGER,
     WEB_LOGIN_URL,
+    WEB_MAIN_URL,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
 )
 
@@ -100,6 +101,24 @@ class WemPortalExpertClient:
         if "AspxAutoDetectCookieSupport" in r2.url or WEB_LOGIN_URL.lower() in r2.url.lower():
             raise AuthError("Expert client: login failed.")
 
+        self._establish_context()
+
+    def _establish_context(self):
+        """Load the portal main page once after login.
+
+        The edit dialog resolves device data from the server-side session
+        context. A fresh login has no active installation yet - fetching
+        the dialog directly then yields an EMPTY value dropdown ("no
+        numeric options found"). Loading Default.aspx selects the (single)
+        installation, matching what a browser session does implicitly.
+        """
+        r_main = self.session.get(
+            WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS
+        )
+        self._raise_if_forbidden(r_main)
+        if WEB_LOGIN_URL.lower() in r_main.url.lower():
+            raise AuthError("Expert client: session not accepted by portal main page.")
+
     def close(self):
         """Close the session; never raises."""
         if self.session is not None:
@@ -118,6 +137,13 @@ class WemPortalExpertClient:
 
         select = tree.xpath(f"//*[@id='{VALUE_FIELD_ID}']")
         if not select:
+            # Distinguish "got the login page instead" from a genuinely
+            # changed/unknown dialog structure.
+            if "tbxUserName" in html_content or "Login.aspx" in html_content:
+                raise AuthError(
+                    "Expert parameter form: portal returned the login page - "
+                    "session was not authenticated."
+                )
             raise ValueError("Expert parameter form: value field not found.")
 
         options = []
@@ -133,7 +159,18 @@ class WemPortalExpertClient:
                 current = val
 
         if not options:
-            raise ValueError("Expert parameter form: no numeric options found.")
+            # Dropdown present but empty: the session has no active
+            # installation context (see _establish_context) or the
+            # parameter could not be resolved for this entityvalue.
+            _LOGGER.debug(
+                "Expert parameter form with empty dropdown, response snippet: %.500s",
+                html_content,
+            )
+            raise ValueError(
+                "Expert parameter form: value dropdown is empty - the portal "
+                "session has no active installation context, or the "
+                "entityvalue does not match a readable parameter."
+            )
 
         # Hidden ASP.NET fields, needed later for the (not yet built) write POST.
         hidden_fields = {}
@@ -237,6 +274,8 @@ class WemPortalExpertClient:
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
         self._raise_if_forbidden(resp)
+        if WEB_LOGIN_URL.lower() in resp.url.lower():
+            raise AuthError("Expert client: redirected to login when fetching the form.")
         state = self.parse_parameter_form(resp.text)
         _LOGGER.debug(
             "Expert parameter %s: current=%s range=%s..%s",
@@ -280,6 +319,7 @@ def create_expert_number_entities(config_entry):
 try:
     from homeassistant.components.number import RestoreNumber
     from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+    from homeassistant.exceptions import HomeAssistantError
     from homeassistant.helpers.entity import DeviceInfo
     from .const import DOMAIN
 
@@ -322,7 +362,14 @@ try:
                 )
                 return client.write_parameter(self._entityvalue, value)
 
-            state = await self.hass.async_add_executor_job(_do_write)
+            try:
+                state = await self.hass.async_add_executor_job(_do_write)
+            except Exception as exc:
+                # HomeAssistantError -> clean frontend message instead of
+                # an "Unexpected exception" traceback in the log.
+                raise HomeAssistantError(
+                    f"Expert write failed for {self._attr_name}: {exc}"
+                ) from exc
             # Verified value from the portal, plus the real device range.
             self._attr_native_value = state.current
             if state.min_value is not None:

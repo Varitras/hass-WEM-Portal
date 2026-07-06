@@ -4,6 +4,28 @@ Alle nennenswerten Änderungen an diesem Fork werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.7.10] – 2026-07-06
+
+### Behoben
+- **Experten-Schreibzugriff: leeres Wert-Dropdown beim ersten Live-Test**
+  („no numeric options found"). Ursache: Der Edit-Dialog löst die
+  Anlagendaten über den serverseitigen Session-Kontext auf – eine frische
+  Login-Session hat aber noch keine aktive Anlage gewählt (der Browser
+  bekommt das implizit durch die Portal-Navigation). Der Client lädt jetzt
+  nach dem Login einmal die Portal-Hauptseite und etabliert damit den
+  Anlagen-Kontext (+1 Request pro Schreibvorgang).
+- **Präzisere Fehlermeldungen:** Login-Seite statt Dialog → klarer
+  Auth-Fehler (Inhalt und Redirect-Erkennung); leeres Dropdown → gezielte
+  Kontext-Diagnose inkl. Debug-Antwortschnipsel bei aktiviertem
+  Debug-Logging.
+- **Saubere Fehleranzeige:** Number-Entität und Service melden Fehler
+  jetzt als `HomeAssistantError` – das Frontend zeigt den eigentlichen
+  Fehlertext statt eines „Unexpected exception"-Tracebacks im Log.
+
+Hinweis: Ab dieser Version erhält jeder ausgelieferte Test-Stand eine
+eigene Versionsnummer, damit der installierte Stand eindeutig erkennbar
+ist.
+
 ## [1.7.9] – 2026-07-05
 
 Neues Feature (freigegeben, Design A+B): **Experten-Schreibzugriff über
