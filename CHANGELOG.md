@@ -4,6 +4,43 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.13] – 2026-07-06
+
+### Fixed
+- **Expert navigation: recognize `__ECNPAGEVIEWSTATE` as the page state
+  field.** The portal's main pages don't use the standard `__VIEWSTATE`
+  hidden field but a Telerik/ECN variant, `__ECNPAGEVIEWSTATE`. The
+  presence checks looked only for `__VIEWSTATE` and therefore reported
+  the page state as missing during navigation. The checks and diagnostics
+  now accept either field (main pages use the ECN variant, dialog pages
+  use plain `__VIEWSTATE`).
+
+## [1.7.12] – 2026-07-06
+
+### Fixed
+- **Expert navigation: parse Telerik async-postback (delta) responses.**
+  The Fachmann navigation steps (submenu, module select, timer polls)
+  return a Telerik/MS-Ajax delta response, not HTML. The hidden-field
+  extractor only understood HTML, so it read no `__VIEWSTATE` from those
+  responses and silently forwarded an empty one into the next postback,
+  breaking the navigation chain without raising - leaving the parameter
+  dialog with an empty value dropdown. The extractor now parses the delta
+  format as well, falling back to HTML otherwise.
+- **Quietly skip statistics groups the module rejects (status 3001).**
+  On every startup the statistics discovery logged a warning for a group
+  that `Statistics/Refresh` lists but `Statistics/Read` rejects with
+  status 3001 ("invalid parameter") for the fixed module. The group was
+  already skipped; it is now skipped at debug level, while any other
+  error is still logged as a warning. The server-side status code is now
+  attached to the raised error so callers can react to specific codes
+  without parsing the message text.
+
+### Added
+- Step-by-step debug logging across the expert navigation (main page,
+  Fachmann unlock, module select, each timer poll, and per-postback
+  response size / delta-vs-HTML / VIEWSTATE presence), so a remaining
+  failure can be pinpointed to the exact step.
+
 ## [1.7.11] – 2026-07-06
 
 Completes the expert write feature (making it actually work against the
@@ -81,7 +118,7 @@ version number so the installed build is always unambiguous.
 
 ## [1.7.9] – 2026-07-05
 
-New feature (approved, design A+B): **expert write access via the web
+New feature: **expert write access via the web
 portal** for Fachmann parameters the mobile API does not expose at all
 (proven from the cached module data: the API delivers only 18 user-level
 parameters, while the Fachmann view shows 100+ values - e.g. the heat
@@ -106,20 +143,11 @@ pump's power limit, "Leistungsbegrenzung").
   restarts (RestoreNumber). Min/max tighten to the device's real range
   after the first successful write.
 
-### Recommended first test
-Enable the option, enter only the heating ID, then write the **identical
-current value** (e.g. 30 → 30) and cross-check in the portal before
-making real changes.
-
-Verified with tests against the installation's real, saved edit dialogs
-(payload assembly, range rejection before any POST, unconfirmed-write
-error, option gating). 12 test suites green.
-
 ## [1.7.8] – 2026-07-05
 
-Hardening and efficiency work on the web scraper (on request, approved
-items). Focus: fail fast on a slow server, gap-free rate-limit
-protection, less connection-setup overhead.
+Hardening and efficiency work on the web scraper. Focus: fail fast on a
+slow server, gap-free rate-limit protection, less connection-setup
+overhead.
 
 ### Added
 - **30s timeout on all scraper requests:** a hanging/slow WEM server used
@@ -157,7 +185,7 @@ scraper discard, timeout on all HTTP calls) plus the full existing suite
 ## [1.7.7] – 2026-07-05
 
 Further, deliberately conservative measures to reduce load on Weishaupt's
-server (on request). All changes are strictly additive/more cautious -
+server. All changes are strictly additive/more cautious -
 nothing ever polls more frequently or aggressively than before, only
 less.
 
@@ -181,7 +209,7 @@ CircuitTimes skipped on the second cycle).
 
 ## [1.7.6] – 2026-07-05
 
-Full codebase review across all files (on request), focused on uncaught
+Full codebase review across all files, focused on uncaught
 exceptions and robustness gaps. No functional behavior change for normal
 operation - purely hardening against edge and error cases.
 

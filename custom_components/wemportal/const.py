@@ -89,6 +89,12 @@ WEB_DEFAULT_URL: Final = "https://www.wemportal.com/Web/Default.aspx"
 WEB_CODE_EXPERTS_URL: Final = (
     "https://www.wemportal.com/Web/UControls/Weishaupt/DataDisplay/CodeExpertsDetails.aspx"
 )
+# The portal's main pages don't use the standard __VIEWSTATE hidden field
+# but a Telerik/ECN variant, __ECNPAGEVIEWSTATE. The dialog pages
+# (CodeExpertsDetails, WwpsParameterDetails) do use plain __VIEWSTATE.
+# Both names are treated as the page's state field so diagnostics and
+# checks work across all navigation steps.
+EXPERT_VIEWSTATE_FIELDS: Final = ("__ECNPAGEVIEWSTATE", "__VIEWSTATE")
 # Submenu postback that opens the expert-code (Fachmann) dialog.
 EXPERT_SUBMENU_TARGET: Final = "ctl00$SubMenuControl1$subMenu"
 EXPERT_SUBMENU_ARG: Final = "3"

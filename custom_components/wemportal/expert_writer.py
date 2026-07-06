@@ -24,6 +24,7 @@ from .const import (
     WEB_MAIN_URL,
     WEB_DEFAULT_URL,
     WEB_CODE_EXPERTS_URL,
+    EXPERT_VIEWSTATE_FIELDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     EXPERT_SUBMENU_TARGET,
     EXPERT_SUBMENU_ARG,
@@ -147,8 +148,8 @@ class WemPortalExpertClient:
             raise AuthError("Expert client: session not accepted by portal main page.")
         current_html = r_main.text
         _LOGGER.debug(
-            "Expert navigation step 1 (main page): %d bytes, viewstate=%s",
-            len(current_html), bool(self._hidden_fields(current_html).get("__VIEWSTATE")),
+            "Expert navigation step 1 (main page): %d bytes, pagestate=%s",
+            len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
         )
 
         # Step 2: unlock Fachmann level. Opening the submenu returns the
@@ -194,8 +195,8 @@ class WemPortalExpertClient:
         self._raise_if_forbidden(r)
         fields = self._hidden_fields(r.text)
         _LOGGER.debug(
-            "Expert navigation: security-code dialog fetched, %d hidden fields, viewstate=%s",
-            len(fields), bool(fields.get("__VIEWSTATE")),
+            "Expert navigation: security-code dialog fetched, %d hidden fields, pagestate=%s",
+            len(fields), self._has_viewstate(fields),
         )
         fields[EXPERT_SECURITY_CODE_FIELD] = EXPERT_SECURITY_CODE
         fields["__EVENTTARGET"] = EXPERT_DIALOG_SAVE_TARGET
@@ -212,6 +213,15 @@ class WemPortalExpertClient:
         )
 
     # --- ASP.NET postback helpers ------------------------------------
+    @staticmethod
+    def _has_viewstate(fields) -> bool:
+        """True if the field dict carries a non-empty page state field.
+
+        The portal's main pages use __ECNPAGEVIEWSTATE, dialog pages use
+        __VIEWSTATE - accept either as the state field.
+        """
+        return any(fields.get(name) for name in EXPERT_VIEWSTATE_FIELDS)
+
     @staticmethod
     def _hidden_fields(content) -> dict:
         """Extract hidden fields (VIEWSTATE, EVENTVALIDATION, ...).
@@ -248,12 +258,12 @@ class WemPortalExpertClient:
         """Perform one ASP.NET postback, carrying over the current page's
         hidden fields, and return the resulting page HTML for the next step."""
         fields = self._hidden_fields(current_html)
-        # Diagnostics: if the carried-over VIEWSTATE is missing/empty the
+        # Diagnostics: if the carried-over page state is missing/empty the
         # server won't advance the session state, and the chain fails
         # silently. Surface that instead.
-        if not fields.get("__VIEWSTATE"):
+        if not self._has_viewstate(fields):
             _LOGGER.debug(
-                "Expert navigation: no __VIEWSTATE to carry into postback %s "
+                "Expert navigation: no page state field to carry into postback %s "
                 "(previous response had %d hidden fields).",
                 event_target, len(fields),
             )
@@ -268,9 +278,9 @@ class WemPortalExpertClient:
         if WEB_LOGIN_URL.lower() in resp.url.lower():
             raise AuthError("Expert client: session expired during navigation.")
         _LOGGER.debug(
-            "Expert navigation: postback %s -> %d bytes, delta=%s, viewstate=%s",
+            "Expert navigation: postback %s -> %d bytes, delta=%s, pagestate=%s",
             event_target, len(resp.text), "|hiddenField|" in resp.text,
-            bool(self._hidden_fields(resp.text).get("__VIEWSTATE")),
+            self._has_viewstate(self._hidden_fields(resp.text)),
         )
         return resp.text
 
