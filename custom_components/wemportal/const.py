@@ -24,6 +24,13 @@ DEFAULT_MODE: Final = "api"
 AVAILABLE_MODES: Final = ["api", "web", "both"]
 PLATFORMS = ["number", "select", "sensor", "switch"]
 DATA_GATHERING_ERROR: Final = "An error occurred while gathering data.This issue should resolve by itself. If this problem persists,open an issue at https://github.com/erikkastelec/hass-WEM-Portal/issues"
+
+# Server-side status code returned by Statistics/Read for a statistics
+# group that isn't valid for the queried module (ModuleType 7/Index 0).
+# The refresh call lists such groups, but reading them is rejected with
+# this code. It's an expected, harmless per-group condition - skipped
+# quietly rather than logged as a warning on every startup.
+WEM_INVALID_PARAMETER_STATUS: Final = 3001
 DEFAULT_CONF_SCAN_INTERVAL_API_VALUE: Final = 300
 DEFAULT_CONF_SCAN_INTERVAL_VALUE: Final = 1800
 DEFAULT_CONF_LANGUAGE_VALUE: Final = "en"

@@ -37,6 +37,7 @@ from .const import (
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
     DATA_GATHERING_ERROR,
+    WEM_INVALID_PARAMETER_STATUS,
     DEFAULT_CONF_LANGUAGE_VALUE,
     DEFAULT_CONF_MODE_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
@@ -597,9 +598,11 @@ class WemPortalApi:
                     self._activate_cooldown()
                     server_status, server_message = self.get_response_details(response)
                     self.valid_login = False
-                    raise ForbiddenError(
+                    forbidden_error = ForbiddenError(
                         f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
-                    ) from exc
+                    )
+                    forbidden_error.server_status = server_status
+                    raise forbidden_error from exc
 
                 # A genuinely expired session (401, or a stealthy redirect
                 # to the login page) is worth one immediate retry with a
@@ -622,9 +625,14 @@ class WemPortalApi:
                 # we invalidate the login state so the next cycle creates a fresh requests.Session.
                 self.valid_login = False
                 
-                raise WemPortalError(
+                wem_error = WemPortalError(
                     f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
-                ) from exc
+                )
+                # Expose the server-side status code so callers can react to
+                # specific ones (e.g. Statistics skips an invalid group)
+                # without parsing the message string.
+                wem_error.server_status = server_status
+                raise wem_error from exc
 
         return response
 
@@ -1092,7 +1100,20 @@ class WemPortalApi:
                         }
                         
                     except Exception as exc:
-                        _LOGGER.warning("Failed to fetch Statistics for group %s: %s", group_id, exc)
+                        # Status 3001 = this statistics group isn't valid for
+                        # the queried module. The refresh call lists such
+                        # groups but reading them is rejected; that's expected
+                        # and harmless, so skip it quietly instead of warning
+                        # on every startup. Any other error is still surfaced.
+                        # Compared as str so an int or str server_status both match.
+                        server_status = getattr(exc, "server_status", None)
+                        if str(server_status) == str(WEM_INVALID_PARAMETER_STATUS):
+                            _LOGGER.debug(
+                                "Skipping statistics group %s: not valid for this module (status %s).",
+                                group_id, WEM_INVALID_PARAMETER_STATUS,
+                            )
+                        else:
+                            _LOGGER.warning("Failed to fetch Statistics for group %s: %s", group_id, exc)
                         
             except Exception as exc:
                 _LOGGER.warning("Error processing Statistics: %s", exc)
