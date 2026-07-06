@@ -26,12 +26,22 @@ from .const import (
     WEB_CODE_EXPERTS_URL,
     EXPERT_VIEWSTATE_FIELDS,
     EXPERT_ASYNCPOST_FIELD,
+    EXPERT_SKIP_MODULE_NAV,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     EXPERT_SUBMENU_TARGET,
     EXPERT_SUBMENU_ARG,
     EXPERT_DIALOG_SAVE_TARGET,
     EXPERT_SECURITY_CODE_FIELD,
     EXPERT_SECURITY_CODE,
+    EXPERT_DIALOG_RADAJAX_ID,
+    EXPERT_DIALOG_TSM_FIELD,
+    EXPERT_DIALOG_TSM_VALUE,
+    EXPERT_DIALOG_RTS_STATE_FIELD,
+    EXPERT_DIALOG_RTS_STATE_VALUE,
+    EXPERT_PAGE_TSM_FIELD,
+    EXPERT_PAGE_TSM_ID_FIELD,
+    EXPERT_PAGE_TSM_VALUE,
+    EXPERT_PAGE_TSM_PANEL_BY_TARGET,
     EXPERT_MODULE_MENU_TARGET,
     EXPERT_MODULE_ARG_HEATPUMP,
     EXPERT_TIMER_TARGET,
@@ -173,6 +183,19 @@ class WemPortalExpertClient:
             len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
         )
 
+        if EXPERT_SKIP_MODULE_NAV:
+            # Hybrid path under test: the Fachmann unlock alone may be
+            # enough for the parameter dialog to return populated. Skip the
+            # module-select + timer-poll postbacks (which need many
+            # JS-generated _ClientState fields) and let _fetch_form() below
+            # (with its retries) fetch the dialog directly.
+            _LOGGER.debug(
+                "Expert navigation: skipping module/timer postbacks "
+                "(EXPERT_SKIP_MODULE_NAV); fetching dialog directly."
+            )
+            time.sleep(EXPERT_TIMER_SETTLE_SECONDS)
+            return
+
         # Step 3: select the target module via its icon-menu async postback.
         current_html = self._postback(
             WEB_DEFAULT_URL, current_html,
@@ -199,7 +222,13 @@ class WemPortalExpertClient:
         time.sleep(EXPERT_TIMER_SETTLE_SECONDS)
 
     def _submit_security_code(self):
-        """Post the Fachmann security code to the code-experts dialog."""
+        """Post the Fachmann security code to the code-experts dialog.
+
+        This is a Telerik RadAjax async postback (confirmed via HAR): it
+        needs __ASYNCPOST=true plus the RadAjax control id, the
+        ScriptManager target and the dialog's RadTabStrip client state, on
+        top of the page's hidden fields (VIEWSTATE/EVENTVALIDATION etc.).
+        """
         # The dialog is a RadWindow served from its own URL; fetch it to
         # get its VIEWSTATE, then post the code via the dialog's save button.
         dialog_url = f"{WEB_CODE_EXPERTS_URL}?rwndrnd={random.random()}"
@@ -213,6 +242,11 @@ class WemPortalExpertClient:
         fields[EXPERT_SECURITY_CODE_FIELD] = EXPERT_SECURITY_CODE
         fields["__EVENTTARGET"] = EXPERT_DIALOG_SAVE_TARGET
         fields["__EVENTARGUMENT"] = ""
+        # RadAjax async-postback fields the server requires for this dialog.
+        fields[EXPERT_ASYNCPOST_FIELD] = "true"
+        fields["RadAJAXControlID"] = EXPERT_DIALOG_RADAJAX_ID
+        fields[EXPERT_DIALOG_TSM_FIELD] = EXPERT_DIALOG_TSM_VALUE
+        fields[EXPERT_DIALOG_RTS_STATE_FIELD] = EXPERT_DIALOG_RTS_STATE_VALUE
         self._check_cooldown()
         r2 = self.session.post(
             dialog_url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
@@ -298,6 +332,16 @@ class WemPortalExpertClient:
             # Telerik async postback: marker field + header, response is a
             # delta stream we keep parsing for the next state.
             fields[EXPERT_ASYNCPOST_FIELD] = "true"
+            # Main-page async postbacks (module select, timer polls) also
+            # need the ScriptManager field identifying which panel posted
+            # back, plus its static TSM version blob. Only add this for
+            # known targets - the dialog postbacks use a different
+            # ScriptManager field (see _submit_security_code) and don't
+            # need this one.
+            panel = EXPERT_PAGE_TSM_PANEL_BY_TARGET.get(event_target)
+            if panel is not None:
+                fields[EXPERT_PAGE_TSM_FIELD] = f"{panel}|{event_target}"
+                fields[EXPERT_PAGE_TSM_ID_FIELD] = EXPERT_PAGE_TSM_VALUE
             resp = self.session.post(
                 url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
                 headers={"X-MicrosoftAjax": "Delta=true"},

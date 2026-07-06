@@ -4,6 +4,35 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.16] – 2026-07-06
+
+### Fixed
+- **Expert navigation: add ScriptManager fields to module/timer
+  postbacks.** A hybrid test confirmed the Fachmann unlock alone doesn't
+  populate the parameter dialog - module selection is required. The
+  module-select and timer-poll postbacks were still rejected because they
+  also need a `ctl00$RSMeControlNetPage` field (pattern
+  `ctl00$ctl00$<panel>|<event_target>`) plus its static TSM version blob,
+  in addition to `__ASYNCPOST=true`. Added for the two known targets only;
+  other postbacks are unaffected.
+
+## [1.7.15] – 2026-07-06
+
+### Fixed
+- **Expert navigation: complete the Fachmann-unlock async postback.** The
+  security-code postback is now sent as a full Telerik async postback
+  (`__ASYNCPOST=true` plus the RadAjax control id, ScriptManager target and
+  dialog client state), which the server previously rejected when only the
+  header was sent.
+
+### Changed
+- **Expert navigation: try the Fachmann unlock alone, then fetch the dialog
+  directly** (`EXPERT_SKIP_MODULE_NAV`). The module-select and timer-poll
+  postbacks depend on many client-generated fields that a non-browser HTTP
+  client can't reproduce; skipping them and fetching the parameter dialog
+  right after the unlock is both simpler and more robust when it suffices.
+  The full postback chain is retained behind the switch.
+
 ## [1.7.14] – 2026-07-06
 
 ### Fixed

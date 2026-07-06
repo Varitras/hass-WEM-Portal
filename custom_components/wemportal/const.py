@@ -101,6 +101,12 @@ EXPERT_VIEWSTATE_FIELDS: Final = ("__ECNPAGEVIEWSTATE", "__VIEWSTATE")
 # NOT an async postback - it's a classic full postback ending in a 302
 # redirect - so it must omit both.
 EXPERT_ASYNCPOST_FIELD: Final = "__ASYNCPOST"
+# Hybrid test switch: skip the fragile module-select + timer-poll postback
+# chain and, after the Fachmann unlock, fetch the parameter dialog
+# directly. Live test showed the dialog stays empty without module
+# selection, so the module postback is required - now False again since
+# _postback() adds the minimal ScriptManager fields these postbacks need.
+EXPERT_SKIP_MODULE_NAV: Final = False
 # Submenu postback that opens the expert-code (Fachmann) dialog.
 EXPERT_SUBMENU_TARGET: Final = "ctl00$SubMenuControl1$subMenu"
 EXPERT_SUBMENU_ARG: Final = "3"
@@ -109,6 +115,51 @@ EXPERT_DIALOG_SAVE_TARGET: Final = "ctl00$DialogContent$BtnSave"
 # Field carrying the Fachmann security code ("11", publicly known).
 EXPERT_SECURITY_CODE_FIELD: Final = "ctl00$DialogContent$tbxSecurityCode"
 EXPERT_SECURITY_CODE: Final = "11"
+# Extra fields the code-experts dialog's async postback needs (from HAR).
+# The dialog is a RadAjax async postback: besides __ASYNCPOST=true it
+# needs the RadAjax control id, the ScriptManager target, and the dialog
+# RadTabStrip client state (a JS-generated field the server accepts with
+# this default). Portal-specific constants captured from the browser flow.
+EXPERT_DIALOG_RADAJAX_ID: Final = "ctl00_RAMPDialogMaster"
+EXPERT_DIALOG_TSM_FIELD: Final = "ctl00$TSMeControlNetDialog"
+EXPERT_DIALOG_TSM_VALUE: Final = (
+    "ctl00$ctl00$DialogContent$DivDialogPanel|ctl00$DialogContent$BtnSave"
+)
+EXPERT_DIALOG_RTS_STATE_FIELD: Final = "ctl00_DialogContent_RTSDialog_ClientState"
+EXPERT_DIALOG_RTS_STATE_VALUE: Final = (
+    '{"selectedIndexes":["0"],"logEntries":[],"scrollState":{}}'
+)
+
+# Extra fields the MAIN PAGE's async postbacks (module select, timer polls)
+# need, distinct from the dialog's (see above). Confirmed via HAR: the
+# security-code fix worked with only its 4 essential fields (no need to
+# replicate the page's full _ClientState clutter), so the same minimal
+# approach is tried here: __ASYNCPOST plus the ScriptManager field and its
+# static TSM version blob (identical across module-select and timer-poll
+# in the capture, i.e. tied to the page/session, not the specific postback).
+EXPERT_PAGE_TSM_FIELD: Final = "ctl00$RSMeControlNetPage"
+EXPERT_PAGE_TSM_ID_FIELD: Final = "ctl00_RSMeControlNetPage_TSM"
+EXPERT_PAGE_TSM_VALUE: Final = (
+    ";;Telerik.Web.UI, Version=2020.1.114.45, Culture=neutral, "
+    "PublicKeyToken=121fae78165ba3d4:en-US:40a36146-6362-49db-b4b5-"
+    "57ab81f34dac:16e4e7cd:33715776:f7645509:24ee1bba:6d43f6d9:e330518b:"
+    "2003d0b8:c128760b:88144a7a:1e771326:c8618e41:1a73651d:333f8d94;"
+    "System.Web.Extensions, Version=4.0.0.0, Culture=neutral, "
+    "PublicKeyToken=31bf3856ad364e35:en-US:64455737-15dd-482f-b336-"
+    "7074c5c53f91:76254418;Telerik.Web.UI, Version=2020.1.114.45, "
+    "Culture=neutral, PublicKeyToken=121fae78165ba3d4:en-US:40a36146-6362-"
+    "49db-b4b5-57ab81f34dac:f46195d3:854aa0a7:b2e06756:92fe8ea0:fa31b949:"
+    "4877f69a:607498fe:4cacbc31:2a8622d7:19620875:874f8ea2:490a9d4e:"
+    "bd8f85e4:c172ae1e:9cdfc6e7:e4f8f289:ed16cbdc;"
+)
+# ScriptManager panel prefix per event target - the value sent is always
+# "ctl00$ctl00$<panel>|<event_target>" (confirmed via HAR for both targets).
+EXPERT_PAGE_TSM_PANEL_BY_TARGET: Final = {
+    "ctl00$rdMain$C$controlExtension$iconMenu$rmMenuLayer":
+        "ctl00$ctl00$rdMain$C$controlExtension$ContentWithoutGridPanel",
+    "ctl00$DeviceContextControl1$timerUpdateData":
+        "ctl00$ctl00$DeviceContextControl1Panel",
+}
 # Icon-menu postback selecting a device module; ARG "6" = heat pump on the
 # reference installation. Configurable via CONF_EXPERT_MODULE_ARG because
 # the menu index can differ on other installations/module layouts.
