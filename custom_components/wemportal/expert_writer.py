@@ -146,6 +146,10 @@ class WemPortalExpertClient:
         if WEB_LOGIN_URL.lower() in r_main.url.lower():
             raise AuthError("Expert client: session not accepted by portal main page.")
         current_html = r_main.text
+        _LOGGER.debug(
+            "Expert navigation step 1 (main page): %d bytes, viewstate=%s",
+            len(current_html), bool(self._hidden_fields(current_html).get("__VIEWSTATE")),
+        )
 
         # Step 2: unlock Fachmann level. Opening the submenu returns the
         # security-code dialog; posting the code "11" unlocks it.
@@ -154,6 +158,7 @@ class WemPortalExpertClient:
             event_target=EXPERT_SUBMENU_TARGET, event_argument=EXPERT_SUBMENU_ARG,
         )
         self._submit_security_code()
+        _LOGGER.debug("Expert navigation step 2 (Fachmann unlock) done.")
 
         # Step 3: select the target module via its icon-menu postback.
         current_html = self._postback(
@@ -161,18 +166,21 @@ class WemPortalExpertClient:
             event_target=EXPERT_MODULE_MENU_TARGET,
             event_argument=self._module_arg,
         )
+        _LOGGER.debug("Expert navigation step 3 (module select, arg=%s) done.", self._module_arg)
 
         # Step 4: poll the live-value timer. The browser polls repeatedly
         # with no explicit "done" signal, so we poll generously. We favor
         # reliability over speed here (see const.py): the real early-exit
         # is that _fetch_form() retries until the dropdown is populated.
-        for _ in range(EXPERT_TIMER_MAX_POLLS):
+        for poll in range(EXPERT_TIMER_MAX_POLLS):
             time.sleep(EXPERT_TIMER_DELAY_SECONDS)
             self._check_cooldown()
             current_html = self._postback(
                 WEB_DEFAULT_URL, current_html,
                 event_target=EXPERT_TIMER_TARGET, event_argument="",
             )
+            _LOGGER.debug("Expert navigation step 4: timer poll %d/%d done.",
+                          poll + 1, EXPERT_TIMER_MAX_POLLS)
         # Extra settle pause before the first dialog fetch, giving the
         # server a moment to finish applying the freshly polled values.
         time.sleep(EXPERT_TIMER_SETTLE_SECONDS)
@@ -185,6 +193,10 @@ class WemPortalExpertClient:
         r = self.session.get(dialog_url, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
         self._raise_if_forbidden(r)
         fields = self._hidden_fields(r.text)
+        _LOGGER.debug(
+            "Expert navigation: security-code dialog fetched, %d hidden fields, viewstate=%s",
+            len(fields), bool(fields.get("__VIEWSTATE")),
+        )
         fields[EXPERT_SECURITY_CODE_FIELD] = EXPERT_SECURITY_CODE
         fields["__EVENTTARGET"] = EXPERT_DIALOG_SAVE_TARGET
         fields["__EVENTARGUMENT"] = ""
@@ -194,23 +206,57 @@ class WemPortalExpertClient:
             headers={"X-MicrosoftAjax": "Delta=true"},
         )
         self._raise_if_forbidden(r2)
+        _LOGGER.debug(
+            "Expert navigation: security-code POST -> %d bytes, delta=%s",
+            len(r2.text), "|hiddenField|" in r2.text,
+        )
 
     # --- ASP.NET postback helpers ------------------------------------
     @staticmethod
-    def _hidden_fields(html_content) -> dict:
-        """Extract all hidden input fields (VIEWSTATE, EVENTVALIDATION, ...)."""
-        tree = html.fromstring(html_content)
+    def _hidden_fields(content) -> dict:
+        """Extract hidden fields (VIEWSTATE, EVENTVALIDATION, ...).
+
+        Handles both response shapes:
+        - a normal HTML page (input[type=hidden]), and
+        - a Telerik/MS-Ajax async-postback delta response, which is NOT
+          HTML but a pipe-delimited stream containing e.g.
+          `...|hiddenField|__VIEWSTATE|<value>|...`. A plain HTML parser
+          finds nothing there, which would silently forward an empty
+          VIEWSTATE and break the navigation chain.
+        """
         fields = {}
-        for inp in tree.xpath("//input[@type='hidden']"):
-            name = inp.get("name")
-            if name:
-                fields[name] = inp.get("value", "")
+        # Delta response: pipe-delimited, carries hiddenField segments.
+        if "|hiddenField|" in content:
+            parts = content.split("|")
+            for i, token in enumerate(parts):
+                if token == "hiddenField" and i + 2 < len(parts):
+                    fields[parts[i + 1]] = parts[i + 2]
+            if fields:
+                return fields
+        # Otherwise parse as HTML.
+        try:
+            tree = html.fromstring(content)
+            for inp in tree.xpath("//input[@type='hidden']"):
+                name = inp.get("name")
+                if name:
+                    fields[name] = inp.get("value", "")
+        except Exception:  # pylint: disable=broad-except
+            pass
         return fields
 
     def _postback(self, url, current_html, event_target, event_argument=""):
         """Perform one ASP.NET postback, carrying over the current page's
         hidden fields, and return the resulting page HTML for the next step."""
         fields = self._hidden_fields(current_html)
+        # Diagnostics: if the carried-over VIEWSTATE is missing/empty the
+        # server won't advance the session state, and the chain fails
+        # silently. Surface that instead.
+        if not fields.get("__VIEWSTATE"):
+            _LOGGER.debug(
+                "Expert navigation: no __VIEWSTATE to carry into postback %s "
+                "(previous response had %d hidden fields).",
+                event_target, len(fields),
+            )
         fields["__EVENTTARGET"] = event_target
         fields["__EVENTARGUMENT"] = event_argument
         self._check_cooldown()
@@ -221,6 +267,11 @@ class WemPortalExpertClient:
         self._raise_if_forbidden(resp)
         if WEB_LOGIN_URL.lower() in resp.url.lower():
             raise AuthError("Expert client: session expired during navigation.")
+        _LOGGER.debug(
+            "Expert navigation: postback %s -> %d bytes, delta=%s, viewstate=%s",
+            event_target, len(resp.text), "|hiddenField|" in resp.text,
+            bool(self._hidden_fields(resp.text).get("__VIEWSTATE")),
+        )
         return resp.text
 
     def close(self):
