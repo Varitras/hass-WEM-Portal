@@ -4,6 +4,23 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.18] – 2026-07-06
+
+### Fixed
+- **Expert navigation: replace fake page reload with the real unlock
+  callback.** Full response dumps revealed that reloading the main page
+  after the Fachmann security-code dialog closes had zero functional
+  effect - the unlock was never registered server-side, despite the
+  security-code POST itself looking successful. The real browser never
+  reloads the page here; instead, the closing dialog fires a
+  RadAjaxManager client callback on the parent page
+  (`ctl00$RAMMasterPage`) that actually registers the unlock. The same
+  mechanism reappears after a parameter write, confirming it's a generic
+  "dialog closed" callback rather than a one-off. Since the security-code
+  dialog runs in its own independent ViewState context, this callback now
+  correctly carries forward the parent page's own prior state rather than
+  the dialog's response.
+
 ## [1.7.17] – 2026-07-06
 
 ### Fixed

@@ -160,6 +160,22 @@ EXPERT_PAGE_TSM_PANEL_BY_TARGET: Final = {
     "ctl00$DeviceContextControl1$timerUpdateData":
         "ctl00$ctl00$DeviceContextControl1Panel",
 }
+# RadAjaxManager client-event callback the browser fires on the PARENT
+# page whenever a RadWindow dialog (Fachmann unlock, parameter write)
+# closes with a "refresh" signal. Confirmed via HAR: this is what actually
+# registers state changes server-side - a plain page reload (what we did
+# before) carries NO such signal and leaves the change inert. The dialog
+# runs in its own independent ViewState/ScriptManager context, so this
+# callback must use the PARENT page's own prior state, not the dialog's.
+EXPERT_RAM_MASTER_TARGET: Final = "ctl00$RAMMasterPage"
+EXPERT_RAM_MASTER_RADAJAX_ID: Final = "ctl00_RAMMasterPage"
+EXPERT_RAM_MASTER_TSM_VALUE: Final = "ctl00$RAMMasterPageSU|ctl00$RAMMasterPage"
+# The "Function" value differs by which dialog just closed (observed:
+# "columns" after the Fachmann-unlock dialog, "refreshdata" after a
+# parameter write) - only the unlock case is needed for navigation.
+EXPERT_RAM_MASTER_UNLOCK_ARGUMENT: Final = (
+    '{"Sender":"1","Function":"columns","ValueType":"Int32","Value":"1","Arguments":[]}'
+)
 # The icon-menu control's own client state (confirmed via HAR:
 # {"logEntries":[],"selectedItemIndex":"6"}). Live testing showed the
 # module-select postback is accepted (real response, valid page state) but

@@ -42,6 +42,10 @@ from .const import (
     EXPERT_PAGE_TSM_ID_FIELD,
     EXPERT_PAGE_TSM_VALUE,
     EXPERT_PAGE_TSM_PANEL_BY_TARGET,
+    EXPERT_RAM_MASTER_TARGET,
+    EXPERT_RAM_MASTER_RADAJAX_ID,
+    EXPERT_RAM_MASTER_TSM_VALUE,
+    EXPERT_RAM_MASTER_UNLOCK_ARGUMENT,
     EXPERT_MODULE_ICONMENU_STATE_FIELD,
     EXPERT_MODULE_ICONMENU_STATE_TEMPLATE,
     EXPERT_MODULE_MENU_TARGET,
@@ -168,20 +172,37 @@ class WemPortalExpertClient:
         # Step 2: unlock Fachmann level. The submenu is a classic full
         # postback (302 -> reloaded Default.aspx), not an async one; then
         # the security-code dialog appears and posting "11" unlocks it.
-        self._postback(
+        current_html = self._postback(
             WEB_DEFAULT_URL, current_html,
             event_target=EXPERT_SUBMENU_TARGET, event_argument=EXPERT_SUBMENU_ARG,
             async_postback=False,
         )
         self._submit_security_code()
-        # Reload the main page so we work from the post-unlock state with a
-        # fresh __ECNPAGEVIEWSTATE for the async postbacks that follow.
-        r_reload = self.session.get(WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
-        self._raise_if_forbidden(r_reload)
-        current_html = r_reload.text
+        # The real browser does NOT reload the main page here (confirmed via
+        # HAR: no GET Default.aspx appears at all between the security-code
+        # POST and the module select). Instead, the closing dialog fires a
+        # RadAjaxManager client callback on the PARENT page
+        # (__EVENTTARGET=ctl00$RAMMasterPage, Function="columns") - this is
+        # what actually registers the unlock server-side; a plain reload
+        # carries no such signal and leaves the unlock inert (which is why
+        # the previous approach never got past an empty parameter dropdown).
+        # The dialog runs in its own independent ViewState/ScriptManager
+        # context (plain __VIEWSTATE, "TSMeControlNetDialog"), so this
+        # callback must carry forward the PARENT page's own prior state
+        # (from the submenu postback above), not the dialog's response.
+        current_html = self._postback(
+            WEB_DEFAULT_URL, current_html,
+            event_target=EXPERT_RAM_MASTER_TARGET,
+            event_argument=EXPERT_RAM_MASTER_UNLOCK_ARGUMENT,
+            extra_fields={
+                "RadAJAXControlID": EXPERT_RAM_MASTER_RADAJAX_ID,
+                EXPERT_PAGE_TSM_FIELD: EXPERT_RAM_MASTER_TSM_VALUE,
+                EXPERT_PAGE_TSM_ID_FIELD: EXPERT_PAGE_TSM_VALUE,
+            },
+        )
         _LOGGER.debug(
-            "Expert navigation step 2 (Fachmann unlock) done; reloaded main page "
-            "%d bytes, pagestate=%s",
+            "Expert navigation step 2 (Fachmann unlock) done via RAMMasterPage "
+            "callback: %d bytes, pagestate=%s",
             len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
         )
 
