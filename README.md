@@ -105,6 +105,14 @@ operation (by design, to avoid any extra polling). After the first
 successful write, the entity shows the verified value and its min/max
 tighten to the device's real allowed range.
 
+A write takes roughly a minute (it reproduces the full Fachmann
+navigation and waits for the portal to load live values). It runs as a
+**background task**: setting the number or calling the service returns
+immediately, and the result is reported via a **persistent
+notification** and the log once finished. The entity value updates once
+the write is verified. A second write is rejected while one is still
+running.
+
 Independent of the number entities, the service
 `wemportal.set_expert_parameter` can write any expert parameter directly:
 
@@ -122,6 +130,14 @@ data:
 - Recommended first test: write the parameter's **current** value (e.g.
   30 if the portal shows 30) and check the portal still shows the same
   value afterwards, before making real changes.
+- **This path is heavier than the mobile API.** Reaching a Fachmann
+  parameter reproduces the full browser navigation: unlock the Fachmann
+  level (security code `11`, publicly known), select the heat pump module,
+  and poll for live values before reading/writing - roughly a dozen
+  requests per write, taking about a minute. It runs only on explicit,
+  on-demand writes (never periodically), as a background task, and
+  respects the same 403 cooldown as the rest of the integration, but you
+  should not automate it to fire frequently.
 
 
 ## Troubleshooting

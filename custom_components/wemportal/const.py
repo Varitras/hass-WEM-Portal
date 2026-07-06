@@ -73,6 +73,50 @@ CONF_EXPERT_ENTITY_HEATING: Final = "expert_entityvalue_heating"
 CONF_EXPERT_ENTITY_COOLING: Final = "expert_entityvalue_cooling"
 SERVICE_SET_EXPERT_PARAMETER: Final = "set_expert_parameter"
 
+# --- Expert web navigation (Fachmann level) -----------------------------
+# The Fachmann parameters (e.g. Leistungsbegrenzung) live behind a second
+# authentication step and a stateful navigation sequence, reconstructed
+# from a real browser HAR capture. These identify the ASP.NET postback
+# targets/arguments of that sequence.
+WEB_DEFAULT_URL: Final = "https://www.wemportal.com/Web/Default.aspx"
+WEB_CODE_EXPERTS_URL: Final = (
+    "https://www.wemportal.com/Web/UControls/Weishaupt/DataDisplay/CodeExpertsDetails.aspx"
+)
+# Submenu postback that opens the expert-code (Fachmann) dialog.
+EXPERT_SUBMENU_TARGET: Final = "ctl00$SubMenuControl1$subMenu"
+EXPERT_SUBMENU_ARG: Final = "3"
+# Save button inside a RadWindow dialog (Fachmann code + parameter write).
+EXPERT_DIALOG_SAVE_TARGET: Final = "ctl00$DialogContent$BtnSave"
+# Field carrying the Fachmann security code ("11", publicly known).
+EXPERT_SECURITY_CODE_FIELD: Final = "ctl00$DialogContent$tbxSecurityCode"
+EXPERT_SECURITY_CODE: Final = "11"
+# Icon-menu postback selecting a device module; ARG "6" = heat pump on the
+# reference installation. Configurable via CONF_EXPERT_MODULE_ARG because
+# the menu index can differ on other installations/module layouts.
+EXPERT_MODULE_MENU_TARGET: Final = "ctl00$rdMain$C$controlExtension$iconMenu$rmMenuLayer"
+EXPERT_MODULE_ARG_HEATPUMP: Final = "6"
+CONF_EXPERT_MODULE_ARG: Final = "expert_module_arg"
+# Timer postback that pulls live values after navigating to a module.
+EXPERT_TIMER_TARGET: Final = "ctl00$DeviceContextControl1$timerUpdateData"
+# Waiting for the portal to load live values after selecting a module.
+# The browser polls repeatedly with no explicit "done" signal. We favor
+# reliability over speed: poll generously and only stop early once the
+# parameter dialog actually returns a populated value list (checked by the
+# caller). EXPERT_TIMER_MAX_POLLS caps the total attempts,
+# EXPERT_TIMER_DELAY_SECONDS is the pause between polls, and
+# EXPERT_TIMER_SETTLE_SECONDS is an extra settle pause after the polls
+# before the first dialog fetch. These are deliberately conservative:
+# a few extra seconds per (rare, on-demand) write is a fair price for it
+# working every time.
+EXPERT_TIMER_MAX_POLLS: Final = 8
+EXPERT_TIMER_DELAY_SECONDS: Final = 3
+EXPERT_TIMER_SETTLE_SECONDS: Final = 2
+# How many times to retry fetching the parameter dialog if it still comes
+# back with an empty dropdown (values not fully loaded yet), and how long
+# to wait between those retries.
+EXPERT_FORM_MAX_ATTEMPTS: Final = 4
+EXPERT_FORM_RETRY_DELAY_SECONDS: Final = 3
+
 # Scraper Constants
 MISSING_DATA_STRINGS: Final = ["--", "label ist null", "label ist null "]
 BOOLEAN_OFF_STRINGS: Final = ["off", "aus"]

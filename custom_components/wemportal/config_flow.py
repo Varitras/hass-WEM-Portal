@@ -27,6 +27,8 @@ from .const import (
     CONF_EXPERT_WRITE,
     CONF_EXPERT_ENTITY_HEATING,
     CONF_EXPERT_ENTITY_COOLING,
+    CONF_EXPERT_MODULE_ARG,
+    EXPERT_MODULE_ARG_HEATPUMP,
 )
 from .exceptions import AuthError
 
@@ -160,6 +162,15 @@ class WemportalOptionsFlow(OptionsFlow):
                     vol.Optional(
                         CONF_EXPERT_ENTITY_COOLING,
                         default=self.config_entry.options.get(CONF_EXPERT_ENTITY_COOLING, ""),
+                    ): config_validation.string,
+                    # Icon-menu argument selecting the module for expert
+                    # writes; default "6" (heat pump on the reference
+                    # installation), overridable for other module layouts.
+                    vol.Optional(
+                        CONF_EXPERT_MODULE_ARG,
+                        default=self.config_entry.options.get(
+                            CONF_EXPERT_MODULE_ARG, EXPERT_MODULE_ARG_HEATPUMP
+                        ),
                     ): config_validation.string,
                 }
             ),

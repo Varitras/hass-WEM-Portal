@@ -134,7 +134,17 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                         # everything get_parameters() already learned and
                         # force a full, slow rediscovery.
                         cached_modules=self.api.modules,
+                        # Preserve an active 403 cooldown across the swap -
+                        # a fresh instance would otherwise reset it and
+                        # resume hitting a server that just rate-limited us.
+                        blocked_until=getattr(self.api, "_blocked_until", 0.0),
                     )
+                    # Point hass.data at the new instance so other consumers
+                    # (e.g. the expert writer's shared cooldown check) use
+                    # the current api, not the discarded one.
+                    entry_store = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+                    if entry_store is not None:
+                        entry_store["api"] = self.api
                     # Best-effort cleanup of the old HTTP session so it
                     # doesn't linger with an open connection after being
                     # discarded.

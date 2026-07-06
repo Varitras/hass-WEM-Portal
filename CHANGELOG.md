@@ -1,300 +1,344 @@
 # Changelog
 
-Alle nennenswerten Änderungen an diesem Fork werden hier dokumentiert.
-Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
-Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
+All notable changes to this fork are documented here.
+Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+versioning follows [Semantic Versioning](https://semver.org/).
+
+## [1.7.11] – 2026-07-06
+
+Completes the expert write feature (making it actually work against the
+live portal) and a full-construct review pass.
+
+### Added
+- **Expert write now reproduces the full Fachmann navigation.** The first
+  live tests returned an empty value dropdown; a browser HAR capture
+  showed that reaching a Fachmann parameter is a stateful multi-step
+  sequence, not a single dialog fetch. The client now reproduces it: load
+  the main page, unlock the Fachmann level via the security-code dialog
+  (code `11`, publicly known), select the target module, and poll the
+  live-value timer until values arrive - only then is the value dropdown
+  populated (proven in the capture: first dialog fetch 0 options, second
+  91).
+- **Configurable module menu index** (`expert_module_arg`, default `6` =
+  heat pump on the reference installation) for other module layouts.
+- **German translations** (`de.json`); config and options were previously
+  English-only even under a German HA locale. Readable, localizable names
+  for the two expert number entities.
+
+### Changed
+- **Conservative expert-write timing (reliability over speed).** More
+  generous live-value polling plus a settle pause, and `_fetch_form()`
+  now retries on an empty dropdown instead of failing immediately - it
+  stops as soon as values are present, so the generous budget costs
+  nothing when the server is quick. A write takes ~1 min.
+- **Expert writes run as background tasks.** A write takes longer than a
+  frontend service call will wait, which surfaced as a UI timeout even
+  though the write completed. Both the number entity and the service now
+  detach the work and report the outcome via a persistent notification
+  plus the log; a second concurrent write is rejected.
+- **Expert number entities follow the `has_entity_name` convention** like
+  the other platforms (readable, translatable names instead of the raw
+  technical slug).
+- Sharpened the `language` option label (it sets the language of the
+  portal-derived sensor/parameter names, not the integration UI), and
+  added the missing `language`/`mode` labels on the first-time setup
+  dialog.
+
+### Fixed
+- **403 cooldown now survives an api re-instantiation.** The coordinator
+  re-creates the `WemPortalApi` on repeated errors but reset the cooldown
+  and never updated `hass.data['api']` - so an active rate-limit cooldown
+  could be silently dropped (resuming requests against a server that just
+  said back off), and the expert writer could end up on a different api
+  object with an independent cooldown. The state is now carried into the
+  new instance and `hass.data['api']` is updated, keeping the cooldown
+  integration-wide.
+
+### Meta
+- Declared the minimum Home Assistant version (`2023.3.0`) in `hacs.json`
+  (required by `async_create_background_task`).
 
 ## [1.7.10] – 2026-07-06
 
-### Behoben
-- **Experten-Schreibzugriff: leeres Wert-Dropdown beim ersten Live-Test**
-  („no numeric options found"). Ursache: Der Edit-Dialog löst die
-  Anlagendaten über den serverseitigen Session-Kontext auf – eine frische
-  Login-Session hat aber noch keine aktive Anlage gewählt (der Browser
-  bekommt das implizit durch die Portal-Navigation). Der Client lädt jetzt
-  nach dem Login einmal die Portal-Hauptseite und etabliert damit den
-  Anlagen-Kontext (+1 Request pro Schreibvorgang).
-- **Präzisere Fehlermeldungen:** Login-Seite statt Dialog → klarer
-  Auth-Fehler (Inhalt und Redirect-Erkennung); leeres Dropdown → gezielte
-  Kontext-Diagnose inkl. Debug-Antwortschnipsel bei aktiviertem
-  Debug-Logging.
-- **Saubere Fehleranzeige:** Number-Entität und Service melden Fehler
-  jetzt als `HomeAssistantError` – das Frontend zeigt den eigentlichen
-  Fehlertext statt eines „Unexpected exception"-Tracebacks im Log.
+### Fixed
+- **Expert write access: empty value dropdown on first live test**
+  ("no numeric options found"). Root cause: the edit dialog resolves
+  device data from the server-side session context - a fresh login
+  session has no active installation selected yet (a browser gets this
+  implicitly by navigating the portal). The client now loads the portal
+  main page once after login, establishing the installation context
+  (+1 request per write operation).
+- **Sharper error messages:** login page instead of the dialog → clear
+  auth error (content and redirect detection); empty dropdown → specific
+  context diagnosis including a debug-level response snippet when debug
+  logging is enabled.
+- **Clean error surfacing:** the number entity and the service now report
+  failures as `HomeAssistantError` - the frontend shows the actual error
+  text instead of an "Unexpected exception" traceback in the log.
 
-Hinweis: Ab dieser Version erhält jeder ausgelieferte Test-Stand eine
-eigene Versionsnummer, damit der installierte Stand eindeutig erkennbar
-ist.
+Note: starting with this version, every delivered test build gets its own
+version number so the installed build is always unambiguous.
 
 ## [1.7.9] – 2026-07-05
 
-Neues Feature (freigegeben, Design A+B): **Experten-Schreibzugriff über
-das Web-Portal** für Fachmann-Parameter, die die Mobile-API nicht
-ausliefert (nachgewiesen anhand der Cache-Daten: API liefert nur 18
-Benutzer-Parameter, die Fachmann-Ansicht zeigt 100+ Werte – z. B. die
-Leistungsbegrenzung der Wärmepumpe).
+New feature (approved, design A+B): **expert write access via the web
+portal** for Fachmann parameters the mobile API does not expose at all
+(proven from the cached module data: the API delivers only 18 user-level
+parameters, while the Fachmann view shows 100+ values - e.g. the heat
+pump's power limit, "Leistungsbegrenzung").
 
-### Hinzugefügt
-- **Neues, eigenständiges Modul `expert_writer.py`** – komplett getrennt
-  von Scraper/API/Coordinator (diese Dateien sind unangetastet, `number.py`
-  nur minimal angedockt). Eigene Kurzzeit-Session pro Vorgang, nur bei
-  explizitem Aufruf – **kein zyklisches Polling**. Der globale 403-Cooldown
-  gilt auch hier.
-- **Option „Expert write access (web)"** im Konfigurieren-Dialog –
-  **standardmäßig AUS**. Solange aus: kein Service, keine Entitäten,
-  Verhalten identisch zu 1.7.8.
+### Added
+- **New standalone module `expert_writer.py`** - fully separate from
+  scraper/API/coordinator (those files are untouched; `number.py` only
+  minimally hooked in). Own short-lived session per operation, invoked
+  explicitly only - **no periodic polling**. The global 403 cooldown
+  applies here as well.
+- **Option "Expert write access (web)"** in the configure dialog -
+  **OFF by default**. While disabled: no service, no entities, behavior
+  identical to 1.7.8.
 - **Service `wemportal.set_expert_parameter`** (entityvalue + value):
-  Formular holen → Wert gegen die Live-Optionsliste der Anlage validieren
-  (der echte erlaubte Bereich, wird nie umgangen) → „Senden"-Postback →
-  erneut lesen und **verifizieren**. Nicht bestätigte Schreibvorgänge
-  werfen `ParameterWriteError`.
-- **Zwei optionale Number-Entitäten** (`wp_leistungsbegrenzung_heizen`/
-  `_kuehlen`) über entityvalue-Felder in den Optionen. Wert wird nur beim
-  Schreiben aktualisiert (verifizierter Ist-Zustand) bzw. nach Neustart
-  wiederhergestellt (RestoreNumber). Min/Max ziehen sich nach dem ersten
-  erfolgreichen Schreiben auf den echten Anlagen-Bereich zusammen.
+  fetch form → validate the value against the device's live option list
+  (the real allowed range, never bypassed) → "Senden" postback → re-read
+  and **verify**. Unconfirmed writes raise `ParameterWriteError`.
+- **Two optional number entities** (`wp_leistungsbegrenzung_heizen`/
+  `_kuehlen`) via entityvalue fields in the options. The value updates
+  only on writes (verified post-write state) and is restored after
+  restarts (RestoreNumber). Min/max tighten to the device's real range
+  after the first successful write.
 
-### Empfohlener Erst-Test
-Schalter aktivieren, nur die Heizen-ID eintragen, dann den **identischen
-Ist-Wert** schreiben (z. B. 30 → 30) und im Portal gegenprüfen, bevor
-echte Änderungen erfolgen.
+### Recommended first test
+Enable the option, enter only the heating ID, then write the **identical
+current value** (e.g. 30 → 30) and cross-check in the portal before
+making real changes.
 
-Mit Tests gegen die echten, gespeicherten Edit-Dialoge der Anlage
-verifiziert (Payload-Aufbau, Bereichs-Ablehnung vor jedem POST,
-Fehler bei unbestätigtem Schreiben, Options-Gating). 12 Testsuiten grün.
+Verified with tests against the installation's real, saved edit dialogs
+(payload assembly, range rejection before any POST, unconfirmed-write
+error, option gating). 12 test suites green.
 
 ## [1.7.8] – 2026-07-05
 
-Härtung und Effizienzsteigerung des Web-Scrapers (auf Anfrage,
-freigegebene Punkte). Fokus: schnelleres Scheitern bei lahmem Server,
-lückenloser Sperr-Schutz, weniger Verbindungsaufbau-Overhead.
+Hardening and efficiency work on the web scraper (on request, approved
+items). Focus: fail fast on a slow server, gap-free rate-limit
+protection, less connection-setup overhead.
 
-### Hinzugefügt
-- **30s-Timeout auf allen Scraper-Requests:** Ein hängender/lahmer
-  WEM-Server blockierte den Update-Zyklus bisher bis zum
-  Coordinator-Timeout (360 s). Jetzt schlägt der einzelne Request nach
-  30 s fehl und das bestehende Retry/Backoff übernimmt deutlich früher.
-- **403-Cooldown gilt jetzt auch für den Scraping-Pfad:** Der globale
-  Cooldown (seit 1.7.7 im API-Pfad) wird jetzt auch vor jedem
-  Scraping-Durchlauf geprüft, und ein 403 vom Web-Frontend aktiviert ihn
-  ebenfalls. Hintergrund: Weishaupts Rate-Limit wirkt auf IP/Account,
-  nicht pro Endpunkt – ein 403 von einer Seite bedeutet daher Pause für
-  beide. Gilt ausschließlich für 403; alle anderen Fehler bleiben wie
-  bisher pfad-getrennt behandelt (Scraper-Fehler ≠ API-Pause und
-  umgekehrt).
-- **Scraper-Verbindung wird über Zyklen wiederverwendet:** Die
-  Scraper-Instanz (inkl. TCP-Verbindung/TLS-Session) bleibt jetzt
-  bestehen, statt bei jedem Zyklus neu aufgebaut zu werden – spart pro
-  Zyklus einen kompletten Verbindungs-Handshake. Nach Auth-Fehlern oder
-  einem 403 wird sie gezielt verworfen und sauber geschlossen, damit die
-  Erholung mit frischer Verbindung startet.
+### Added
+- **30s timeout on all scraper requests:** a hanging/slow WEM server used
+  to block the update cycle until the coordinator-wide timeout (360 s).
+  Now the individual request fails after 30 s and the existing
+  retry/backoff takes over much earlier.
+- **403 cooldown now also covers the scraping path:** the global cooldown
+  (in the API path since 1.7.7) is now checked before every scraping run,
+  and a 403 from the web frontend activates it too. Background:
+  Weishaupt's rate limit applies per IP/account, not per endpoint - a 403
+  from either side therefore pauses both. Applies to 403 only; all other
+  errors remain handled per-path as before (scraper error ≠ API pause and
+  vice versa).
+- **Scraper connection reused across cycles:** the scraper instance
+  (including its TCP connection/TLS session) now persists instead of
+  being rebuilt every cycle - saving a full connection handshake per
+  cycle. After auth errors or a 403 it is deliberately discarded and
+  cleanly closed so recovery starts on a fresh connection.
 
-### Geändert
-- Code-Hygiene im Scraper: `ICON_MAPPER` einmalig auf Modulebene statt
-  pro Tabellenzeile; toter Else-Zweig in `parse_expert_page` entfernt;
-  Login-Fehlerbehandlung entwirrt (eigene Fehler werden nicht mehr vom
-  Netzwerkfehler-Handler neu verpackt).
+### Changed
+- Code hygiene in the scraper: `ICON_MAPPER` once at module level instead
+  of per table row; dead else-branch removed in `parse_expert_page`;
+  login error handling untangled (own errors are no longer re-wrapped by
+  the network-error handler).
 
-### Unverändert (bewusst)
-- Die 2-Sekunden-Pause nach dem Login-POST bleibt bestehen
-  (Risiko/Nutzen einer Entfernung unklar, daher nicht angefasst).
+### Unchanged (deliberately)
+- The 2-second pause after the login POST stays in place (risk/benefit of
+  removing it unclear, so left untouched).
 
-Mit 4 neuen Tests abgesichert (Instanz-Wiederverwendung über 3 Zyklen,
-403 → Cooldown + Scraper-Verwurf + Fail-Fast ohne Netzaktivität,
-Auth-Fehler → Scraper-Verwurf, Timeout auf allen HTTP-Calls) plus der
-kompletten bestehenden Suite (9 Testdateien).
+Covered by 4 new tests (instance reuse across 3 cycles, 403 → cooldown +
+scraper discard + fail-fast without network activity, auth error →
+scraper discard, timeout on all HTTP calls) plus the full existing suite
+(9 test files).
 
 ## [1.7.7] – 2026-07-05
 
-Weitere, gezielt konservative Maßnahmen zur Reduktion der Serverlast bei
-Weishaupt (auf Anfrage). Alle Änderungen sind rein additiv/vorsichtiger –
-nichts pollt jemals häufiger oder aggressiver als vorher, nur seltener.
+Further, deliberately conservative measures to reduce load on Weishaupt's
+server (on request). All changes are strictly additive/more cautious -
+nothing ever polls more frequently or aggressively than before, only
+less.
 
-### Hinzugefügt
-- **403 vs. 401 getrennt behandelt:** Ein 403 (Rate-Limit/Sperre) löst
-  nicht mehr automatisch einen erneuten Login-Versuch aus (das wäre eine
-  zusätzliche Anfrage genau im falschen Moment). Stattdessen wird eine
-  30-minütige Cool-down-Phase aktiviert: **alle** weiteren Anfragen
-  (auch an völlig andere Endpunkte) schlagen bis dahin sofort fehl, ganz
-  ohne Netzwerkzugriff. Ein 401 (abgelaufene Session) verhält sich
-  weiterhin wie bisher (ein Retry mit neuem Login).
-- **Heizprogramme (CircuitTimes) werden gecacht:** Nur noch alle 4 Stunden
-  pro Heizkreis neu abgefragt statt bei jedem einzelnen Update-Zyklus –
-  sie ändern sich nur bei manueller Bearbeitung in der Weishaupt-App
-  (über HA ohnehin nicht editierbar).
-- **Statistik-Intervall auf 4 Stunden gestreckt** (vorher 1 Stunde) – es
-  sind Tages-Summen, die sich nicht stündlich ändern.
+### Added
+- **403 vs. 401 handled separately:** a 403 (rate limit/block) no longer
+  automatically triggers a fresh login attempt (an extra request at
+  exactly the wrong moment). Instead, a 30-minute cooldown is activated:
+  **all** further requests (including to entirely different endpoints)
+  fail immediately until then, with no network access at all. A 401
+  (expired session) behaves as before (one retry with a fresh login).
+- **Heating schedules (CircuitTimes) are cached:** refetched only every
+  4 hours per heating circuit instead of on every single update cycle -
+  they only change when edited manually in the Weishaupt app (not
+  editable via HA anyway).
+- **Statistics interval widened to 4 hours** (previously 1 hour) - these
+  are daily aggregates that don't change hourly.
 
-Mit 4 neuen, gezielten Tests abgesichert (kein Retry bei 403, Cool-down
-blockiert Folgeanfragen ganz ohne Netzwerkzugriff, 401 verhält sich
-unverändert, CircuitTimes werden im zweiten Zyklus übersprungen).
+Covered by 4 new, targeted tests (no retry on 403, cooldown blocks
+follow-up requests without any network access, 401 behaves unchanged,
+CircuitTimes skipped on the second cycle).
 
 ## [1.7.6] – 2026-07-05
 
-Vollständiger Codebase-Review über alle Dateien hinweg (auf Wunsch), Fokus
-auf nicht abgefangene Exceptions und Robustheitslücken. Keine funktionale
-Verhaltensänderung für den Normalbetrieb – ausschließlich Absicherung
-gegen Rand- und Fehlerfälle.
+Full codebase review across all files (on request), focused on uncaught
+exceptions and robustness gaps. No functional behavior change for normal
+operation - purely hardening against edge and error cases.
 
-### Behoben
-- **`number.py`/`select.py`/`switch.py`:** dieselbe Absturzgefahr durch
-  direkten Key-Zugriff (`ParameterID`, `icon`, `ModuleIndex`, `ModuleType`,
-  `min_value`/`max_value`/`step`), die in `sensor.py` schon länger behoben
-  war, jetzt auch in den drei Geschwisterdateien behoben. Ein einzelner
-  unerwarteter Datensatz kann nicht mehr das Setup der kompletten Plattform
-  für alle Geräte crashen lassen.
-- **`number.py`:** numerische Validierung verschärft – `NumberEntity` hat
-  keinen gültigen Text-Zustand, daher wird jetzt immer auf eine Zahl
-  geprüft, nicht nur wenn zufällig eine Einheit vorhanden ist (dieselbe
-  Fehlerklasse wie beim Leistungs-Sensor-Crash aus 1.7.5, hier präventiv
-  geschlossen).
-- **`mapper.py::process_api_values`:** verarbeitet jetzt jeden Datenpunkt
-  einzeln abgesichert – ein einzelner fehlerhafter Wert bricht nicht mehr
-  die Verarbeitung für den Rest des kompletten Geräte-Updates ab. Dabei
-  auch einen fehlenden `_LOGGER`-Import behoben (hätte selbst zu einem
-  `NameError` geführt).
-- **`__init__.py`:** `migrate_unique_ids()` crasht nicht mehr bei leerem
-  `coordinator.data`; ein beschädigtes Discovery-Cache-File verhindert
-  nicht mehr den kompletten Start; die Migration selbst ist jetzt
-  fehlertolerant abgesichert; kleinere defensive `.get()`/Default-Fixes.
-- **`coordinator.py`:** catch-all Exception-Handler ergänzt (fängt u. a.
-  `asyncio.TimeoutError` bei sehr großen Anlagen ab, die den Timeout
-  genuine überschreiten); alte HTTP-Session wird bei Re-Instanziierung
-  jetzt sauber geschlossen statt nur verworfen.
-- **`wemportalapi.py`:** `get_parameters()` fängt jetzt auch `ValueError`
-  (kaputtes JSON) statt nur `KeyError` ab; `assert` durch expliziten Check
-  ersetzt; `api_login()`/`web_login()` fangen jetzt die breitere
-  `RequestException` statt nur `HTTPError` ab (konsistent zu
-  `make_api_call`); dabei einen latenten `NameError` in `web_login()`
-  behoben (Zugriff auf `response`, bevor sicher war, dass es zugewiesen
-  wurde); `fetch_webscraping_data()` behandelt reine Netzwerkfehler jetzt
-  mit demselben Backoff wie andere Fehlerarten.
+### Fixed
+- **`number.py`/`select.py`/`switch.py`:** the same crash risk from
+  direct key access (`ParameterID`, `icon`, `ModuleIndex`, `ModuleType`,
+  `min_value`/`max_value`/`step`) that was already fixed in `sensor.py`
+  is now also fixed in the three sibling files. A single unexpected data
+  record can no longer crash the entire platform setup for all devices.
+- **`number.py`:** numeric validation tightened - `NumberEntity` has no
+  valid text state, so a numeric value is now always enforced, not just
+  when a unit happens to be present (same error class as the power-sensor
+  crash from 1.7.5, closed preventively here).
+- **`mapper.py::process_api_values`:** now processes each data point with
+  its own error isolation - a single malformed value no longer aborts
+  processing for the rest of the entire device update. Also fixed a
+  missing `_LOGGER` import (which would itself have caused a
+  `NameError`).
+- **`__init__.py`:** `migrate_unique_ids()` no longer crashes on empty
+  `coordinator.data`; a corrupted discovery cache file no longer prevents
+  startup entirely; the migration itself is now fault-tolerant; minor
+  defensive `.get()`/default fixes.
+- **`coordinator.py`:** catch-all exception handler added (covers e.g.
+  `asyncio.TimeoutError` on very large installations that genuinely
+  exceed the timeout); the old HTTP session is now cleanly closed on
+  re-instantiation instead of just discarded.
+- **`wemportalapi.py`:** `get_parameters()` now also catches `ValueError`
+  (broken JSON), not just `KeyError`; `assert` replaced with an explicit
+  check; `api_login()`/`web_login()` now catch the broader
+  `RequestException` instead of only `HTTPError` (consistent with
+  `make_api_call`); fixed a latent `NameError` in `web_login()` (access
+  to `response` before it was guaranteed to be assigned);
+  `fetch_webscraping_data()` now applies the same backoff to plain
+  network errors as to other failure modes.
 
-Mit 7 Testsuiten (inkl. neuer, gezielter Tests für jeden der obigen
-Punkte) verifiziert.
+Verified with 7 test suites (including new, targeted tests for each of
+the points above).
 
 ## [1.7.5] – 2026-07-05
 
-### Behoben
-- **Absturz bei numerischen Sensoren durch Text-Werte:** `sanitize_value()`
-  lieferte für erkannte Boolean-Werte Text (`"Off"`/`"On"`) statt einer
-  Zahl, wenn dem aktuellen Messwert keine Einheit anhing (z. B. reines
-  `"Aus"` ohne Zahl). Bei Sensoren, die grundsätzlich numerisch sind
-  (`device_class: power`, `state_class: measurement`) und deren Einheit
-  (z. B. `"kW"`) aus einem vorherigen Zyklus beibehalten wurde (siehe
-  Wert-Lücken-Schutz aus 1.7.0), führte das zu: reale Einheit + nicht-
-  numerischer Text-Wert – Home Assistant lehnt das strikt ab und der
-  Sensor konnte gar nicht erst angelegt werden
-  (`ValueError: [...] has the non-numeric value: 'Off'`). Betroffen u. a.
-  `sensor.warmepumpe_soll_leistung` und `sensor.warmepumpe_ist_leistung`.
-  `sanitize_value()` liefert jetzt für Boolean-Werte immer `0.0`/`1.0`,
-  nie Text – wie im Original-Code, bevor diese Fallunterscheidung
-  eingeführt wurde. Zusätzlich als zweite Sicherheitsebene: `sensor.py`
-  erkennt jetzt auch anhand von `device_class`/`state_class` (nicht nur
-  der Einheit des aktuellen Zyklus), dass ein numerischer Wert
-  erforderlich ist, und `device_class`/`state_class` werden jetzt **vor**
-  der Wert-Validierung gesetzt, damit dieses Sicherheitsnetz auch beim
-  allerersten Anlegen der Entität greift.
+### Fixed
+- **Crash on numeric sensors caused by text values:** `sanitize_value()`
+  returned text (`"Off"`/`"On"`) instead of a number for recognized
+  boolean values whenever the current reading had no unit attached (e.g.
+  a plain `"Aus"` without a number). For sensors that are fundamentally
+  numeric (`device_class: power`, `state_class: measurement`) whose unit
+  (e.g. `"kW"`) was preserved from a previous cycle (see the value-gap
+  protection from 1.7.0), this combined into: real unit + non-numeric
+  text value - Home Assistant strictly rejects that and the sensor could
+  not be created at all
+  (`ValueError: [...] has the non-numeric value: 'Off'`). Affected e.g.
+  `sensor.warmepumpe_soll_leistung` and `sensor.warmepumpe_ist_leistung`.
+  `sanitize_value()` now always returns `0.0`/`1.0` for boolean values,
+  never text - as in the original code before this branching was
+  introduced. Additionally, as a second safety layer: `sensor.py` now
+  also uses `device_class`/`state_class` (not just the current cycle's
+  unit) to detect that a numeric value is required, and
+  `device_class`/`state_class` are now set **before** value validation so
+  this safety net is active from the very first entity creation.
 
 ## [1.7.4] – 2026-07-05
 
-### Behoben
-- **`fuzzywuzzy`-Performance-Warnung im Log:** `python-Levenshtein` zu
-  den Requirements hinzugefügt, damit die schnelle C-Erweiterung für das
-  Fuzzy-Matching in `select.py` automatisch mitinstalliert wird, statt
-  auf die langsamere reine Python-Implementierung zurückzufallen. Rein
-  kosmetisch/Performance – die Funktionalität war davon nicht betroffen.
+### Fixed
+- **`fuzzywuzzy` performance warning in the log:** added
+  `python-Levenshtein` to the requirements so the fast C extension for
+  fuzzy matching in `select.py` is installed automatically instead of
+  falling back to the slower pure-Python implementation. Purely
+  cosmetic/performance - functionality was not affected.
 
 ## [1.7.3] – 2026-07-05
 
-### Behoben
-- **SELECT-Optionen passten wegen Sprach-Mismatch der API nicht:** Auch
-  nach dem 1.7.1-Fix trat "Value Off not found in options [...] (names:
-  ['Aus', ...])" weiterhin auf. Ursache diesmal: Der **live von der API
-  gelesene Wert** kam als `"Off"` (Englisch) zurück, während die aus der
-  Parameter-Definition (`EnumValues`) ermittelte Optionsliste `"Aus"`
-  (Deutsch) enthielt – unabhängig vom sanitize_value-Fix aus 1.7.1. Das
-  bestehende Fuzzy-String-Matching konnte das nicht auffangen, da `"Off"`
-  und `"Aus"` keine gemeinsamen Buchstaben haben und der Ähnlichkeits-Score
-  weit unter dem Schwellwert von 75 lag. `select.py` erkennt jetzt
-  explizit deutsch/englische On/Off-Synonyme (`"Off"`↔`"Aus"`,
-  `"On"`↔`"Ein"`) und matcht sie unabhängig von der jeweiligen Sprache
-  gegen die tatsächlich vorhandene Optionsliste. Mit Tests für beide
-  Richtungen sowie einem Sanity-Check gegen False-Positives abgesichert.
+### Fixed
+- **SELECT options failed to match due to an API language mismatch:**
+  even after the 1.7.1 fix, "Value Off not found in options [...] (names:
+  ['Aus', ...])" kept occurring. Cause this time: the **live value read
+  from the API** came back as `"Off"` (English) while the option list
+  derived from the parameter definition (`EnumValues`) contained `"Aus"`
+  (German) - independent of the sanitize_value fix from 1.7.1. The
+  existing fuzzy string matching could not bridge this, since `"Off"` and
+  `"Aus"` share no letters and the similarity score stayed far below the
+  threshold of 75. `select.py` now explicitly recognizes German/English
+  on/off synonyms (`"Off"`↔`"Aus"`, `"On"`↔`"Ein"`) and matches them
+  against the actually present option list regardless of language.
+  Covered by tests for both directions plus a sanity check against false
+  positives.
 
 ## [1.7.2] – 2026-07-05
 
-### Behoben
-- **Leere Fehlermeldungen bei fehlgeschlagenen API-Calls:** `get_response_details()`
-  prüfte `if response:` – bei `requests.Response` ist das bei Statuscodes
-  ≥ 400 immer `False` (`Response.__bool__`), also genau dann, wenn ein
-  Fehler vorliegt. Dadurch wurde die vom Server mitgeschickte
-  Fehlerbeschreibung (Status/Message) nie ausgelesen, Log-Meldungen wie
-  „Server returned status code: and message:" blieben leer. Betrifft nur
-  die Diagnose-Qualität der Logs, nicht die Funktion selbst (der
-  bestehende Resilienz-Mechanismus – einzelne fehlgeschlagene
-  Statistik-Gruppen werden übersprungen, alles andere läuft normal weiter
-  – war davon nicht betroffen).
+### Fixed
+- **Empty error messages on failed API calls:** `get_response_details()`
+  checked `if response:` - for `requests.Response` that is always `False`
+  for status codes ≥ 400 (`Response.__bool__`), i.e. exactly when an
+  error is present. As a result, the error description sent by the server
+  (status/message) was never read, and log messages like "Server returned
+  status code: and message:" stayed empty. Affects only the diagnostic
+  quality of the logs, not functionality itself (the existing resilience
+  mechanism - individual failed statistics groups are skipped, everything
+  else continues normally - was not affected).
 
 ## [1.7.1] – 2026-07-05
 
-### Behoben
-- **Regression aus 1.7.0:** SELECT-Entitäten, bei denen eine Option
-  wörtlich `"Aus"` heißt (z. B. "Hot Water Push" mit den Optionen
-  `Aus, 5, 10, ..., 240` Minuten), schlugen fehl mit
-  `Value Off not found in options [...]`. Ursache war, dass die neue,
-  gemeinsame `sanitize_value()` (siehe 1.7.0) auf **alle**
-  EnumValues-Parameter angewendet wurde, nicht nur auf echte
-  SWITCH-Booleans – dabei wurde `"Aus"` zu `"Off"` umgeschrieben und
-  passte danach nicht mehr zur eigenen Optionsliste. Die Normalisierung
-  läuft jetzt nur noch für Parameter mit `DataType == SWITCH`; andere
-  Enum-Werte (SELECT) behalten ihren Original-String. Mit
-  Regressionstest abgesichert (reproduziert exakt den gemeldeten Fall).
+### Fixed
+- **Regression from 1.7.0:** SELECT entities where an option is literally
+  named `"Aus"` (e.g. "Hot Water Push" with options
+  `Aus, 5, 10, ..., 240` minutes) failed with
+  `Value Off not found in options [...]`. The cause: the new, shared
+  `sanitize_value()` (see 1.7.0) was applied to **all** EnumValues
+  parameters, not just true SWITCH booleans - rewriting `"Aus"` to
+  `"Off"`, which then no longer matched the entity's own option list.
+  Normalization now runs only for parameters with `DataType == SWITCH`;
+  other enum values (SELECT) keep their original string. Covered by a
+  regression test (reproduces the exact reported case).
 
 ## [1.7.0] – 2026-07-05
 
-### Hinzugefügt
-- Discovery-Cache: Geräte-/Modul-/Parameter-Definitionen werden jetzt über
-  Home-Assistant-Neustarts hinweg persistiert. Die langsame, gedrosselte
-  Parameter-Discovery (`get_parameters()`, ~5 Sek. pro Modul) läuft nur
-  noch, wenn tatsächlich etwas fehlt (Neuinstallation, neues Modul).
-- Session-/Cookie-Wiederverwendung beim Web-Scraping: Vor einem vollen
-  Login-Handshake wird zuerst versucht, die Session aus dem letzten
-  erfolgreichen Scrape weiterzunutzen. Reduziert Requests pro Zyklus.
-- `RestoreSensor` für alle Sensoren: die Einheit (`unit_of_measurement`)
-  wird nach einem Neustart aus dem letzten bekannten Zustand wiederhergestellt,
-  falls sie direkt nach dem Neustart kurzzeitig fehlt.
-- Zusätzliche, rein additive Backoff-Sicherheitsmarge im Coordinator nach
-  wiederholten Fehlschlägen (skaliert, gedeckelt bei 6 Std.) – bestehende
-  Sleep-/Rate-Limiting-Zeiten in `wemportalapi.py` bleiben unverändert.
+### Added
+- Discovery cache: device/module/parameter definitions are now persisted
+  across Home Assistant restarts. The slow, rate-limited parameter
+  discovery (`get_parameters()`, ~5 s per module) only runs when
+  something is actually missing (fresh install, new module).
+- Session/cookie reuse for web scraping: before a full login handshake,
+  the session from the last successful scrape is tried first. Reduces
+  requests per cycle.
+- `RestoreSensor` for all sensors: the unit (`unit_of_measurement`) is
+  restored from the last known state after a restart if it is briefly
+  missing right after startup.
+- Additional, purely additive backoff safety margin in the coordinator
+  after repeated failures (scaled, capped at 6 h) - existing
+  sleep/rate-limiting times in `wemportalapi.py` remain unchanged.
 
-### Geändert
-- `sanitize_value()` aus `mapper.py` und `scraper.py` zu einer einzigen,
-  gemeinsamen Implementierung in `utils.py` konsolidiert.
+### Changed
+- Consolidated `sanitize_value()` from `mapper.py` and `scraper.py` into
+  a single shared implementation in `utils.py`.
 
-### Behoben
-- **Sprachabhängiger Switch-Bug:** Schalter mit dem Wert `"Ein"`/`"On"`
-  (Großschreibung, je nach Portal-Sprache oder API- vs. Scraping-Pfad)
-  wurden fälschlich als „aus" angezeigt. Erkennung erweitert auf
+### Fixed
+- **Locale-dependent switch bug:** switches with the value `"Ein"`/`"On"`
+  (capitalized, depending on portal language or API vs. scraping path)
+  were incorrectly shown as "off". Detection extended to
   `1`, `1.0`, `"On"`, `"on"`, `"Ein"`, `"ein"`.
-- **Header-Merge-Bug in `make_api_call()`:** Aufruf-spezifische Header
-  (z. B. bei `get_statistics()`) ersetzten bisher die Standard-Header
-  komplett statt sie zu ergänzen, wodurch `Host`/`User-Agent`/`Accept`
-  verloren gingen.
-- **Falsche „Unknown"-Lücken:** Ein einzelner fehlender Scrape-/API-Wert
-  überschrieb den letzten bekannten Wert mit `None` bzw. `0.0`. Der letzte
-  bekannte Wert wird jetzt beibehalten, bis ein neuer gültiger Wert vorliegt.
-- **Absturzrisiko bei Entity-Setup:** `values["platform"]` (direkter
-  Key-Zugriff) in `sensor.py`/`number.py`/`select.py`/`switch.py` hätte bei
-  einem einzigen unerwarteten Datensatz das komplette Setup der jeweiligen
-  Plattform für alle Geräte abbrechen lassen. Jetzt `.get("platform")` mit
-  sauberem Überspringen einzelner fehlerhafter Einträge.
+- **Header merge bug in `make_api_call()`:** call-specific headers (e.g.
+  in `get_statistics()`) previously replaced the default headers entirely
+  instead of extending them, losing `Host`/`User-Agent`/`Accept`.
+- **False "Unknown" gaps:** a single missing scrape/API value overwrote
+  the last known value with `None` or `0.0`. The last known value is now
+  kept until a new valid value arrives.
+- **Crash risk during entity setup:** `values["platform"]` (direct key
+  access) in `sensor.py`/`number.py`/`select.py`/`switch.py` could abort
+  the entire platform setup for all devices on a single unexpected data
+  record. Now `.get("platform")` with clean skipping of individual broken
+  entries.
 
-### Entfernt
-- Ungenutzte Konstante `REFRESH_WAIT_TIME` (toter Code).
+### Removed
+- Unused constant `REFRESH_WAIT_TIME` (dead code).
 
 ---
 
 ## [1.6.0] – upstream (erikkastelec/hass-WEM-Portal)
-Ausgangsversion dieses Forks. Siehe [Original-Repo](https://github.com/erikkastelec/hass-WEM-Portal)
-für die vorherige Historie.
+Base version of this fork. See the
+[original repo](https://github.com/erikkastelec/hass-WEM-Portal) for
+earlier history.

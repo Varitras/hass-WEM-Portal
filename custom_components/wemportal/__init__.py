@@ -241,21 +241,51 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
         def _do_write():
             # Own short-lived session per write; honors the global 403
             # cooldown via the api object's check.
+            from .const import CONF_EXPERT_MODULE_ARG
+            module_arg = (entry.options.get(CONF_EXPERT_MODULE_ARG) or "").strip() or None
             client = WemPortalExpertClient(
                 entry.data.get(CONF_USERNAME),
                 entry.data.get(CONF_PASSWORD),
                 cooldown_check=api._check_cooldown,
+                module_arg=module_arg,
             )
             return client.write_parameter(entityvalue, value)
 
-        try:
-            state = await hass.async_add_executor_job(_do_write)
-        except Exception as exc:
-            from homeassistant.exceptions import HomeAssistantError
-            raise HomeAssistantError(f"Expert write failed: {exc}") from exc
-        _LOGGER.info(
-            "Expert parameter %s set to %s (allowed range %s..%s)",
-            entityvalue, state.current, state.min_value, state.max_value,
+        async def _run_in_background():
+            # An expert write takes ~60-80s (full Fachmann navigation),
+            # longer than a service call will wait, so run it detached and
+            # report the outcome via a persistent notification + the log.
+            try:
+                state = await hass.async_add_executor_job(_do_write)
+            except Exception as exc:  # pylint: disable=broad-except
+                _LOGGER.error("Expert write failed for %s: %s", entityvalue, exc)
+                await hass.services.async_call(
+                    "persistent_notification", "create",
+                    {
+                        "title": "WEM Portal expert write failed",
+                        "message": f"Setting {entityvalue} to {value} failed: {exc}",
+                        "notification_id": f"wemportal_expert_{entityvalue}",
+                    },
+                    blocking=False,
+                )
+                return
+            _LOGGER.info(
+                "Expert parameter %s set to %s (allowed range %s..%s)",
+                entityvalue, state.current, state.min_value, state.max_value,
+            )
+            await hass.services.async_call(
+                "persistent_notification", "create",
+                {
+                    "title": "WEM Portal expert write",
+                    "message": f"{entityvalue} set to {state.current}.",
+                    "notification_id": f"wemportal_expert_{entityvalue}",
+                },
+                blocking=False,
+            )
+
+        # Return immediately; the write continues in the background.
+        hass.async_create_background_task(
+            _run_in_background(), name=f"wemportal_expert_write_{entityvalue}"
         )
 
     hass.services.async_register(

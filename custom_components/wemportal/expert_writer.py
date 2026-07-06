@@ -12,6 +12,7 @@ verifies the result by re-reading the form afterwards.
 
 import re
 import time
+import random
 
 from curl_cffi import requests
 from lxml import html
@@ -21,7 +22,22 @@ from .const import (
     _LOGGER,
     WEB_LOGIN_URL,
     WEB_MAIN_URL,
+    WEB_DEFAULT_URL,
+    WEB_CODE_EXPERTS_URL,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
+    EXPERT_SUBMENU_TARGET,
+    EXPERT_SUBMENU_ARG,
+    EXPERT_DIALOG_SAVE_TARGET,
+    EXPERT_SECURITY_CODE_FIELD,
+    EXPERT_SECURITY_CODE,
+    EXPERT_MODULE_MENU_TARGET,
+    EXPERT_MODULE_ARG_HEATPUMP,
+    EXPERT_TIMER_TARGET,
+    EXPERT_TIMER_MAX_POLLS,
+    EXPERT_TIMER_DELAY_SECONDS,
+    EXPERT_TIMER_SETTLE_SECONDS,
+    EXPERT_FORM_MAX_ATTEMPTS,
+    EXPERT_FORM_RETRY_DELAY_SECONDS,
 )
 
 # Edit dialog endpoint; entityvalue identifies device/module/parameter.
@@ -53,12 +69,16 @@ class WemPortalExpertClient:
     fully independent of the polling scraper/API paths.
     """
 
-    def __init__(self, username, password, cooldown_check=None):
+    def __init__(self, username, password, cooldown_check=None, module_arg=None):
         self.username = username
         self.password = password
         # Optional callable raising ForbiddenError while a 403 cooldown is
         # active (shared protection with the rest of the integration).
         self._cooldown_check = cooldown_check
+        # Icon-menu argument selecting the target module; defaults to the
+        # heat pump index of the reference installation but is overridable
+        # for other module layouts.
+        self._module_arg = module_arg or EXPERT_MODULE_ARG_HEATPUMP
         self.session = None
 
     # ------------------------------------------------------------------
@@ -104,20 +124,104 @@ class WemPortalExpertClient:
         self._establish_context()
 
     def _establish_context(self):
-        """Load the portal main page once after login.
+        """Reproduce the browser navigation that unlocks the Fachmann view.
 
-        The edit dialog resolves device data from the server-side session
-        context. A fresh login has no active installation yet - fetching
-        the dialog directly then yields an EMPTY value dropdown ("no
-        numeric options found"). Loading Default.aspx selects the (single)
-        installation, matching what a browser session does implicitly.
+        Reconstructed from a real browser HAR capture. A fresh login only
+        reaches the user level; the Fachmann parameters (e.g.
+        Leistungsbegrenzung) require, in order:
+          1. load the portal main page (Default.aspx),
+          2. unlock the Fachmann level via a security-code dialog (code
+             "11", publicly known),
+          3. select the target device module (heat pump),
+          4. poll the live-value timer a few times until values arrive.
+        Only after this does the parameter edit dialog return a populated
+        value dropdown. This is inherently heavier than the API path and
+        runs solely on explicit, on-demand write operations.
         """
+        # Step 1: main page (also captures the base VIEWSTATE we need).
         r_main = self.session.get(
             WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS
         )
         self._raise_if_forbidden(r_main)
         if WEB_LOGIN_URL.lower() in r_main.url.lower():
             raise AuthError("Expert client: session not accepted by portal main page.")
+        current_html = r_main.text
+
+        # Step 2: unlock Fachmann level. Opening the submenu returns the
+        # security-code dialog; posting the code "11" unlocks it.
+        current_html = self._postback(
+            WEB_DEFAULT_URL, current_html,
+            event_target=EXPERT_SUBMENU_TARGET, event_argument=EXPERT_SUBMENU_ARG,
+        )
+        self._submit_security_code()
+
+        # Step 3: select the target module via its icon-menu postback.
+        current_html = self._postback(
+            WEB_DEFAULT_URL, current_html,
+            event_target=EXPERT_MODULE_MENU_TARGET,
+            event_argument=self._module_arg,
+        )
+
+        # Step 4: poll the live-value timer. The browser polls repeatedly
+        # with no explicit "done" signal, so we poll generously. We favor
+        # reliability over speed here (see const.py): the real early-exit
+        # is that _fetch_form() retries until the dropdown is populated.
+        for _ in range(EXPERT_TIMER_MAX_POLLS):
+            time.sleep(EXPERT_TIMER_DELAY_SECONDS)
+            self._check_cooldown()
+            current_html = self._postback(
+                WEB_DEFAULT_URL, current_html,
+                event_target=EXPERT_TIMER_TARGET, event_argument="",
+            )
+        # Extra settle pause before the first dialog fetch, giving the
+        # server a moment to finish applying the freshly polled values.
+        time.sleep(EXPERT_TIMER_SETTLE_SECONDS)
+
+    def _submit_security_code(self):
+        """Post the Fachmann security code to the code-experts dialog."""
+        # The dialog is a RadWindow served from its own URL; fetch it to
+        # get its VIEWSTATE, then post the code via the dialog's save button.
+        dialog_url = f"{WEB_CODE_EXPERTS_URL}?rwndrnd={random.random()}"
+        r = self.session.get(dialog_url, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
+        self._raise_if_forbidden(r)
+        fields = self._hidden_fields(r.text)
+        fields[EXPERT_SECURITY_CODE_FIELD] = EXPERT_SECURITY_CODE
+        fields["__EVENTTARGET"] = EXPERT_DIALOG_SAVE_TARGET
+        fields["__EVENTARGUMENT"] = ""
+        self._check_cooldown()
+        r2 = self.session.post(
+            dialog_url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            headers={"X-MicrosoftAjax": "Delta=true"},
+        )
+        self._raise_if_forbidden(r2)
+
+    # --- ASP.NET postback helpers ------------------------------------
+    @staticmethod
+    def _hidden_fields(html_content) -> dict:
+        """Extract all hidden input fields (VIEWSTATE, EVENTVALIDATION, ...)."""
+        tree = html.fromstring(html_content)
+        fields = {}
+        for inp in tree.xpath("//input[@type='hidden']"):
+            name = inp.get("name")
+            if name:
+                fields[name] = inp.get("value", "")
+        return fields
+
+    def _postback(self, url, current_html, event_target, event_argument=""):
+        """Perform one ASP.NET postback, carrying over the current page's
+        hidden fields, and return the resulting page HTML for the next step."""
+        fields = self._hidden_fields(current_html)
+        fields["__EVENTTARGET"] = event_target
+        fields["__EVENTARGUMENT"] = event_argument
+        self._check_cooldown()
+        resp = self.session.post(
+            url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            headers={"X-MicrosoftAjax": "Delta=true"},
+        )
+        self._raise_if_forbidden(resp)
+        if WEB_LOGIN_URL.lower() in resp.url.lower():
+            raise AuthError("Expert client: session expired during navigation.")
+        return resp.text
 
     def close(self):
         """Close the session; never raises."""
@@ -229,7 +333,9 @@ class WemPortalExpertClient:
 
             # The Senden button is type=button and submits via a JS
             # __doPostBack('ctl00$DialogContent$BtnSave', '') - replicate
-            # that postback, carrying over all hidden ASP.NET fields.
+            # that postback, carrying over all hidden ASP.NET fields. The
+            # portal sends this as a Telerik async postback (see the
+            # X-MicrosoftAjax header and rwndrnd cache-buster in the HAR).
             post_data = dict(state.hidden_fields)
             post_data["__EVENTTARGET"] = "ctl00$DialogContent$BtnSave"
             post_data["__EVENTARGUMENT"] = ""
@@ -238,15 +344,19 @@ class WemPortalExpertClient:
             self._check_cooldown()
             resp = self.session.post(
                 EXPERT_PARAMETER_URL,
-                params={"entityvalue": entityvalue, "readdata": "True"},
+                params={"entityvalue": entityvalue, "readdata": "True",
+                        "rwndrnd": str(random.random())},
                 data=post_data,
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+                headers={"X-MicrosoftAjax": "Delta=true"},
             )
             self._raise_if_forbidden(resp)
 
             # Verify by re-reading the form: the device/portal must now
-            # report the new value as selected.
-            verify = self._fetch_form(entityvalue)
+            # report the new value as selected. The value is applied
+            # immediately, so a short retry budget is enough here (unlike
+            # the initial read, where live values may still be loading).
+            verify = self._fetch_form(entityvalue, max_attempts=2)
             if verify.current != value_f:
                 raise ParameterWriteError(
                     f"Write not confirmed: form still shows {verify.current}, "
@@ -265,23 +375,55 @@ class WemPortalExpertClient:
         if not re.fullmatch(r"[0-9A-Fa-f]+", entityvalue or ""):
             raise ValueError(f"Invalid entityvalue: {entityvalue!r}")
 
-    def _fetch_form(self, entityvalue: str) -> ExpertParameterState:
-        """GET + parse the edit form on the already logged-in session."""
-        self._check_cooldown()
-        resp = self.session.get(
-            EXPERT_PARAMETER_URL,
-            params={"entityvalue": entityvalue, "readdata": "True"},
-            timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-        )
-        self._raise_if_forbidden(resp)
-        if WEB_LOGIN_URL.lower() in resp.url.lower():
-            raise AuthError("Expert client: redirected to login when fetching the form.")
-        state = self.parse_parameter_form(resp.text)
-        _LOGGER.debug(
-            "Expert parameter %s: current=%s range=%s..%s",
-            entityvalue, state.current, state.min_value, state.max_value,
-        )
-        return state
+    def _fetch_form(self, entityvalue: str, max_attempts: int = None) -> ExpertParameterState:
+        """GET + parse the edit form on the already logged-in session.
+
+        Retries on an empty dropdown: after selecting the module the live
+        values can still be trickling in, so a first fetch may legitimately
+        come back empty. Rather than failing immediately we retry a few
+        times with a pause, favoring reliability over speed (these are
+        rare, on-demand operations). Only after all attempts still yield an
+        empty dropdown do we raise.
+
+        max_attempts defaults to EXPERT_FORM_MAX_ATTEMPTS (initial read,
+        where values may still be loading). The post-write verify passes a
+        smaller value, since the value is applied immediately and no long
+        wait is warranted there.
+        """
+        if max_attempts is None:
+            max_attempts = EXPERT_FORM_MAX_ATTEMPTS
+        last_error = None
+        for attempt in range(max_attempts):
+            self._check_cooldown()
+            resp = self.session.get(
+                EXPERT_PARAMETER_URL,
+                params={"entityvalue": entityvalue, "readdata": "True",
+                        "rwndrnd": str(random.random())},
+                timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            )
+            self._raise_if_forbidden(resp)
+            if WEB_LOGIN_URL.lower() in resp.url.lower():
+                raise AuthError("Expert client: redirected to login when fetching the form.")
+            try:
+                state = self.parse_parameter_form(resp.text)
+                _LOGGER.debug(
+                    "Expert parameter %s: current=%s range=%s..%s (attempt %d)",
+                    entityvalue, state.current, state.min_value, state.max_value,
+                    attempt + 1,
+                )
+                return state
+            except ValueError as exc:
+                # Empty dropdown / values not ready yet - wait and retry.
+                # (parse_parameter_form raises AuthError for a login page,
+                # which we deliberately do NOT swallow here.)
+                last_error = exc
+                _LOGGER.debug(
+                    "Expert parameter %s not ready on attempt %d/%d: %s",
+                    entityvalue, attempt + 1, max_attempts, exc,
+                )
+                if attempt < max_attempts - 1:
+                    time.sleep(EXPERT_FORM_RETRY_DELAY_SECONDS)
+        raise last_error
 
 
 def create_expert_number_entities(config_entry):
@@ -331,6 +473,7 @@ try:
         """
 
         _attr_should_poll = False
+        _attr_has_entity_name = True
         _attr_native_unit_of_measurement = "%"
         _attr_native_step = 1
         # Display bounds; the real device range is enforced live in
@@ -342,9 +485,17 @@ try:
         def __init__(self, config_entry, name, entityvalue):
             self._config_entry = config_entry
             self._entityvalue = entityvalue
-            self._attr_name = name
+            # `name` is the technical slug (e.g. wp_leistungsbegrenzung_heizen);
+            # keep it as the stable object_id source but show a readable
+            # friendly name, consistent with has_entity_name on the other
+            # platforms.
+            self._attr_name = name.replace("_", " ").title()
+            self._attr_translation_key = name
             self._attr_unique_id = f"{config_entry.entry_id}:expert:{entityvalue}"
             self._attr_native_value = None
+            # Guards against starting a second write while one is still
+            # running in the background (the write takes ~60-80s).
+            self._write_in_progress = False
 
         async def async_added_to_hass(self):
             """Restore the last known value after a restart."""
@@ -354,22 +505,52 @@ try:
                 self._attr_native_value = last.native_value
 
         async def async_set_native_value(self, value: float) -> None:
+            """Start the write in the background and return immediately.
+
+            An expert write reproduces the full Fachmann navigation and
+            takes ~60-80s - far longer than a frontend service call will
+            wait. Running it as a background task lets the call return at
+            once; the outcome is reported via a persistent notification
+            and the log. The entity value updates once the write is
+            verified.
+            """
+            if self._write_in_progress:
+                raise HomeAssistantError(
+                    f"{self._attr_name}: a write is already in progress, please wait."
+                )
+            self._write_in_progress = True
+            self.hass.async_create_background_task(
+                self._async_write_in_background(value),
+                name=f"wemportal_expert_write_{self._attr_unique_id}",
+            )
+
+        async def _async_write_in_background(self, value: float) -> None:
+            """Perform the actual (slow) write off the service-call path."""
+            from .const import CONF_EXPERT_MODULE_ARG
+
+            module_arg = (self._config_entry.options.get(CONF_EXPERT_MODULE_ARG) or "").strip() or None
+
             def _do_write():
                 client = WemPortalExpertClient(
                     self._config_entry.data.get(CONF_USERNAME),
                     self._config_entry.data.get(CONF_PASSWORD),
                     cooldown_check=self._cooldown_check(),
+                    module_arg=module_arg,
                 )
                 return client.write_parameter(self._entityvalue, value)
 
             try:
                 state = await self.hass.async_add_executor_job(_do_write)
-            except Exception as exc:
-                # HomeAssistantError -> clean frontend message instead of
-                # an "Unexpected exception" traceback in the log.
-                raise HomeAssistantError(
-                    f"Expert write failed for {self._attr_name}: {exc}"
-                ) from exc
+            except Exception as exc:  # pylint: disable=broad-except
+                _LOGGER.error("Expert write failed for %s: %s", self._attr_name, exc)
+                self._notify(
+                    f"Setting {self._attr_name} to {value} failed: {exc}",
+                    success=False,
+                )
+                return
+            finally:
+                self._write_in_progress = False
+
             # Verified value from the portal, plus the real device range.
             self._attr_native_value = state.current
             if state.min_value is not None:
@@ -377,6 +558,26 @@ try:
             if state.max_value is not None:
                 self._attr_native_max_value = state.max_value
             self.async_write_ha_state()
+            _LOGGER.info(
+                "Expert parameter %s set and verified: %s", self._attr_name, state.current
+            )
+            self._notify(f"{self._attr_name} set to {state.current}.", success=True)
+
+        def _notify(self, message: str, success: bool) -> None:
+            """Report the background write outcome via a persistent notification."""
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    "persistent_notification",
+                    "create",
+                    {
+                        "title": "WEM Portal expert write"
+                        + ("" if success else " failed"),
+                        "message": message,
+                        "notification_id": f"wemportal_expert_{self._attr_unique_id}",
+                    },
+                    blocking=False,
+                )
+            )
 
         def _cooldown_check(self):
             """Fetch the shared 403-cooldown check from the running api."""

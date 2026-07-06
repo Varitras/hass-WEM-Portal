@@ -50,7 +50,7 @@ from .const import (
 class WemPortalApi:
     """Wrapper class for Weishaupt WEM Portal"""
 
-    def __init__(self, username, password, config=None, existing_data=None, cached_modules=None) -> None:
+    def __init__(self, username, password, config=None, existing_data=None, cached_modules=None, blocked_until=0.0) -> None:
         if config is None:
             config = {}
         self.data = copy.deepcopy(existing_data) if existing_data else {}
@@ -119,7 +119,11 @@ class WemPortalApi:
         # additive safety measure: it only ever makes the integration
         # quieter after the server has already signaled distress, never
         # more aggressive. See _check_cooldown()/_activate_cooldown().
-        self._blocked_until = 0.0
+        # Accepted as a constructor argument so an active cooldown survives
+        # the coordinator re-instantiating this object on repeated errors -
+        # otherwise a fresh instance would reset it to 0.0 and resume
+        # hitting a server that just told us to back off.
+        self._blocked_until = blocked_until
 
         # Used to keep track of how many update intervals to wait before retrying spider
         self.spider_wait_interval = 0

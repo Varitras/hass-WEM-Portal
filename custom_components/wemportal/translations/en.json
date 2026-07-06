@@ -4,7 +4,9 @@
       "user": {
         "data": {
           "username": "Username (email)",
-          "password": "Password"
+          "password": "Password",
+          "language": "Language of sensor/parameter names (default = en)",
+          "mode": "Mode (default = api)"
         }
       }
     },
@@ -23,12 +25,23 @@
         "data": {
           "scan_interval": "Web scraping interval (default = 1800 sec)",
           "api_scan_interval": "Api scan interval (default = 300 sec)",
-          "language": "Language (default = en)",
+          "language": "Language of sensor/parameter names (default = en)",
           "mode": "Mode(default = api)",
           "expert_write_enabled": "Expert write access via web (default = off)",
           "expert_entityvalue_heating": "entityvalue: Leistungsbegrenzung Heizen (hex, optional)",
-          "expert_entityvalue_cooling": "entityvalue: Leistungsbegrenzung Kuehlen (hex, optional)"
+          "expert_entityvalue_cooling": "entityvalue: Leistungsbegrenzung Kuehlen (hex, optional)",
+          "expert_module_arg": "Expert: module menu index (default = 6, heat pump)"
         }
+      }
+    }
+  },
+  "entity": {
+    "number": {
+      "wp_leistungsbegrenzung_heizen": {
+        "name": "Heat pump power limit (heating)"
+      },
+      "wp_leistungsbegrenzung_kuehlen": {
+        "name": "Heat pump power limit (cooling)"
       }
     }
   }
