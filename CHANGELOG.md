@@ -4,6 +4,25 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.17] – 2026-07-06
+
+### Fixed
+- **Expert navigation: register module selection via icon-menu client
+  state.** All navigation postbacks are now accepted by the server (real,
+  growing responses, valid page state throughout), yet the parameter
+  dialog still came back empty after module select and the timer polls.
+  The module-select postback's event target/argument tells the server
+  which control fired, but the icon-menu control's own client state
+  (`selectedItemIndex`) appears to be what actually persists "module N
+  selected" into the session. Added, matching the configured module
+  argument.
+
+### Changed
+- **Reduced timer polls from 8 to 4.** A real browser capture needed only
+  2 polls before the dialog came back populated on the first genuine
+  attempt; 4 keeps a safety margin while roughly halving the request
+  count for this step.
+
 ## [1.7.16] – 2026-07-06
 
 ### Fixed

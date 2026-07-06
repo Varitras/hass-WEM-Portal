@@ -42,6 +42,8 @@ from .const import (
     EXPERT_PAGE_TSM_ID_FIELD,
     EXPERT_PAGE_TSM_VALUE,
     EXPERT_PAGE_TSM_PANEL_BY_TARGET,
+    EXPERT_MODULE_ICONMENU_STATE_FIELD,
+    EXPERT_MODULE_ICONMENU_STATE_TEMPLATE,
     EXPERT_MODULE_MENU_TARGET,
     EXPERT_MODULE_ARG_HEATPUMP,
     EXPERT_TIMER_TARGET,
@@ -197,10 +199,17 @@ class WemPortalExpertClient:
             return
 
         # Step 3: select the target module via its icon-menu async postback.
+        # Besides the postback event itself, the icon-menu control's own
+        # client state must reflect the selection - otherwise the server
+        # accepts the postback (real response, valid page state) but
+        # doesn't register "module N selected" for the session, leaving
+        # the parameter dialog empty afterwards.
+        icon_menu_state = EXPERT_MODULE_ICONMENU_STATE_TEMPLATE % self._module_arg
         current_html = self._postback(
             WEB_DEFAULT_URL, current_html,
             event_target=EXPERT_MODULE_MENU_TARGET,
             event_argument=self._module_arg,
+            extra_fields={EXPERT_MODULE_ICONMENU_STATE_FIELD: icon_menu_state},
         )
         _LOGGER.debug("Expert navigation step 3 (module select, arg=%s) done.", self._module_arg)
 
@@ -301,7 +310,7 @@ class WemPortalExpertClient:
         return fields
 
     def _postback(self, url, current_html, event_target, event_argument="",
-                  async_postback=True):
+                  async_postback=True, extra_fields=None):
         """Perform one ASP.NET postback, carrying over the current page's
         hidden fields, and return the resulting page HTML for the next step.
 
@@ -313,6 +322,9 @@ class WemPortalExpertClient:
         - async_postback=False: a classic full postback that ends in a 302
           redirect to the reloaded page. No async field, no async header,
           follow the redirect. Used for the submenu (Fachmann) unlock.
+
+        extra_fields lets a caller add postback-specific fields (e.g. a
+        control's own client state) on top of the standard ones.
         """
         fields = self._hidden_fields(current_html)
         # Diagnostics: if the carried-over page state is missing/empty the
@@ -326,6 +338,8 @@ class WemPortalExpertClient:
             )
         fields["__EVENTTARGET"] = event_target
         fields["__EVENTARGUMENT"] = event_argument
+        if extra_fields:
+            fields.update(extra_fields)
 
         self._check_cooldown()
         if async_postback:

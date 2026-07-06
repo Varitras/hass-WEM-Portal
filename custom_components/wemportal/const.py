@@ -160,6 +160,17 @@ EXPERT_PAGE_TSM_PANEL_BY_TARGET: Final = {
     "ctl00$DeviceContextControl1$timerUpdateData":
         "ctl00$ctl00$DeviceContextControl1Panel",
 }
+# The icon-menu control's own client state (confirmed via HAR:
+# {"logEntries":[],"selectedItemIndex":"6"}). Live testing showed the
+# module-select postback is accepted (real response, valid page state) but
+# the parameter dialog still comes back empty afterwards - suggesting the
+# server needs this control-level state, not just the postback event
+# target/argument, to register "module N selected" in the session. Only
+# relevant for the module-select postback, not the timer polls.
+EXPERT_MODULE_ICONMENU_STATE_FIELD: Final = (
+    "ctl00_rdMain_C_controlExtension_iconMenu_rmMenuLayer_ClientState"
+)
+EXPERT_MODULE_ICONMENU_STATE_TEMPLATE: Final = '{"logEntries":[],"selectedItemIndex":"%s"}'
 # Icon-menu postback selecting a device module; ARG "6" = heat pump on the
 # reference installation. Configurable via CONF_EXPERT_MODULE_ARG because
 # the menu index can differ on other installations/module layouts.
@@ -177,8 +188,9 @@ EXPERT_TIMER_TARGET: Final = "ctl00$DeviceContextControl1$timerUpdateData"
 # EXPERT_TIMER_SETTLE_SECONDS is an extra settle pause after the polls
 # before the first dialog fetch. These are deliberately conservative:
 # a few extra seconds per (rare, on-demand) write is a fair price for it
-# working every time.
-EXPERT_TIMER_MAX_POLLS: Final = 8
+# working every time. A real browser capture needed only 2 polls; 4 keeps
+# a safety margin while halving the previous request count (less load).
+EXPERT_TIMER_MAX_POLLS: Final = 4
 EXPERT_TIMER_DELAY_SECONDS: Final = 3
 EXPERT_TIMER_SETTLE_SECONDS: Final = 2
 # How many times to retry fetching the parameter dialog if it still comes
