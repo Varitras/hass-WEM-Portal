@@ -3,3 +3,4 @@ __pycache__/
 .venv/
 ha_config
 scripts/
+.patches
