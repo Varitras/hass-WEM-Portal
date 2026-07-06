@@ -1,0 +1,28 @@
+set_expert_parameter:
+  name: Set expert parameter
+  description: >-
+    Writes a Fachmann/expert parameter via the WEM Portal web frontend.
+    Only available while the "Expert write access (web)" option is enabled.
+    The value is validated against the device's own allowed range and the
+    write is verified by re-reading the parameter afterwards.
+  fields:
+    entityvalue:
+      name: Entity value
+      description: >-
+        Hex parameter ID of YOUR installation, taken from the portal's edit
+        dialog URL (entityvalue=...). Installation-specific - do not share
+        publicly.
+      required: true
+      example: "6400000000000000000000000000000000FF"
+      selector:
+        text:
+    value:
+      name: Value
+      description: New value. Must be one of the options the device offers.
+      required: true
+      example: 30
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
