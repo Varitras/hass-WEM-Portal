@@ -3,5 +3,9 @@ __pycache__/
 .venv/
 ha_config
 scripts/
-.patches
-wem_debug*
+.patches/
+wem_debug.py
+wem_debug.txt
+wem_dump/
+wem_debug.py
+wem_debug.py
