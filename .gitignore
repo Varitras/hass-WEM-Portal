@@ -4,3 +4,4 @@ __pycache__/
 ha_config
 scripts/
 .patches
+wem_debug.py
