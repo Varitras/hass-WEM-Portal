@@ -4,6 +4,21 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.19] – 2026-07-06
+
+### Fixed
+- **Expert navigation: add Referer headers matching the real browser.**
+  Direct verification (searching response dumps for Fachmann-only values
+  like "Schaltdifferenz") showed the Fachmann permission never actually
+  took effect server-side, despite every postback being accepted without
+  error. The real browser sends a Referer header on every request in the
+  chain; `curl_cffi` does not do this automatically, and none were being
+  sent. Added Referer headers matching the HAR exactly: main-page
+  postbacks reference the main page; the security-code dialog's POST
+  references its own GET URL (a same-page form submit); the write POST
+  references the exact URL of the last successfully fetched parameter
+  dialog (including its real cache-buster), not a fresh one.
+
 ## [1.7.18] – 2026-07-06
 
 ### Fixed

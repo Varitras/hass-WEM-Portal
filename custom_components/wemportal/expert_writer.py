@@ -98,6 +98,10 @@ class WemPortalExpertClient:
         # for other module layouts.
         self._module_arg = module_arg or EXPERT_MODULE_ARG_HEATPUMP
         self.session = None
+        # URL the last successfully fetched parameter dialog was served at
+        # (including its real rwndrnd) - used as Referer for the following
+        # write POST, matching the HAR's "same-page form submit" pattern.
+        self._last_dialog_url = None
 
     # ------------------------------------------------------------------
     def _check_cooldown(self):
@@ -262,7 +266,10 @@ class WemPortalExpertClient:
         # The dialog is a RadWindow served from its own URL; fetch it to
         # get its VIEWSTATE, then post the code via the dialog's save button.
         dialog_url = f"{WEB_CODE_EXPERTS_URL}?rwndrnd={random.random()}"
-        r = self.session.get(dialog_url, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
+        r = self.session.get(
+            dialog_url, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            headers={"Referer": WEB_MAIN_URL},
+        )
         self._raise_if_forbidden(r)
         fields = self._hidden_fields(r.text)
         _LOGGER.debug(
@@ -280,7 +287,7 @@ class WemPortalExpertClient:
         self._check_cooldown()
         r2 = self.session.post(
             dialog_url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-            headers={"X-MicrosoftAjax": "Delta=true"},
+            headers={"X-MicrosoftAjax": "Delta=true", "Referer": dialog_url},
         )
         self._raise_if_forbidden(r2)
         _LOGGER.debug(
@@ -379,14 +386,14 @@ class WemPortalExpertClient:
                 fields[EXPERT_PAGE_TSM_ID_FIELD] = EXPERT_PAGE_TSM_VALUE
             resp = self.session.post(
                 url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-                headers={"X-MicrosoftAjax": "Delta=true"},
+                headers={"X-MicrosoftAjax": "Delta=true", "Referer": WEB_MAIN_URL},
             )
         else:
             # Full postback ending in a 302 -> follow it to the reloaded
             # page, whose HTML carries the fresh state for the next step.
             resp = self.session.post(
                 url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-                allow_redirects=True,
+                allow_redirects=True, headers={"Referer": WEB_MAIN_URL},
             )
         self._raise_if_forbidden(resp)
         if WEB_LOGIN_URL.lower() in resp.url.lower():
@@ -524,7 +531,8 @@ class WemPortalExpertClient:
                         "rwndrnd": str(random.random())},
                 data=post_data,
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-                headers={"X-MicrosoftAjax": "Delta=true"},
+                headers={"X-MicrosoftAjax": "Delta=true",
+                        "Referer": self._last_dialog_url or WEB_MAIN_URL},
             )
             self._raise_if_forbidden(resp)
 
@@ -576,10 +584,16 @@ class WemPortalExpertClient:
                 params={"entityvalue": entityvalue, "readdata": "True",
                         "rwndrnd": str(random.random())},
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+                headers={"Referer": WEB_MAIN_URL},
             )
             self._raise_if_forbidden(resp)
             if WEB_LOGIN_URL.lower() in resp.url.lower():
                 raise AuthError("Expert client: redirected to login when fetching the form.")
+            # Remember the exact URL this form was served at, so a
+            # following write POST can reference it as Referer (confirmed
+            # via HAR: the write's Referer is the same URL - including
+            # rwndrnd - that rendered the form being submitted).
+            self._last_dialog_url = resp.url
             try:
                 state = self.parse_parameter_form(resp.text)
                 _LOGGER.debug(
