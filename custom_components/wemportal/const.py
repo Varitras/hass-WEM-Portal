@@ -95,6 +95,12 @@ WEB_CODE_EXPERTS_URL: Final = (
 # Both names are treated as the page's state field so diagnostics and
 # checks work across all navigation steps.
 EXPERT_VIEWSTATE_FIELDS: Final = ("__ECNPAGEVIEWSTATE", "__VIEWSTATE")
+# Telerik RadAjax async-postback marker. Real async postbacks (module
+# select, timer polls, dialog saves) carry this field set to "true" in the
+# body AND the X-MicrosoftAjax: Delta=true header. The submenu unlock is
+# NOT an async postback - it's a classic full postback ending in a 302
+# redirect - so it must omit both.
+EXPERT_ASYNCPOST_FIELD: Final = "__ASYNCPOST"
 # Submenu postback that opens the expert-code (Fachmann) dialog.
 EXPERT_SUBMENU_TARGET: Final = "ctl00$SubMenuControl1$subMenu"
 EXPERT_SUBMENU_ARG: Final = "3"

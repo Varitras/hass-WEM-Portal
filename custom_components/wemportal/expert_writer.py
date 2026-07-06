@@ -25,6 +25,7 @@ from .const import (
     WEB_DEFAULT_URL,
     WEB_CODE_EXPERTS_URL,
     EXPERT_VIEWSTATE_FIELDS,
+    EXPERT_ASYNCPOST_FIELD,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     EXPERT_SUBMENU_TARGET,
     EXPERT_SUBMENU_ARG,
@@ -152,16 +153,27 @@ class WemPortalExpertClient:
             len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
         )
 
-        # Step 2: unlock Fachmann level. Opening the submenu returns the
-        # security-code dialog; posting the code "11" unlocks it.
-        current_html = self._postback(
+        # Step 2: unlock Fachmann level. The submenu is a classic full
+        # postback (302 -> reloaded Default.aspx), not an async one; then
+        # the security-code dialog appears and posting "11" unlocks it.
+        self._postback(
             WEB_DEFAULT_URL, current_html,
             event_target=EXPERT_SUBMENU_TARGET, event_argument=EXPERT_SUBMENU_ARG,
+            async_postback=False,
         )
         self._submit_security_code()
-        _LOGGER.debug("Expert navigation step 2 (Fachmann unlock) done.")
+        # Reload the main page so we work from the post-unlock state with a
+        # fresh __ECNPAGEVIEWSTATE for the async postbacks that follow.
+        r_reload = self.session.get(WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
+        self._raise_if_forbidden(r_reload)
+        current_html = r_reload.text
+        _LOGGER.debug(
+            "Expert navigation step 2 (Fachmann unlock) done; reloaded main page "
+            "%d bytes, pagestate=%s",
+            len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
+        )
 
-        # Step 3: select the target module via its icon-menu postback.
+        # Step 3: select the target module via its icon-menu async postback.
         current_html = self._postback(
             WEB_DEFAULT_URL, current_html,
             event_target=EXPERT_MODULE_MENU_TARGET,
@@ -254,9 +266,20 @@ class WemPortalExpertClient:
             pass
         return fields
 
-    def _postback(self, url, current_html, event_target, event_argument=""):
+    def _postback(self, url, current_html, event_target, event_argument="",
+                  async_postback=True):
         """Perform one ASP.NET postback, carrying over the current page's
-        hidden fields, and return the resulting page HTML for the next step."""
+        hidden fields, and return the resulting page HTML for the next step.
+
+        Two shapes exist in this portal's navigation (confirmed via HAR):
+        - async_postback=True: a Telerik RadAjax async postback. Sends
+          __ASYNCPOST=true in the body plus the X-MicrosoftAjax:Delta=true
+          header; the response is a delta stream. Used for module select
+          and the timer polls.
+        - async_postback=False: a classic full postback that ends in a 302
+          redirect to the reloaded page. No async field, no async header,
+          follow the redirect. Used for the submenu (Fachmann) unlock.
+        """
         fields = self._hidden_fields(current_html)
         # Diagnostics: if the carried-over page state is missing/empty the
         # server won't advance the session state, and the chain fails
@@ -269,17 +292,30 @@ class WemPortalExpertClient:
             )
         fields["__EVENTTARGET"] = event_target
         fields["__EVENTARGUMENT"] = event_argument
+
         self._check_cooldown()
-        resp = self.session.post(
-            url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-            headers={"X-MicrosoftAjax": "Delta=true"},
-        )
+        if async_postback:
+            # Telerik async postback: marker field + header, response is a
+            # delta stream we keep parsing for the next state.
+            fields[EXPERT_ASYNCPOST_FIELD] = "true"
+            resp = self.session.post(
+                url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+                headers={"X-MicrosoftAjax": "Delta=true"},
+            )
+        else:
+            # Full postback ending in a 302 -> follow it to the reloaded
+            # page, whose HTML carries the fresh state for the next step.
+            resp = self.session.post(
+                url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+                allow_redirects=True,
+            )
         self._raise_if_forbidden(resp)
         if WEB_LOGIN_URL.lower() in resp.url.lower():
             raise AuthError("Expert client: session expired during navigation.")
         _LOGGER.debug(
-            "Expert navigation: postback %s -> %d bytes, delta=%s, pagestate=%s",
-            event_target, len(resp.text), "|hiddenField|" in resp.text,
+            "Expert navigation: postback %s (async=%s) -> %d bytes, delta=%s, pagestate=%s",
+            event_target, async_postback, len(resp.text),
+            "|hiddenField|" in resp.text,
             self._has_viewstate(self._hidden_fields(resp.text)),
         )
         return resp.text

@@ -4,6 +4,19 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.14] – 2026-07-06
+
+### Fixed
+- **Expert navigation: correct postback shapes.** The navigation postbacks
+  were all modeled as Telerik async postbacks, which the server rejected.
+  In fact the submenu (Fachmann) unlock is a classic full postback ending
+  in a 302 redirect - no `__ASYNCPOST` field, no `X-MicrosoftAjax` header -
+  while the module-select and timer postbacks are async postbacks that need
+  `__ASYNCPOST=true` in the body in addition to the header. `_postback` now
+  distinguishes the two shapes, and the main page is reloaded after the
+  unlock so the async postbacks start from the post-unlock state with a
+  fresh `__ECNPAGEVIEWSTATE`.
+
 ## [1.7.13] – 2026-07-06
 
 ### Fixed
