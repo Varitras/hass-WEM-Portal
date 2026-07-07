@@ -6,6 +6,17 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.3] – 2026-07-07
+
+### Fixed
+- **A stored invalid slot ID (e.g. a leftover `0`) can now be cleared.**
+  The slot fields used `default`, so clearing a field on save fell back to
+  the stored value - making it impossible to delete an invalid entry: it
+  could neither be saved (rejected as invalid) nor removed (reverted to the
+  old value). The fields now use `suggested_value`, which prefills the
+  current value but lets an emptied field stay empty, so a stray value can
+  be deleted.
+
 ## [1.8.2] – 2026-07-07
 
 ### Fixed
