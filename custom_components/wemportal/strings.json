@@ -50,9 +50,13 @@
           "expert_slot_10_name": "Expert parameter 10: name (optional)",
           "expert_slot_10_id": "Expert parameter 10: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
           "expert_enable_module_nav": "⚠ Only if you know what you are doing! Enable module select (default = off, normally unnecessary).",
-          "expert_enable_security_code": "⚠ Only if you know what you are doing! Enable security-code step (default = off, normally unnecessary)."
+          "expert_enable_security_code": "⚠ Only if you know what you are doing! Enable security-code step (default = off, normally unnecessary).",
+          "expert_notify_on_success": "Show a notification after a successful expert write (default = off; failures are always reported)"
         }
       }
+    },
+    "error": {
+      "invalid_entityvalue": "Invalid entityvalue ID: only hex characters (0-9, A-F) are allowed."
     }
   }
 }

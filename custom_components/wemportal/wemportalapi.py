@@ -156,9 +156,15 @@ class WemPortalApi:
         if we're still within a cooldown period from a previous 403."""
         if self._blocked_until and time.monotonic() < self._blocked_until:
             remaining = int(self._blocked_until - time.monotonic())
+            # Human-readable: minutes for anything over a minute, so the
+            # message surfaced in the frontend is immediately meaningful.
+            if remaining >= 60:
+                remaining_str = f"~{(remaining + 59) // 60} min"
+            else:
+                remaining_str = f"{remaining}s"
             raise ForbiddenError(
                 f"Still cooling down after a previous rate-limit response "
-                f"({remaining}s remaining). Skipping requests until then."
+                f"({remaining_str} remaining). Skipping requests until then."
             )
 
     def fetch_data(self, enabled_devices=None):

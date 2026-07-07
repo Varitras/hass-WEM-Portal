@@ -15,7 +15,30 @@ from .const import (
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
     ENERGY_POWER_KEYWORDS,
+    DOMAIN,
 )
+
+
+def build_device_info(entry_id, device_id, sw_version=None):
+    """Build the DeviceInfo dict for a WEM Portal sub-device.
+
+    Every entity platform (number, select, sensor, switch) exposes the same
+    per-device identity - a child device keyed by "<entry_id>:<device_id>"
+    that links back to the integration hub via via_device. Centralizing it
+    here keeps the four platforms in sync; previously each duplicated the
+    same dict. `sw_version` is optional (only the sensor platform has an
+    API version to report).
+    """
+    info = {
+        "identifiers": {(DOMAIN, f"{entry_id}:{device_id}")},
+        "via_device": (DOMAIN, entry_id),
+        "name": str(device_id),
+        "manufacturer": "Weishaupt",
+        "model": "WEM Portal",
+    }
+    if sw_version:
+        info["sw_version"] = sw_version
+    return info
 
 
 def sanitize_value(value_str, unit=None, name=""):
@@ -39,8 +62,10 @@ def sanitize_value(value_str, unit=None, name=""):
             reading/spike on the Home Assistant Energy Dashboard).
 
     Returns:
-        A float for numeric/boolean values, or the original string if it
-        can't be interpreted as a number or known boolean placeholder.
+        A float for numeric/boolean values; None for empty or "missing
+        data" values (the sensor then shows as unavailable rather than
+        reporting a fabricated 0); or the original string if it can't be
+        interpreted as a number or known boolean/placeholder.
 
     Note on boolean handling: "Ein"/"On"/"Aus"/"Off" are ALWAYS mapped to
     1.0/0.0 here, never to text, regardless of `unit`. An earlier version
@@ -59,6 +84,17 @@ def sanitize_value(value_str, unit=None, name=""):
         return value_str
 
     val_lower = value_str.lower().strip()
+
+    # An empty or whitespace-only string is missing data, not a real value.
+    # The portal occasionally sends "" for a parameter (e.g. a value that
+    # didn't serialize, or a momentarily absent reading). Left as-is it
+    # reaches a numeric sensor and crashes entity setup with
+    # "could not convert string to float: ''". Return None (HA shows the
+    # sensor as "unavailable") rather than a fabricated 0.0 - a room sensor
+    # briefly without a reading should not report 0 degrees. This is the
+    # same honesty the energy/power branch below already applies.
+    if val_lower == "":
+        return None
 
     if val_lower in [x.strip() for x in MISSING_DATA_STRINGS]:
         name_lower = name.lower()

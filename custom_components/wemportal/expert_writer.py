@@ -76,6 +76,18 @@ EXPERT_PARAMETER_URL = (
 VALUE_FIELD_ID = "ctl00_DialogContent_ddlNewValue"
 
 
+def _short_ev(entityvalue: str) -> str:
+    """Shortened entityvalue for user-visible log/notification text.
+
+    entityvalues are installation-specific and shouldn't end up verbatim in
+    text people copy into issues/forums. Debug-level logs keep the full id
+    (needed for troubleshooting); info/warning/error and notifications use
+    this shortened form.
+    """
+    ev = entityvalue or ""
+    return f"{ev[:6]}…" if len(ev) > 6 else ev
+
+
 class ExpertParameterState:
     """Parsed state of one expert parameter's edit form."""
 
@@ -653,7 +665,7 @@ class WemPortalExpertClient:
                     raise
                 except Exception as exc:  # pylint: disable=broad-except
                     _LOGGER.warning(
-                        "Expert auto-poll: reading %s failed: %s", entityvalue, exc
+                        "Expert auto-poll: reading %s failed: %s", _short_ev(entityvalue), exc
                     )
                     result[entityvalue] = None
         finally:
@@ -730,7 +742,7 @@ class WemPortalExpertClient:
                     f"expected {value_f}. The portal may have rejected the value."
                 )
             _LOGGER.info(
-                "Expert parameter %s written and verified: %s", entityvalue, value_f
+                "Expert parameter %s written and verified: %s", _short_ev(entityvalue), value_f
             )
             return verify
         finally:
@@ -881,7 +893,7 @@ try:
     from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
     from homeassistant.core import callback
     from homeassistant.exceptions import HomeAssistantError
-    from homeassistant.helpers.entity import DeviceInfo
+    from homeassistant.helpers.device_registry import DeviceInfo
     from .const import DOMAIN
 
     class WemPortalExpertNumber(RestoreNumber):
@@ -936,9 +948,18 @@ try:
 
             Called by the hourly auto-poll after reading the parameter in a
             shared session. Updates the value and the live device range, then
-            writes HA state. A no-op if state is None (read failed for this id).
+            writes HA state. A no-op if state is None (read failed for this
+            id) or while a write is in flight - a poll that started before
+            the write carries the pre-write value, and applying it would
+            briefly overwrite the freshly verified one.
             """
             if state is None:
+                return
+            if self._write_in_progress:
+                _LOGGER.debug(
+                    "Discarding poll result for %s: a write is in progress.",
+                    self._attr_name,
+                )
                 return
             self._attr_native_value = state.current
             if state.min_value is not None:
@@ -1005,7 +1026,16 @@ try:
             self._notify(f"{self._attr_name} set to {state.current}.", success=True)
 
         def _notify(self, message: str, success: bool) -> None:
-            """Report the background write outcome via a persistent notification."""
+            """Report the background write outcome via a persistent notification.
+
+            Failures always notify. Success only notifies when the user
+            enabled CONF_EXPERT_NOTIFY_ON_SUCCESS (off by default) - the
+            success is logged regardless.
+            """
+            if success:
+                from .const import CONF_EXPERT_NOTIFY_ON_SUCCESS
+                if not self._config_entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
+                    return
             self.hass.async_create_task(
                 self.hass.services.async_call(
                     "persistent_notification",

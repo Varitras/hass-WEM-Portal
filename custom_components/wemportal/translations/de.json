@@ -52,9 +52,13 @@
           "expert_slot_10_name": "Experten-Parameter 10: Name (optional)",
           "expert_slot_10_id": "Experten-Parameter 10: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
           "expert_enable_module_nav": "⚠ Nur wenn du weißt, was du tust! Modul-Auswahl aktivieren (Standard = aus, normalerweise nicht nötig).",
-          "expert_enable_security_code": "⚠ Nur wenn du weißt, was du tust! Sicherheitscode-Schritt aktivieren (Standard = aus, normalerweise nicht nötig)."
+          "expert_enable_security_code": "⚠ Nur wenn du weißt, was du tust! Sicherheitscode-Schritt aktivieren (Standard = aus, normalerweise nicht nötig).",
+          "expert_notify_on_success": "Bei erfolgreichem Experten-Schreibvorgang eine Benachrichtigung anzeigen (Standard = aus; Fehler werden immer gemeldet)"
         }
       }
+    },
+    "error": {
+      "invalid_entityvalue": "Ungültige entityvalue-ID: nur Hex-Zeichen (0-9, A-F) erlaubt."
     }
   }
 }

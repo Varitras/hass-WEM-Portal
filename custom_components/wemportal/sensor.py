@@ -6,14 +6,14 @@ from homeassistant.components.sensor import SensorEntity, RestoreSensor
 from homeassistant.config_entries import ConfigEntry
 
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.const import EntityCategory
 
 from .const import _LOGGER, DOMAIN
 from . import get_wemportal_unique_id
-from .utils import (fix_value_and_uom, uom_to_device_class, uom_to_state_class)
+from .utils import (fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
 
 
 async def async_setup_entry(
@@ -151,18 +151,12 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
     @property
     def device_info(self) -> DeviceInfo:
         """Get device information."""
-        info = {
-            "identifiers": {
-                (DOMAIN, f"{self._config_entry.entry_id}:{str(self._device_id)}")
-            },
-            "via_device": (DOMAIN, self._config_entry.entry_id),
-            "name": str(self._device_id),
-            "manufacturer": "Weishaupt",
-            "model": "WEM Portal",
-        }
+        sw_version = None
         if hasattr(self.coordinator.api, "api_version") and self.coordinator.api.api_version:
-            info["sw_version"] = self.coordinator.api.api_version
-        return info
+            sw_version = self.coordinator.api.api_version
+        return build_device_info(
+            self._config_entry.entry_id, self._device_id, sw_version=sw_version
+        )
 
     @property
     def available(self):

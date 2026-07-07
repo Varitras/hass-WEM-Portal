@@ -5,13 +5,13 @@ Switch platform for wemportal component
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import _LOGGER, DOMAIN
 from . import get_wemportal_unique_id
-from .utils import (fix_value_and_uom)
+from .utils import (fix_value_and_uom, build_device_info)
 
 # Recognized "on" values, covering both the numeric form (API path) and the
 # German/English text forms a value may arrive in (e.g. depending on the
@@ -92,14 +92,7 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Get device information."""
-        return {
-            "identifiers": {
-                (DOMAIN, f"{self._config_entry.entry_id}:{str(self._device_id)}")
-            },
-            "via_device": (DOMAIN, self._config_entry.entry_id),
-            "name": str(self._device_id),
-            "manufacturer": "Weishaupt",
-        }
+        return build_device_info(self._config_entry.entry_id, self._device_id)
 
     async def async_turn_on(self, **kwargs) -> None:
         await self.hass.async_add_executor_job(

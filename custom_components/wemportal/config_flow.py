@@ -30,6 +30,7 @@ from .const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_AUTO_POLL,
     CONF_EXPERT_POLL_INTERVAL,
+    CONF_EXPERT_NOTIFY_ON_SUCCESS,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
     CONF_EXPERT_ENABLE_MODULE_NAV,
@@ -130,35 +131,62 @@ class WemportalOptionsFlow(OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""
+        errors = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            # Validate the ten expert slot IDs on save: an entityvalue must
+            # be a plain hex string. Catching a typo here (with the field
+            # marked in the form) beats a cryptic failure on the first
+            # read/write minutes later. Whitespace is stripped, empty is fine.
+            import re
+            for i in range(1, EXPERT_SLOT_COUNT + 1):
+                id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
+                raw = (user_input.get(id_key) or "").strip()
+                user_input[id_key] = raw  # persist the stripped value
+                if raw and not re.fullmatch(r"[0-9A-Fa-f]+", raw):
+                    errors[id_key] = "invalid_entityvalue"
+            if not errors:
+                return self.async_create_entry(title="", data=user_input)
+
+        # On an error redisplay, prefill the form with what the user just
+        # typed (so nothing has to be re-entered); otherwise with the
+        # stored options.
+        source = user_input if user_input is not None else self.config_entry.options
+        self._opt = lambda key, fallback: source.get(key, fallback)
         return self.async_show_form(
             step_id="init",
+            errors=errors,
             data_schema=vol.Schema(
                 {
                     vol.Optional(
                         CONF_SCAN_INTERVAL,
-                        default=self.config_entry.options.get(CONF_SCAN_INTERVAL, 1800),
+                        default=self._opt(CONF_SCAN_INTERVAL, 1800),
                     ): config_validation.positive_int,
                     vol.Optional(
                         CONF_SCAN_INTERVAL_API,
-                        default=self.config_entry.options.get(
-                            CONF_SCAN_INTERVAL_API, 300
+                        default=self._opt(CONF_SCAN_INTERVAL_API, 300
                         ),
                     ): config_validation.positive_int,
                     vol.Optional(
                         CONF_LANGUAGE,
-                        default=self.config_entry.options.get(CONF_LANGUAGE, "en"),
+                        default=self._opt(CONF_LANGUAGE, "en"),
                     ): config_validation.string,
                     
                     vol.Optional(
-                        CONF_MODE, default=self.config_entry.options.get(CONF_MODE, DEFAULT_MODE)
+                        CONF_MODE, default=self._opt(CONF_MODE, DEFAULT_MODE)
                         ): vol.In(AVAILABLE_MODES),
                     # Expert write access (web) - off by default. Entities/
                     # service only exist while this is enabled.
                     vol.Optional(
                         CONF_EXPERT_WRITE,
-                        default=self.config_entry.options.get(CONF_EXPERT_WRITE, False),
+                        default=self._opt(CONF_EXPERT_WRITE, False),
+                    ): config_validation.boolean,
+                    # Post a persistent notification after a SUCCESSFUL expert
+                    # write. OFF by default (noisy when setting several
+                    # values); failures always notify regardless.
+                    vol.Optional(
+                        CONF_EXPERT_NOTIFY_ON_SUCCESS,
+                        default=self._opt(CONF_EXPERT_NOTIFY_ON_SUCCESS, False
+                        ),
                     ): config_validation.boolean,
                     # Optional periodic read-back of the configured expert
                     # parameters - OFF by default (each read is a full
@@ -167,12 +195,11 @@ class WemportalOptionsFlow(OptionsFlow):
                     # MIN_EXPERT_POLL_INTERVAL_MINUTES.
                     vol.Optional(
                         CONF_EXPERT_AUTO_POLL,
-                        default=self.config_entry.options.get(CONF_EXPERT_AUTO_POLL, False),
+                        default=self._opt(CONF_EXPERT_AUTO_POLL, False),
                     ): config_validation.boolean,
                     vol.Optional(
                         CONF_EXPERT_POLL_INTERVAL,
-                        default=self.config_entry.options.get(
-                            CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+                        default=self._opt(CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
                         ),
                     ): vol.All(
                         config_validation.positive_int,
@@ -186,8 +213,7 @@ class WemportalOptionsFlow(OptionsFlow):
                     # module layout where reads/writes otherwise fail.
                     vol.Optional(
                         CONF_EXPERT_ENABLE_MODULE_NAV,
-                        default=self.config_entry.options.get(
-                            CONF_EXPERT_ENABLE_MODULE_NAV, False
+                        default=self._opt(CONF_EXPERT_ENABLE_MODULE_NAV, False
                         ),
                     ): config_validation.boolean,
                     # Module menu index used ONLY when module select is
@@ -195,14 +221,12 @@ class WemportalOptionsFlow(OptionsFlow):
                     # reference install.
                     vol.Optional(
                         CONF_EXPERT_MODULE_ARG,
-                        default=self.config_entry.options.get(
-                            CONF_EXPERT_MODULE_ARG, ""
+                        default=self._opt(CONF_EXPERT_MODULE_ARG, ""
                         ),
                     ): config_validation.string,
                     vol.Optional(
                         CONF_EXPERT_ENABLE_SECURITY_CODE,
-                        default=self.config_entry.options.get(
-                            CONF_EXPERT_ENABLE_SECURITY_CODE, False
+                        default=self._opt(CONF_EXPERT_ENABLE_SECURITY_CODE, False
                         ),
                     ): config_validation.boolean,
                     # Ten generic expert-parameter slots (name + entityvalue
@@ -216,20 +240,20 @@ class WemportalOptionsFlow(OptionsFlow):
     def _expert_slot_schema(self):
         """Build the vol schema fields for the ten generic expert slots.
 
-        Each slot is a name field and an entityvalue-id field, both optional
-        and defaulting to any previously stored value. Kept as a helper so
-        the ten slots don't bloat the main schema literal.
+        Each slot is a name field and an entityvalue-id field, both optional.
+        Defaults come from self._opt, which prefers the just-submitted user
+        input on an error redisplay over the stored options, so a validation
+        error never wipes what the user typed.
         """
-        opts = self.config_entry.options
         fields = {}
         for i in range(1, EXPERT_SLOT_COUNT + 1):
             name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % i
             id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
             fields[
-                vol.Optional(name_key, default=opts.get(name_key, ""))
+                vol.Optional(name_key, default=self._opt(name_key, ""))
             ] = config_validation.string
             fields[
-                vol.Optional(id_key, default=opts.get(id_key, ""))
+                vol.Optional(id_key, default=self._opt(id_key, ""))
             ] = config_validation.string
         return fields
 

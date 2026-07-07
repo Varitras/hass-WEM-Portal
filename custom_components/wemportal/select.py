@@ -5,13 +5,14 @@ Select platform for wemportal component
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, _LOGGER, BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
 from . import get_wemportal_unique_id
-from fuzzywuzzy import process
+from .utils import build_device_info
+import difflib
 
 
 async def async_setup_entry(
@@ -98,9 +99,15 @@ class WemPortalSelect(CoordinatorEntity, SelectEntity):
             return synonym_match
 
         if val is not None and self._options_names:
-            best_match, score = process.extractOne(str(val), self._options_names)
-            if score >= 75:
-                return best_match
+            # Last-resort fuzzy match against the option names. Uses stdlib
+            # difflib (no external dependency); its 0.0-1.0 ratio cutoff of
+            # 0.75 mirrors the previous fuzzywuzzy score threshold of 75.
+            # Only string option names can be compared, so non-str options
+            # are filtered out first.
+            str_names = [n for n in self._options_names if isinstance(n, str)]
+            matches = difflib.get_close_matches(str(val), str_names, n=1, cutoff=0.75)
+            if matches:
+                return matches[0]
         raise ValueError
 
     def __init__(
@@ -154,14 +161,7 @@ class WemPortalSelect(CoordinatorEntity, SelectEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Get device information."""
-        return {
-            "identifiers": {
-                (DOMAIN, f"{self._config_entry.entry_id}:{self._device_id}")
-            },
-            "via_device": (DOMAIN, self._config_entry.entry_id),
-            "name": str(self._device_id),
-            "manufacturer": "Weishaupt",
-        }
+        return build_device_info(self._config_entry.entry_id, self._device_id)
 
     @property
     def available(self):

@@ -136,9 +136,13 @@ successful write (or the first periodic read), the entity shows the
 verified value and its min/max tighten to the device's real allowed range.
 
 A write runs as a **background task**: setting the number or calling the
-service returns immediately, and the result is reported via a **persistent
-notification** and the log once finished. A second write is rejected while
-one is still running.
+service returns immediately, and the outcome is written to the log once
+finished. A second write is rejected while one is still running.
+
+Failed writes always raise a **persistent notification**. Successful writes
+do **not** notify by default (that gets noisy when setting several values);
+enable **`Notify on successful expert write`** in the options if you want a
+confirmation popup on success too.
 
 ### Periodic read-back (optional, off by default)
 

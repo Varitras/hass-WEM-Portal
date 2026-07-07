@@ -25,6 +25,7 @@ from .const import (
     CONF_EXPERT_WRITE,
     CONF_EXPERT_AUTO_POLL,
     CONF_EXPERT_POLL_INTERVAL,
+    CONF_EXPERT_NOTIFY_ON_SUCCESS,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
     CONF_EXPERT_MODULE_ARG,
@@ -261,15 +262,20 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             # navigation + write + verify) - still longer than a frontend
             # service call comfortably waits, so run it detached and report
             # the outcome via a persistent notification + the log.
+            # entityvalues are installation-specific; only a shortened form
+            # appears in log/notification TEXT (which people copy into
+            # issues/forums). The internal notification_id keeps the full
+            # id - it is never displayed.
+            ev_short = f"{entityvalue[:6]}…" if len(entityvalue) > 6 else entityvalue
             try:
                 state = await hass.async_add_executor_job(_do_write)
             except Exception as exc:  # pylint: disable=broad-except
-                _LOGGER.error("Expert write failed for %s: %s", entityvalue, exc)
+                _LOGGER.error("Expert write failed for %s: %s", ev_short, exc)
                 await hass.services.async_call(
                     "persistent_notification", "create",
                     {
                         "title": "WEM Portal expert write failed",
-                        "message": f"Setting {entityvalue} to {value} failed: {exc}",
+                        "message": f"Setting {ev_short} to {value} failed: {exc}",
                         "notification_id": f"wemportal_expert_{entityvalue}",
                     },
                     blocking=False,
@@ -277,17 +283,18 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
                 return
             _LOGGER.info(
                 "Expert parameter %s set to %s (allowed range %s..%s)",
-                entityvalue, state.current, state.min_value, state.max_value,
+                ev_short, state.current, state.min_value, state.max_value,
             )
-            await hass.services.async_call(
-                "persistent_notification", "create",
-                {
-                    "title": "WEM Portal expert write",
-                    "message": f"{entityvalue} set to {state.current}.",
-                    "notification_id": f"wemportal_expert_{entityvalue}",
-                },
-                blocking=False,
-            )
+            if entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
+                await hass.services.async_call(
+                    "persistent_notification", "create",
+                    {
+                        "title": "WEM Portal expert write",
+                        "message": f"{ev_short} set to {state.current}.",
+                        "notification_id": f"wemportal_expert_{entityvalue}",
+                    },
+                    blocking=False,
+                )
 
         # Return immediately; the write continues in the background.
         hass.async_create_background_task(
@@ -354,6 +361,16 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
             entityvalues = [e.entityvalue for e in entities]
             if not entityvalues:
                 return
+            # Collision guard: if any entity write is in flight, skip this
+            # cycle instead of opening a second concurrent portal session.
+            # Reading in parallel could also briefly write a pre-write
+            # (stale) value back into an entity right after its verified
+            # write. The next scheduled poll picks things up again.
+            if any(getattr(e, "_write_in_progress", False) for e in entities):
+                _LOGGER.debug(
+                    "Expert auto-poll: a write is in progress, skipping this cycle."
+                )
+                return
             def _do_read():
                 from .expert_writer import expert_client_options
                 client = WemPortalExpertClient(
@@ -369,8 +386,40 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
             except Exception as exc:  # pylint: disable=broad-except
                 _LOGGER.warning("Expert auto-poll read failed: %s", exc)
                 return
+            # Per-id consecutive-failure tracking: a persistently failing id
+            # (usually a typo'd entityvalue) would otherwise only produce an
+            # hourly debug/warning nobody sees. After 3 consecutive failures
+            # raise ONE notification per id; reset on the next success so a
+            # recurring problem re-notifies at most once per streak.
+            fail_counts = store.setdefault("expert_poll_fail_counts", {})
+            notified = store.setdefault("expert_poll_fail_notified", set())
             for entity in entities:
-                entity.apply_read_state(results.get(entity.entityvalue))
+                state = results.get(entity.entityvalue)
+                ev = entity.entityvalue
+                if state is None:
+                    fail_counts[ev] = fail_counts.get(ev, 0) + 1
+                    if fail_counts[ev] >= 3 and ev not in notified:
+                        notified.add(ev)
+                        hass.async_create_task(
+                            hass.services.async_call(
+                                "persistent_notification", "create",
+                                {
+                                    "title": "WEM Portal expert auto-poll",
+                                    "message": (
+                                        f"Reading '{entity.name}' has failed "
+                                        f"{fail_counts[ev]} times in a row. "
+                                        "Check the configured entityvalue ID "
+                                        "in the integration options."
+                                    ),
+                                    "notification_id": f"wemportal_poll_fail_{ev}",
+                                },
+                                blocking=False,
+                            )
+                        )
+                else:
+                    fail_counts.pop(ev, None)
+                    notified.discard(ev)
+                entity.apply_read_state(state)
         finally:
             # Always reschedule the next run (with fresh jitter), even if this
             # cycle failed - a transient error must not stop future polls.

@@ -4,6 +4,61 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [1.8.0] – 2026-07-07
+
+### Added
+- **Option to notify on successful expert writes** (`Notify on successful
+  expert write`), off by default. A successful write no longer posts a
+  persistent notification unless this is enabled, which avoids notification
+  noise when setting several values. Failed writes always notify, and
+  successes are still written to the log regardless.
+- **Expert slot IDs are validated when saving the options** (hex-only): a
+  typo'd entityvalue is flagged directly in the form instead of failing
+  cryptically on the first read/write. Entered values are preserved on the
+  error redisplay.
+- **Persistent auto-poll failures now surface**: if reading a configured
+  parameter fails 3 times in a row (usually a mistyped entityvalue), one
+  notification per id is raised; it resets on the next successful read.
+
+### Changed
+- **Dropped the `fuzzywuzzy` and `python-Levenshtein` dependencies.** The
+  select platform's last-resort fuzzy option matching now uses Python's
+  standard-library `difflib` (same 0.75 similarity cutoff), removing two
+  external requirements - including one that needs C compilation and could
+  fail to install on some architectures. `fuzzywuzzy` was also deprecated
+  (renamed to `thefuzz` upstream).
+- **Centralized the per-device `DeviceInfo`** into a single
+  `build_device_info()` helper in `utils.py`, replacing the block that was
+  duplicated across the number, select, sensor, and switch platforms. All
+  four sub-devices now report a consistent model.
+- **`DeviceInfo` is now imported from `homeassistant.helpers.device_registry`**
+  (the current location) instead of the legacy `homeassistant.helpers.entity`
+  re-export, in all five entity platform modules - future-proofing against
+  the eventual removal of the old import path.
+- **Installation-specific entityvalue IDs are shortened** in log messages
+  and notification texts (first 6 characters + ellipsis), so copying logs
+  into issues or forums no longer leaks the full id. Debug-level logs keep
+  the full id for troubleshooting.
+- **Rate-limit cooldown errors now show the remaining time in minutes**
+  instead of raw seconds.
+
+### Fixed
+- **Empty parameter values no longer crash numeric sensors** (matches
+  upstream issue #141). When the portal sends an empty string for a
+  parameter, `sanitize_value()` now returns `None` (the sensor shows as
+  "unavailable") instead of passing the empty string through, which on a
+  numeric sensor raised "could not convert string to float: ''" during
+  entity setup. A fabricated `0.0` is deliberately avoided so a sensor
+  briefly without a reading doesn't report a false zero. (The sensor
+  platform already had a second guard for this; the value source is now
+  correct too.)
+- **Auto-poll no longer collides with a running write**: a poll cycle is
+  skipped while a write is in flight, and a poll result that arrives during
+  a write is discarded - previously a stale pre-write value could briefly
+  overwrite the freshly verified one.
+
 ## [1.7.0] – 2026-07-07
 
 First release of this fork, based on upstream
