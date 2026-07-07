@@ -205,6 +205,33 @@ different portal or module layout needs them:
   enable periodic read-back, keep the interval generous (the minimum is
   15 minutes) so you don't provoke a temporary block.
 
+### About the entityvalue ID (background)
+
+The `entityvalue` is a fixed-length hex string that encodes several things
+at once. Understanding this helps explain why the feature works the way it
+does. Note that this description was derived by observation, not from vendor
+documentation, and may not hold for every model.
+
+- Part of the ID is an **address** (which category and which parameter),
+  and part of it is **installation-specific** - it identifies your specific
+  system. The same parameter on a different installation has a different ID.
+  For this reason you should treat your IDs as private (don't post them in
+  issues or forums), and you must **not** copy an ID from someone else: on
+  your system it would address a *different* parameter, and writing to it
+  could change something unintended.
+- The ID also carries a **snapshot of the current value** at the moment it
+  was read from the parameter list. That embedded value is not part of the
+  stable address - the portal ignores it when opening the dialog. This is
+  why a stored ID keeps working even after the underlying value has changed:
+  the integration re-opens the dialog, reads the current value from the
+  form's dropdown (not from the ID), and submits the new value. The ID
+  itself is never rewritten.
+- Because of this, do **not** try to "clean up" a stored ID by zeroing the
+  value portion. The integration deliberately uses the full ID exactly as
+  the portal itself does. After every write it re-reads the form and
+  verifies the new value was applied, which is the actual safeguard against
+  a mistyped or mismatched ID.
+
 ## Troubleshooting
 
 Please set logging for the custom component to debug:
