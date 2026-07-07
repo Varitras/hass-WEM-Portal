@@ -98,6 +98,13 @@ CONF_EXPERT_WRITE: Final = "expert_write_enabled"
 # as the entity's friendly name / slug source) and an entityvalue hex ID
 # (from the portal's parameter edit dialog). Empty slots are ignored.
 EXPERT_SLOT_COUNT: Final = 10
+
+# Minimum length for a slot entityvalue ID in the options-flow validation.
+# Real entityvalues are long hex strings (the known ones are 36 chars); this
+# floor rejects obvious stray entries like "0" or "abc" while staying well
+# below 36 so a slightly different length on another installation still
+# validates. Format is additionally checked to be hex.
+MIN_EXPERT_ENTITYVALUE_LENGTH: Final = 16
 CONF_EXPERT_SLOT_NAME_TEMPLATE: Final = "expert_slot_%d_name"
 CONF_EXPERT_SLOT_ID_TEMPLATE: Final = "expert_slot_%d_id"
 # Optional periodic read-back of the configured expert parameters. OFF by
