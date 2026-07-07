@@ -12,6 +12,12 @@ in [Home Assistant](https://home-assistant.io/).
 This is a fork of
 [erikkastelec/hass-WEM-Portal](https://github.com/erikkastelec/hass-WEM-Portal).
 
+> **Disclaimer:** This is a personal hobby/test project, developed for my own
+> setup and shared as-is. It is not an official integration, comes with no
+> warranty, and no support or maintenance is guaranteed. Use at your own risk
+> — especially the expert write feature, which changes settings on your real
+> heating system. Always verify changes in the WEM Portal itself.
+
 ## Installation
 
 ### HACS (custom repository)
