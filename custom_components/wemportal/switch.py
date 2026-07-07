@@ -5,13 +5,21 @@ Switch platform for wemportal component
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import _LOGGER, DOMAIN
 from . import get_wemportal_unique_id
-from .utils import (fix_value_and_uom)
+from .utils import (fix_value_and_uom, build_device_info)
+
+# Recognized "on" values, covering both the numeric form (API path) and the
+# German/English text forms a value may arrive in (e.g. depending on the
+# configured portal language, or whether it came via web scraping vs. the
+# API). Previously only `1.0`/`"on"` (lowercase) were recognized, which
+# meant a switch reporting "Ein" or "On" (capitalized) would silently and
+# incorrectly show as "off" in Home Assistant.
+WEM_SWITCH_ON_VALUES = (1, 1.0, "On", "on", "Ein", "ein")
 
 
 async def async_setup_entry(
@@ -27,7 +35,9 @@ async def async_setup_entry(
         for unique_id, values in entity_data.items():
             if isinstance(values, int):
                 continue
-            if values["platform"] == "switch":
+            # .get() instead of direct indexing: one malformed data point
+            # should not crash setup for every switch entity on this device.
+            if values.get("platform") == "switch":
                 entities.append(
                     WemPortalSwitch(
                         coordinator, config_entry, device_id, unique_id, values
@@ -51,7 +61,12 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
 
-        val, uom = fix_value_and_uom(entity_data["value"], entity_data["unit"])
+        # .get() with sensible fallbacks rather than direct indexing: an
+        # unexpected/malformed data point should degrade gracefully
+        # (skip this one entity's optional metadata) instead of raising a
+        # KeyError that would abort setup for every switch entity on this
+        # device.
+        val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
 
         self._last_updated = None
         self._config_entry = config_entry
@@ -62,29 +77,22 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
             self._config_entry.entry_id, str(self._device_id), str(_unique_id)
         )
 
-        self._parameter_id = entity_data["ParameterID"]
+        self._parameter_id = entity_data.get("ParameterID", _unique_id)
         self._data_key = _unique_id
-        self._attr_icon = entity_data["icon"]
+        self._attr_icon = entity_data.get("icon", "mdi:flash")
         self._attr_unit = uom
-        self._attr_is_on = (val == 1.0 or val == "on")
+        self._attr_is_on = val in WEM_SWITCH_ON_VALUES
         self._attr_should_poll = False
         self._attr_device_class = "switch"  # type: ignore
-        self._module_index = entity_data["ModuleIndex"]
-        self._module_type = entity_data["ModuleType"]
+        self._module_index = entity_data.get("ModuleIndex")
+        self._module_type = entity_data.get("ModuleType")
 
         _LOGGER.debug('Init switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
 
     @property
     def device_info(self) -> DeviceInfo:
         """Get device information."""
-        return {
-            "identifiers": {
-                (DOMAIN, f"{self._config_entry.entry_id}:{str(self._device_id)}")
-            },
-            "via_device": (DOMAIN, self._config_entry.entry_id),
-            "name": str(self._device_id),
-            "manufacturer": "Weishaupt",
-        }
+        return build_device_info(self._config_entry.entry_id, self._device_id)
 
     async def async_turn_on(self, **kwargs) -> None:
         await self.hass.async_add_executor_job(
@@ -120,7 +128,7 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         """Handle updated data from the coordinator."""
         try:
             temp_val = self.coordinator.data[self._device_id][self._data_key]["value"]
-            self._attr_is_on = (temp_val == 1)
+            self._attr_is_on = temp_val in WEM_SWITCH_ON_VALUES
             
             _LOGGER.debug('Update switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
 

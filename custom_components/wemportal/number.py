@@ -8,9 +8,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import get_wemportal_unique_id
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from .const import _LOGGER, DOMAIN
-from .utils import (fix_value_and_uom, uom_to_device_class)
+from .utils import (fix_value_and_uom, uom_to_device_class, build_device_info)
 
 
 async def async_setup_entry(
@@ -26,7 +26,9 @@ async def async_setup_entry(
         for unique_id, values in entity_data.items():
             if isinstance(values, int):
                 continue
-            if values["platform"] == "number":
+            # .get() instead of direct indexing: one malformed data point
+            # should not crash setup for every number entity on this device.
+            if values.get("platform") == "number":
                 entities.append(
                     WemPortalNumber(
                         coordinator, config_entry, device_id, unique_id, values
@@ -35,17 +37,37 @@ async def async_setup_entry(
 
     async_add_entities(entities)
 
+    # Expert write access (web): add the configured expert numbers.
+    # Returns [] unless the option is enabled - lazy import keeps the
+    # expert module out of the load path while disabled.
+    from .expert_writer import create_expert_number_entities
+    expert_entities = create_expert_number_entities(config_entry)
+    if expert_entities:
+        async_add_entities(expert_entities)
+        # Expose them to the optional hourly auto-poll (set up in __init__),
+        # which reads all configured ids in one shared session and pushes the
+        # values back into these entities.
+        store = hass.data[DOMAIN][config_entry.entry_id]
+        store["expert_entities"] = expert_entities
+        start_poll = store.get("start_expert_auto_poll")
+        if start_poll is not None:
+            start_poll()
+
 
 class WemPortalNumber(CoordinatorEntity, NumberEntity):
     """Representation of a WEM Portal number."""
 
-    def _validated_native_value(self, val, uom):
-        """Return a Home Assistant-safe native value."""
-        effective_uom = uom
-        if effective_uom in (None, ""):
-            effective_uom = getattr(self, "_attr_native_unit_of_measurement", None)
-        is_numeric_sensor = effective_uom not in (None, "")
+    def _validated_native_value(self, val):
+        """Return a Home Assistant-safe native value.
 
+        Unlike sensor.py (where a value can legitimately be text when no
+        device_class is set), a NumberEntity's native_value is ALWAYS
+        required to be numeric - there is no valid "text" state for a
+        number input. So this always attempts the numeric conversion,
+        rather than only doing so when a unit happens to be present this
+        cycle (which previously could let a non-numeric string slip
+        through uncaught whenever the per-cycle unit was empty).
+        """
         if val is None:
             _LOGGER.warning('Invalid number value for "%s": %r -> set to None', self._attr_name, val)
             return None
@@ -56,12 +78,11 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
                 _LOGGER.warning('Invalid number value for "%s": %r -> set to None', self._attr_name, val)
                 return None
 
-        if is_numeric_sensor:
-            try:
-                float(val)
-            except (TypeError, ValueError):
-                _LOGGER.warning('Invalid numeric number value for "%s": %r -> set to None', self._attr_name, val)
-                return None
+        try:
+            float(val)
+        except (TypeError, ValueError):
+            _LOGGER.warning('Invalid numeric number value for "%s": %r -> set to None', self._attr_name, val)
+            return None
 
         return val
 
@@ -71,7 +92,12 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
 
-        val, uom = fix_value_and_uom(entity_data["value"], entity_data["unit"])
+        # .get() with sensible fallbacks rather than direct indexing: an
+        # unexpected/malformed data point should degrade gracefully
+        # (skip this one entity's optional metadata) instead of raising a
+        # KeyError that would abort setup for every number entity on this
+        # device.
+        val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
 
         self._config_entry = config_entry
         self._device_id = device_id
@@ -81,17 +107,17 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
             self._config_entry.entry_id, str(self._device_id), str(_unique_id)
         )
         self._last_updated = None
-        self._parameter_id = entity_data["ParameterID"]
+        self._parameter_id = entity_data.get("ParameterID", _unique_id)
         self._data_key = _unique_id
-        self._attr_icon = entity_data["icon"]
+        self._attr_icon = entity_data.get("icon", "mdi:flash")
         self._attr_native_unit_of_measurement = uom
-        self._attr_native_value = self._validated_native_value(val, uom)
-        self._attr_native_min_value = entity_data["min_value"]
-        self._attr_native_max_value = entity_data["max_value"]
-        self._attr_native_step = entity_data["step"]
+        self._attr_native_value = self._validated_native_value(val)
+        self._attr_native_min_value = entity_data.get("min_value", 0.0)
+        self._attr_native_max_value = entity_data.get("max_value", 100.0)
+        self._attr_native_step = entity_data.get("step", 1)
         self._attr_should_poll = False
-        self._module_index = entity_data["ModuleIndex"]
-        self._module_type = entity_data["ModuleType"]
+        self._module_index = entity_data.get("ModuleIndex")
+        self._module_type = entity_data.get("ModuleType")
 
         _LOGGER.debug(
             'Init number: %s: "%s" [%s]', 
@@ -116,14 +142,7 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Get device information."""
-        return {
-            "identifiers": {
-                (DOMAIN, f"{self._config_entry.entry_id}:{str(self._device_id)}")
-            },
-            "via_device": (DOMAIN, self._config_entry.entry_id),
-            "name": str(self._device_id),
-            "manufacturer": "Weishaupt",
-        }
+        return build_device_info(self._config_entry.entry_id, self._device_id)
 
     @property
     def available(self):
@@ -136,9 +155,9 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
 
         try:
             entity_data = self.coordinator.data[self._device_id][self._data_key]
-            val, uom = fix_value_and_uom(entity_data["value"], entity_data["unit"])
+            val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
 
-            self._attr_native_value = self._validated_native_value(val, uom)
+            self._attr_native_value = self._validated_native_value(val)
 
             # set uom if it references a valid non-trivial unit of measurement
             if uom not in (None, ""):

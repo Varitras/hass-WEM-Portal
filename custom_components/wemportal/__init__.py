@@ -22,9 +22,18 @@ from .const import (
     _LOGGER,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+    CONF_EXPERT_WRITE,
+    CONF_EXPERT_AUTO_POLL,
+    CONF_EXPERT_POLL_INTERVAL,
+    CONF_EXPERT_NOTIFY_ON_SUCCESS,
+    DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
+    MIN_EXPERT_POLL_INTERVAL_MINUTES,
+    CONF_EXPERT_MODULE_ARG,
+    SERVICE_SET_EXPERT_PARAMETER,
 )
-from .coordinator import WemPortalDataUpdateCoordinator
+from .coordinator import WemPortalDataUpdateCoordinator, get_modules_store
 from .wemportalapi import WemPortalApi
+from .utils import deserialize_modules
 import homeassistant.helpers.entity_registry as entity_registry
 from homeassistant.helpers import device_registry as device_registry
 
@@ -44,6 +53,13 @@ async def migrate_unique_ids(
     hass: HomeAssistant, config_entry: ConfigEntry, coordinator
 ):
     er = entity_registry.async_get(hass)
+    # Nothing to migrate yet if the first refresh came back empty (e.g. no
+    # devices found, or every device failed this cycle) - guard against
+    # this instead of crashing with an IndexError on an empty keys() list,
+    # which would otherwise abort the entire integration setup.
+    if not coordinator.data:
+        _LOGGER.debug("Skipping unique_id migration: coordinator has no data yet.")
+        return
     # Do migration for first device if we have multiple
     device_id = list(coordinator.data.keys())[0]
     data = coordinator.data[device_id]
@@ -140,11 +156,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         _LOGGER.info("Found devices for %s: %s", DOMAIN, device_ids)
 
+    # Load any previously persisted device/module/parameter metadata, so we
+    # can skip the slow, rate-limited per-module discovery in
+    # get_parameters() on this restart (see coordinator.py / wemportalapi.py
+    # for where this cache is used and re-saved).
+    cached_modules = None
+    try:
+        modules_store = get_modules_store(hass, entry.entry_id)
+        cached_modules_raw = await modules_store.async_load()
+        cached_modules = deserialize_modules(cached_modules_raw) if cached_modules_raw else None
+    except Exception as exc:  # pylint: disable=broad-except
+        # A corrupted/unreadable cache file must never prevent the
+        # integration from starting - worst case, we just lose the
+        # startup-time optimization for this one restart and fall back to
+        # a full discovery, exactly like a first-ever install.
+        _LOGGER.warning(
+            "Could not load cached WEM Portal module data, falling back to full "
+            "discovery for this restart: %s", exc
+        )
+    if cached_modules:
+        _LOGGER.info(
+            "Loaded cached module/parameter definitions for %s devices. "
+            "Skipping full discovery for this restart.",
+            len(cached_modules),
+        )
+
     # Creating API object
     api = WemPortalApi(
         entry.data.get(CONF_USERNAME),
         entry.data.get(CONF_PASSWORD),
-        config=entry.options
+        config=entry.options,
+        cached_modules=cached_modules,
     )
     # Create custom coordinator
     coordinator = WemPortalDataUpdateCoordinator(
@@ -155,7 +197,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Is there an on_update function that we can add listener to?
     _LOGGER.info("Migrating entity names for wemportal")
-    await migrate_unique_ids(hass, entry, coordinator)
+    try:
+        await migrate_unique_ids(hass, entry, coordinator)
+    except Exception as exc:  # pylint: disable=broad-except
+        # Migration is a best-effort cleanup step (renames old unique_ids
+        # to the new format). A failure here should never prevent the
+        # integration from loading - worst case, some entities keep their
+        # old unique_id until the next successful migration attempt.
+        _LOGGER.warning("Unique_id migration failed, continuing without it: %s", exc)
 
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
@@ -175,7 +224,240 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
+    # Expert write access (web): register the service only while the
+    # option is enabled. Everything lives in expert_writer.py - the
+    # polling paths (scraper/API/coordinator) are untouched.
+    if entry.options.get(CONF_EXPERT_WRITE, False):
+        _async_register_expert_service(hass, entry, api)
+        _async_setup_expert_auto_poll(hass, entry, api)
+
     return True
+
+
+def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api) -> None:
+    """Register wemportal.set_expert_parameter (idempotent)."""
+    from .expert_writer import WemPortalExpertClient
+
+    if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
+        return
+
+    async def _handle_set_expert_parameter(call):
+        entityvalue = call.data["entityvalue"]
+        value = call.data["value"]
+
+        def _do_write():
+            # Own short-lived session per write; honors the global 403
+            # cooldown via the api object's check.
+            from .expert_writer import expert_client_options
+            client = WemPortalExpertClient(
+                entry.data.get(CONF_USERNAME),
+                entry.data.get(CONF_PASSWORD),
+                cooldown_check=api._check_cooldown,
+                **expert_client_options(entry.options),
+            )
+            return client.write_parameter(entityvalue, value)
+
+        async def _run_in_background():
+            # An expert write takes roughly 5-15s (login + minimal Fachmann
+            # navigation + write + verify) - still longer than a frontend
+            # service call comfortably waits, so run it detached and report
+            # the outcome via a persistent notification + the log.
+            # entityvalues are installation-specific; only a shortened form
+            # appears in log/notification TEXT (which people copy into
+            # issues/forums). The internal notification_id keeps the full
+            # id - it is never displayed.
+            ev_short = f"{entityvalue[:6]}…" if len(entityvalue) > 6 else entityvalue
+            try:
+                state = await hass.async_add_executor_job(_do_write)
+            except Exception as exc:  # pylint: disable=broad-except
+                _LOGGER.error("Expert write failed for %s: %s", ev_short, exc)
+                await hass.services.async_call(
+                    "persistent_notification", "create",
+                    {
+                        "title": "WEM Portal expert write failed",
+                        "message": f"Setting {ev_short} to {value} failed: {exc}",
+                        "notification_id": f"wemportal_expert_{entityvalue}",
+                    },
+                    blocking=False,
+                )
+                return
+            _LOGGER.info(
+                "Expert parameter %s set to %s (allowed range %s..%s)",
+                ev_short, state.current, state.min_value, state.max_value,
+            )
+            if entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
+                await hass.services.async_call(
+                    "persistent_notification", "create",
+                    {
+                        "title": "WEM Portal expert write",
+                        "message": f"{ev_short} set to {state.current}.",
+                        "notification_id": f"wemportal_expert_{entityvalue}",
+                    },
+                    blocking=False,
+                )
+
+        # Return immediately; the write continues in the background.
+        hass.async_create_background_task(
+            _run_in_background(), name=f"wemportal_expert_write_{entityvalue}"
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_EXPERT_PARAMETER,
+        _handle_set_expert_parameter,
+        schema=vol.Schema(
+            {
+                vol.Required("entityvalue"): config_validation.string,
+                vol.Required("value"): vol.Coerce(float),
+            }
+        ),
+    )
+
+
+def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) -> None:
+    """Optionally read the configured expert parameters on a timer.
+
+    OFF unless CONF_EXPERT_AUTO_POLL is enabled. Each read is a full
+    Fachmann navigation, so this is deliberately infrequent (default 60 min,
+    floored at MIN_EXPERT_POLL_INTERVAL_MINUTES) and reads ALL configured ids
+    in ONE shared session to minimise load. A 403 engages the shared cooldown
+    via the client's cooldown_check, and this poll then skips until it clears.
+
+    The entities are created by number.py's platform setup, which may run
+    after this. So we expose a `start_expert_auto_poll` callback in the entry
+    store; whichever of the two runs last actually starts the timer.
+    """
+    import random
+    from homeassistant.helpers.event import async_call_later
+    from .expert_writer import WemPortalExpertClient
+
+    if not entry.options.get(CONF_EXPERT_AUTO_POLL, False):
+        return
+
+    interval_min = entry.options.get(
+        CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+    )
+    try:
+        interval_min = max(int(interval_min), MIN_EXPERT_POLL_INTERVAL_MINUTES)
+    except (TypeError, ValueError):
+        interval_min = DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+
+    # Fraction of extra, random delay added on top of the configured interval
+    # each cycle (0..20%). Jitter is added ONLY upwards, so the effective
+    # interval is always >= the user's setting (and thus never below the
+    # 15-min floor) - the poll pattern is less regular without ever hitting
+    # the portal more often than configured.
+    EXPERT_POLL_JITTER_FRACTION = 0.20
+
+    store = hass.data[DOMAIN][entry.entry_id]
+
+    def _next_delay_seconds():
+        base = interval_min * 60
+        return base + random.uniform(0, base * EXPERT_POLL_JITTER_FRACTION)
+
+    async def _poll(_now=None):
+        try:
+            entities = store.get("expert_entities") or []
+            entityvalues = [e.entityvalue for e in entities]
+            if not entityvalues:
+                return
+            # Collision guard: if any entity write is in flight, skip this
+            # cycle instead of opening a second concurrent portal session.
+            # Reading in parallel could also briefly write a pre-write
+            # (stale) value back into an entity right after its verified
+            # write. The next scheduled poll picks things up again.
+            if any(getattr(e, "_write_in_progress", False) for e in entities):
+                _LOGGER.debug(
+                    "Expert auto-poll: a write is in progress, skipping this cycle."
+                )
+                return
+            def _do_read():
+                from .expert_writer import expert_client_options
+                client = WemPortalExpertClient(
+                    entry.data.get(CONF_USERNAME),
+                    entry.data.get(CONF_PASSWORD),
+                    cooldown_check=api._check_cooldown,
+                    **expert_client_options(entry.options),
+                )
+                return client.read_many(entityvalues)
+
+            try:
+                results = await hass.async_add_executor_job(_do_read)
+            except Exception as exc:  # pylint: disable=broad-except
+                _LOGGER.warning("Expert auto-poll read failed: %s", exc)
+                return
+            # Per-id consecutive-failure tracking: a persistently failing id
+            # (usually a typo'd entityvalue) would otherwise only produce an
+            # hourly debug/warning nobody sees. After 3 consecutive failures
+            # raise ONE notification per id; reset on the next success so a
+            # recurring problem re-notifies at most once per streak.
+            fail_counts = store.setdefault("expert_poll_fail_counts", {})
+            notified = store.setdefault("expert_poll_fail_notified", set())
+            for entity in entities:
+                state = results.get(entity.entityvalue)
+                ev = entity.entityvalue
+                if state is None:
+                    fail_counts[ev] = fail_counts.get(ev, 0) + 1
+                    if fail_counts[ev] >= 3 and ev not in notified:
+                        notified.add(ev)
+                        hass.async_create_task(
+                            hass.services.async_call(
+                                "persistent_notification", "create",
+                                {
+                                    "title": "WEM Portal expert auto-poll",
+                                    "message": (
+                                        f"Reading '{entity.name}' has failed "
+                                        f"{fail_counts[ev]} times in a row. "
+                                        "Check the configured entityvalue ID "
+                                        "in the integration options."
+                                    ),
+                                    "notification_id": f"wemportal_poll_fail_{ev}",
+                                },
+                                blocking=False,
+                            )
+                        )
+                else:
+                    fail_counts.pop(ev, None)
+                    notified.discard(ev)
+                entity.apply_read_state(state)
+        finally:
+            # Always reschedule the next run (with fresh jitter), even if this
+            # cycle failed - a transient error must not stop future polls.
+            _schedule_next()
+
+    def _schedule_next():
+        delay = _next_delay_seconds()
+        unsub = async_call_later(hass, delay, _poll)
+        store["expert_poll_unsub"] = unsub
+        _LOGGER.debug(
+            "Expert auto-poll: next read in %.1f min (base %d min + jitter).",
+            delay / 60, interval_min,
+        )
+
+    def _cancel():
+        unsub = store.pop("expert_poll_unsub", None)
+        if unsub is not None:
+            unsub()
+
+    def _start():
+        # Idempotent: only one timer chain per entry.
+        if store.get("expert_poll_started"):
+            return
+        store["expert_poll_started"] = True
+        entry.async_on_unload(_cancel)
+        _LOGGER.info(
+            "Expert auto-poll enabled: reading configured parameters about "
+            "every %d min (with up to +%d%% random jitter).",
+            interval_min, int(EXPERT_POLL_JITTER_FRACTION * 100),
+        )
+        # Initial read shortly after startup; it reschedules itself afterwards.
+        hass.async_create_background_task(_poll(), name="wemportal_expert_initial_poll")
+
+    # If the entities already exist, start now; otherwise number.py will call
+    # this once it has created them.
+    store["start_expert_auto_poll"] = _start
+    if store.get("expert_entities"):
+        _start()
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -187,10 +469,15 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
 async def _async_entry_updated(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """Handle entry updates."""
-    _LOGGER.info("Migrating entity names for wemportal because of config entry update")
-    await migrate_unique_ids(
-        hass, config_entry, hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
-    )
+    entry_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
+    if entry_data is None or "coordinator" not in entry_data:
+        _LOGGER.debug("No coordinator found for %s during entry update; skipping migration.", config_entry.entry_id)
+    else:
+        _LOGGER.info("Migrating entity names for wemportal because of config entry update")
+        try:
+            await migrate_unique_ids(hass, config_entry, entry_data["coordinator"])
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.warning("Unique_id migration failed, continuing without it: %s", exc)
     await hass.config_entries.async_reload(config_entry.entry_id)
 
 
@@ -200,6 +487,10 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )
     if unload_ok:
-        hass.data[DOMAIN].pop(config_entry.entry_id)
+        hass.data.get(DOMAIN, {}).pop(config_entry.entry_id, None)
+        # Remove the expert service (if registered) so a reload with the
+        # option disabled doesn't leave a stale service behind.
+        if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
+            hass.services.async_remove(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
 
     return unload_ok

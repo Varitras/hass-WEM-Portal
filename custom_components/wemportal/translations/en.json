@@ -1,32 +1,64 @@
 {
-    "config": {
-      "step": {
-        "user": {
-          "data": {
-            "username": "Username (email)",
-            "password": "Password"
-          }
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "username": "Username (email)",
+          "password": "Password",
+          "language": "Language of sensor/parameter names (default = en)",
+          "mode": "Mode (default = api)"
         }
-      },
-      "error": {
-        "cannot_connect": "Failed to connect",
-        "invalid_auth": "Invalid authentication",
-        "unknown": "Unexpected error"
-      },
-      "abort": {
-        "already_configured": "Account is already configured"
       }
     },
-    "options": {
-      "step": {
-        "init": {
-          "data": {
-            "scan_interval": "Web scraping interval (default = 1800 sec)",
-            "api_scan_interval": "Api scan interval (default = 300 sec)",
-            "language": "Language (default = en)",
-            "mode": "Mode(default = api)"
-          }
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid authentication",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Account is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Web scraping interval (default = 1800 sec)",
+          "api_scan_interval": "Api scan interval (default = 300 sec)",
+          "language": "Language of sensor/parameter names (default = en)",
+          "mode": "Mode(default = api)",
+          "expert_write_enabled": "Expert write access via web (default = off)",
+          "expert_module_arg": "Module menu index (only used when module select is enabled; empty = 6 = heat pump)",
+          "expert_auto_poll_enabled": "Poll expert parameters periodically (default = off). Note: polling too frequently can trigger a temporary block (403) from the portal.",
+          "expert_poll_interval_minutes": "Poll interval in minutes (default = 60, minimum = 15)",
+          "expert_slot_1_name": "Expert parameter 1: name (optional)",
+          "expert_slot_1_id": "Expert parameter 1: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_2_name": "Expert parameter 2: name (optional)",
+          "expert_slot_2_id": "Expert parameter 2: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_3_name": "Expert parameter 3: name (optional)",
+          "expert_slot_3_id": "Expert parameter 3: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_4_name": "Expert parameter 4: name (optional)",
+          "expert_slot_4_id": "Expert parameter 4: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_5_name": "Expert parameter 5: name (optional)",
+          "expert_slot_5_id": "Expert parameter 5: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_6_name": "Expert parameter 6: name (optional)",
+          "expert_slot_6_id": "Expert parameter 6: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_7_name": "Expert parameter 7: name (optional)",
+          "expert_slot_7_id": "Expert parameter 7: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_8_name": "Expert parameter 8: name (optional)",
+          "expert_slot_8_id": "Expert parameter 8: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_9_name": "Expert parameter 9: name (optional)",
+          "expert_slot_9_id": "Expert parameter 9: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_10_name": "Expert parameter 10: name (optional)",
+          "expert_slot_10_id": "Expert parameter 10: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_enable_module_nav": "⚠ Only if you know what you are doing! Enable module select (default = off, normally unnecessary).",
+          "expert_enable_security_code": "⚠ Only if you know what you are doing! Enable security-code step (default = off, normally unnecessary).",
+          "expert_notify_on_success": "Show a notification after a successful expert write (default = off; failures are always reported)"
         }
       }
+    },
+    "error": {
+      "invalid_entityvalue": "Invalid entityvalue ID: only hex characters (0-9, A-F) are allowed."
     }
   }
+}

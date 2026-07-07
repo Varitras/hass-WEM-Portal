@@ -2,19 +2,8 @@
 
 from collections import defaultdict
 from .translations import friendly_name_mapper, translate
-from .const import WemDataType
-
-
-def sanitize_value(value_str):
-    """Sanitize typical German strings or off states to numeric values."""
-    if value_str in ["off", "Aus", "Label ist null", "Label ist null ", "--"]:
-        return 0.0
-    if value_str in ["Ein"]:
-        return 1.0
-    try:
-        return float(value_str)
-    except ValueError:
-        return value_str
+from .const import WemDataType, _LOGGER
+from .utils import sanitize_value
 
 
 def get_min_max(param_id: str, data_type: int, min_val, max_val) -> tuple[float, float]:
@@ -56,109 +45,142 @@ class WemPortalDataMapper:
         parsed_sensors = {}
 
         for module in values_json.get("Modules", []):
-            module_tuple = (module["ModuleIndex"], module["ModuleType"])
+            try:
+                module_tuple = (module["ModuleIndex"], module["ModuleType"])
+            except (KeyError, TypeError) as exc:
+                _LOGGER.warning("Skipping malformed module entry in API response: %s", exc)
+                continue
             if module_tuple not in modules_dict[device_id]:
                 continue
 
             device_module = modules_dict[device_id][module_tuple]
 
             for value in module.get("Values", []):
-                param_id = value["ParameterID"]
+                try:
+                    param_id = value["ParameterID"]
+                except (KeyError, TypeError) as exc:
+                    _LOGGER.warning("Skipping malformed value entry in API response: %s", exc)
+                    continue
                 if param_id not in device_module["parameters"]:
                     continue
 
-                parameter = device_module["parameters"][param_id]
-                name = f"{device_module['Name']}-{parameter['ParameterID']}"
+                try:
+                    parameter = device_module["parameters"][param_id]
+                    name = f"{device_module['Name']}-{parameter['ParameterID']}"
 
-                numeric_val = value.get("NumericValue")
-                string_val = value.get("StringValue", "")
+                    numeric_val = value.get("NumericValue")
+                    string_val = value.get("StringValue", "")
 
-                final_value = numeric_val if numeric_val is not None else string_val
+                    final_value = numeric_val if numeric_val is not None else string_val
 
-                if parameter.get("EnumValues"):
-                    final_value = sanitize_value(string_val)
-                else:
-                    if isinstance(final_value, str):
-                        final_value = sanitize_value(final_value)
+                    is_writeable = parameter.get("IsWriteable", False)
+                    data_type = parameter.get("DataType")
 
-                is_writeable = parameter.get("IsWriteable", False)
-                data_type = parameter.get("DataType")
+                    if parameter.get("EnumValues"):
+                        if data_type == WemDataType.SWITCH:
+                            # Only normalize true booleans (on/off) here. Other
+                            # enum-valued parameters - e.g. a SELECT dropdown
+                            # like a 0-240 minute push duration, where one
+                            # option happens to be "Aus"/"Off" - must keep
+                            # their exact original string, so they still match
+                            # the literal option names built from this same
+                            # parameter's EnumValues a few lines below
+                            # (select.py matches the raw value against those
+                            # names verbatim). Rewriting "Aus" to "Off"/0.0
+                            # here would silently break that match.
+                            final_value = sanitize_value(string_val, value.get("Unit"), name)
+                        else:
+                            final_value = string_val
+                    else:
+                        if isinstance(final_value, str):
+                            final_value = sanitize_value(final_value, value.get("Unit"), name)
 
-                translated_name = translate(
-                    language,
-                    friendly_name_mapper(param_id),
-                )
-                translated_module_name = translate(language, device_module['Name'].strip())
-                
-                module_words = set(translated_module_name.lower().split())
-                entity_words = set(translated_name.lower().split())
-                
-                if module_words.issubset(entity_words):
-                    friendly_name = translated_name
-                else:
-                    friendly_name = f"{translated_module_name} {translated_name}"
+                    translated_name = translate(
+                        language,
+                        friendly_name_mapper(param_id),
+                    )
+                    translated_module_name = translate(language, device_module['Name'].strip())
 
-                parsed_sensors[name] = {
-                    "friendlyName": friendly_name,
-                    "ParameterID": param_id,
-                    "unit": value.get("Unit"),
-                    "value": final_value,
-                    "IsWriteable": is_writeable,
-                    "DataType": data_type,
-                    "ModuleIndex": module["ModuleIndex"],
-                    "ModuleType": module["ModuleType"],
-                }
+                    module_words = set(translated_module_name.lower().split())
+                    entity_words = set(translated_name.lower().split())
 
-                if is_writeable:
-                    common_attrs = {
-                        "friendlyName": parsed_sensors[name]["friendlyName"],
+                    if module_words.issubset(entity_words):
+                        friendly_name = translated_name
+                    else:
+                        friendly_name = f"{translated_module_name} {translated_name}"
+
+                    parsed_sensors[name] = {
+                        "friendlyName": friendly_name,
                         "ParameterID": param_id,
                         "unit": value.get("Unit"),
-                        "icon": icon_mapper[value.get("Unit")],
                         "value": final_value,
+                        "IsWriteable": is_writeable,
                         "DataType": data_type,
                         "ModuleIndex": module["ModuleIndex"],
                         "ModuleType": module["ModuleType"],
                     }
 
-                    min_val, max_val = get_min_max(
-                        param_id, 
-                        data_type, 
-                        parameter.get("MinValue"), 
-                        parameter.get("MaxValue")
-                    )
+                    if is_writeable:
+                        common_attrs = {
+                            "friendlyName": parsed_sensors[name]["friendlyName"],
+                            "ParameterID": param_id,
+                            "unit": value.get("Unit"),
+                            "icon": icon_mapper[value.get("Unit")],
+                            "value": final_value,
+                            "DataType": data_type,
+                            "ModuleIndex": module["ModuleIndex"],
+                            "ModuleType": module["ModuleType"],
+                        }
 
-                    if data_type in (WemDataType.NUMBER_STEP_HALF, WemDataType.NUMBER_STEP_ONE):
-                        api_data[device_id][name] = {
-                            **common_attrs,
-                            "platform": "number",
-                            "min_value": min_val,
-                            "max_value": max_val,
-                            "step": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
-                        }
-                    elif data_type == WemDataType.SELECT:
-                        api_data[device_id][name] = {
-                            **common_attrs,
-                            "platform": "select",
-                            "options": [x["Value"] for x in parameter.get("EnumValues", [])],
-                            "optionsNames": [x["Name"] for x in parameter.get("EnumValues", [])],
-                        }
-                    elif data_type == WemDataType.SWITCH:
-                        if isinstance(final_value, str) and final_value.startswith("{"):
-                            pass  # It's a JSON schedule, fallback to sensor
-                        elif int(min_val) == 0 and int(max_val) == 1:
-                            api_data[device_id][name] = {
-                                **common_attrs,
-                                "platform": "switch",
-                            }
-                        else:
+                        min_val, max_val = get_min_max(
+                            param_id,
+                            data_type,
+                            parameter.get("MinValue"),
+                            parameter.get("MaxValue")
+                        )
+
+                        if data_type in (WemDataType.NUMBER_STEP_HALF, WemDataType.NUMBER_STEP_ONE):
                             api_data[device_id][name] = {
                                 **common_attrs,
                                 "platform": "number",
                                 "min_value": min_val,
                                 "max_value": max_val,
-                                "step": 1,
+                                "step": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
                             }
+                        elif data_type == WemDataType.SELECT:
+                            api_data[device_id][name] = {
+                                **common_attrs,
+                                "platform": "select",
+                                "options": [x["Value"] for x in parameter.get("EnumValues", [])],
+                                "optionsNames": [x["Name"] for x in parameter.get("EnumValues", [])],
+                            }
+                        elif data_type == WemDataType.SWITCH:
+                            if isinstance(final_value, str) and final_value.startswith("{"):
+                                pass  # It's a JSON schedule, fallback to sensor
+                            elif int(min_val) == 0 and int(max_val) == 1:
+                                api_data[device_id][name] = {
+                                    **common_attrs,
+                                    "platform": "switch",
+                                }
+                            else:
+                                api_data[device_id][name] = {
+                                    **common_attrs,
+                                    "platform": "number",
+                                    "min_value": min_val,
+                                    "max_value": max_val,
+                                    "step": 1,
+                                }
+                except Exception as exc:  # pylint: disable=broad-except
+                    # A single malformed/unexpected data point should never
+                    # cost us the rest of this device's update - log and
+                    # move on to the next value instead of letting the
+                    # exception abort processing for everything after it.
+                    _LOGGER.warning(
+                        "Skipping value for parameter %s due to unexpected error: %s",
+                        value.get("ParameterID", "?") if isinstance(value, dict) else "?",
+                        exc,
+                    )
+                    continue
 
         # Process read-only sensors and fallback for unknown writeable datatypes
         for key, sensor in parsed_sensors.items():
@@ -206,7 +228,7 @@ class WemPortalDataMapper:
                 else:
                     new_unit = sensor.get("unit")
                     old_unit = api_data[device_id].get(key, {}).get("unit")
-                    final_unit = new_unit if new_unit is not None else old_unit
+                    final_unit = new_unit if new_unit not in (None, "") else old_unit
                     
                     api_data[device_id][key] = {
                         "value": sensor["value"],

@@ -1,0 +1,64 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "username": "Benutzername (E-Mail)",
+          "password": "Passwort",
+          "language": "Sprache der Sensor-/Parameternamen (Standard = en)",
+          "mode": "Modus (Standard = api)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung fehlgeschlagen",
+      "invalid_auth": "Ungültige Anmeldedaten",
+      "unknown": "Unerwarteter Fehler"
+    },
+    "abort": {
+      "already_configured": "Konto ist bereits konfiguriert"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Web-Scraping-Intervall (Standard = 1800 Sek.)",
+          "api_scan_interval": "API-Abfrageintervall (Standard = 300 Sek.)",
+          "language": "Sprache der Sensor-/Parameternamen (Standard = en)",
+          "mode": "Modus (Standard = api)",
+          "expert_write_enabled": "Experten-Schreibzugriff über Web (Standard = aus)",
+          "expert_module_arg": "Modul-Menüindex (nur wirksam bei aktivierter Modul-Auswahl; leer = 6 = Wärmepumpe)",
+          "expert_auto_poll_enabled": "Experten-Parameter regelmäßig abfragen (Standard = aus). Achtung: Zu häufiges Abfragen kann zu einer vorübergehenden Sperre (403) durch das Portal führen.",
+          "expert_poll_interval_minutes": "Abfrageintervall in Minuten (Standard = 60, Minimum = 15)",
+          "expert_slot_1_name": "Experten-Parameter 1: Name (optional)",
+          "expert_slot_1_id": "Experten-Parameter 1: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_2_name": "Experten-Parameter 2: Name (optional)",
+          "expert_slot_2_id": "Experten-Parameter 2: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_3_name": "Experten-Parameter 3: Name (optional)",
+          "expert_slot_3_id": "Experten-Parameter 3: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_4_name": "Experten-Parameter 4: Name (optional)",
+          "expert_slot_4_id": "Experten-Parameter 4: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_5_name": "Experten-Parameter 5: Name (optional)",
+          "expert_slot_5_id": "Experten-Parameter 5: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_6_name": "Experten-Parameter 6: Name (optional)",
+          "expert_slot_6_id": "Experten-Parameter 6: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_7_name": "Experten-Parameter 7: Name (optional)",
+          "expert_slot_7_id": "Experten-Parameter 7: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_8_name": "Experten-Parameter 8: Name (optional)",
+          "expert_slot_8_id": "Experten-Parameter 8: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_9_name": "Experten-Parameter 9: Name (optional)",
+          "expert_slot_9_id": "Experten-Parameter 9: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_slot_10_name": "Experten-Parameter 10: Name (optional)",
+          "expert_slot_10_id": "Experten-Parameter 10: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
+          "expert_enable_module_nav": "⚠ Nur wenn du weißt, was du tust! Modul-Auswahl aktivieren (Standard = aus, normalerweise nicht nötig).",
+          "expert_enable_security_code": "⚠ Nur wenn du weißt, was du tust! Sicherheitscode-Schritt aktivieren (Standard = aus, normalerweise nicht nötig).",
+          "expert_notify_on_success": "Bei erfolgreichem Experten-Schreibvorgang eine Benachrichtigung anzeigen (Standard = aus; Fehler werden immer gemeldet)"
+        }
+      }
+    },
+    "error": {
+      "invalid_entityvalue": "Ungültige entityvalue-ID: nur Hex-Zeichen (0-9, A-F) erlaubt."
+    }
+  }
+}
