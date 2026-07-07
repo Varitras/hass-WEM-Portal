@@ -64,6 +64,7 @@ from .const import (
     EXPERT_TIMER_TARGET,
     EXPERT_FORM_MAX_ATTEMPTS,
     EXPERT_FORM_RETRY_DELAY_SECONDS,
+    MIN_EXPERT_ENTITYVALUE_LENGTH,
 )
 
 # Edit dialog endpoint; entityvalue identifies device/module/parameter.
@@ -86,6 +87,19 @@ def _short_ev(entityvalue: str) -> str:
     """
     ev = entityvalue or ""
     return f"{ev[:6]}…" if len(ev) > 6 else ev
+
+
+def _is_valid_entityvalue(entityvalue) -> bool:
+    """True if the entityvalue looks like a real ID: hex and long enough.
+
+    Real entityvalues are long hex strings (the known ones are 36 chars).
+    A short/stray value like "0" or "abc" - typically left over from a typo
+    or a pre-1.8.1 config where the length check didn't exist yet - is not a
+    readable parameter and only produces an empty dialog. Callers use this
+    to skip such values instead of firing a pointless portal request.
+    """
+    ev = (entityvalue or "").strip()
+    return bool(re.fullmatch(r"[0-9A-Fa-f]+", ev)) and len(ev) >= MIN_EXPERT_ENTITYVALUE_LENGTH
 
 
 class ExpertParameterState:
@@ -651,8 +665,17 @@ class WemPortalExpertClient:
         """
         result = {}
         ids = [e for e in (entityvalues or []) if e]
-        for entityvalue in ids:
-            self._validate_entityvalue(entityvalue)
+        # Skip entityvalues that can't be a real ID (too short / non-hex) -
+        # e.g. a stale "0" from a pre-1.8.1 config. Polling them would only
+        # hit an empty dialog and log a misleading failure every cycle.
+        skipped = [e for e in ids if not _is_valid_entityvalue(e)]
+        for e in skipped:
+            _LOGGER.debug(
+                "Expert auto-poll: skipping invalid entityvalue %s "
+                "(not a readable ID); fix or clear it in the options.",
+                _short_ev(e),
+            )
+        ids = [e for e in ids if _is_valid_entityvalue(e)]
         if not ids:
             return result
         self._check_cooldown()
@@ -751,7 +774,11 @@ class WemPortalExpertClient:
     # ------------------------------------------------------------------
     @staticmethod
     def _validate_entityvalue(entityvalue: str):
-        if not re.fullmatch(r"[0-9A-Fa-f]+", entityvalue or ""):
+        # Active read/write of a single parameter: reject anything that
+        # isn't a plausible ID (hex + minimum length) with a clear error,
+        # so a user writing to a mistyped/too-short id gets feedback rather
+        # than a confusing empty-dialog failure.
+        if not _is_valid_entityvalue(entityvalue):
             raise ValueError(f"Invalid entityvalue: {entityvalue!r}")
 
     def _fetch_form(self, entityvalue: str, max_attempts: int = None) -> ExpertParameterState:

@@ -6,6 +6,55 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.3] – 2026-07-07
+
+### Fixed
+- **A stored invalid slot ID (e.g. a leftover `0`) can now be cleared.**
+  The slot fields used `default`, so clearing a field on save fell back to
+  the stored value - making it impossible to delete an invalid entry: it
+  could neither be saved (rejected as invalid) nor removed (reverted to the
+  old value). The fields now use `suggested_value`, which prefills the
+  current value but lets an emptied field stay empty, so a stray value can
+  be deleted.
+
+## [1.8.2] – 2026-07-07
+
+### Fixed
+- **Auto-poll skips invalid stored entityvalues instead of polling them.**
+  A too-short or non-hex ID left in the config (e.g. a stray `0` from before
+  the length check existed) is now skipped during periodic reads rather than
+  triggering a portal request that hits an empty dialog and logs a
+  misleading "reading 0 failed" warning. Active single reads/writes still
+  reject such IDs with a clear error. The validity rule (hex + minimum
+  length) is shared with the options-flow validation.
+
+## [1.8.1] – 2026-07-07
+
+### Changed
+- **README clarifies the example entityvalue.** The hex ID shown in the
+  "how to find your entityvalue" steps and the service example is now
+  explicitly marked as an illustrative placeholder, not a real/copyable ID.
+- **Consistent wording for the option toggles.** The advanced module-select
+  and security-code toggles now follow the same structure as the other
+  options (short description + default + a "Note:" caveat), while keeping
+  their leading warning symbol to flag them as the riskier advanced
+  options.
+
+### Fixed
+- **Short slot IDs like `0` are no longer accepted.** The options-flow
+  entityvalue validation now requires a minimum length in addition to being
+  hex, so a stray entry like `0` or `abc` is rejected in the form instead
+  of being saved as a valid ID (which would only cause a failing portal
+  request later). Real IDs (long hex strings) are unaffected; empty stays
+  allowed.
+- **Saving the options without changes no longer reloads the integration.**
+  The options dialog previously always triggered a full reload (and a fresh
+  portal login) on save, even when nothing changed - e.g. saving without
+  edits, or typing only whitespace into an already-empty slot-ID field
+  (whitespace is stripped to empty). The flow now detects an unchanged
+  save and closes without reloading, which also avoids needless requests
+  against the portal's 403 rate limit.
+
 ## [1.8.0] – 2026-07-07
 
 ### Added
