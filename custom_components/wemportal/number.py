@@ -44,6 +44,14 @@ async def async_setup_entry(
     expert_entities = create_expert_number_entities(config_entry)
     if expert_entities:
         async_add_entities(expert_entities)
+        # Expose them to the optional hourly auto-poll (set up in __init__),
+        # which reads all configured ids in one shared session and pushes the
+        # values back into these entities.
+        store = hass.data[DOMAIN][config_entry.entry_id]
+        store["expert_entities"] = expert_entities
+        start_poll = store.get("start_expert_auto_poll")
+        if start_poll is not None:
+            start_poll()
 
 
 class WemPortalNumber(CoordinatorEntity, NumberEntity):

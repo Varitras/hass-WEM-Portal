@@ -64,12 +64,18 @@ services exist and the integration behaves exactly as before.
 
 ### How it works
 
-- Writing happens **on demand only** on a short-lived web session
-  (a handful of requests per write, no periodic polling at all).
+- Reaching an expert parameter reproduces a **minimal** web navigation:
+  log in, switch to the Fachmann submenu, then fetch the parameter's edit
+  form. (The security-code step and module pre-selection that older
+  versions performed turned out to be unnecessary and are skipped by
+  default; the code for them is retained but disabled, as a fallback.)
+- Writing happens **on demand** on a short-lived web session.
 - The new value is validated against the option list of the device's own
   edit form, so only values your heat pump actually accepts can be sent.
 - After writing, the form is read back to **verify** the device accepted
   the value; unconfirmed writes raise an error.
+- Optionally, the configured parameters can also be **read back on a
+  timer** (see *Periodic read-back* below) - off by default.
 - A rate-limit response (403) from the server pauses this feature together
   with the rest of the integration.
 
@@ -90,28 +96,44 @@ not post it publicly. To find it:
    `entityvalue=6400000000000000000000000000000000FF`.
 4. Copy the hex string after `entityvalue=` - that is the ID.
 
+Alternatively, open the parameter's edit dialog and copy the
+`entityvalue=...` value straight from the request URL in the developer
+tools **Network** tab.
+
 ### Enabling the feature
 
 1. Go to `Settings > Devices & Services > WEM Portal > CONFIGURE`.
 2. Enable `Expert write access via web`.
-3. Optionally paste your entityvalue IDs into the
-   `Leistungsbegrenzung Heizen` / `Kuehlen` fields (either or both).
-4. Save - the integration reloads.
+3. Fill in one or more of the **ten generic expert-parameter slots**. Each
+   slot has a *name* (free text - becomes the entity's friendly name) and
+   an *entityvalue* (the hex ID from the step above). Leave unused slots
+   empty. A slot with an ID but no name gets a default name.
+4. (Optional) Set the module menu index if your heat pump is not the
+   default module (`6` on the reference installation).
+5. Save - the integration reloads.
 
-If IDs were entered, number entities appear (e.g.
-`number.wp_leistungsbegrenzung_heizen`). They start **without a value** -
-this is expected, since the value is only read as part of a write
-operation (by design, to avoid any extra polling). After the first
-successful write, the entity shows the verified value and its min/max
+Each filled slot becomes a writable `number` entity. Entities start
+**without a value** unless periodic read-back is enabled - the value is
+otherwise only read as part of a write. After a successful write (or the
+first periodic read), the entity shows the verified value and its min/max
 tighten to the device's real allowed range.
 
-A write takes roughly a minute (it reproduces the full Fachmann
-navigation and waits for the portal to load live values). It runs as a
-**background task**: setting the number or calling the service returns
-immediately, and the result is reported via a **persistent
-notification** and the log once finished. The entity value updates once
-the write is verified. A second write is rejected while one is still
-running.
+A write runs as a **background task**: setting the number or calling the
+service returns immediately, and the result is reported via a **persistent
+notification** and the log once finished. A second write is rejected while
+one is still running.
+
+### Periodic read-back (optional, off by default)
+
+If you want the entities to reflect the portal's current values without a
+write, enable **`Poll expert parameters periodically`** and set a **poll
+interval in minutes** (default 60, minimum 15). All configured parameters
+are then read in **one shared session** at that interval.
+
+> **Warning:** each read is a full Fachmann navigation. Polling too
+> frequently can trigger a **temporary IP block (403)** from the portal,
+> which pauses the whole integration until it clears. Keep the interval
+> generous; the 15-minute floor is enforced for this reason.
 
 Independent of the number entities, the service
 `wemportal.set_expert_parameter` can write any expert parameter directly:
@@ -123,6 +145,31 @@ data:
   value: 30
 ```
 
+### Advanced options (only if you know what you are doing)
+
+Reaching an expert parameter needs only: log in, switch to the Fachmann
+submenu, fetch the dialog. Two extra navigation steps that older versions
+performed - a **module select** and a **security-code step** - were proven
+unnecessary on the reference installation and are therefore **skipped by
+default**.
+
+Both can be re-enabled from the options dialog, in case a different portal
+or module layout needs them:
+
+- **`Enable module select`** (default off) - re-runs the icon-menu module
+  selection before fetching the parameter dialog. Only useful if your
+  parameters do not resolve without a module being selected first. When
+  enabled, the **`Module menu index`** field chooses the module (empty
+  falls back to `6`, the heat pump on the reference install).
+- **`Enable security-code step`** (default off) - re-runs the Fachmann
+  security-code unlock (`11`). Normally unnecessary because the submenu
+  already reaches the Fachmann level; enable only for a portal that
+  requires the code per session.
+
+> **Warning:** leave both off unless reads/writes actually fail without
+> them. They add requests (and thus 403 exposure) and exist only as a
+> fallback for unusual setups.
+
 ### Safety notes
 
 - Writes go to your **real heating system**, identical to changing the
@@ -130,14 +177,12 @@ data:
 - Recommended first test: write the parameter's **current** value (e.g.
   30 if the portal shows 30) and check the portal still shows the same
   value afterwards, before making real changes.
-- **This path is heavier than the mobile API.** Reaching a Fachmann
-  parameter reproduces the full browser navigation: unlock the Fachmann
-  level (security code `11`, publicly known), select the heat pump module,
-  and poll for live values before reading/writing - roughly a dozen
-  requests per write, taking about a minute. It runs only on explicit,
-  on-demand writes (never periodically), as a background task, and
-  respects the same 403 cooldown as the rest of the integration, but you
-  should not automate it to fire frequently.
+- **This path is heavier than the mobile API.** Every read or write is a
+  fresh web login plus navigation. It runs only on explicit, on-demand
+  writes - or, if you enable it, on the periodic read-back timer. Both
+  respect the same 403 cooldown as the rest of the integration. If you
+  enable periodic read-back, keep the interval generous (the minimum is
+  15 minutes) so you don't provoke a temporary block.
 
 
 ## Troubleshooting

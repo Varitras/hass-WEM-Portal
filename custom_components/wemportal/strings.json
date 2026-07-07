@@ -26,8 +26,31 @@
           "language": "Language (default = en)",
           "mode": "Mode(default = api)",
           "expert_write_enabled": "Expert write access via web (default = off)",
-          "expert_entityvalue_heating": "entityvalue: Leistungsbegrenzung Heizen (hex, optional)",
-          "expert_entityvalue_cooling": "entityvalue: Leistungsbegrenzung Kuehlen (hex, optional)"
+          "expert_module_arg": "Module menu index (only used when module select is enabled; empty = 6 = heat pump)",
+          "expert_auto_poll_enabled": "Poll expert parameters periodically (default = off). Note: polling too frequently can trigger a temporary block (403) from the portal.",
+          "expert_poll_interval_minutes": "Poll interval in minutes (default = 60, minimum = 15)",
+          "expert_slot_1_name": "Expert parameter 1: name (optional)",
+          "expert_slot_1_id": "Expert parameter 1: entityvalue (hex, optional)",
+          "expert_slot_2_name": "Expert parameter 2: name (optional)",
+          "expert_slot_2_id": "Expert parameter 2: entityvalue (hex, optional)",
+          "expert_slot_3_name": "Expert parameter 3: name (optional)",
+          "expert_slot_3_id": "Expert parameter 3: entityvalue (hex, optional)",
+          "expert_slot_4_name": "Expert parameter 4: name (optional)",
+          "expert_slot_4_id": "Expert parameter 4: entityvalue (hex, optional)",
+          "expert_slot_5_name": "Expert parameter 5: name (optional)",
+          "expert_slot_5_id": "Expert parameter 5: entityvalue (hex, optional)",
+          "expert_slot_6_name": "Expert parameter 6: name (optional)",
+          "expert_slot_6_id": "Expert parameter 6: entityvalue (hex, optional)",
+          "expert_slot_7_name": "Expert parameter 7: name (optional)",
+          "expert_slot_7_id": "Expert parameter 7: entityvalue (hex, optional)",
+          "expert_slot_8_name": "Expert parameter 8: name (optional)",
+          "expert_slot_8_id": "Expert parameter 8: entityvalue (hex, optional)",
+          "expert_slot_9_name": "Expert parameter 9: name (optional)",
+          "expert_slot_9_id": "Expert parameter 9: entityvalue (hex, optional)",
+          "expert_slot_10_name": "Expert parameter 10: name (optional)",
+          "expert_slot_10_id": "Expert parameter 10: entityvalue (hex, optional)",
+          "expert_enable_module_nav": "Advanced: enable module select (default = off). Only change if you know what you are doing - normally unnecessary; for unusual installation/module layouts.",
+          "expert_enable_security_code": "Advanced: enable the security-code step (default = off). Warning: normally unnecessary and only for special cases - enable only if you know what you are doing."
         }
       }
     }

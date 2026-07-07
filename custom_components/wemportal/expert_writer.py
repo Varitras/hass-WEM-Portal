@@ -22,20 +22,29 @@ from .const import (
     _LOGGER,
     WEB_LOGIN_URL,
     WEB_MAIN_URL,
+    WEB_PORTAL_ORIGIN,
+    WEB_ACCEPT_LANGUAGE,
+    WEB_ACCEPT_NAV,
+    WEB_ACCEPT_AJAX,
     WEB_DEFAULT_URL,
     WEB_CODE_EXPERTS_URL,
     EXPERT_VIEWSTATE_FIELDS,
     EXPERT_ASYNCPOST_FIELD,
     EXPERT_SKIP_MODULE_NAV,
+    EXPERT_SKIP_SECURITY_CODE,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     EXPERT_SUBMENU_TARGET,
     EXPERT_SUBMENU_ARG,
+    EXPERT_SUBMENU_CLIENTSTATE_FIELD,
+    EXPERT_SUBMENU_CLIENTSTATE_VALUE,
     EXPERT_DIALOG_SAVE_TARGET,
     EXPERT_SECURITY_CODE_FIELD,
     EXPERT_SECURITY_CODE,
     EXPERT_DIALOG_RADAJAX_ID,
     EXPERT_DIALOG_TSM_FIELD,
     EXPERT_DIALOG_TSM_VALUE,
+    EXPERT_DIALOG_TSM_ID_FIELD,
+    EXPERT_DIALOG_TSM_ID_VALUE,
     EXPERT_DIALOG_RTS_STATE_FIELD,
     EXPERT_DIALOG_RTS_STATE_VALUE,
     EXPERT_PAGE_TSM_FIELD,
@@ -46,14 +55,13 @@ from .const import (
     EXPERT_RAM_MASTER_RADAJAX_ID,
     EXPERT_RAM_MASTER_TSM_VALUE,
     EXPERT_RAM_MASTER_UNLOCK_ARGUMENT,
+    EXPERT_RAM_MASTER_REFRESH_BUTTON_FIELD,
+    EXPERT_RAM_MASTER_REFRESH_BUTTON_VALUE,
     EXPERT_MODULE_ICONMENU_STATE_FIELD,
     EXPERT_MODULE_ICONMENU_STATE_TEMPLATE,
     EXPERT_MODULE_MENU_TARGET,
     EXPERT_MODULE_ARG_HEATPUMP,
     EXPERT_TIMER_TARGET,
-    EXPERT_TIMER_MAX_POLLS,
-    EXPERT_TIMER_DELAY_SECONDS,
-    EXPERT_TIMER_SETTLE_SECONDS,
     EXPERT_FORM_MAX_ATTEMPTS,
     EXPERT_FORM_RETRY_DELAY_SECONDS,
 )
@@ -87,7 +95,8 @@ class WemPortalExpertClient:
     fully independent of the polling scraper/API paths.
     """
 
-    def __init__(self, username, password, cooldown_check=None, module_arg=None):
+    def __init__(self, username, password, cooldown_check=None, module_arg=None,
+                 enable_module_nav=None, enable_security_code=None):
         self.username = username
         self.password = password
         # Optional callable raising ForbiddenError while a 403 cooldown is
@@ -97,11 +106,37 @@ class WemPortalExpertClient:
         # heat pump index of the reference installation but is overridable
         # for other module layouts.
         self._module_arg = module_arg or EXPERT_MODULE_ARG_HEATPUMP
+        # Per-instance overrides for the two navigation steps that are
+        # skipped by default. None -> fall back to the module constants
+        # (EXPERT_SKIP_MODULE_NAV / EXPERT_SKIP_SECURITY_CODE). A concrete
+        # bool (from the options UI) wins over the constant, so a user can
+        # re-enable either step for an unusual portal/module layout. Stored
+        # as "do the step?" for readability (inverse of the SKIP_ constants).
+        self._do_module_nav = (
+            (not EXPERT_SKIP_MODULE_NAV) if enable_module_nav is None
+            else bool(enable_module_nav)
+        )
+        self._do_security_code = (
+            (not EXPERT_SKIP_SECURITY_CODE) if enable_security_code is None
+            else bool(enable_security_code)
+        )
         self.session = None
         # URL the last successfully fetched parameter dialog was served at
         # (including its real rwndrnd) - used as Referer for the following
         # write POST, matching the HAR's "same-page form submit" pattern.
         self._last_dialog_url = None
+        # Main-page HTML state left by _establish_context (after module
+        # select). _fetch_form uses it to fire an on-demand live-value timer
+        # postback only when the dialog still comes back empty - replacing
+        # the old fixed pre-poll loop with a demand-driven one (early exit
+        # as soon as the dropdown is populated). Updated as polls advance.
+        self._nav_html = None
+        # Optional hook for standalone debugging (set by wem_debug.py, never
+        # used by the real integration): if set, called as
+        # hook(step_name, url, fields, session) right before every POST,
+        # letting an external tool export the exact computed field values
+        # for a manual replay test. Never invoked/needed in normal operation.
+        self._export_hook = None
 
     # ------------------------------------------------------------------
     def _check_cooldown(self):
@@ -117,7 +152,7 @@ class WemPortalExpertClient:
     # ------------------------------------------------------------------
     def _login(self):
         """Perform a fresh web login on a new session."""
-        self.session = requests.Session(impersonate="chrome110")
+        self.session = requests.Session(impersonate="chrome146")
 
         r1 = self.session.get(WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
         self._raise_if_forbidden(r1)
@@ -146,23 +181,29 @@ class WemPortalExpertClient:
         self._establish_context()
 
     def _establish_context(self):
-        """Reproduce the browser navigation that unlocks the Fachmann view.
+        """Reproduce the browser navigation that reaches the Fachmann view.
 
         Reconstructed from a real browser HAR capture. A fresh login only
         reaches the user level; the Fachmann parameters (e.g.
         Leistungsbegrenzung) require, in order:
           1. load the portal main page (Default.aspx),
-          2. unlock the Fachmann level via a security-code dialog (code
-             "11", publicly known),
+          2. switch to the Fachmann submenu - the decisive step is the
+             submenu RadMenu ClientState selecting "Fachmann" (index 3);
+             this alone puts the session on the Fachmann level (verified by
+             a live read AND write). A separate security-code ("11") dialog
+             exists and is reproduced by an optional, disabled-by-default
+             sub-sequence kept as a safety net (see EXPERT_SKIP_SECURITY_CODE),
+             but is not needed while the account's Fachmann access is active,
           3. select the target device module (heat pump),
           4. poll the live-value timer a few times until values arrive.
         Only after this does the parameter edit dialog return a populated
         value dropdown. This is inherently heavier than the API path and
-        runs solely on explicit, on-demand write operations.
+        runs solely on explicit, on-demand read/write operations.
         """
         # Step 1: main page (also captures the base VIEWSTATE we need).
         r_main = self.session.get(
-            WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS
+            WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            headers={"Accept": WEB_ACCEPT_NAV, "Accept-Language": WEB_ACCEPT_LANGUAGE},
         )
         self._raise_if_forbidden(r_main)
         if WEB_LOGIN_URL.lower() in r_main.url.lower():
@@ -173,54 +214,104 @@ class WemPortalExpertClient:
             len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
         )
 
-        # Step 2: unlock Fachmann level. The submenu is a classic full
-        # postback (302 -> reloaded Default.aspx), not an async one; then
-        # the security-code dialog appears and posting "11" unlocks it.
+        # Step 2: switch to the Fachmann submenu. Classic full postback
+        # (302 -> reloaded Default.aspx), not an async one. The submenu's
+        # RadMenu client state must be supplied so the server knows the
+        # "Fachmann" item (index 3) is the one being selected - it is a
+        # JS-generated field, not a server-rendered hidden input, so
+        # _postback's hidden-field carry-over never includes it. Without it
+        # the reload returns the plain user level and every later step
+        # operates on a non-Fachmann page (confirmed via HAR).
         current_html = self._postback(
             WEB_DEFAULT_URL, current_html,
             event_target=EXPERT_SUBMENU_TARGET, event_argument=EXPERT_SUBMENU_ARG,
             async_postback=False,
-        )
-        self._submit_security_code()
-        # The real browser does NOT reload the main page here (confirmed via
-        # HAR: no GET Default.aspx appears at all between the security-code
-        # POST and the module select). Instead, the closing dialog fires a
-        # RadAjaxManager client callback on the PARENT page
-        # (__EVENTTARGET=ctl00$RAMMasterPage, Function="columns") - this is
-        # what actually registers the unlock server-side; a plain reload
-        # carries no such signal and leaves the unlock inert (which is why
-        # the previous approach never got past an empty parameter dropdown).
-        # The dialog runs in its own independent ViewState/ScriptManager
-        # context (plain __VIEWSTATE, "TSMeControlNetDialog"), so this
-        # callback must carry forward the PARENT page's own prior state
-        # (from the submenu postback above), not the dialog's response.
-        current_html = self._postback(
-            WEB_DEFAULT_URL, current_html,
-            event_target=EXPERT_RAM_MASTER_TARGET,
-            event_argument=EXPERT_RAM_MASTER_UNLOCK_ARGUMENT,
             extra_fields={
-                "RadAJAXControlID": EXPERT_RAM_MASTER_RADAJAX_ID,
-                EXPERT_PAGE_TSM_FIELD: EXPERT_RAM_MASTER_TSM_VALUE,
-                EXPERT_PAGE_TSM_ID_FIELD: EXPERT_PAGE_TSM_VALUE,
+                EXPERT_SUBMENU_CLIENTSTATE_FIELD: EXPERT_SUBMENU_CLIENTSTATE_VALUE,
             },
         )
-        _LOGGER.debug(
-            "Expert navigation step 2 (Fachmann unlock) done via RAMMasterPage "
-            "callback: %d bytes, pagestate=%s",
-            len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
-        )
-
-        if EXPERT_SKIP_MODULE_NAV:
-            # Hybrid path under test: the Fachmann unlock alone may be
-            # enough for the parameter dialog to return populated. Skip the
-            # module-select + timer-poll postbacks (which need many
-            # JS-generated _ClientState fields) and let _fetch_form() below
-            # (with its retries) fetch the dialog directly.
-            _LOGGER.debug(
-                "Expert navigation: skipping module/timer postbacks "
-                "(EXPERT_SKIP_MODULE_NAV); fetching dialog directly."
+        # --- Fachmann security-code sub-sequence (retained safety net) ---
+        # DISABLED by default (EXPERT_SKIP_SECURITY_CODE=True in const.py).
+        # Proven unnecessary for both read and write: the submenu ClientState
+        # alone puts the session on the Fachmann level (same as the scraper,
+        # which reads the expert view with no code at all). The full block
+        # below is kept, not deleted, so it can be re-enabled instantly if
+        # Weishaupt ever makes the code mandatory again (e.g. a per-session
+        # unlock). See the constant's comment in const.py for the full
+        # rationale. When active, it fires: timer postback -> security-code
+        # dialog+POST -> RAMMasterPage unlock callback.
+        if self._do_security_code:
+            # HAR-confirmed: after the security-code dialog opens and before
+            # the code is posted, the browser fires exactly ONE main-page
+            # timer postback (timerUpdateData). Its response carries the
+            # fresh main-page state (__ECNPAGEVIEWSTATE/__EVENTVALIDATION)
+            # that the subsequent RAMMasterPage unlock callback must
+            # reference - byte-for-byte identical to the callback body in the
+            # capture. Omitting it left the unlock callback carrying the stale
+            # submenu-reload state, so the server accepted the callback
+            # without error but never materialised the unlock (empty
+            # parameter dropdown afterwards). A single postback, NOT the
+            # generic poll loop, keeps the added server load minimal.
+            self._check_cooldown()
+            current_html = self._postback(
+                WEB_DEFAULT_URL, current_html,
+                event_target=EXPERT_TIMER_TARGET, event_argument="",
             )
-            time.sleep(EXPERT_TIMER_SETTLE_SECONDS)
+            self._submit_security_code()
+            # The real browser does NOT reload the main page here (confirmed
+            # via HAR: no GET Default.aspx appears at all between the
+            # security-code POST and the module select). Instead, the closing
+            # dialog fires a RadAjaxManager client callback on the PARENT page
+            # (__EVENTTARGET=ctl00$RAMMasterPage, Function="columns") - this
+            # is what actually registers the unlock server-side; a plain
+            # reload carries no such signal and leaves the unlock inert (which
+            # is why the previous approach never got past an empty parameter
+            # dropdown). The dialog runs in its own independent
+            # ViewState/ScriptManager context (plain __VIEWSTATE,
+            # "TSMeControlNetDialog"), so this callback must carry forward the
+            # PARENT page's own prior state - and specifically the state from
+            # the timer postback just above (the last main-page response), not
+            # the earlier submenu reload, since the timer postback is what the
+            # real callback's state matches in the capture.
+            current_html = self._postback(
+                WEB_DEFAULT_URL, current_html,
+                event_target=EXPERT_RAM_MASTER_TARGET,
+                event_argument=EXPERT_RAM_MASTER_UNLOCK_ARGUMENT,
+                extra_fields={
+                    "RadAJAXControlID": EXPERT_RAM_MASTER_RADAJAX_ID,
+                    EXPERT_PAGE_TSM_FIELD: EXPERT_RAM_MASTER_TSM_VALUE,
+                    EXPERT_PAGE_TSM_ID_FIELD: EXPERT_PAGE_TSM_VALUE,
+                    EXPERT_RAM_MASTER_REFRESH_BUTTON_FIELD: EXPERT_RAM_MASTER_REFRESH_BUTTON_VALUE,
+                },
+            )
+            _LOGGER.debug(
+                "Expert navigation step 2 (Fachmann unlock) done via "
+                "RAMMasterPage callback: %d bytes, pagestate=%s",
+                len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
+            )
+        else:
+            _LOGGER.debug(
+                "Expert navigation: security-code sub-sequence disabled - "
+                "Fachmann level reached via the submenu ClientState alone; "
+                "code not required for read/write on the reference install."
+            )
+
+        if not self._do_module_nav:
+            # DEFAULT PATH: skip the module-select postback. A live read
+            # proved the parameter dialog comes back fully populated without
+            # selecting a module first (the heat pump is the 7th menu entry,
+            # not the first, so this is not a default-module coincidence) -
+            # the entityvalue in the dialog URL addresses device/module/
+            # parameter completely. _fetch_form fetches the dialog directly
+            # and still polls live values on demand if it ever comes back
+            # empty (using the page state handed over here). The module-
+            # select code below is kept as a safety net for other module
+            # layouts and can be re-enabled from the options UI.
+            _LOGGER.debug(
+                "Expert navigation: skipping module-select postback "
+                "(default); fetching dialog directly."
+            )
+            self._nav_html = current_html
             return
 
         # Step 3: select the target module via its icon-menu async postback.
@@ -238,22 +329,32 @@ class WemPortalExpertClient:
         )
         _LOGGER.debug("Expert navigation step 3 (module select, arg=%s) done.", self._module_arg)
 
-        # Step 4: poll the live-value timer. The browser polls repeatedly
-        # with no explicit "done" signal, so we poll generously. We favor
-        # reliability over speed here (see const.py): the real early-exit
-        # is that _fetch_form() retries until the dropdown is populated.
-        for poll in range(EXPERT_TIMER_MAX_POLLS):
-            time.sleep(EXPERT_TIMER_DELAY_SECONDS)
-            self._check_cooldown()
-            current_html = self._postback(
-                WEB_DEFAULT_URL, current_html,
-                event_target=EXPERT_TIMER_TARGET, event_argument="",
-            )
-            _LOGGER.debug("Expert navigation step 4: timer poll %d/%d done.",
-                          poll + 1, EXPERT_TIMER_MAX_POLLS)
-        # Extra settle pause before the first dialog fetch, giving the
-        # server a moment to finish applying the freshly polled values.
-        time.sleep(EXPERT_TIMER_SETTLE_SECONDS)
+        # After the module select the live values may still be trickling in.
+        # Instead of firing a fixed batch of timer postbacks up front (which
+        # always cost their full wait even when the dialog is already ready),
+        # we hand the current page state to _fetch_form and let it poll the
+        # live-value timer ON DEMAND - one postback at a time, only while the
+        # dialog still comes back empty, stopping the instant it is populated.
+        # This early-exit is both faster in the common case and no worse than
+        # the old loop in the worst case (same max poll budget).
+        self._nav_html = current_html
+
+    def _poll_live_values_once(self):
+        """Fire one live-value timer postback on the main page.
+
+        Used by _fetch_form to advance the server's live-value loading when
+        the parameter dialog still comes back empty, replacing the former
+        fixed pre-poll loop in _establish_context. Safe no-op if navigation
+        state is unavailable (e.g. the module-nav skip path).
+        """
+        if not self._nav_html:
+            return
+        self._check_cooldown()
+        self._nav_html = self._postback(
+            WEB_DEFAULT_URL, self._nav_html,
+            event_target=EXPERT_TIMER_TARGET, event_argument="",
+        )
+        _LOGGER.debug("Expert navigation: on-demand live-value timer poll done.")
 
     def _submit_security_code(self):
         """Post the Fachmann security code to the code-experts dialog.
@@ -268,13 +369,20 @@ class WemPortalExpertClient:
         dialog_url = f"{WEB_CODE_EXPERTS_URL}?rwndrnd={random.random()}"
         r = self.session.get(
             dialog_url, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-            headers={"Referer": WEB_MAIN_URL},
+            headers={
+                "Referer": WEB_MAIN_URL,
+                "Accept": WEB_ACCEPT_NAV,
+                "Accept-Language": WEB_ACCEPT_LANGUAGE,
+            },
         )
         self._raise_if_forbidden(r)
         fields = self._hidden_fields(r.text)
         _LOGGER.debug(
-            "Expert navigation: security-code dialog fetched, %d hidden fields, pagestate=%s",
+            "Expert navigation: security-code dialog fetched, %d hidden fields, "
+            "pagestate=%s, __VIEWSTATE len=%d, __EVENTVALIDATION len=%d",
             len(fields), self._has_viewstate(fields),
+            len(fields.get("__VIEWSTATE", "")),
+            len(fields.get("__EVENTVALIDATION", "")),
         )
         fields[EXPERT_SECURITY_CODE_FIELD] = EXPERT_SECURITY_CODE
         fields["__EVENTTARGET"] = EXPERT_DIALOG_SAVE_TARGET
@@ -283,11 +391,22 @@ class WemPortalExpertClient:
         fields[EXPERT_ASYNCPOST_FIELD] = "true"
         fields["RadAJAXControlID"] = EXPERT_DIALOG_RADAJAX_ID
         fields[EXPERT_DIALOG_TSM_FIELD] = EXPERT_DIALOG_TSM_VALUE
+        fields[EXPERT_DIALOG_TSM_ID_FIELD] = EXPERT_DIALOG_TSM_ID_VALUE
         fields[EXPERT_DIALOG_RTS_STATE_FIELD] = EXPERT_DIALOG_RTS_STATE_VALUE
         self._check_cooldown()
+        sec_headers = {
+            "X-MicrosoftAjax": "Delta=true",
+            "Referer": dialog_url,
+            "Origin": WEB_PORTAL_ORIGIN,
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": WEB_ACCEPT_AJAX,
+            "Accept-Language": WEB_ACCEPT_LANGUAGE,
+        }
+        if self._export_hook is not None:
+            self._export_hook("security_code", dialog_url, dict(fields), dict(sec_headers), self.session)
         r2 = self.session.post(
             dialog_url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-            headers={"X-MicrosoftAjax": "Delta=true", "Referer": dialog_url},
+            headers=sec_headers,
         )
         self._raise_if_forbidden(r2)
         _LOGGER.debug(
@@ -368,6 +487,15 @@ class WemPortalExpertClient:
         fields["__EVENTARGUMENT"] = event_argument
         if extra_fields:
             fields.update(extra_fields)
+        # The main page's ScriptManager TSM version-blob field is sent on
+        # EVERY postback once its scripts are loaded (confirmed via a
+        # structural field comparison against a real browser's subMenu
+        # postback - a FULL, non-async postback that still carries this
+        # field) - not just async ones as previously assumed. The
+        # $-prefixed panel-target field remains async/known-panel-only,
+        # since it identifies which UpdatePanel triggered THIS specific
+        # async postback, which doesn't apply to a full postback.
+        fields[EXPERT_PAGE_TSM_ID_FIELD] = EXPERT_PAGE_TSM_VALUE
 
         self._check_cooldown()
         if async_postback:
@@ -376,24 +504,40 @@ class WemPortalExpertClient:
             fields[EXPERT_ASYNCPOST_FIELD] = "true"
             # Main-page async postbacks (module select, timer polls) also
             # need the ScriptManager field identifying which panel posted
-            # back, plus its static TSM version blob. Only add this for
-            # known targets - the dialog postbacks use a different
-            # ScriptManager field (see _submit_security_code) and don't
-            # need this one.
+            # back. Only add this for known targets - the dialog postbacks
+            # use a different ScriptManager field (see
+            # _submit_security_code) and don't need this one.
             panel = EXPERT_PAGE_TSM_PANEL_BY_TARGET.get(event_target)
             if panel is not None:
                 fields[EXPERT_PAGE_TSM_FIELD] = f"{panel}|{event_target}"
-                fields[EXPERT_PAGE_TSM_ID_FIELD] = EXPERT_PAGE_TSM_VALUE
+            headers = {
+                "X-MicrosoftAjax": "Delta=true",
+                "Referer": WEB_MAIN_URL,
+                "Origin": WEB_PORTAL_ORIGIN,
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": WEB_ACCEPT_AJAX,
+                "Accept-Language": WEB_ACCEPT_LANGUAGE,
+            }
+        else:
+            headers = {
+                "Referer": WEB_MAIN_URL,
+                "Origin": WEB_PORTAL_ORIGIN,
+                "Accept": WEB_ACCEPT_NAV,
+                "Accept-Language": WEB_ACCEPT_LANGUAGE,
+            }
+        if self._export_hook is not None:
+            self._export_hook(event_target, url, dict(fields), dict(headers), self.session)
+        if async_postback:
             resp = self.session.post(
                 url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-                headers={"X-MicrosoftAjax": "Delta=true", "Referer": WEB_MAIN_URL},
+                headers=headers,
             )
         else:
             # Full postback ending in a 302 -> follow it to the reloaded
             # page, whose HTML carries the fresh state for the next step.
             resp = self.session.post(
                 url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-                allow_redirects=True, headers={"Referer": WEB_MAIN_URL},
+                allow_redirects=True, headers=headers,
             )
         self._raise_if_forbidden(resp)
         if WEB_LOGIN_URL.lower() in resp.url.lower():
@@ -483,6 +627,39 @@ class WemPortalExpertClient:
         finally:
             self.close()
 
+    def read_many(self, entityvalues) -> dict:
+        """Read several parameters on ONE shared session.
+
+        Logs in and navigates to the Fachmann level once, then fetches each
+        parameter dialog in turn - far cheaper than one login per id, which
+        matters for the periodic auto-poll. Returns {entityvalue: state}; an
+        id that fails to read maps to None instead of aborting the batch, so
+        one bad id doesn't lose the others. A ForbiddenError (403) is NOT
+        swallowed - it propagates so the shared cooldown engages.
+        """
+        result = {}
+        ids = [e for e in (entityvalues or []) if e]
+        for entityvalue in ids:
+            self._validate_entityvalue(entityvalue)
+        if not ids:
+            return result
+        self._check_cooldown()
+        try:
+            self._login()
+            for entityvalue in ids:
+                try:
+                    result[entityvalue] = self._fetch_form(entityvalue)
+                except ForbiddenError:
+                    raise
+                except Exception as exc:  # pylint: disable=broad-except
+                    _LOGGER.warning(
+                        "Expert auto-poll: reading %s failed: %s", entityvalue, exc
+                    )
+                    result[entityvalue] = None
+        finally:
+            self.close()
+        return result
+
     def write_parameter(self, entityvalue: str, value) -> ExpertParameterState:
         """Login, set a new value via the edit form, verify, close session.
 
@@ -531,8 +708,14 @@ class WemPortalExpertClient:
                         "rwndrnd": str(random.random())},
                 data=post_data,
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-                headers={"X-MicrosoftAjax": "Delta=true",
-                        "Referer": self._last_dialog_url or WEB_MAIN_URL},
+                headers={
+                    "X-MicrosoftAjax": "Delta=true",
+                    "Referer": self._last_dialog_url or WEB_MAIN_URL,
+                    "Origin": WEB_PORTAL_ORIGIN,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": WEB_ACCEPT_AJAX,
+                    "Accept-Language": WEB_ACCEPT_LANGUAGE,
+                },
             )
             self._raise_if_forbidden(resp)
 
@@ -562,12 +745,16 @@ class WemPortalExpertClient:
     def _fetch_form(self, entityvalue: str, max_attempts: int = None) -> ExpertParameterState:
         """GET + parse the edit form on the already logged-in session.
 
-        Retries on an empty dropdown: after selecting the module the live
+        Demand-driven live-value loading: after selecting the module the
         values can still be trickling in, so a first fetch may legitimately
-        come back empty. Rather than failing immediately we retry a few
-        times with a pause, favoring reliability over speed (these are
-        rare, on-demand operations). Only after all attempts still yield an
-        empty dropdown do we raise.
+        come back empty. On an empty dropdown we fire ONE live-value timer
+        postback, pause, and retry - stopping the moment the dropdown is
+        populated (early exit). This replaces the former fixed pre-poll loop
+        in _establish_context: in the common case the dialog is ready on the
+        first try and no timer postbacks are sent at all; in the worst case
+        it polls up to the same budget as before. Favors reliability over
+        speed (rare, on-demand operations). Only after all attempts still
+        yield an empty dropdown do we raise.
 
         max_attempts defaults to EXPERT_FORM_MAX_ATTEMPTS (initial read,
         where values may still be loading). The post-write verify passes a
@@ -584,7 +771,11 @@ class WemPortalExpertClient:
                 params={"entityvalue": entityvalue, "readdata": "True",
                         "rwndrnd": str(random.random())},
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-                headers={"Referer": WEB_MAIN_URL},
+                headers={
+                    "Referer": WEB_MAIN_URL,
+                    "Accept": WEB_ACCEPT_NAV,
+                    "Accept-Language": WEB_ACCEPT_LANGUAGE,
+                },
             )
             self._raise_if_forbidden(resp)
             if WEB_LOGIN_URL.lower() in resp.url.lower():
@@ -603,46 +794,96 @@ class WemPortalExpertClient:
                 )
                 return state
             except ValueError as exc:
-                # Empty dropdown / values not ready yet - wait and retry.
-                # (parse_parameter_form raises AuthError for a login page,
-                # which we deliberately do NOT swallow here.)
+                # Empty dropdown / values not ready yet. (parse_parameter_form
+                # raises AuthError for a login page, which we deliberately do
+                # NOT swallow here.) Nudge the server with one live-value
+                # timer postback, wait, then retry.
                 last_error = exc
                 _LOGGER.debug(
                     "Expert parameter %s not ready on attempt %d/%d: %s",
                     entityvalue, attempt + 1, max_attempts, exc,
                 )
                 if attempt < max_attempts - 1:
+                    self._poll_live_values_once()
                     time.sleep(EXPERT_FORM_RETRY_DELAY_SECONDS)
         raise last_error
+
+
+def expert_client_options(options):
+    """Return the WemPortalExpertClient kwargs derived from entry options.
+
+    Centralises reading the module argument and the two advanced navigation
+    toggles (module select / security code) so every client instantiation -
+    write service, entity background write, and auto-poll - stays consistent.
+    Both toggles default to OFF (i.e. the steps stay skipped) unless the user
+    enabled them in the options UI.
+    """
+    from .const import (
+        CONF_EXPERT_MODULE_ARG,
+        CONF_EXPERT_ENABLE_MODULE_NAV,
+        CONF_EXPERT_ENABLE_SECURITY_CODE,
+    )
+    module_arg = (options.get(CONF_EXPERT_MODULE_ARG) or "").strip() or None
+    return {
+        "module_arg": module_arg,
+        "enable_module_nav": bool(options.get(CONF_EXPERT_ENABLE_MODULE_NAV, False)),
+        "enable_security_code": bool(options.get(CONF_EXPERT_ENABLE_SECURITY_CODE, False)),
+    }
 
 
 def create_expert_number_entities(config_entry):
     """Build the configured expert number entities (comfort layer on top
     of the write service). Imported lazily by number.py's setup so this
-    module stays out of the load path while the option is disabled."""
+    module stays out of the load path while the option is disabled.
+
+    Sources, in order:
+      - the ten generic slots (name + entityvalue id), and
+      - the two legacy fixed slots (heating/cooling), for configs created
+        before the generic slots existed.
+    Empty slots are skipped; duplicate entityvalues are de-duplicated so a
+    value present in both a legacy slot and a generic slot yields one entity.
+    """
     from .const import (
         CONF_EXPERT_WRITE,
         CONF_EXPERT_ENTITY_HEATING,
         CONF_EXPERT_ENTITY_COOLING,
+        EXPERT_SLOT_COUNT,
+        CONF_EXPERT_SLOT_NAME_TEMPLATE,
+        CONF_EXPERT_SLOT_ID_TEMPLATE,
     )
 
     if not config_entry.options.get(CONF_EXPERT_WRITE, False):
         return []
 
-    entities = []
-    for option_key, name in (
+    if "WemPortalExpertNumber" not in globals():
+        _LOGGER.error("Expert number entities unavailable: HA imports missing.")
+        return []
+
+    opts = config_entry.options
+    # Collect (name, entityvalue) pairs from generic slots first, then the
+    # legacy fixed slots. name may be blank -> a default is derived later.
+    specs = []
+    for i in range(1, EXPERT_SLOT_COUNT + 1):
+        entityvalue = (opts.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip()
+        if not entityvalue:
+            continue
+        name = (opts.get(CONF_EXPERT_SLOT_NAME_TEMPLATE % i) or "").strip()
+        specs.append((name or f"expert_parameter_{i}", entityvalue))
+    for legacy_key, legacy_name in (
         (CONF_EXPERT_ENTITY_HEATING, "wp_leistungsbegrenzung_heizen"),
         (CONF_EXPERT_ENTITY_COOLING, "wp_leistungsbegrenzung_kuehlen"),
     ):
-        entityvalue = (config_entry.options.get(option_key) or "").strip()
+        entityvalue = (opts.get(legacy_key) or "").strip()
         if entityvalue:
-            # Guard for non-HA contexts (e.g. unit tests without the HA
-            # package): the entity class below only exists if the HA
-            # imports succeeded.
-            if "WemPortalExpertNumber" not in globals():
-                _LOGGER.error("Expert number entities unavailable: HA imports missing.")
-                return []
-            entities.append(WemPortalExpertNumber(config_entry, name, entityvalue))
+            specs.append((legacy_name, entityvalue))
+
+    entities = []
+    seen = set()
+    for name, entityvalue in specs:
+        if entityvalue in seen:
+            continue
+        seen.add(entityvalue)
+        entities.append(WemPortalExpertNumber(config_entry, name, entityvalue))
     return entities
 
 
@@ -651,6 +892,7 @@ def create_expert_number_entities(config_entry):
 try:
     from homeassistant.components.number import RestoreNumber
     from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+    from homeassistant.core import callback
     from homeassistant.exceptions import HomeAssistantError
     from homeassistant.helpers.entity import DeviceInfo
     from .const import DOMAIN
@@ -694,6 +936,28 @@ try:
             if last is not None and last.native_value is not None:
                 self._attr_native_value = last.native_value
 
+        @property
+        def entityvalue(self):
+            """The portal entityvalue hex ID this entity reads/writes."""
+            return self._entityvalue
+
+        @callback
+        def apply_read_state(self, state):
+            """Update this entity from a periodic read result (ExpertParameterState).
+
+            Called by the hourly auto-poll after reading the parameter in a
+            shared session. Updates the value and the live device range, then
+            writes HA state. A no-op if state is None (read failed for this id).
+            """
+            if state is None:
+                return
+            self._attr_native_value = state.current
+            if state.min_value is not None:
+                self._attr_native_min_value = state.min_value
+            if state.max_value is not None:
+                self._attr_native_max_value = state.max_value
+            self.async_write_ha_state()
+
         async def async_set_native_value(self, value: float) -> None:
             """Start the write in the background and return immediately.
 
@@ -716,16 +980,14 @@ try:
 
         async def _async_write_in_background(self, value: float) -> None:
             """Perform the actual (slow) write off the service-call path."""
-            from .const import CONF_EXPERT_MODULE_ARG
-
-            module_arg = (self._config_entry.options.get(CONF_EXPERT_MODULE_ARG) or "").strip() or None
+            client_opts = expert_client_options(self._config_entry.options)
 
             def _do_write():
                 client = WemPortalExpertClient(
                     self._config_entry.data.get(CONF_USERNAME),
                     self._config_entry.data.get(CONF_PASSWORD),
                     cooldown_check=self._cooldown_check(),
-                    module_arg=module_arg,
+                    **client_opts,
                 )
                 return client.write_parameter(self._entityvalue, value)
 

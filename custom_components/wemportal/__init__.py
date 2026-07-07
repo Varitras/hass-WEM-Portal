@@ -23,6 +23,11 @@ from .const import (
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
     CONF_EXPERT_WRITE,
+    CONF_EXPERT_AUTO_POLL,
+    CONF_EXPERT_POLL_INTERVAL,
+    DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
+    MIN_EXPERT_POLL_INTERVAL_MINUTES,
+    CONF_EXPERT_MODULE_ARG,
     SERVICE_SET_EXPERT_PARAMETER,
 )
 from .coordinator import WemPortalDataUpdateCoordinator, get_modules_store
@@ -223,6 +228,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # polling paths (scraper/API/coordinator) are untouched.
     if entry.options.get(CONF_EXPERT_WRITE, False):
         _async_register_expert_service(hass, entry, api)
+        _async_setup_expert_auto_poll(hass, entry, api)
 
     return True
 
@@ -241,13 +247,12 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
         def _do_write():
             # Own short-lived session per write; honors the global 403
             # cooldown via the api object's check.
-            from .const import CONF_EXPERT_MODULE_ARG
-            module_arg = (entry.options.get(CONF_EXPERT_MODULE_ARG) or "").strip() or None
+            from .expert_writer import expert_client_options
             client = WemPortalExpertClient(
                 entry.data.get(CONF_USERNAME),
                 entry.data.get(CONF_PASSWORD),
                 cooldown_check=api._check_cooldown,
-                module_arg=module_arg,
+                **expert_client_options(entry.options),
             )
             return client.write_parameter(entityvalue, value)
 
@@ -299,6 +304,110 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             }
         ),
     )
+
+
+def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) -> None:
+    """Optionally read the configured expert parameters on a timer.
+
+    OFF unless CONF_EXPERT_AUTO_POLL is enabled. Each read is a full
+    Fachmann navigation, so this is deliberately infrequent (default 60 min,
+    floored at MIN_EXPERT_POLL_INTERVAL_MINUTES) and reads ALL configured ids
+    in ONE shared session to minimise load. A 403 engages the shared cooldown
+    via the client's cooldown_check, and this poll then skips until it clears.
+
+    The entities are created by number.py's platform setup, which may run
+    after this. So we expose a `start_expert_auto_poll` callback in the entry
+    store; whichever of the two runs last actually starts the timer.
+    """
+    import random
+    from homeassistant.helpers.event import async_call_later
+    from .expert_writer import WemPortalExpertClient
+
+    if not entry.options.get(CONF_EXPERT_AUTO_POLL, False):
+        return
+
+    interval_min = entry.options.get(
+        CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+    )
+    try:
+        interval_min = max(int(interval_min), MIN_EXPERT_POLL_INTERVAL_MINUTES)
+    except (TypeError, ValueError):
+        interval_min = DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+
+    # Fraction of extra, random delay added on top of the configured interval
+    # each cycle (0..20%). Jitter is added ONLY upwards, so the effective
+    # interval is always >= the user's setting (and thus never below the
+    # 15-min floor) - the poll pattern is less regular without ever hitting
+    # the portal more often than configured.
+    EXPERT_POLL_JITTER_FRACTION = 0.20
+
+    store = hass.data[DOMAIN][entry.entry_id]
+
+    def _next_delay_seconds():
+        base = interval_min * 60
+        return base + random.uniform(0, base * EXPERT_POLL_JITTER_FRACTION)
+
+    async def _poll(_now=None):
+        try:
+            entities = store.get("expert_entities") or []
+            entityvalues = [e.entityvalue for e in entities]
+            if not entityvalues:
+                return
+            def _do_read():
+                from .expert_writer import expert_client_options
+                client = WemPortalExpertClient(
+                    entry.data.get(CONF_USERNAME),
+                    entry.data.get(CONF_PASSWORD),
+                    cooldown_check=api._check_cooldown,
+                    **expert_client_options(entry.options),
+                )
+                return client.read_many(entityvalues)
+
+            try:
+                results = await hass.async_add_executor_job(_do_read)
+            except Exception as exc:  # pylint: disable=broad-except
+                _LOGGER.warning("Expert auto-poll read failed: %s", exc)
+                return
+            for entity in entities:
+                entity.apply_read_state(results.get(entity.entityvalue))
+        finally:
+            # Always reschedule the next run (with fresh jitter), even if this
+            # cycle failed - a transient error must not stop future polls.
+            _schedule_next()
+
+    def _schedule_next():
+        delay = _next_delay_seconds()
+        unsub = async_call_later(hass, delay, _poll)
+        store["expert_poll_unsub"] = unsub
+        _LOGGER.debug(
+            "Expert auto-poll: next read in %.1f min (base %d min + jitter).",
+            delay / 60, interval_min,
+        )
+
+    def _cancel():
+        unsub = store.pop("expert_poll_unsub", None)
+        if unsub is not None:
+            unsub()
+
+    def _start():
+        # Idempotent: only one timer chain per entry.
+        if store.get("expert_poll_started"):
+            return
+        store["expert_poll_started"] = True
+        entry.async_on_unload(_cancel)
+        _LOGGER.info(
+            "Expert auto-poll enabled: reading configured parameters about "
+            "every %d min (with up to +%d%% random jitter).",
+            interval_min, int(EXPERT_POLL_JITTER_FRACTION * 100),
+        )
+        # Initial read shortly after startup; it reschedules itself afterwards.
+        hass.async_create_background_task(_poll(), name="wemportal_expert_initial_poll")
+
+    # If the entities already exist, start now; otherwise number.py will call
+    # this once it has created them.
+    store["start_expert_auto_poll"] = _start
+    if store.get("expert_entities"):
+        _start()
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:

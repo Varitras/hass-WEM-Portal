@@ -27,6 +27,15 @@ from .const import (
     CONF_EXPERT_WRITE,
     CONF_EXPERT_ENTITY_HEATING,
     CONF_EXPERT_ENTITY_COOLING,
+    EXPERT_SLOT_COUNT,
+    CONF_EXPERT_SLOT_NAME_TEMPLATE,
+    CONF_EXPERT_SLOT_ID_TEMPLATE,
+    CONF_EXPERT_AUTO_POLL,
+    CONF_EXPERT_POLL_INTERVAL,
+    DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
+    MIN_EXPERT_POLL_INTERVAL_MINUTES,
+    CONF_EXPERT_ENABLE_MODULE_NAV,
+    CONF_EXPERT_ENABLE_SECURITY_CODE,
     CONF_EXPERT_MODULE_ARG,
     EXPERT_MODULE_ARG_HEATPUMP,
 )
@@ -153,26 +162,76 @@ class WemportalOptionsFlow(OptionsFlow):
                         CONF_EXPERT_WRITE,
                         default=self.config_entry.options.get(CONF_EXPERT_WRITE, False),
                     ): config_validation.boolean,
-                    # entityvalue hex IDs from the portal's edit dialogs
-                    # (empty = no number entity for that parameter).
+                    # Optional periodic read-back of the configured expert
+                    # parameters - OFF by default (each read is a full
+                    # Fachmann navigation; frequent polling risks a 403 IP
+                    # block). The interval is in minutes and floored at
+                    # MIN_EXPERT_POLL_INTERVAL_MINUTES.
                     vol.Optional(
-                        CONF_EXPERT_ENTITY_HEATING,
-                        default=self.config_entry.options.get(CONF_EXPERT_ENTITY_HEATING, ""),
-                    ): config_validation.string,
+                        CONF_EXPERT_AUTO_POLL,
+                        default=self.config_entry.options.get(CONF_EXPERT_AUTO_POLL, False),
+                    ): config_validation.boolean,
                     vol.Optional(
-                        CONF_EXPERT_ENTITY_COOLING,
-                        default=self.config_entry.options.get(CONF_EXPERT_ENTITY_COOLING, ""),
-                    ): config_validation.string,
-                    # Icon-menu argument selecting the module for expert
-                    # writes; default "6" (heat pump on the reference
-                    # installation), overridable for other module layouts.
+                        CONF_EXPERT_POLL_INTERVAL,
+                        default=self.config_entry.options.get(
+                            CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+                        ),
+                    ): vol.All(
+                        config_validation.positive_int,
+                        vol.Clamp(min=MIN_EXPERT_POLL_INTERVAL_MINUTES),
+                    ),
+                    # --- Advanced expert options (only if you know what you
+                    # are doing) --------------------------------------------
+                    # Both navigation steps below are skipped by default
+                    # because they were proven unnecessary on the reference
+                    # installation. Re-enable only for an unusual portal or
+                    # module layout where reads/writes otherwise fail.
+                    vol.Optional(
+                        CONF_EXPERT_ENABLE_MODULE_NAV,
+                        default=self.config_entry.options.get(
+                            CONF_EXPERT_ENABLE_MODULE_NAV, False
+                        ),
+                    ): config_validation.boolean,
+                    # Module menu index used ONLY when module select is
+                    # enabled above. Empty default; "6" = heat pump on the
+                    # reference install.
                     vol.Optional(
                         CONF_EXPERT_MODULE_ARG,
                         default=self.config_entry.options.get(
-                            CONF_EXPERT_MODULE_ARG, EXPERT_MODULE_ARG_HEATPUMP
+                            CONF_EXPERT_MODULE_ARG, ""
                         ),
                     ): config_validation.string,
+                    vol.Optional(
+                        CONF_EXPERT_ENABLE_SECURITY_CODE,
+                        default=self.config_entry.options.get(
+                            CONF_EXPERT_ENABLE_SECURITY_CODE, False
+                        ),
+                    ): config_validation.boolean,
+                    # Ten generic expert-parameter slots (name + entityvalue
+                    # hex ID). Added programmatically below so the block stays
+                    # compact. Empty slots are ignored.
+                    **self._expert_slot_schema(),
                 }
             ),
         )
+
+    def _expert_slot_schema(self):
+        """Build the vol schema fields for the ten generic expert slots.
+
+        Each slot is a name field and an entityvalue-id field, both optional
+        and defaulting to any previously stored value. Kept as a helper so
+        the ten slots don't bloat the main schema literal.
+        """
+        opts = self.config_entry.options
+        fields = {}
+        for i in range(1, EXPERT_SLOT_COUNT + 1):
+            name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % i
+            id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
+            fields[
+                vol.Optional(name_key, default=opts.get(name_key, ""))
+            ] = config_validation.string
+            fields[
+                vol.Optional(id_key, default=opts.get(id_key, ""))
+            ] = config_validation.string
+        return fields
 

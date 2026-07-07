@@ -7,5 +7,5 @@ scripts/
 wem_debug.py
 wem_debug.txt
 wem_dump/
-wem_debug.py
-wem_debug.py
+/tests/
+.pytest_cache
