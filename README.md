@@ -17,6 +17,9 @@ This is a fork of
 > warranty, and no support or maintenance is guaranteed. Use at your own risk
 > — especially the expert write feature, which changes settings on your real
 > heating system. Always verify changes in the WEM Portal itself.
+>
+> Developed with AI assistance (Claude), with all testing, decisions, and
+> validation done by me against my own installation.
 
 ## Installation
 
