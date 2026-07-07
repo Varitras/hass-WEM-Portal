@@ -112,8 +112,11 @@ not post it publicly. To find it:
    and click the **pencil/edit icon** next to the parameter.
 3. In the highlighted `<input>` element, look at the `onclick` attribute:
    it contains a URL fragment like `WwpsParameterDetails.aspx` followed by
-   `entityvalue=3A7F91C2E0B48D5619F2A0C7B4E83D105C2A`.
-4. Copy the hex string after `entityvalue=` - that is the ID.
+   `entityvalue=<a long hex string>`. For example it might look like
+   `entityvalue=3A7F91C2E0B48D5619F2A0C7B4E83D105C2A` - **this is only an
+   illustrative example, not a real ID; yours will be different.**
+4. Copy the hex string after `entityvalue=` (the part shown as the example
+   above) - that is *your* ID.
 
 Alternatively, open the parameter's edit dialog and copy the
 `entityvalue=...` value straight from the request URL in the developer
@@ -163,7 +166,9 @@ Independent of the number entities, the service
 ```yaml
 action: wemportal.set_expert_parameter
 data:
-  entityvalue: "3A7F91C2E0B48D5619F2A0C7B4E83D105C2A"  # your ID
+  # Replace the example hex string below with YOUR own entityvalue
+  # (found via the steps above). This one is just a placeholder.
+  entityvalue: "3A7F91C2E0B48D5619F2A0C7B4E83D105C2A"
   value: 30
 ```
 

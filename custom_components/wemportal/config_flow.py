@@ -26,6 +26,7 @@ from .const import (
     DEFAULT_CONF_LANGUAGE_VALUE,
     CONF_EXPERT_WRITE,
     EXPERT_SLOT_COUNT,
+    MIN_EXPERT_ENTITYVALUE_LENGTH,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_AUTO_POLL,
@@ -134,17 +135,35 @@ class WemportalOptionsFlow(OptionsFlow):
         errors = {}
         if user_input is not None:
             # Validate the ten expert slot IDs on save: an entityvalue must
-            # be a plain hex string. Catching a typo here (with the field
-            # marked in the form) beats a cryptic failure on the first
-            # read/write minutes later. Whitespace is stripped, empty is fine.
+            # be a plain hex string of a plausible length. Real entityvalues
+            # are long (the known ones are 36 hex chars); a short entry like
+            # "0" or "abc" is a stray value/typo, not a real ID, and would
+            # only cause a pointless failing portal request later. We require
+            # hex AND a minimum length, kept well below the observed 36 so a
+            # slightly different length on another installation still passes.
+            # Whitespace is stripped; empty stays allowed (slot unused).
             import re
+            min_len = MIN_EXPERT_ENTITYVALUE_LENGTH
             for i in range(1, EXPERT_SLOT_COUNT + 1):
                 id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
                 raw = (user_input.get(id_key) or "").strip()
                 user_input[id_key] = raw  # persist the stripped value
-                if raw and not re.fullmatch(r"[0-9A-Fa-f]+", raw):
+                if raw and (
+                    not re.fullmatch(r"[0-9A-Fa-f]+", raw) or len(raw) < min_len
+                ):
                     errors[id_key] = "invalid_entityvalue"
             if not errors:
+                # No-op guard: writing a new options entry always triggers a
+                # full integration reload (and a fresh portal login). If the
+                # normalized input is identical to the stored options -
+                # e.g. the user opened the dialog and saved without changes,
+                # or only typed whitespace into an already-empty ID field -
+                # skip the write so we don't reload for nothing. Reloading
+                # needlessly also risks the portal's 403 rate limit.
+                current = dict(self.config_entry.options)
+                merged = {**current, **user_input}
+                if merged == current:
+                    return self.async_abort(reason="no_changes")
                 return self.async_create_entry(title="", data=user_input)
 
         # On an error redisplay, prefill the form with what the user just

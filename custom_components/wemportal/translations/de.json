@@ -51,14 +51,17 @@
           "expert_slot_9_id": "Experten-Parameter 9: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
           "expert_slot_10_name": "Experten-Parameter 10: Name (optional)",
           "expert_slot_10_id": "Experten-Parameter 10: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_enable_module_nav": "⚠ Nur wenn du weißt, was du tust! Modul-Auswahl aktivieren (Standard = aus, normalerweise nicht nötig).",
-          "expert_enable_security_code": "⚠ Nur wenn du weißt, was du tust! Sicherheitscode-Schritt aktivieren (Standard = aus, normalerweise nicht nötig).",
+          "expert_enable_module_nav": "⚠ Modul-Auswahl aktivieren (Standard = aus). Hinweis: normalerweise nicht nötig – nur aktivieren, wenn du weißt, was du tust.",
+          "expert_enable_security_code": "⚠ Sicherheitscode-Schritt aktivieren (Standard = aus). Hinweis: normalerweise nicht nötig – nur aktivieren, wenn du weißt, was du tust.",
           "expert_notify_on_success": "Bei erfolgreichem Experten-Schreibvorgang eine Benachrichtigung anzeigen (Standard = aus; Fehler werden immer gemeldet)"
         }
       }
     },
     "error": {
-      "invalid_entityvalue": "Ungültige entityvalue-ID: nur Hex-Zeichen (0-9, A-F) erlaubt."
+      "invalid_entityvalue": "Ungültige entityvalue-ID: muss eine lange Hex-Zeichenkette sein (nur 0-9, A-F; typisch 36 Zeichen). Kurze Werte wie 0 sind keine gültige ID."
+    },
+    "abort": {
+      "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen."
     }
   }
 }
