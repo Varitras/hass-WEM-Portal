@@ -260,19 +260,29 @@ class WemportalOptionsFlow(OptionsFlow):
         """Build the vol schema fields for the ten generic expert slots.
 
         Each slot is a name field and an entityvalue-id field, both optional.
-        Defaults come from self._opt, which prefers the just-submitted user
-        input on an error redisplay over the stored options, so a validation
-        error never wipes what the user typed.
+        Prefilled values use `suggested_value` (via description), NOT
+        `default`: with `default`, a field the user clears on save falls
+        back to the stored value, making it impossible to delete a value
+        (e.g. a stray "0" left in a slot). `suggested_value` shows the
+        current value but lets an emptied field stay empty. The suggested
+        value prefers just-submitted input on an error redisplay so a
+        validation error never wipes what the user typed.
         """
         fields = {}
         for i in range(1, EXPERT_SLOT_COUNT + 1):
             name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % i
             id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
             fields[
-                vol.Optional(name_key, default=self._opt(name_key, ""))
+                vol.Optional(
+                    name_key,
+                    description={"suggested_value": self._opt(name_key, "")},
+                )
             ] = config_validation.string
             fields[
-                vol.Optional(id_key, default=self._opt(id_key, ""))
+                vol.Optional(
+                    id_key,
+                    description={"suggested_value": self._opt(id_key, "")},
+                )
             ] = config_validation.string
         return fields
 
