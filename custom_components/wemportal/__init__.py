@@ -257,9 +257,10 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             return client.write_parameter(entityvalue, value)
 
         async def _run_in_background():
-            # An expert write takes ~60-80s (full Fachmann navigation),
-            # longer than a service call will wait, so run it detached and
-            # report the outcome via a persistent notification + the log.
+            # An expert write takes roughly 5-15s (login + minimal Fachmann
+            # navigation + write + verify) - still longer than a frontend
+            # service call comfortably waits, so run it detached and report
+            # the outcome via a persistent notification + the log.
             try:
                 state = await hass.async_add_executor_job(_do_write)
             except Exception as exc:  # pylint: disable=broad-except

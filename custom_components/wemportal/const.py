@@ -71,7 +71,7 @@ API_STATISTICS_READ_URL: Final = "https://www.wemportal.com/app/Statistics/Read"
 # generous: a 403 means the server is already unhappy with our request
 # rate, so backing off hard (rather than continuing to poll other
 # endpoints in the same cycle) is the safer choice.
-FORBIDDEN_COOLDOWN_SECONDS: Final = 30 * 60  # 30 minutes
+FORBIDDEN_COOLDOWN_SECONDS: Final = 15 * 60  # 15 minutes
 
 # Per-request timeout for the web scraper's HTTP calls. Without one, a
 # slow/hanging WEM Portal response would block the executor thread until
@@ -84,21 +84,16 @@ SCRAPER_REQUEST_TIMEOUT_SECONDS: Final = 30
 # them directly in the WEM Portal app (this integration only ever shows
 # them as read-only sensors). Refetching them every single coordinator
 # cycle is unnecessary load; this caps how often they're refreshed.
-CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS: Final = 4 * 3600  # 4 hours
+CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
 
-# Energy statistics are daily aggregates - they don't need hourly
-# refreshes. Widening this beyond the original 1 hour further reduces
-# steady-state load without any meaningful loss of freshness.
-STATISTICS_REFRESH_INTERVAL_SECONDS: Final = 4 * 3600  # 4 hours
+# Energy statistics are daily aggregates - they don't need per-cycle
+# refreshes. This caps how often they're refreshed.
+STATISTICS_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
 
 # Expert write access (web) - disabled by default. Only when enabled are
 # the wemportal.set_expert_parameter service and the configured expert
 # number entities registered.
 CONF_EXPERT_WRITE: Final = "expert_write_enabled"
-# Legacy fixed slots (heating/cooling) - kept only so existing configs keep
-# working; new configs use the 10 generic slots below.
-CONF_EXPERT_ENTITY_HEATING: Final = "expert_entityvalue_heating"
-CONF_EXPERT_ENTITY_COOLING: Final = "expert_entityvalue_cooling"
 # Ten generic expert-parameter slots. Each slot has a free-text name (used
 # as the entity's friendly name / slug source) and an entityvalue hex ID
 # (from the portal's parameter edit dialog). Empty slots are ignored.

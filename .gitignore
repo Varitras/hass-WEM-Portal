@@ -1,11 +1,23 @@
+# Python
 *.pyc
 __pycache__/
 .venv/
-ha_config
-scripts/
-.patches/
+.pytest_cache/
+
+# Local-only test suite (kept out of the repo; HACS ships only
+# custom_components/wemportal/ anyway)
+/tests/
+
+# Local-only CLI debug tool and its output (hits the real portal;
+# developer utility, not shipped to end users). wem_dump/ can contain
+# live session cookies and installation-specific values - never commit it.
 wem_debug.py
 wem_debug.txt
 wem_dump/
-/tests/
-.pytest_cache
+
+# Local HA dev instance / scratch
+ha_config
+scripts/
+
+# Build artifacts
+*.zip

@@ -836,17 +836,11 @@ def create_expert_number_entities(config_entry):
     of the write service). Imported lazily by number.py's setup so this
     module stays out of the load path while the option is disabled.
 
-    Sources, in order:
-      - the ten generic slots (name + entityvalue id), and
-      - the two legacy fixed slots (heating/cooling), for configs created
-        before the generic slots existed.
-    Empty slots are skipped; duplicate entityvalues are de-duplicated so a
-    value present in both a legacy slot and a generic slot yields one entity.
+    Entities are built from the ten generic slots (name + entityvalue id).
+    Empty slots are skipped; duplicate entityvalues are de-duplicated.
     """
     from .const import (
         CONF_EXPERT_WRITE,
-        CONF_EXPERT_ENTITY_HEATING,
-        CONF_EXPERT_ENTITY_COOLING,
         EXPERT_SLOT_COUNT,
         CONF_EXPERT_SLOT_NAME_TEMPLATE,
         CONF_EXPERT_SLOT_ID_TEMPLATE,
@@ -860,8 +854,8 @@ def create_expert_number_entities(config_entry):
         return []
 
     opts = config_entry.options
-    # Collect (name, entityvalue) pairs from generic slots first, then the
-    # legacy fixed slots. name may be blank -> a default is derived later.
+    # Collect (name, entityvalue) pairs from the generic slots. A slot with
+    # an id but no name gets a default name.
     specs = []
     for i in range(1, EXPERT_SLOT_COUNT + 1):
         entityvalue = (opts.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip()
@@ -869,13 +863,6 @@ def create_expert_number_entities(config_entry):
             continue
         name = (opts.get(CONF_EXPERT_SLOT_NAME_TEMPLATE % i) or "").strip()
         specs.append((name or f"expert_parameter_{i}", entityvalue))
-    for legacy_key, legacy_name in (
-        (CONF_EXPERT_ENTITY_HEATING, "wp_leistungsbegrenzung_heizen"),
-        (CONF_EXPERT_ENTITY_COOLING, "wp_leistungsbegrenzung_kuehlen"),
-    ):
-        entityvalue = (opts.get(legacy_key) or "").strip()
-        if entityvalue:
-            specs.append((legacy_name, entityvalue))
 
     entities = []
     seen = set()
@@ -917,16 +904,18 @@ try:
         def __init__(self, config_entry, name, entityvalue):
             self._config_entry = config_entry
             self._entityvalue = entityvalue
-            # `name` is the technical slug (e.g. wp_leistungsbegrenzung_heizen);
-            # keep it as the stable object_id source but show a readable
-            # friendly name, consistent with has_entity_name on the other
-            # platforms.
+            # `name` comes from the slot's name field (or a default like
+            # "expert_parameter_3"); use it as the stable object_id source
+            # but show a readable friendly name, consistent with
+            # has_entity_name on the other platforms.
             self._attr_name = name.replace("_", " ").title()
-            self._attr_translation_key = name
+            # No translation_key: slot names are free text with no matching
+            # translation entry, so the friendly name above is used directly
+            # (setting an unresolvable translation_key would only log warnings).
             self._attr_unique_id = f"{config_entry.entry_id}:expert:{entityvalue}"
             self._attr_native_value = None
             # Guards against starting a second write while one is still
-            # running in the background (the write takes ~60-80s).
+            # running in the background (the write takes roughly 5-15s).
             self._write_in_progress = False
 
         async def async_added_to_hass(self):
@@ -961,12 +950,12 @@ try:
         async def async_set_native_value(self, value: float) -> None:
             """Start the write in the background and return immediately.
 
-            An expert write reproduces the full Fachmann navigation and
-            takes ~60-80s - far longer than a frontend service call will
-            wait. Running it as a background task lets the call return at
-            once; the outcome is reported via a persistent notification
-            and the log. The entity value updates once the write is
-            verified.
+            An expert write logs in, does the minimal Fachmann navigation,
+            writes and verifies - roughly 5-15s, still longer than a
+            frontend service call comfortably waits. Running it as a
+            background task lets the call return at once; the outcome is
+            reported via a persistent notification and the log. The entity
+            value updates once the write is verified.
             """
             if self._write_in_progress:
                 raise HomeAssistantError(
