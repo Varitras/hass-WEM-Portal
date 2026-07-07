@@ -6,6 +6,17 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.2] – 2026-07-07
+
+### Fixed
+- **Auto-poll skips invalid stored entityvalues instead of polling them.**
+  A too-short or non-hex ID left in the config (e.g. a stray `0` from before
+  the length check existed) is now skipped during periodic reads rather than
+  triggering a portal request that hits an empty dialog and logs a
+  misleading "reading 0 failed" warning. Active single reads/writes still
+  reject such IDs with a clear error. The validity rule (hex + minimum
+  length) is shared with the options-flow validation.
+
 ## [1.8.1] – 2026-07-07
 
 ### Changed
