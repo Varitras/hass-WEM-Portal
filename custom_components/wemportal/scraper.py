@@ -42,8 +42,9 @@ class WemPortalScraper:
         """
         try:
             self.session.close()
-        except Exception:  # pylint: disable=broad-except
-            pass
+        except Exception as exc:  # pylint: disable=broad-except
+            # Closing is best-effort; the session is being discarded anyway.
+            _LOGGER.debug("Ignoring error while closing scraper session: %s", exc)
 
     def _raise_if_forbidden(self, response):
         """Raise ForbiddenError on a 403 so the caller can trigger the
@@ -139,8 +140,9 @@ class WemPortalScraper:
                 _LOGGER.debug("Cached WEM Portal session is no longer valid, logging in again.")
                 try:
                     self.session.cookies.clear()
-                except Exception:
-                    pass
+                except Exception as exc:  # pylint: disable=broad-except
+                    # Non-fatal: we re-login below regardless.
+                    _LOGGER.debug("Ignoring error while clearing cookies: %s", exc)
 
         # --- Full login sequence ---
         # 1. GET Login page

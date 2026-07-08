@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.4] – 2026-07-07
+
+### Changed
+- **Silent `except: pass` blocks now log at debug level.** The five
+  best-effort cleanup/parse fallbacks (session close, cookie clear, hidden-
+  field parsing) no longer swallow errors silently - they keep the same
+  non-fatal behaviour but leave a debug-log trace, so a regression (e.g. a
+  portal format change) is visible during troubleshooting. Resolves the
+  static-analysis "try/except/pass" findings.
+
+### Documentation
+- **README: background on the entityvalue ID.** Explains that part of the ID
+  is installation-specific (don't share/copy IDs) and that the embedded
+  value snapshot is ignored for addressing - which is why a stored ID keeps
+  working after the value changes, and why the ID must not be "normalized".
+
 ## [1.8.3] – 2026-07-07
 
 ### Fixed

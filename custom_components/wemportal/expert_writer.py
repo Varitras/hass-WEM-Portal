@@ -478,8 +478,11 @@ class WemPortalExpertClient:
                 name = inp.get("name")
                 if name:
                     fields[name] = inp.get("value", "")
-        except Exception:  # pylint: disable=broad-except
-            pass
+        except Exception as exc:  # pylint: disable=broad-except
+            # Malformed/unparseable response: return whatever was collected
+            # so the caller degrades gracefully instead of crashing. Logged
+            # so a parsing regression (e.g. a portal format change) is visible.
+            _LOGGER.debug("Could not parse hidden fields from response: %s", exc)
         return fields
 
     def _postback(self, url, current_html, event_target, event_argument="",
@@ -581,8 +584,9 @@ class WemPortalExpertClient:
         if self.session is not None:
             try:
                 self.session.close()
-            except Exception:  # pylint: disable=broad-except
-                pass
+            except Exception as exc:  # pylint: disable=broad-except
+                # Closing is best-effort; the session is being discarded anyway.
+                _LOGGER.debug("Ignoring error while closing expert session: %s", exc)
             self.session = None
 
     # ------------------------------------------------------------------

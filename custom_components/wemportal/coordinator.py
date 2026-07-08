@@ -151,8 +151,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     if old_session is not None:
                         try:
                             old_session.close()
-                        except Exception:  # pylint: disable=broad-except
-                            pass
+                        except Exception as exc:  # pylint: disable=broad-except
+                            # Best-effort cleanup of the discarded session.
+                            _LOGGER.debug("Ignoring error while closing old session: %s", exc)
                 raise UpdateFailed(f"Error fetching data from wemportal: {exc}") from exc
             except Exception as exc:  # pylint: disable=broad-except
                 # Catch-all safety net: covers cases that don't come from
