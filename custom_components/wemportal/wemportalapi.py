@@ -45,6 +45,8 @@ from .const import (
     FORBIDDEN_COOLDOWN_SECONDS,
     CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
     STATISTICS_REFRESH_INTERVAL_SECONDS,
+    API_REQUEST_TIMEOUT_SECONDS,
+    SCRAPER_REQUEST_TIMEOUT_SECONDS,
 )
 
 
@@ -408,10 +410,17 @@ class WemPortalApi:
         self.session = reqs.Session()
         self.session.cookies.clear()
         self.session.headers.update(self.headers)
+        # Initialized BEFORE the try block: if the POST itself fails with a
+        # pure network error (connection reset, DNS, timeout), `response`
+        # would otherwise not exist yet and the error handler below would
+        # crash with an UnboundLocalError instead of raising the intended
+        # UnknownAuthError.
+        response = None
         try:
             response = self.session.post(
                 API_LOGIN_URL,
                 data=payload,
+                timeout=API_REQUEST_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
             
@@ -486,7 +495,10 @@ class WemPortalApi:
 
         # Step 1: Fetch the login page
         try:
-            initial_response = session.get(login_url, headers=headers)
+            initial_response = session.get(
+                login_url, headers=headers,
+                timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            )
             initial_response.raise_for_status()
         except reqs.exceptions.RequestException as exc:
             raise UnknownAuthError(f"Failed to load the login page: {exc}") from exc
@@ -513,6 +525,7 @@ class WemPortalApi:
                     **headers,
                     "Content-Type": "application/x-www-form-urlencoded",
                 },
+                timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
 
@@ -555,6 +568,10 @@ class WemPortalApi:
         response = None
 
         for attempt in range(attempts):
+            # Reset per attempt: on a network failure during a retry the
+            # error handler below would otherwise read stale details from
+            # the PREVIOUS attempt's response.
+            response = None
             # Fail fast if we're still cooling down from a previous 403 -
             # applies to every single call site that goes through here,
             # not just the one that originally triggered it.
@@ -571,10 +588,10 @@ class WemPortalApi:
             try:
                 if not data:
                     _LOGGER.debug("Sending GET request to %s with headers: %s", url, current_headers)
-                    response = self.session.get(url, headers=current_headers, timeout=10)
+                    response = self.session.get(url, headers=current_headers, timeout=API_REQUEST_TIMEOUT_SECONDS)
                 else:
                     _LOGGER.debug("Sending POST request to %s with headers: %s and data: %s", url, current_headers, data)
-                    response = self.session.post(url, headers=current_headers, json=data, timeout=10)
+                    response = self.session.post(url, headers=current_headers, json=data, timeout=API_REQUEST_TIMEOUT_SECONDS)
 
                 response.raise_for_status()
 
@@ -657,14 +674,21 @@ class WemPortalApi:
         """
         _LOGGER.debug("Fetching api device data")
         previously_known_modules = self.modules or {}
-        self.modules = {}
-        self.data = {}
+        # Build the fresh device/module view in LOCAL dicts first and only
+        # assign to self.modules/self.data once everything succeeded.
+        # Previously both were wiped BEFORE the API call: a single failing
+        # call (e.g. one 403) then left them empty, and the next successful
+        # run saw no previously-known modules - silently discarding all
+        # cached parameter definitions and forcing the slow, rate-limited
+        # full discovery in get_parameters() that the cache exists to avoid.
         data = self.make_api_call(API_DEVICE_READ_URL, do_retry=True).json()
 
+        new_modules = {}
+        new_data = {}
         for device in data["Devices"]:
             device_id_str = str(device["ID"])
-            self.data[device_id_str] = {}
-            self.modules[device_id_str] = {}
+            new_data[device_id_str] = {}
+            new_modules[device_id_str] = {}
             previously_known_device_modules = previously_known_modules.get(device_id_str, {})
             for module in device["Modules"]:
                 module_key = (module["Index"], module["Type"])
@@ -676,8 +700,10 @@ class WemPortalApi:
                 cached_module = previously_known_device_modules.get(module_key)
                 if cached_module and "parameters" in cached_module:
                     module_entry["parameters"] = cached_module["parameters"]
-                self.modules[device_id_str][module_key] = module_entry
-            self.data[device_id_str]["ConnectionStatus"] = device["ConnectionStatus"]
+                new_modules[device_id_str][module_key] = module_entry
+            new_data[device_id_str]["ConnectionStatus"] = device["ConnectionStatus"]
+        self.modules = new_modules
+        self.data = new_data
 
     def get_parameters(self):
         if self.modules is None:
@@ -812,8 +838,13 @@ class WemPortalApi:
         target_devices = enabled_devices if enabled_devices else list(self.data.keys())
         _LOGGER.debug("Computed target_devices=%s", target_devices)
         for device_id in target_devices:
-            _LOGGER.debug("Processing device_id=%s (type %s). Is in self.data? %s", device_id, type(device_id), str(device_id) in self.data)
-            if str(device_id) not in self.data:
+            # Normalize once: self.data is keyed by str, but callers may
+            # pass ints. Previously the membership check used str() while
+            # the accesses below used the raw value - a latent KeyError for
+            # any int id that only the broad per-device handlers would catch.
+            device_id = str(device_id)
+            _LOGGER.debug("Processing device_id=%s. Is in self.data? %s", device_id, device_id in self.data)
+            if device_id not in self.data:
                 continue
                 
             # 1. Fetch Device Status First
@@ -1015,6 +1046,9 @@ class WemPortalApi:
         
         target_devices = enabled_devices if enabled_devices else list(self.data.keys())
         for device_id in target_devices:
+            # Same str-normalization as in get_data(): self.data is keyed
+            # by str, callers may pass ints.
+            device_id = str(device_id)
             if device_id not in self.data:
                 continue
             try:

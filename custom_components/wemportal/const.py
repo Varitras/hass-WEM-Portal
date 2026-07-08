@@ -52,6 +52,12 @@ DATA_GATHERING_ERROR: Final = "An error occurred while gathering data.This issue
 WEM_INVALID_PARAMETER_STATUS: Final = 3001
 DEFAULT_CONF_SCAN_INTERVAL_API_VALUE: Final = 300
 DEFAULT_CONF_SCAN_INTERVAL_VALUE: Final = 1800
+# Lower bounds enforced (clamped, like the expert poll interval) on the two
+# scan intervals in the options flow. Both fields are plain positive-int
+# seconds, so without a floor a stray tiny value (e.g. "1") would poll the
+# portal continuously and reliably trigger the IP-wide 403 rate limit.
+MIN_SCAN_INTERVAL_SECONDS: Final = 60  # web scraping interval floor
+MIN_SCAN_INTERVAL_API_SECONDS: Final = 10  # mobile-API interval floor
 DEFAULT_CONF_LANGUAGE_VALUE: Final = "en"
 DEFAULT_CONF_MODE_VALUE: Final = "api"
 API_LOGIN_URL: Final = "https://www.wemportal.com/app/Account/Login"
@@ -79,6 +85,20 @@ FORBIDDEN_COOLDOWN_SECONDS: Final = 15 * 60  # 15 minutes
 # request after this many seconds instead lets the existing retry/backoff
 # logic take over much sooner.
 SCRAPER_REQUEST_TIMEOUT_SECONDS: Final = 30
+
+# Per-request timeout for the mobile-API HTTP calls (login included).
+# make_api_call() already used this value inline; the login POST previously
+# had no timeout at all, so a hanging server could block the executor
+# thread indefinitely (the coordinator's async timeout only abandons the
+# await - the thread itself would stay stuck).
+API_REQUEST_TIMEOUT_SECONDS: Final = 10
+
+# How many CONSECUTIVE AuthErrors the coordinator tolerates before
+# escalating to ConfigEntryAuthFailed (HA's reauth flow, which stops all
+# automatic retries until the user intervenes). The portal occasionally
+# serves a transient login page, and treating a single such hiccup as
+# "credentials are wrong" would needlessly take the integration down.
+AUTH_ERROR_ESCALATION_THRESHOLD: Final = 3
 
 # Heating schedules (CircuitTimes) rarely change - only when a user edits
 # them directly in the WEM Portal app (this integration only ever shows

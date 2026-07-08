@@ -119,7 +119,11 @@ async def migrate_unique_ids(
                 break
 
     if change:
-        await coordinator.async_config_entry_first_refresh()
+        # A debounced refresh is enough to update the migrated entities.
+        # async_config_entry_first_refresh() here ran a SECOND full portal
+        # cycle right after the initial one (and is meant for setup only) -
+        # needless extra requests against the portal's rate limit.
+        await coordinator.async_request_refresh()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -242,7 +246,10 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
         return
 
     async def _handle_set_expert_parameter(call):
-        entityvalue = call.data["entityvalue"]
+        # Strip once at the boundary: the validity check strips internally,
+        # but the raw value is what ends up in the request URL - stray
+        # whitespace from a copy/paste would otherwise travel along.
+        entityvalue = call.data["entityvalue"].strip()
         value = call.data["value"]
 
         def _do_write():

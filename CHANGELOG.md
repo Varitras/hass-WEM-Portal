@@ -6,6 +6,50 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.5] – 2026-07-08
+
+### Changed
+- **Scan intervals now have a lower bound.** The web and API scan
+  intervals in the options are clamped to a minimum (60 s web, 10 s API),
+  like the expert poll interval already was. A stray tiny value such as
+  `1` second would poll the portal continuously and reliably trigger the
+  IP-wide 403 rate limit.
+- **A single transient login failure no longer forces reauthentication.**
+  The portal occasionally serves a login page mid-session; previously one
+  such hiccup immediately put the integration into Home Assistant's
+  reauth state, stopping all automatic retries until manual action. Auth
+  errors now escalate to reauth only after 3 consecutive failures and are
+  retried like other errors before that.
+- **The language option is a closed choice (en/de) in the options too.**
+  Previously the options dialog accepted any free-text language code,
+  unlike the initial setup form.
+
+### Fixed
+- **Crash instead of a clear error when the API login hit a network
+  failure.** A connection error/timeout during the login POST crashed the
+  error handler itself (unbound `response` variable), surfacing as
+  "Unexpected error" instead of the intended authentication error message.
+- **A failed device refresh no longer discards the discovery cache.** The
+  device/module list was cleared before the API call; if that call failed
+  (e.g. a single 403), the in-memory parameter definitions were lost and
+  the next successful cycle re-ran the slow, rate-limited full parameter
+  discovery the cache exists to avoid. The new list now replaces the old
+  one only after the call succeeded.
+- **Missing request timeouts on the login paths.** The API login POST and
+  the web login used for config-flow validation had no timeout, so a
+  hanging server could block an executor thread indefinitely. They now
+  use the same timeouts as the regular API/scraper requests.
+- **Connection leak on error recovery.** When the coordinator re-created
+  the API object after repeated errors, it closed the old API session but
+  not the old instance's persistent web-scraper session, leaking one open
+  connection towards the portal per recovery.
+- **Minor robustness fixes:** device ids are normalized to strings before
+  data lookups (latent KeyError with int ids); the expert write service
+  strips whitespace around the passed entityvalue; retried API calls no
+  longer report error details from the previous attempt's response; the
+  unique-id migration triggers a light debounced refresh instead of a
+  second full portal cycle right after startup.
+
 ## [1.8.4] – 2026-07-07
 
 ### Changed

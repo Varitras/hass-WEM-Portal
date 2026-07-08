@@ -14,7 +14,13 @@ from homeassistant.helpers.storage import Store
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from .exceptions import ForbiddenError, ServerError, WemPortalError, AuthError
-from .const import _LOGGER, DEFAULT_CONF_SCAN_INTERVAL_API_VALUE, DEFAULT_TIMEOUT, DOMAIN
+from .const import (
+    _LOGGER,
+    AUTH_ERROR_ESCALATION_THRESHOLD,
+    DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
+    DEFAULT_TIMEOUT,
+    DOMAIN,
+)
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from .wemportalapi import WemPortalApi
 from .utils import serialize_modules
@@ -61,6 +67,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         self.config_entry = config_entry
         self.last_try = None
         self.num_failed = 0
+        # Consecutive AuthError counter, separate from num_failed: only
+        # after AUTH_ERROR_ESCALATION_THRESHOLD auth failures IN A ROW do we
+        # escalate to ConfigEntryAuthFailed (reauth). Reset on any success.
+        self.num_auth_failed = 0
         self._modules_store = get_modules_store(hass, config_entry.entry_id)
 
 
@@ -112,17 +122,34 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             try:
                 x = await self.hass.async_add_executor_job(self.api.fetch_data, enabled_devices)
                 self.num_failed = 0
+                self.num_auth_failed = 0
                 await self._async_save_modules_cache()
                 return x
             except AuthError as exc:
                 self.num_failed += 1
-                _LOGGER.error("Authentication error, raising ConfigEntryAuthFailed: %s", exc)
-                raise ConfigEntryAuthFailed("WEM Portal authentication failed. Check your credentials.") from exc
+                self.num_auth_failed += 1
+                # Escalate to reauth only after several CONSECUTIVE auth
+                # failures. The portal occasionally serves a transient login
+                # page; treating a single such hiccup as "credentials are
+                # wrong" would put the integration into the reauth state,
+                # which stops all automatic retries until the user acts.
+                if self.num_auth_failed >= AUTH_ERROR_ESCALATION_THRESHOLD:
+                    _LOGGER.error(
+                        "Authentication failed %d times in a row, raising ConfigEntryAuthFailed: %s",
+                        self.num_auth_failed, exc,
+                    )
+                    raise ConfigEntryAuthFailed("WEM Portal authentication failed. Check your credentials.") from exc
+                _LOGGER.warning(
+                    "Authentication error (%d/%d before reauth is required), will retry: %s",
+                    self.num_auth_failed, AUTH_ERROR_ESCALATION_THRESHOLD, exc,
+                )
+                raise UpdateFailed(f"Authentication error, will retry: {exc}") from exc
             except (WemPortalError, ForbiddenError) as exc:
                 self.num_failed += 1
                 if self.num_failed >= 2:
                     _LOGGER.info("API errors persistent. Re-instantiating WemPortalApi to recover from potentially corrupted session/state.")
                     old_session = getattr(self.api, "session", None)
+                    old_api = self.api
                     self.api = WemPortalApi(
                         self.config_entry.data.get(CONF_USERNAME),
                         self.config_entry.data.get(CONF_PASSWORD),
@@ -154,6 +181,14 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                         except Exception as exc:  # pylint: disable=broad-except
                             # Best-effort cleanup of the discarded session.
                             _LOGGER.debug("Ignoring error while closing old session: %s", exc)
+                    # Also close the old instance's persistent scraper (its
+                    # own curl_cffi session) - previously only the API
+                    # session was closed, leaking one open web connection
+                    # towards Weishaupt on every recovery.
+                    try:
+                        old_api._reset_scraper()
+                    except Exception as exc:  # pylint: disable=broad-except
+                        _LOGGER.debug("Ignoring error while closing old scraper: %s", exc)
                 raise UpdateFailed(f"Error fetching data from wemportal: {exc}") from exc
             except Exception as exc:  # pylint: disable=broad-except
                 # Catch-all safety net: covers cases that don't come from

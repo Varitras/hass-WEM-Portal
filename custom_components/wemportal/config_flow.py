@@ -38,6 +38,8 @@ from .const import (
     CONF_EXPERT_ENABLE_SECURITY_CODE,
     CONF_EXPERT_MODULE_ARG,
     EXPERT_MODULE_ARG_HEATPUMP,
+    MIN_SCAN_INTERVAL_SECONDS,
+    MIN_SCAN_INTERVAL_API_SECONDS,
 )
 from .exceptions import AuthError
 
@@ -176,19 +178,32 @@ class WemportalOptionsFlow(OptionsFlow):
             errors=errors,
             data_schema=vol.Schema(
                 {
+                    # Both scan intervals are clamped to a lower bound (like
+                    # the expert poll interval below): a stray tiny value
+                    # such as "1" second would poll the portal continuously
+                    # and reliably trigger the IP-wide 403 rate limit.
                     vol.Optional(
                         CONF_SCAN_INTERVAL,
                         default=self._opt(CONF_SCAN_INTERVAL, 1800),
-                    ): config_validation.positive_int,
+                    ): vol.All(
+                        config_validation.positive_int,
+                        vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
+                    ),
                     vol.Optional(
                         CONF_SCAN_INTERVAL_API,
                         default=self._opt(CONF_SCAN_INTERVAL_API, 300
                         ),
-                    ): config_validation.positive_int,
+                    ): vol.All(
+                        config_validation.positive_int,
+                        vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
+                    ),
+                    # Same closed choice as the initial setup form -
+                    # previously a free string here allowed saving an
+                    # unsupported language code.
                     vol.Optional(
                         CONF_LANGUAGE,
                         default=self._opt(CONF_LANGUAGE, "en"),
-                    ): config_validation.string,
+                    ): vol.In(["en", "de"]),
                     
                     vol.Optional(
                         CONF_MODE, default=self._opt(CONF_MODE, DEFAULT_MODE)
