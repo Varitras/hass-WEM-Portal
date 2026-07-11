@@ -2,7 +2,7 @@
 Switch platform for wemportal component
 """
 
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -83,7 +83,7 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_unit = uom
         self._attr_is_on = val in WEM_SWITCH_ON_VALUES
         self._attr_should_poll = False
-        self._attr_device_class = "switch"  # type: ignore
+        self._attr_device_class = SwitchDeviceClass.SWITCH
         self._module_index = entity_data.get("ModuleIndex")
         self._module_type = entity_data.get("ModuleType")
 
@@ -129,7 +129,7 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         try:
             temp_val = self.coordinator.data[self._device_id][self._data_key]["value"]
             self._attr_is_on = temp_val in WEM_SWITCH_ON_VALUES
-            
+
             _LOGGER.debug('Update switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
 
         except KeyError:

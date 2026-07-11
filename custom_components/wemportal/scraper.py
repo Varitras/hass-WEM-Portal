@@ -1,21 +1,23 @@
 """Web scraping scraper for WEM Portal using curl_cffi."""
 
 import time
-import logging
 from collections import defaultdict
 from curl_cffi import requests
 from lxml import html
-from custom_components.wemportal.exceptions import AuthError, ExpiredSessionError, ForbiddenError
-from custom_components.wemportal.const import (
+
+# Relative imports and the shared integration logger, consistent with every
+# other module in this package (absolute custom_components.* imports would
+# break if the install directory is ever named differently).
+from .exceptions import AuthError, ForbiddenError
+from .const import (
+    _LOGGER,
     WEB_LOGIN_URL,
     WEB_MAIN_URL,
     TEMPERATURE_KEYWORDS,
     PERCENTAGE_KEYWORDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
 )
-from custom_components.wemportal.utils import sanitize_value
-
-_LOGGER = logging.getLogger(__name__)
+from .utils import sanitize_value
 
 # Unit -> icon mapping for scraped sensors. Defined once at module level
 # instead of being re-created for every single table row during parsing
@@ -42,8 +44,9 @@ class WemPortalScraper:
         """
         try:
             self.session.close()
-        except Exception:  # pylint: disable=broad-except
-            pass
+        except Exception as exc:  # pylint: disable=broad-except
+            # Closing is best-effort; the session is being discarded anyway.
+            _LOGGER.debug("Ignoring error while closing scraper session: %s", exc)
 
     def _raise_if_forbidden(self, response):
         """Raise ForbiddenError on a 403 so the caller can trigger the
@@ -52,7 +55,7 @@ class WemPortalScraper:
         the app API."""
         if response.status_code == 403:
             raise ForbiddenError("WEM Portal web frontend returned 403 (rate limit/forbidden).")
-        
+
     def _load_expert_page(self):
         """GET the main portal page and POST to select the 'Expert' tab.
 
@@ -139,8 +142,9 @@ class WemPortalScraper:
                 _LOGGER.debug("Cached WEM Portal session is no longer valid, logging in again.")
                 try:
                     self.session.cookies.clear()
-                except Exception:
-                    pass
+                except Exception as exc:  # pylint: disable=broad-except
+                    # Non-fatal: we re-login below regardless.
+                    _LOGGER.debug("Ignoring error while clearing cookies: %s", exc)
 
         # --- Full login sequence ---
         # 1. GET Login page
@@ -161,10 +165,10 @@ class WemPortalScraper:
         tree = html.fromstring(r1.text)
         viewstate_elem = tree.xpath("//*[@id='__VIEWSTATE']/@value")
         eventval_elem = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
-        
+
         if not viewstate_elem or not eventval_elem:
             raise AuthError("Authentication Error: Could not find VIEWSTATE or EVENTVALIDATION.")
-            
+
         viewstate = viewstate_elem[0]
         eventval = eventval_elem[0]
 
@@ -176,7 +180,7 @@ class WemPortalScraper:
             "ctl00$content$tbxPassword": self.password,
             "ctl00$content$btnLogin": "Anmelden",
         }
-        
+
         r2 = self.session.post(
             WEB_LOGIN_URL, data=login_data, allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
@@ -204,7 +208,7 @@ class WemPortalScraper:
         _LOGGER.debug("Parsing expert page HTML")
         output = {}
         tree = html.fromstring(html_content)
-        
+
         for div in tree.xpath('//div[contains(@class, "RadPanelBar RadPanelBar_Default rpbSimpleData")]'):
             header_elems = div.xpath('.//th[contains(@class, "simpleDataHeaderTextCell")]/span/text()')
             if not header_elems:
@@ -220,21 +224,21 @@ class WemPortalScraper:
                 .replace(" ", "_")
                 .casefold()
             )
-                
+
             for td in div.xpath('.//div[contains(@class, "rpTemplate")]/table[contains(@class, "simpleDataTable")]/tbody/tr'):
                 try:
                     name_elems = td.xpath('.//td[contains(@class, "simpleDataNameCell")]/span/text()')
                     val_elems = td.xpath('.//td[contains(@class, "simpleDataValueCell") or contains(@class, "simpleDataValueEnumCell")]/span/text()')
-                    
+
                     if name_elems and val_elems:
                         raw_name = name_elems[0].strip()
                         friendly_name = f"{header_raw} - {raw_name.lstrip('- ')}"
-                        
+
                         name = name_elems[0].replace("  ", "").replace(" ", "_").casefold()
                         name = header + "-" + name
                         original_value = val_elems[0].strip()
                         value = original_value
-                        
+
                         split_value = value.split(" ", 1)
                         unit = ""
                         if len(split_value) >= 2:
@@ -242,7 +246,7 @@ class WemPortalScraper:
                             unit = split_value[1]
                         else:
                             value = split_value[0]
-                            
+
                         try:
                             value = ".".join(value.split(","))
                             value = float(value)

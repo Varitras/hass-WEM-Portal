@@ -158,11 +158,11 @@ def fix_value_and_uom(val, uom):
     Translate WEM specific values and units of measurement to Home Assistant.
 
     This function returns:
-      * a valid Home Assistant UoM if it can be mapped 
+      * a valid Home Assistant UoM if it can be mapped
         (see: https://github.com/home-assistant/core/blob/dev/homeassistant/const.py)
-      * an empty string as UoM if the value is a number without any indication 
+      * an empty string as UoM if the value is a number without any indication
         of its unit of measurement (e.g., a counter)
-      * None as UoM if the value is a string without any indication 
+      * None as UoM if the value is a string without any indication
         of its unit of measurement (e.g., a status text)
     """
 
@@ -209,7 +209,7 @@ def uom_to_device_class(uom):
         UnitOfTime.HOURS:                           SensorDeviceClass.DURATION,
         UnitOfFrequency.HERTZ:                      SensorDeviceClass.FREQUENCY,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorDeviceClass.VOLUME_FLOW_RATE,
-    }.get(uom, None) # return None if no device class is available
+    }.get(uom) # return None if no device class is available
 
 def uom_to_state_class(uom):
     """Return the state class of this unit of measurement, if any."""
@@ -227,4 +227,4 @@ def uom_to_state_class(uom):
         UnitOfTime.HOURS:                           SensorStateClass.TOTAL_INCREASING,
         UnitOfFrequency.HERTZ:                      SensorStateClass.MEASUREMENT,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorStateClass.MEASUREMENT,
-    }.get(uom, None) # return None if no state class is available
+    }.get(uom) # return None if no state class is available

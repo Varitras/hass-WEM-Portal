@@ -10,6 +10,7 @@ against the live option list from the freshly fetched edit form and
 verifies the result by re-reading the form afterwards.
 """
 
+import hashlib
 import re
 import time
 import random
@@ -26,7 +27,6 @@ from .const import (
     WEB_ACCEPT_LANGUAGE,
     WEB_ACCEPT_NAV,
     WEB_ACCEPT_AJAX,
-    WEB_DEFAULT_URL,
     WEB_CODE_EXPERTS_URL,
     EXPERT_VIEWSTATE_FIELDS,
     EXPERT_ASYNCPOST_FIELD,
@@ -77,7 +77,7 @@ EXPERT_PARAMETER_URL = (
 VALUE_FIELD_ID = "ctl00_DialogContent_ddlNewValue"
 
 
-def _short_ev(entityvalue: str) -> str:
+def short_ev(entityvalue: str) -> str:
     """Shortened entityvalue for user-visible log/notification text.
 
     entityvalues are installation-specific and shouldn't end up verbatim in
@@ -87,6 +87,21 @@ def _short_ev(entityvalue: str) -> str:
     """
     ev = entityvalue or ""
     return f"{ev[:6]}…" if len(ev) > 6 else ev
+
+
+def ev_digest(entityvalue: str) -> str:
+    """Short, stable digest of an entityvalue for use in internal IDs.
+
+    Used wherever an id derived from the entityvalue must be unique and
+    stable but ends up in persisted/inspectable places (entity-registry
+    unique_ids, persistent-notification ids, task names). The raw
+    entityvalue is installation-specific and shouldn't appear there
+    verbatim - someone sharing their .storage files or diagnostic dumps
+    would otherwise leak it. SHA-256 (truncated) keeps the mapping
+    deterministic without being reversible.
+    """
+    ev = (entityvalue or "").strip()
+    return hashlib.sha256(ev.encode("utf-8")).hexdigest()[:16]
 
 
 def _is_valid_entityvalue(entityvalue) -> bool:
@@ -249,7 +264,7 @@ class WemPortalExpertClient:
         # the reload returns the plain user level and every later step
         # operates on a non-Fachmann page (confirmed via HAR).
         current_html = self._postback(
-            WEB_DEFAULT_URL, current_html,
+            WEB_MAIN_URL, current_html,
             event_target=EXPERT_SUBMENU_TARGET, event_argument=EXPERT_SUBMENU_ARG,
             async_postback=False,
             extra_fields={
@@ -280,7 +295,7 @@ class WemPortalExpertClient:
             # generic poll loop, keeps the added server load minimal.
             self._check_cooldown()
             current_html = self._postback(
-                WEB_DEFAULT_URL, current_html,
+                WEB_MAIN_URL, current_html,
                 event_target=EXPERT_TIMER_TARGET, event_argument="",
             )
             self._submit_security_code()
@@ -300,7 +315,7 @@ class WemPortalExpertClient:
             # the earlier submenu reload, since the timer postback is what the
             # real callback's state matches in the capture.
             current_html = self._postback(
-                WEB_DEFAULT_URL, current_html,
+                WEB_MAIN_URL, current_html,
                 event_target=EXPERT_RAM_MASTER_TARGET,
                 event_argument=EXPERT_RAM_MASTER_UNLOCK_ARGUMENT,
                 extra_fields={
@@ -348,7 +363,7 @@ class WemPortalExpertClient:
         # the parameter dialog empty afterwards.
         icon_menu_state = EXPERT_MODULE_ICONMENU_STATE_TEMPLATE % self._module_arg
         current_html = self._postback(
-            WEB_DEFAULT_URL, current_html,
+            WEB_MAIN_URL, current_html,
             event_target=EXPERT_MODULE_MENU_TARGET,
             event_argument=self._module_arg,
             extra_fields={EXPERT_MODULE_ICONMENU_STATE_FIELD: icon_menu_state},
@@ -377,7 +392,7 @@ class WemPortalExpertClient:
             return
         self._check_cooldown()
         self._nav_html = self._postback(
-            WEB_DEFAULT_URL, self._nav_html,
+            WEB_MAIN_URL, self._nav_html,
             event_target=EXPERT_TIMER_TARGET, event_argument="",
         )
         _LOGGER.debug("Expert navigation: on-demand live-value timer poll done.")
@@ -478,8 +493,11 @@ class WemPortalExpertClient:
                 name = inp.get("name")
                 if name:
                     fields[name] = inp.get("value", "")
-        except Exception:  # pylint: disable=broad-except
-            pass
+        except Exception as exc:  # pylint: disable=broad-except
+            # Malformed/unparseable response: return whatever was collected
+            # so the caller degrades gracefully instead of crashing. Logged
+            # so a parsing regression (e.g. a portal format change) is visible.
+            _LOGGER.debug("Could not parse hidden fields from response: %s", exc)
         return fields
 
     def _postback(self, url, current_html, event_target, event_argument="",
@@ -581,8 +599,9 @@ class WemPortalExpertClient:
         if self.session is not None:
             try:
                 self.session.close()
-            except Exception:  # pylint: disable=broad-except
-                pass
+            except Exception as exc:  # pylint: disable=broad-except
+                # Closing is best-effort; the session is being discarded anyway.
+                _LOGGER.debug("Ignoring error while closing expert session: %s", exc)
             self.session = None
 
     # ------------------------------------------------------------------
@@ -673,7 +692,7 @@ class WemPortalExpertClient:
             _LOGGER.debug(
                 "Expert auto-poll: skipping invalid entityvalue %s "
                 "(not a readable ID); fix or clear it in the options.",
-                _short_ev(e),
+                short_ev(e),
             )
         ids = [e for e in ids if _is_valid_entityvalue(e)]
         if not ids:
@@ -688,7 +707,7 @@ class WemPortalExpertClient:
                     raise
                 except Exception as exc:  # pylint: disable=broad-except
                     _LOGGER.warning(
-                        "Expert auto-poll: reading %s failed: %s", _short_ev(entityvalue), exc
+                        "Expert auto-poll: reading %s failed: %s", short_ev(entityvalue), exc
                     )
                     result[entityvalue] = None
         finally:
@@ -765,7 +784,7 @@ class WemPortalExpertClient:
                     f"expected {value_f}. The portal may have rejected the value."
                 )
             _LOGGER.info(
-                "Expert parameter %s written and verified: %s", _short_ev(entityvalue), value_f
+                "Expert parameter %s written and verified: %s", short_ev(entityvalue), value_f
             )
             return verify
         finally:
@@ -777,9 +796,15 @@ class WemPortalExpertClient:
         # Active read/write of a single parameter: reject anything that
         # isn't a plausible ID (hex + minimum length) with a clear error,
         # so a user writing to a mistyped/too-short id gets feedback rather
-        # than a confusing empty-dialog failure.
+        # than a confusing empty-dialog failure. Only the SHORTENED id goes
+        # into the message: it propagates into error logs and persistent
+        # notifications (texts people copy into issues/forums), and a
+        # nearly-correct id would otherwise appear there almost in full.
         if not _is_valid_entityvalue(entityvalue):
-            raise ValueError(f"Invalid entityvalue: {entityvalue!r}")
+            raise ValueError(
+                f"Invalid entityvalue: {short_ev((entityvalue or '').strip())!r} "
+                "(must be a long hex string; check the configured ID)"
+            )
 
     def _fetch_form(self, entityvalue: str, max_attempts: int = None) -> ExpertParameterState:
         """GET + parse the edit form on the already logged-in session.
@@ -951,7 +976,12 @@ try:
             # No translation_key: slot names are free text with no matching
             # translation entry, so the friendly name above is used directly
             # (setting an unresolvable translation_key would only log warnings).
-            self._attr_unique_id = f"{config_entry.entry_id}:expert:{entityvalue}"
+            # unique_id carries a DIGEST of the entityvalue, not the raw id:
+            # unique_ids are persisted in .storage/core.entity_registry, and
+            # the installation-specific raw id shouldn't leak into files
+            # people share for debugging. number.py migrates entities from
+            # the old raw-id format on setup, preserving entity_id/history.
+            self._attr_unique_id = f"{config_entry.entry_id}:expert:{ev_digest(entityvalue)}"
             self._attr_native_value = None
             # Guards against starting a second write while one is still
             # running in the background (the write takes roughly 5-15s).
@@ -1081,7 +1111,7 @@ try:
             """Fetch the shared 403-cooldown check from the running api."""
             entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
             api = entry_data.get("api") if entry_data else None
-            return api._check_cooldown if api is not None else None
+            return api.check_cooldown if api is not None else None
 
         @property
         def device_info(self) -> DeviceInfo:

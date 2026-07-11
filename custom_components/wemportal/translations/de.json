@@ -8,6 +8,14 @@
           "language": "Sprache der Sensor-/Parameternamen (Standard = en)",
           "mode": "Modus (Standard = api)"
         }
+      },
+      "reauth_confirm": {
+        "title": "WEM Portal neu anmelden",
+        "description": "Die Anmeldung am WEM Portal ist mehrfach fehlgeschlagen. Bitte Zugangsdaten neu eingeben.",
+        "data": {
+          "username": "Benutzername (E-Mail)",
+          "password": "Passwort"
+        }
       }
     },
     "error": {
@@ -16,7 +24,9 @@
       "unknown": "Unerwarteter Fehler"
     },
     "abort": {
-      "already_configured": "Konto ist bereits konfiguriert"
+      "already_configured": "Konto ist bereits konfiguriert",
+      "reauth_successful": "Neuanmeldung erfolgreich",
+      "unknown": "Unerwarteter Fehler"
     }
   },
   "options": {
@@ -58,7 +68,8 @@
       }
     },
     "error": {
-      "invalid_entityvalue": "Ungültige entityvalue-ID: muss eine lange Hex-Zeichenkette sein (nur 0-9, A-F; typisch 36 Zeichen). Kurze Werte wie 0 sind keine gültige ID."
+      "invalid_entityvalue": "Ungültige entityvalue-ID: muss eine lange Hex-Zeichenkette sein (nur 0-9, A-F; typisch 36 Zeichen). Kurze Werte wie 0 sind keine gültige ID.",
+      "invalid_module_arg": "Ungültiger Modul-Menüindex: nur Ziffern (z. B. 6). Leer lassen für den Standardwert."
     },
     "abort": {
       "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen."

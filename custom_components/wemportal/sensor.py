@@ -2,7 +2,7 @@
 Sensor platform for wemportal component
 """
 
-from homeassistant.components.sensor import SensorEntity, RestoreSensor
+from homeassistant.components.sensor import RestoreSensor
 from homeassistant.config_entries import ConfigEntry
 
 from homeassistant.core import HomeAssistant, callback
@@ -94,7 +94,9 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
         """Initialize the sensor."""
         super().__init__(coordinator)
 
-        val, uom = fix_value_and_uom(entity_data["value"], entity_data["unit"])
+        # .get() like the other platforms: one malformed data point must not
+        # abort setup for every sensor on this device with a KeyError.
+        val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
 
         self._last_updated = None
         self._config_entry = config_entry
@@ -170,7 +172,7 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
         try:
 
             entity_data = self.coordinator.data[self._device_id][self._data_key]
-            val, uom = fix_value_and_uom(entity_data["value"], entity_data["unit"])
+            val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
             self._attr_native_value = self._validated_native_value(val, uom)
 
             # set uom if it references a valid non-trivial unit of measurement
@@ -178,9 +180,9 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
                 self._attr_native_unit_of_measurement = uom
 
             _LOGGER.debug(
-                'Update sensor: %s: "%s" [%s]', 
-                self._attr_name, 
-                self._attr_native_value, 
+                'Update sensor: %s: "%s" [%s]',
+                self._attr_name,
+                self._attr_native_value,
                 self._attr_native_unit_of_measurement
             )
 
@@ -218,7 +220,7 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
         attr = {}
         if self._last_updated is not None:
             attr["Last Updated"] = self._last_updated
-            
+
         try:
             entity_data = self.coordinator.data[self._device_id][self._data_key]
             if "CircuitTimesDay" in entity_data:
@@ -229,5 +231,5 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
                 attr["Raw_JSON"] = entity_data["value"]
         except KeyError:
             pass
-            
+
         return attr

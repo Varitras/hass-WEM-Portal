@@ -4,13 +4,22 @@ on:
   push:
   pull_request:
 
+# Minimal GITHUB_TOKEN scope: HACS validation only reads the repo. Limiting
+# the token is a supply-chain hardening best practice (flagged by CodeQL
+# otherwise).
+permissions:
+  contents: read
+
 jobs:
   hacs:
     name: HACS validation
     runs-on: "ubuntu-latest"
     steps:
-      - uses: "actions/checkout@v4"
+      - uses: "actions/checkout@v5"
       - name: HACS validation
-        uses: "hacs/action@main"
+        # Pinned to a commit SHA (supply-chain hygiene): a mutable branch
+        # ref like @main could silently start running different code.
+        # hacs/action main as of 2026-07-08; bump deliberately when needed.
+        uses: "hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa"
         with:
           category: "integration"

@@ -6,15 +6,15 @@ https://github.com/erikkastelec/hass-WEM-Portal
 
 """
 from datetime import timedelta
+import random
 
-import homeassistant.helpers.config_validation as config_validation
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.config_entries import ConfigEntry
 from .const import (
-    CONF_LANGUAGE,
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
     DOMAIN,
@@ -28,14 +28,16 @@ from .const import (
     CONF_EXPERT_NOTIFY_ON_SUCCESS,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
-    CONF_EXPERT_MODULE_ARG,
     SERVICE_SET_EXPERT_PARAMETER,
 )
-from .coordinator import WemPortalDataUpdateCoordinator, get_modules_store
+from .coordinator import (
+    WemPortalDataUpdateCoordinator,
+    get_modules_store,
+    get_scraper_device_store,
+)
 from .wemportalapi import WemPortalApi
 from .utils import deserialize_modules
-import homeassistant.helpers.entity_registry as entity_registry
-from homeassistant.helpers import device_registry as device_registry
+from homeassistant.helpers import device_registry, entity_registry
 
 def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):
     """Return unique ID for WEM Portal."""
@@ -68,29 +70,29 @@ async def migrate_unique_ids(
     for unique_id, values in data.items():
         if isinstance(values, int):
             continue
-            
+
         new_id = get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id)
-        
+
         # Build a list of possible old unique_ids
         friendly_name = values.get("friendlyName", "")
         platform = values.get("platform", "sensor")
-        
+
         possible_old_ids = []
         if unique_id != "ConnectionStatus":
             possible_old_ids.append(unique_id)
             possible_old_ids.append(f"{device_id}-{unique_id}")
-            
+
         if friendly_name:
             possible_old_ids.append(friendly_name)
             possible_old_ids.append(f"{device_id}-{friendly_name}")
             possible_old_ids.append(get_wemportal_unique_id(config_entry.entry_id, device_id, friendly_name))
-            
+
         parameter_id = values.get("ParameterID")
         if parameter_id:
             possible_old_ids.append(parameter_id)
             possible_old_ids.append(f"{device_id}-{parameter_id}")
             possible_old_ids.append(get_wemportal_unique_id(config_entry.entry_id, device_id, parameter_id))
-            
+
         # Try to find an entity under any of these old ids
         for old_id in possible_old_ids:
             if not old_id:
@@ -103,7 +105,7 @@ async def migrate_unique_ids(
                         "Found entity with old id and an entity with a new unique_id. Preserving old entity..."
                     )
                     er.async_remove(new_entity_id)
-                    
+
                 if old_id != new_id:
                     _LOGGER.info(
                         "Migrating entity %s from old id %s to new unique_id %s",
@@ -119,7 +121,11 @@ async def migrate_unique_ids(
                 break
 
     if change:
-        await coordinator.async_config_entry_first_refresh()
+        # A debounced refresh is enough to update the migrated entities.
+        # async_config_entry_first_refresh() here ran a SECOND full portal
+        # cycle right after the initial one (and is meant for setup only) -
+        # needless extra requests against the portal's rate limit.
+        await coordinator.async_request_refresh()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -142,8 +148,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ),
         )
 
-    # Currently we only support one device so we will take first device id
-    device_id = "0000"
     dr = device_registry.async_get(hass)
     devices = [
         device
@@ -181,12 +185,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             len(cached_modules),
         )
 
+    # Load the stable scraper device id (decided once, then persisted) so
+    # scraped sensors keep a constant device id - and history - across mode
+    # switches. None on a fresh install / first run after upgrade: the api
+    # then decides it deterministically on the first scrape (preferring the
+    # real API device id, else the placeholder) and the coordinator persists
+    # it. Existing installs therefore lock in whatever id they already use,
+    # so nobody loses history at upgrade.
+    scraper_device_id = None
+    try:
+        scraper_device_id = await get_scraper_device_store(hass, entry.entry_id).async_load()
+    except Exception as exc:  # pylint: disable=broad-except
+        _LOGGER.debug("Could not load stored scraper device id: %s", exc)
+
     # Creating API object
     api = WemPortalApi(
         entry.data.get(CONF_USERNAME),
         entry.data.get(CONF_PASSWORD),
         config=entry.options,
         cached_modules=cached_modules,
+        scraper_device_id=scraper_device_id,
     )
     # Create custom coordinator
     coordinator = WemPortalDataUpdateCoordinator(
@@ -236,13 +254,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api) -> None:
     """Register wemportal.set_expert_parameter (idempotent)."""
-    from .expert_writer import WemPortalExpertClient
+    from .expert_writer import WemPortalExpertClient, ev_digest, short_ev
 
     if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
         return
 
     async def _handle_set_expert_parameter(call):
-        entityvalue = call.data["entityvalue"]
+        # Strip once at the boundary: the validity check strips internally,
+        # but the raw value is what ends up in the request URL - stray
+        # whitespace from a copy/paste would otherwise travel along.
+        entityvalue = call.data["entityvalue"].strip()
         value = call.data["value"]
 
         def _do_write():
@@ -252,7 +273,7 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             client = WemPortalExpertClient(
                 entry.data.get(CONF_USERNAME),
                 entry.data.get(CONF_PASSWORD),
-                cooldown_check=api._check_cooldown,
+                cooldown_check=api.check_cooldown,
                 **expert_client_options(entry.options),
             )
             return client.write_parameter(entityvalue, value)
@@ -264,9 +285,10 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             # the outcome via a persistent notification + the log.
             # entityvalues are installation-specific; only a shortened form
             # appears in log/notification TEXT (which people copy into
-            # issues/forums). The internal notification_id keeps the full
-            # id - it is never displayed.
-            ev_short = f"{entityvalue[:6]}…" if len(entityvalue) > 6 else entityvalue
+            # issues/forums), and the internal notification_id uses a
+            # digest of the id (stable/unique, but nothing to leak if it
+            # ever surfaces in states or diagnostic dumps).
+            ev_short = short_ev(entityvalue)
             try:
                 state = await hass.async_add_executor_job(_do_write)
             except Exception as exc:  # pylint: disable=broad-except
@@ -276,7 +298,7 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
                     {
                         "title": "WEM Portal expert write failed",
                         "message": f"Setting {ev_short} to {value} failed: {exc}",
-                        "notification_id": f"wemportal_expert_{entityvalue}",
+                        "notification_id": f"wemportal_expert_{ev_digest(entityvalue)}",
                     },
                     blocking=False,
                 )
@@ -291,14 +313,16 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
                     {
                         "title": "WEM Portal expert write",
                         "message": f"{ev_short} set to {state.current}.",
-                        "notification_id": f"wemportal_expert_{entityvalue}",
+                        "notification_id": f"wemportal_expert_{ev_digest(entityvalue)}",
                     },
                     blocking=False,
                 )
 
         # Return immediately; the write continues in the background.
+        # Task name also uses the digest (task names can appear in asyncio
+        # debug output), not the raw installation-specific id.
         hass.async_create_background_task(
-            _run_in_background(), name=f"wemportal_expert_write_{entityvalue}"
+            _run_in_background(), name=f"wemportal_expert_write_{ev_digest(entityvalue)}"
         )
 
     hass.services.async_register(
@@ -307,7 +331,7 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
         _handle_set_expert_parameter,
         schema=vol.Schema(
             {
-                vol.Required("entityvalue"): config_validation.string,
+                vol.Required("entityvalue"): cv.string,
                 vol.Required("value"): vol.Coerce(float),
             }
         ),
@@ -327,9 +351,8 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
     after this. So we expose a `start_expert_auto_poll` callback in the entry
     store; whichever of the two runs last actually starts the timer.
     """
-    import random
     from homeassistant.helpers.event import async_call_later
-    from .expert_writer import WemPortalExpertClient
+    from .expert_writer import WemPortalExpertClient, ev_digest
 
     if not entry.options.get(CONF_EXPERT_AUTO_POLL, False):
         return
@@ -376,7 +399,7 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
                 client = WemPortalExpertClient(
                     entry.data.get(CONF_USERNAME),
                     entry.data.get(CONF_PASSWORD),
-                    cooldown_check=api._check_cooldown,
+                    cooldown_check=api.check_cooldown,
                     **expert_client_options(entry.options),
                 )
                 return client.read_many(entityvalues)
@@ -411,7 +434,7 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
                                         "Check the configured entityvalue ID "
                                         "in the integration options."
                                     ),
-                                    "notification_id": f"wemportal_poll_fail_{ev}",
+                                    "notification_id": f"wemportal_poll_fail_{ev_digest(ev)}",
                                 },
                                 blocking=False,
                             )
@@ -462,7 +485,7 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Handle schema migrations."""
-    # V1 to V2 migration is a no-op for the data schema, as entity ID migration 
+    # V1 to V2 migration is a no-op for the data schema, as entity ID migration
     # is handled dynamically inside async_setup_entry via migrate_unique_ids.
     return True
 
