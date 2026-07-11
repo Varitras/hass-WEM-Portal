@@ -3,10 +3,13 @@
 __pycache__/
 .venv/
 .pytest_cache/
+.ruff_cache/
 
-# Local-only test suite (kept out of the repo; HACS ships only
-# custom_components/wemportal/ anyway)
-/tests/
+# Local-only test suite: fast unit tests that run against a minimal HA stub
+# without installing Home Assistant (kept out of the repo). The committed
+# CI test suite lives in /tests/ and runs against real Home Assistant on
+# GitHub Actions (see .github/workflows/test.yaml).
+/tests_local/
 
 # Local-only CLI debug tool and its output (hits the real portal;
 # developer utility, not shipped to end users). wem_dump/ can contain

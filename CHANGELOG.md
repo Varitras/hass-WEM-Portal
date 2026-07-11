@@ -6,6 +6,90 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.9.0] – 2026-07-08
+
+### Fixed
+- **Scraped sensors keep a stable device id (and history) across mode
+  switches.** Web-scraped sensors are stored under a device id that becomes
+  part of their entity `unique_id`. Previously that id depended on the mode:
+  in `web` mode there is no API-discovered device, so scraped sensors fell
+  back to a placeholder device (`0000`), while in `api`/`both` mode they
+  attached to the real device id. Switching modes therefore re-created the
+  scraped entities under a different id, orphaning the originals and losing
+  their history. The scraper device id is now decided once - preferring the
+  real API device id, falling back to the placeholder only for a pure-web
+  install that has never seen the mobile API - and then persisted, so it
+  stays constant across mode switches. Existing installations lock in
+  whatever id they already use, so nobody loses history on upgrade.
+
+### Code quality
+- **Lint/consistency pass; no functional change to normal operation.**
+  Removed unused imports, dead code (an unused device-id assignment) and
+  whitespace noise; consolidated duplicate constants (`WEB_DEFAULT_URL`
+  into `WEB_MAIN_URL`, `DEFAULT_CONF_MODE_VALUE` into `DEFAULT_MODE`);
+  removed the unused `DEFAULT_NAME`. `scraper.py` now uses relative
+  imports and the shared integration logger like every other module.
+  Hoisted function-level `re`/`random` imports to module level (one sat
+  inside a per-row parsing loop). The sensor platform now guards data
+  access with `.get()` like the other platforms.
+- **Error hints now point to this fork's issue tracker** instead of the
+  upstream project's, and the data-gathering error text got its missing
+  spaces back.
+- **Modernized Home Assistant API usage:** the coordinator passes
+  `config_entry` explicitly to the base class (the implicit variant is on
+  HA's deprecation path) and uses `asyncio.timeout` instead of the
+  third-party `async_timeout`; the switch platform uses the
+  `SwitchDeviceClass` enum. Number entities now expose parsed numeric
+  values as real floats instead of numeric strings.
+- **`get_data()` split into three focused steps** (device status,
+  parameter values, heating schedules) for readability; order, error
+  handling and behaviour are unchanged.
+- **Minimum Home Assistant version raised to 2024.11** (`hacs.json`): the
+  explicit `config_entry` coordinator parameter used above only exists
+  since 2024.11. The previous floor (2023.3) predates several APIs this
+  integration already relied on.
+- **Smaller style fixes.** The rate-limit cooldown check on the API object
+  is now a public method (`check_cooldown`), matching its real use as the
+  shared cooldown gate for the standalone expert writer. The options flow
+  builds its prefill helper as a local function instead of a lambda stored
+  on the flow instance. `config_validation`/`entity_registry` imports use
+  the Home Assistant idiom (`cv` alias / `from ... import`).
+
+### Security
+- **The password field in the setup and re-authentication dialogs is now
+  masked** (proper password input type) instead of rendering as clear text
+  while typing.
+- **A mistyped entityvalue no longer appears in full in error texts.** The
+  "invalid entityvalue" error shown in notifications and logs now contains
+  only the shortened form of the id - a nearly-correct id (e.g. one
+  character off) previously ended up almost complete in exactly the texts
+  people copy into issues and forums.
+- **Internal ids derived from an entityvalue are now digests.** Entity
+  unique_ids, persistent-notification ids and background-task names embed a
+  truncated SHA-256 of the entityvalue instead of the raw
+  installation-specific id, so shared `.storage` files or diagnostic dumps
+  no longer contain it. Existing expert entities are migrated in place
+  (entity id and history are preserved).
+- **Authentication error messages no longer include the raw server response
+  body.** They keep the HTTP status and the server's own status/message
+  fields; a full response body (often an entire HTML error page) does not
+  belong in UI messages and logs.
+- **The account email is no longer logged at warning level** on failed API
+  logins (warnings are what people paste into issues; debug logs keep it).
+- **CI: the HACS validation action is pinned to a commit SHA** instead of a
+  mutable branch reference.
+
+### Added
+- **Re-authentication support.** When the portal login keeps failing (e.g.
+  after a password change), Home Assistant's re-authenticate prompt now
+  opens a proper credentials dialog instead of failing with an unknown-step
+  error that required deleting and re-adding the integration.
+
+### Changed
+- **The advanced module-menu-index option only accepts digits** (or empty
+  for the default), so a typo is caught in the form instead of being sent
+  to the portal as a postback argument.
+
 ## [1.8.5] – 2026-07-08
 
 ### Changed

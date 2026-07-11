@@ -1,5 +1,6 @@
 """Data mapper for mapping API values to Home Assistant platforms."""
 
+import re
 from collections import defaultdict
 from .translations import friendly_name_mapper, translate
 from .const import WemDataType, _LOGGER
@@ -188,21 +189,20 @@ class WemPortalDataMapper:
                 if mode == "both" and len(api_data.keys()) < 2:
                     param_id = sensor["ParameterID"]
                     if param_id not in scraping_mapper:
-                        for scraped_entity, scraped_data in api_data[device_id].items():
+                        for scraped_data in api_data[device_id].values():
                             if not isinstance(scraped_data, dict):
                                 continue
                             scraped_entity_id = scraped_data.get("ParameterID", "")
                             try:
-                                import re
                                 scraped_part = scraped_entity_id.split("-")[1]
                                 translated_scraped = translate(language, friendly_name_mapper(scraped_part))
-                                
+
                                 def tokenize(text):
                                     return set(re.sub(r'[^a-zA-Z0-9äöüß]', ' ', text.lower()).split())
-                                    
+
                                 sensor_words = tokenize(sensor["friendlyName"])
                                 scraped_words = tokenize(translated_scraped)
-                                
+
                                 if scraped_words and scraped_words.issubset(sensor_words):
                                     scraping_mapper.setdefault(param_id, []).append(scraped_entity_id)
                             except IndexError:
@@ -229,7 +229,7 @@ class WemPortalDataMapper:
                     new_unit = sensor.get("unit")
                     old_unit = api_data[device_id].get(key, {}).get("unit")
                     final_unit = new_unit if new_unit not in (None, "") else old_unit
-                    
+
                     api_data[device_id][key] = {
                         "value": sensor["value"],
                         "ParameterID": sensor["ParameterID"],

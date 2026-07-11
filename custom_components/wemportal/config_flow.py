@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 import voluptuous as vol
 
@@ -14,7 +15,12 @@ from homeassistant.config_entries import (
 from homeassistant import exceptions
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import callback, HomeAssistant
-import homeassistant.helpers.config_validation as config_validation
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 from .wemportalapi import WemPortalApi
 from .const import (
     DOMAIN,
@@ -37,7 +43,6 @@ from .const import (
     CONF_EXPERT_ENABLE_MODULE_NAV,
     CONF_EXPERT_ENABLE_SECURITY_CODE,
     CONF_EXPERT_MODULE_ARG,
-    EXPERT_MODULE_ARG_HEATPUMP,
     MIN_SCAN_INTERVAL_SECONDS,
     MIN_SCAN_INTERVAL_API_SECONDS,
 )
@@ -45,10 +50,17 @@ from .exceptions import AuthError
 
 _LOGGER = logging.getLogger(__name__)
 
+# Password uses a proper password-type selector so the browser masks the
+# input (a plain `str` field renders as clear text - shoulder-surfing /
+# screen-sharing exposure while typing).
+PASSWORD_SELECTOR = TextSelector(
+    TextSelectorConfig(type=TextSelectorType.PASSWORD, autocomplete="current-password")
+)
+
 DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME): str,
-        vol.Required(CONF_PASSWORD): str,
+        vol.Required(CONF_PASSWORD): PASSWORD_SELECTOR,
         vol.Required(CONF_LANGUAGE, default=DEFAULT_CONF_LANGUAGE_VALUE): vol.In(["en", "de"]),
         vol.Optional(CONF_MODE, default=DEFAULT_MODE): vol.In(AVAILABLE_MODES),
     }
@@ -128,6 +140,63 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=DATA_SCHEMA, errors=errors
         )
 
+    async def async_step_reauth(self, entry_data):
+        """Start reauthentication (triggered by ConfigEntryAuthFailed).
+
+        Without this step, the reauth flow Home Assistant starts after a
+        ConfigEntryAuthFailed would fail with an unknown-step error, and
+        changed portal credentials could only be fixed by deleting and
+        re-adding the integration.
+        """
+        self._reauth_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        """Ask for fresh credentials, validate them, update and reload."""
+        entry = getattr(self, "_reauth_entry", None)
+        if entry is None:
+            return self.async_abort(reason="unknown")
+
+        errors = {}
+        if user_input is not None:
+            new_data = {**entry.data, **user_input}
+            # Validate against the mode the entry actually runs in (options
+            # override the value stored at initial setup).
+            effective_mode = entry.options.get(
+                CONF_MODE, new_data.get(CONF_MODE, DEFAULT_MODE)
+            )
+            try:
+                await validate_input(
+                    self.hass, {**new_data, CONF_MODE: effective_mode}
+                )
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception during reauth")
+                errors["base"] = "unknown"
+            else:
+                self.hass.config_entries.async_update_entry(entry, data=new_data)
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USERNAME,
+                        default=entry.data.get(CONF_USERNAME, ""),
+                    ): str,
+                    vol.Required(CONF_PASSWORD): PASSWORD_SELECTOR,
+                }
+            ),
+            errors=errors,
+        )
+
 
 class WemportalOptionsFlow(OptionsFlow):
     """Handle options."""
@@ -144,7 +213,6 @@ class WemportalOptionsFlow(OptionsFlow):
             # hex AND a minimum length, kept well below the observed 36 so a
             # slightly different length on another installation still passes.
             # Whitespace is stripped; empty stays allowed (slot unused).
-            import re
             min_len = MIN_EXPERT_ENTITYVALUE_LENGTH
             for i in range(1, EXPERT_SLOT_COUNT + 1):
                 id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
@@ -154,6 +222,14 @@ class WemportalOptionsFlow(OptionsFlow):
                     not re.fullmatch(r"[0-9A-Fa-f]+", raw) or len(raw) < min_len
                 ):
                     errors[id_key] = "invalid_entityvalue"
+            # The module menu index feeds an ASP.NET postback argument and a
+            # ClientState JSON template verbatim - restrict it to digits so
+            # a typo (or stray JSON) is caught in the form instead of being
+            # sent to the portal. Empty stays allowed (= use the default).
+            module_arg = (user_input.get(CONF_EXPERT_MODULE_ARG) or "").strip()
+            user_input[CONF_EXPERT_MODULE_ARG] = module_arg
+            if module_arg and not module_arg.isdigit():
+                errors[CONF_EXPERT_MODULE_ARG] = "invalid_module_arg"
             if not errors:
                 # No-op guard: writing a new options entry always triggers a
                 # full integration reload (and a fresh portal login). If the
@@ -172,7 +248,13 @@ class WemportalOptionsFlow(OptionsFlow):
         # typed (so nothing has to be re-entered); otherwise with the
         # stored options.
         source = user_input if user_input is not None else self.config_entry.options
-        self._opt = lambda key, fallback: source.get(key, fallback)
+
+        def opt(key, fallback):
+            # Local helper (previously a lambda stored on self): read an
+            # option value with a fallback - from the just-submitted input on
+            # an error redisplay, or the stored options otherwise.
+            return source.get(key, fallback)
+
         return self.async_show_form(
             step_id="init",
             errors=errors,
@@ -184,17 +266,17 @@ class WemportalOptionsFlow(OptionsFlow):
                     # and reliably trigger the IP-wide 403 rate limit.
                     vol.Optional(
                         CONF_SCAN_INTERVAL,
-                        default=self._opt(CONF_SCAN_INTERVAL, 1800),
+                        default=opt(CONF_SCAN_INTERVAL, 1800),
                     ): vol.All(
-                        config_validation.positive_int,
+                        cv.positive_int,
                         vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
                     ),
                     vol.Optional(
                         CONF_SCAN_INTERVAL_API,
-                        default=self._opt(CONF_SCAN_INTERVAL_API, 300
+                        default=opt(CONF_SCAN_INTERVAL_API, 300
                         ),
                     ): vol.All(
-                        config_validation.positive_int,
+                        cv.positive_int,
                         vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
                     ),
                     # Same closed choice as the initial setup form -
@@ -202,26 +284,26 @@ class WemportalOptionsFlow(OptionsFlow):
                     # unsupported language code.
                     vol.Optional(
                         CONF_LANGUAGE,
-                        default=self._opt(CONF_LANGUAGE, "en"),
+                        default=opt(CONF_LANGUAGE, "en"),
                     ): vol.In(["en", "de"]),
-                    
+
                     vol.Optional(
-                        CONF_MODE, default=self._opt(CONF_MODE, DEFAULT_MODE)
+                        CONF_MODE, default=opt(CONF_MODE, DEFAULT_MODE)
                         ): vol.In(AVAILABLE_MODES),
                     # Expert write access (web) - off by default. Entities/
                     # service only exist while this is enabled.
                     vol.Optional(
                         CONF_EXPERT_WRITE,
-                        default=self._opt(CONF_EXPERT_WRITE, False),
-                    ): config_validation.boolean,
+                        default=opt(CONF_EXPERT_WRITE, False),
+                    ): cv.boolean,
                     # Post a persistent notification after a SUCCESSFUL expert
                     # write. OFF by default (noisy when setting several
                     # values); failures always notify regardless.
                     vol.Optional(
                         CONF_EXPERT_NOTIFY_ON_SUCCESS,
-                        default=self._opt(CONF_EXPERT_NOTIFY_ON_SUCCESS, False
+                        default=opt(CONF_EXPERT_NOTIFY_ON_SUCCESS, False
                         ),
-                    ): config_validation.boolean,
+                    ): cv.boolean,
                     # Optional periodic read-back of the configured expert
                     # parameters - OFF by default (each read is a full
                     # Fachmann navigation; frequent polling risks a 403 IP
@@ -229,14 +311,14 @@ class WemportalOptionsFlow(OptionsFlow):
                     # MIN_EXPERT_POLL_INTERVAL_MINUTES.
                     vol.Optional(
                         CONF_EXPERT_AUTO_POLL,
-                        default=self._opt(CONF_EXPERT_AUTO_POLL, False),
-                    ): config_validation.boolean,
+                        default=opt(CONF_EXPERT_AUTO_POLL, False),
+                    ): cv.boolean,
                     vol.Optional(
                         CONF_EXPERT_POLL_INTERVAL,
-                        default=self._opt(CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+                        default=opt(CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
                         ),
                     ): vol.All(
-                        config_validation.positive_int,
+                        cv.positive_int,
                         vol.Clamp(min=MIN_EXPERT_POLL_INTERVAL_MINUTES),
                     ),
                     # --- Advanced expert options (only if you know what you
@@ -247,31 +329,31 @@ class WemportalOptionsFlow(OptionsFlow):
                     # module layout where reads/writes otherwise fail.
                     vol.Optional(
                         CONF_EXPERT_ENABLE_MODULE_NAV,
-                        default=self._opt(CONF_EXPERT_ENABLE_MODULE_NAV, False
+                        default=opt(CONF_EXPERT_ENABLE_MODULE_NAV, False
                         ),
-                    ): config_validation.boolean,
+                    ): cv.boolean,
                     # Module menu index used ONLY when module select is
                     # enabled above. Empty default; "6" = heat pump on the
                     # reference install.
                     vol.Optional(
                         CONF_EXPERT_MODULE_ARG,
-                        default=self._opt(CONF_EXPERT_MODULE_ARG, ""
+                        default=opt(CONF_EXPERT_MODULE_ARG, ""
                         ),
-                    ): config_validation.string,
+                    ): cv.string,
                     vol.Optional(
                         CONF_EXPERT_ENABLE_SECURITY_CODE,
-                        default=self._opt(CONF_EXPERT_ENABLE_SECURITY_CODE, False
+                        default=opt(CONF_EXPERT_ENABLE_SECURITY_CODE, False
                         ),
-                    ): config_validation.boolean,
+                    ): cv.boolean,
                     # Ten generic expert-parameter slots (name + entityvalue
                     # hex ID). Added programmatically below so the block stays
                     # compact. Empty slots are ignored.
-                    **self._expert_slot_schema(),
+                    **self._expert_slot_schema(opt),
                 }
             ),
         )
 
-    def _expert_slot_schema(self):
+    def _expert_slot_schema(self, opt):
         """Build the vol schema fields for the ten generic expert slots.
 
         Each slot is a name field and an entityvalue-id field, both optional.
@@ -290,14 +372,14 @@ class WemportalOptionsFlow(OptionsFlow):
             fields[
                 vol.Optional(
                     name_key,
-                    description={"suggested_value": self._opt(name_key, "")},
+                    description={"suggested_value": opt(name_key, "")},
                 )
-            ] = config_validation.string
+            ] = cv.string
             fields[
                 vol.Optional(
                     id_key,
-                    description={"suggested_value": self._opt(id_key, "")},
+                    description={"suggested_value": opt(id_key, "")},
                 )
-            ] = config_validation.string
+            ] = cv.string
         return fields
 

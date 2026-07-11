@@ -1,9 +1,8 @@
 """ WemPortal integration coordinator """
 from __future__ import annotations
+import asyncio
 from time import monotonic
-import copy
 
-import async_timeout
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import (
@@ -13,7 +12,7 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.helpers.storage import Store
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
-from .exceptions import ForbiddenError, ServerError, WemPortalError, AuthError
+from .exceptions import ForbiddenError, WemPortalError, AuthError
 from .const import (
     _LOGGER,
     AUTH_ERROR_ESCALATION_THRESHOLD,
@@ -30,6 +29,10 @@ from .utils import serialize_modules
 # of the cached data ever changes in a backwards-incompatible way.
 MODULES_STORAGE_VERSION = 1
 
+# Version of the on-disk format for the stable scraper device id
+# (see get_scraper_device_store()). Just a bare string value.
+SCRAPER_DEVICE_STORAGE_VERSION = 1
+
 # A safety cap on how long the coordinator will ever wait between retries
 # after repeated failures (see the backoff logic in _async_update_data).
 MAX_BACKOFF_SECONDS = 6 * 3600  # 6 hours
@@ -45,6 +48,17 @@ def get_modules_store(hass: HomeAssistant, entry_id: str) -> Store:
     return Store(hass, MODULES_STORAGE_VERSION, f"{DOMAIN}_{entry_id}_modules")
 
 
+def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store:
+    """Return the Store used to persist the stable scraper device id.
+
+    Loaded by __init__.py before creating the WemPortalApi instance and
+    saved by the coordinator after a successful update, so the id decided
+    once (see WemPortalApi.resolve_scraper_device_id) survives restarts and
+    never silently changes on a later mode switch.
+    """
+    return Store(hass, SCRAPER_DEVICE_STORAGE_VERSION, f"{DOMAIN}_{entry_id}_scraper_device")
+
+
 class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
     """DataUpdateCoordinator for wemportal component"""
 
@@ -56,15 +70,18 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         update_interval,
     ) -> None:
         """Initialize DataUpdateCoordinator for the wemportal component"""
+        # config_entry is passed to the base class (current HA convention;
+        # the implicit assignment is on the deprecation path). The base
+        # class also sets self.hass/self.config_entry, so no manual
+        # assignments are needed here.
         super().__init__(
             hass,
             _LOGGER,
             name="WemPortal update",
             update_interval=update_interval,
+            config_entry=config_entry,
         )
         self.api = api
-        self.hass = hass
-        self.config_entry = config_entry
         self.last_try = None
         self.num_failed = 0
         # Consecutive AuthError counter, separate from num_failed: only
@@ -72,7 +89,29 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # escalate to ConfigEntryAuthFailed (reauth). Reset on any success.
         self.num_auth_failed = 0
         self._modules_store = get_modules_store(hass, config_entry.entry_id)
+        self._scraper_device_store = get_scraper_device_store(hass, config_entry.entry_id)
+        # Remember the last-persisted scraper device id so we only write the
+        # store when it actually changes (it's decided once and then stable).
+        self._saved_scraper_device_id = None
 
+
+    async def _async_save_scraper_device_id(self) -> None:
+        """Persist the stable scraper device id once it has been decided.
+
+        Written only when it changes (normally exactly once, on the first
+        successful scrape after install/upgrade), so scraped sensors keep a
+        constant device id - and history - across mode switches. Best-effort:
+        a failed save only means it is re-decided next start from the same
+        deterministic rule, which yields the same value in the common case.
+        """
+        device_id = getattr(self.api, "scraper_device_id", None)
+        if not device_id or device_id == self._saved_scraper_device_id:
+            return
+        try:
+            await self._scraper_device_store.async_save(device_id)
+            self._saved_scraper_device_id = device_id
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.debug("Could not persist WEM Portal scraper device id: %s", exc)
 
     async def _async_save_modules_cache(self) -> None:
         """Persist discovered device/module/parameter metadata to disk.
@@ -111,19 +150,20 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
 
         device_registry = dr.async_get(self.hass)
         enabled_devices = []
-        for device_id in self.api.data.keys():
+        for device_id in self.api.data:
             device_entry = device_registry.async_get_device(identifiers={(DOMAIN, str(device_id))})
             if device_entry is not None and device_entry.disabled_by is not None:
                 _LOGGER.debug("Skipping disabled device %s", device_id)
                 continue
             enabled_devices.append(device_id)
 
-        async with async_timeout.timeout(DEFAULT_TIMEOUT):
+        async with asyncio.timeout(DEFAULT_TIMEOUT):
             try:
                 x = await self.hass.async_add_executor_job(self.api.fetch_data, enabled_devices)
                 self.num_failed = 0
                 self.num_auth_failed = 0
                 await self._async_save_modules_cache()
+                await self._async_save_scraper_device_id()
                 return x
             except AuthError as exc:
                 self.num_failed += 1
@@ -165,6 +205,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                         # a fresh instance would otherwise reset it and
                         # resume hitting a server that just rate-limited us.
                         blocked_until=getattr(self.api, "_blocked_until", 0.0),
+                        # Preserve the already-decided stable scraper device
+                        # id, so the swap doesn't re-decide it (and possibly
+                        # move scraped sensors to a different device).
+                        scraper_device_id=getattr(self.api, "scraper_device_id", None),
                     )
                     # Point hass.data at the new instance so other consumers
                     # (e.g. the expert writer's shared cooldown check) use
@@ -194,7 +238,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # Catch-all safety net: covers cases that don't come from
                 # fetch_data() itself (which already wraps its own
                 # unexpected errors as WemPortalError) - most notably
-                # asyncio.TimeoutError raised by the async_timeout.timeout()
+                # TimeoutError raised by the asyncio.timeout()
                 # context above when a very large installation's discovery
                 # genuinely takes longer than DEFAULT_TIMEOUT. Without this,
                 # such an error would propagate out of the coordinator

@@ -12,8 +12,9 @@ class WemDataType(IntEnum):
 
 _LOGGER = logging.getLogger("custom_components.wemportal")
 DOMAIN: Final = "wemportal"
-GITHUB_PROJECT_URL: Final = "https://github.com/erikkastelec/hass-WEM-Portal/issues"
-DEFAULT_NAME: Final = "Weishaupt WEM Portal"
+# Issue tracker of THIS fork - used in user-facing error hints, so problems
+# with fork-specific behaviour land here and not at the upstream project.
+GITHUB_PROJECT_URL: Final = "https://github.com/Varitras/hass-WEM-Portal/issues"
 DEFAULT_TIMEOUT: Final = 360
 WEB_MAIN_URL: Final = "https://www.wemportal.com/Web/Default.aspx"
 # The portal origin, sent on every postback (confirmed via HAR) - both
@@ -42,7 +43,19 @@ CONF_MODE: Final = "mode"
 DEFAULT_MODE: Final = "api"
 AVAILABLE_MODES: Final = ["api", "web", "both"]
 PLATFORMS = ["number", "select", "sensor", "switch"]
-DATA_GATHERING_ERROR: Final = "An error occurred while gathering data.This issue should resolve by itself. If this problem persists,open an issue at https://github.com/erikkastelec/hass-WEM-Portal/issues"
+
+# Placeholder device id the web scraper falls back to when no real
+# API-discovered device is known (a pure-web install that never ran the
+# mobile API). The scraper itself has no device concept - it reads a web
+# page - but entity unique_ids are "<entry>:<device_id>:<name>", so scraped
+# sensors need a STABLE device id or their history breaks on mode switches.
+# See WemPortalApi.resolve_scraper_device_id() for how this is locked in
+# once and then persisted.
+SCRAPER_FALLBACK_DEVICE_ID: Final = "0000"
+DATA_GATHERING_ERROR: Final = (
+    "An error occurred while gathering data. This issue should resolve by "
+    f"itself. If this problem persists, open an issue at {GITHUB_PROJECT_URL}"
+)
 
 # Server-side status code returned by Statistics/Read for a statistics
 # group that isn't valid for the queried module (ModuleType 7/Index 0).
@@ -59,7 +72,6 @@ DEFAULT_CONF_SCAN_INTERVAL_VALUE: Final = 1800
 MIN_SCAN_INTERVAL_SECONDS: Final = 60  # web scraping interval floor
 MIN_SCAN_INTERVAL_API_SECONDS: Final = 10  # mobile-API interval floor
 DEFAULT_CONF_LANGUAGE_VALUE: Final = "en"
-DEFAULT_CONF_MODE_VALUE: Final = "api"
 API_LOGIN_URL: Final = "https://www.wemportal.com/app/Account/Login"
 API_DEVICE_READ_URL: Final = "https://www.wemportal.com/app/Device/Read"
 API_EVENT_TYPE_READ_URL: Final = "https://www.wemportal.com/app/EventType/Read"
@@ -158,7 +170,8 @@ SERVICE_SET_EXPERT_PARAMETER: Final = "set_expert_parameter"
 # authentication step and a stateful navigation sequence, reconstructed
 # from a real browser HAR capture. These identify the ASP.NET postback
 # targets/arguments of that sequence.
-WEB_DEFAULT_URL: Final = "https://www.wemportal.com/Web/Default.aspx"
+# (Formerly a second WEB_DEFAULT_URL constant existed with the identical
+# value as WEB_MAIN_URL; consolidated into WEB_MAIN_URL.)
 WEB_CODE_EXPERTS_URL: Final = (
     "https://www.wemportal.com/Web/UControls/Weishaupt/DataDisplay/CodeExpertsDetails.aspx"
 )

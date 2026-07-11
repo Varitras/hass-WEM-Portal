@@ -43,6 +43,7 @@ async def async_setup_entry(
     from .expert_writer import create_expert_number_entities
     expert_entities = create_expert_number_entities(config_entry)
     if expert_entities:
+        _async_migrate_expert_unique_ids(hass, config_entry, expert_entities)
         async_add_entities(expert_entities)
         # Expose them to the optional hourly auto-poll (set up in __init__),
         # which reads all configured ids in one shared session and pushes the
@@ -52,6 +53,38 @@ async def async_setup_entry(
         start_poll = store.get("start_expert_auto_poll")
         if start_poll is not None:
             start_poll()
+
+
+def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> None:
+    """Migrate expert entities from raw-entityvalue unique_ids to digests.
+
+    Older versions embedded the raw, installation-specific entityvalue in
+    the unique_id (persisted in .storage/core.entity_registry); it is now a
+    SHA-256 digest (see expert_writer.ev_digest). Updating the registry
+    entry in place preserves the entity_id, history and restored state.
+    Best-effort: a failure only means the entity is re-created under the
+    new unique_id instead of migrated.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    for entity in expert_entities:
+        old_unique_id = f"{config_entry.entry_id}:expert:{entity.entityvalue}"
+        if old_unique_id == entity.unique_id:
+            continue
+        entity_id = registry.async_get_entity_id("number", DOMAIN, old_unique_id)
+        if entity_id is None:
+            continue
+        if registry.async_get_entity_id("number", DOMAIN, entity.unique_id) is not None:
+            # A digest-format entity already exists; leave both untouched
+            # rather than colliding (should not happen in practice).
+            _LOGGER.debug("Skipping expert unique_id migration for %s: target exists.", entity_id)
+            continue
+        try:
+            registry.async_update_entity(entity_id, new_unique_id=entity.unique_id)
+            _LOGGER.info("Migrated expert entity %s to digest-based unique_id.", entity_id)
+        except ValueError as exc:
+            _LOGGER.warning("Could not migrate expert entity %s: %s", entity_id, exc)
 
 
 class WemPortalNumber(CoordinatorEntity, NumberEntity):
@@ -79,12 +112,13 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
                 return None
 
         try:
-            float(val)
+            # Return the CONVERTED float: NumberEntity.native_value must be
+            # numeric, and a numeric string like "42.5" should not leak
+            # through as a str just because it parses.
+            return float(val)
         except (TypeError, ValueError):
             _LOGGER.warning('Invalid numeric number value for "%s": %r -> set to None', self._attr_name, val)
             return None
-
-        return val
 
     def __init__(
         self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data
@@ -120,9 +154,9 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
         self._module_type = entity_data.get("ModuleType")
 
         _LOGGER.debug(
-            'Init number: %s: "%s" [%s]', 
-            self._attr_name, 
-            self._attr_native_value, 
+            'Init number: %s: "%s" [%s]',
+            self._attr_name,
+            self._attr_native_value,
             self._attr_native_unit_of_measurement
         )
 
@@ -164,9 +198,9 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
                 self._attr_native_unit_of_measurement = uom
 
             _LOGGER.debug(
-                'Update number: %s: "%s" [%s]', 
-                self._attr_name, 
-                self._attr_native_value, 
+                'Update number: %s: "%s" [%s]',
+                self._attr_name,
+                self._attr_native_value,
                 self._attr_native_unit_of_measurement
             )
 

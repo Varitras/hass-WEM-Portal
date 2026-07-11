@@ -31,7 +31,7 @@ def friendly_name_mapper(value: str) -> str:
 
 def translate(language: str, value: str) -> str:
     value = value.lower()
-    
+
     # Safe word fragments and full words, sorted by length later to match longest first
     vocab = {
         "en": {
@@ -104,13 +104,13 @@ def translate(language: str, value: str) -> str:
             "r130": "r130",
         }
     }
-    
+
     out = value
-    
+
     if language in vocab:
         # Sort replacements by length descending so longer compound words match first
         replacements = sorted(vocab[language].items(), key=lambda x: len(x[0]), reverse=True)
-        
+
         # Use placeholders to prevent cascading translation bugs
         placeholders = {}
         for i, (de_word, en_word) in enumerate(replacements):
@@ -118,14 +118,14 @@ def translate(language: str, value: str) -> str:
                 placeholder = f"__TOKEN_{i}__"
                 placeholders[placeholder] = f" {en_word} "
                 out = out.replace(de_word, placeholder)
-                
+
         # Resolve placeholders back to English words
         for placeholder, en_word in placeholders.items():
             out = out.replace(placeholder, en_word)
-                
+
     out = out.replace("_", " ")
     # Clean up extra spaces caused by multiple replacements
     out = " ".join(out.split()).title()
     out = out.replace("1St ", "1st ").replace("2Nd ", "2nd ")
-    
+
     return out
