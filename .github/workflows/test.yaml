@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+# Minimal GITHUB_TOKEN scope: this workflow only checks out and runs tests,
+# so read access to the repo contents is all it needs. Limiting the token
+# is a supply-chain hardening best practice (flagged by CodeQL otherwise).
+permissions:
+  contents: read
+
 jobs:
   pytest:
     name: pytest (real Home Assistant)
