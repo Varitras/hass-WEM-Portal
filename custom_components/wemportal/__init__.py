@@ -328,8 +328,8 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             client = WemPortalExpertClient(
                 target_entry.data.get(CONF_USERNAME),
                 target_entry.data.get(CONF_PASSWORD),
-                cooldown_check=target_api.check_cooldown,
-                cooldown_activate=target_api._activate_cooldown,
+                cooldown_check=target_api.check_expert_cooldown,
+                cooldown_activate=target_api.activate_expert_cooldown,
                 **expert_client_options(target_entry.options),
             )
             return client.write_parameter(entityvalue, value)
@@ -461,8 +461,8 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
                 client = WemPortalExpertClient(
                     entry.data.get(CONF_USERNAME),
                     entry.data.get(CONF_PASSWORD),
-                    cooldown_check=current_api.check_cooldown,
-                    cooldown_activate=current_api._activate_cooldown,
+                    cooldown_check=current_api.check_expert_cooldown,
+                    cooldown_activate=current_api.activate_expert_cooldown,
                     **expert_client_options(entry.options),
                 )
                 return client.read_many(entityvalues)

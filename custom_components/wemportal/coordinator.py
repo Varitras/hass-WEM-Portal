@@ -211,6 +211,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                         # a fresh instance would otherwise reset it and
                         # resume hitting a server that just rate-limited us.
                         blocked_until=getattr(self.api, "_blocked_until", 0.0),
+                        # Same reasoning for the expert-only backoff: a fresh
+                        # instance would otherwise clear it and let the expert
+                        # path resume against a portal that just rejected it.
+                        expert_blocked_until=getattr(self.api, "_expert_blocked_until", 0.0),
                         # Preserve the already-decided stable scraper device
                         # id, so the swap doesn't re-decide it (and possibly
                         # move scraped sensors to a different device).

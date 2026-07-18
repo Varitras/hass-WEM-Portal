@@ -131,6 +131,19 @@ STATISTICS_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
 # calm pace.
 STATISTICS_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
 
+# Backoff after a 403 on the EXPERT (Fachmann) path only.
+#
+# A 403 does not necessarily mean the portal is rate-limiting our IP: it can
+# just as well mean "I do not accept this particular request" (an unexpected
+# postback shape, a session that is not in the required state, ...). Treating
+# every expert 403 as an IP-wide rate limit paused the whole integration for
+# FORBIDDEN_COOLDOWN_SECONDS because of a single rejected request - verified
+# in practice while the portal was demonstrably reachable in a browser at the
+# same time. The expert path therefore backs off on its own now, while the
+# polling paths keep running; a 403 seen by the API/scraper still pauses
+# everything, including the expert path, because that IS the rate-limit signal.
+EXPERT_FORBIDDEN_COOLDOWN_SECONDS: Final = 300  # 5 minutes
+
 # Expert write access (web) - disabled by default. Only when enabled are
 # the wemportal.set_expert_parameter service and the configured expert
 # number entities registered.

@@ -237,6 +237,11 @@ class WemportalOptionsFlow(OptionsFlow):
     # which is indistinguishable from "the portal has no parameters" - the
     # user had no way to tell that the search never actually ran.
     _discovery_error: str | None = None
+    # Human-readable detail for the configure form's description (e.g. the
+    # exact remaining backoff time). The error strings themselves are static
+    # translations, so the specifics go here instead of leaving the user to
+    # guess how long "try again later" means.
+    _discovery_detail: str = ""
 
     async def async_step_init(self, user_input=None):
         """Options menu: configure directly, or discover expert parameters."""
@@ -250,9 +255,12 @@ class WemportalOptionsFlow(OptionsFlow):
         errors = {}
         # Surface a failed discovery here (the step the user is sent to
         # afterwards), then clear it so it doesn't stick to a later save.
+        detail = ""
         if self._discovery_error and user_input is None:
             errors["base"] = self._discovery_error
             self._discovery_error = None
+            detail = self._discovery_detail
+            self._discovery_detail = ""
         if user_input is not None:
             # Validate the ten expert slot IDs on save: an entityvalue must
             # be a plain hex string of a plausible length. Real entityvalues
@@ -326,6 +334,7 @@ class WemportalOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id="configure",
             errors=errors,
+            description_placeholders={"status": detail},
             data_schema=vol.Schema(
                 {
                     # Both scan intervals are clamped to a lower bound (like
@@ -473,8 +482,8 @@ class WemportalOptionsFlow(OptionsFlow):
         return WemPortalExpertClient(
             entry.data.get(CONF_USERNAME),
             entry.data.get(CONF_PASSWORD),
-            cooldown_check=api.check_cooldown if api is not None else None,
-            cooldown_activate=api._activate_cooldown if api is not None else None,
+            cooldown_check=api.check_expert_cooldown if api is not None else None,
+            cooldown_activate=api.activate_expert_cooldown if api is not None else None,
             **client_opts,
         )
 
@@ -543,16 +552,14 @@ class WemportalOptionsFlow(OptionsFlow):
                 self._discovered = await self.hass.async_add_executor_job(
                     client.discover, modules
                 )
-            except ForbiddenError:
-                # The shared 403 cooldown is active (often triggered by a
-                # second portal login moments after the first one, e.g. the
-                # module-list refresh). discover() aborts BEFORE sending any
-                # request, so this is not evidence that discovery is broken.
-                _LOGGER.warning(
-                    "Expert discovery: portal access is in the 403 cooldown; "
-                    "no request was sent. Wait for it to expire and retry."
-                )
+            except ForbiddenError as exc:
+                # Either the expert path is backing off from an earlier 403,
+                # or the portal rejected a request just now. The exception
+                # text says which, and names the request - pass it through to
+                # the form instead of making the user read the log.
+                _LOGGER.warning("Expert discovery: not run - %s", exc)
                 self._discovery_error = "discovery_blocked"
+                self._discovery_detail = str(exc)
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Expert discovery: parameter discovery failed")
                 self._discovery_error = "discovery_failed"

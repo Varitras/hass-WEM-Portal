@@ -123,6 +123,72 @@ def test_get_statistics_accepts_int_device_ids():
     assert calls, "statistics refresh was skipped for an int device id"
 
 
+def test_expert_403_does_not_pause_sensor_polling():
+    """An expert 403 must back off the expert path ONLY.
+
+    A 403 is not proof of an IP-wide rate limit - it can equally mean the
+    portal rejected that particular request. Pausing all polling for it cost
+    the user their readings, verified in practice while the portal was
+    reachable in a browser at the same time.
+    """
+    api = _api()
+    api.activate_expert_cooldown()
+
+    # Expert path is paused...
+    with pytest.raises(exceptions.ForbiddenError):
+        api.check_expert_cooldown()
+    # ...but polling is not.
+    api.check_cooldown()
+
+
+def test_global_403_still_pauses_the_expert_path():
+    """The reverse must keep working: a genuine rate limit seen by the API
+    or scraper is the real signal, and must stop expert requests too."""
+    api = _api()
+    api._activate_cooldown()
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api.check_cooldown()
+    with pytest.raises(exceptions.ForbiddenError):
+        api.check_expert_cooldown()
+
+
+def test_expert_cooldown_reports_remaining_time():
+    """The message is surfaced in the options form, so it has to say how
+    long the wait actually is instead of a vague 'try again later'."""
+    api = _api()
+    api.activate_expert_cooldown(seconds=120)
+
+    with pytest.raises(exceptions.ForbiddenError) as excinfo:
+        api.check_expert_cooldown()
+
+    assert "min remaining" in str(excinfo.value)
+
+
+def test_expert_cooldown_is_never_shortened():
+    api = _api()
+    api.activate_expert_cooldown(seconds=600)
+    before = api._expert_blocked_until
+    api.activate_expert_cooldown(seconds=5)
+
+    assert api._expert_blocked_until == before
+
+
+def test_expert_cooldown_survives_api_reinstantiation():
+    """The coordinator swaps the api object on repeated errors; a fresh
+    instance must not silently clear an active expert backoff."""
+    api = _api()
+    api.activate_expert_cooldown()
+
+    replacement = WemPortalApi(
+        "user@example.org", "secret",
+        expert_blocked_until=api._expert_blocked_until,
+    )
+
+    with pytest.raises(exceptions.ForbiddenError):
+        replacement.check_expert_cooldown()
+
+
 def _statistics_api(call_recorder, fail=False):
     """An api whose statistics refresh either works or always fails."""
     api = _api()

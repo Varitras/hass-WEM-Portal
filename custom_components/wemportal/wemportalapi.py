@@ -45,6 +45,7 @@ from .const import (
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
     FORBIDDEN_COOLDOWN_SECONDS,
+    EXPERT_FORBIDDEN_COOLDOWN_SECONDS,
     CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
     STATISTICS_REFRESH_INTERVAL_SECONDS,
     STATISTICS_RETRY_INTERVAL_SECONDS,
@@ -57,7 +58,7 @@ from .const import (
 class WemPortalApi:
     """Wrapper class for Weishaupt WEM Portal"""
 
-    def __init__(self, username, password, config=None, existing_data=None, cached_modules=None, blocked_until=0.0, scraper_device_id=None) -> None:
+    def __init__(self, username, password, config=None, existing_data=None, cached_modules=None, blocked_until=0.0, scraper_device_id=None, expert_blocked_until=0.0) -> None:
         if config is None:
             config = {}
         self.data = copy.deepcopy(existing_data) if existing_data else {}
@@ -145,6 +146,12 @@ class WemPortalApi:
         # otherwise a fresh instance would reset it to 0.0 and resume
         # hitting a server that just told us to back off.
         self._blocked_until = blocked_until
+        # Separate, EXPERT-ONLY backoff. A 403 on the Fachmann path only
+        # pauses that path (see EXPERT_FORBIDDEN_COOLDOWN_SECONDS for why);
+        # the polling paths keep running. The reverse still holds: a genuine
+        # rate limit seen by the API/scraper pauses the expert path too, via
+        # check_expert_cooldown() consulting check_cooldown() first.
+        self._expert_blocked_until = expert_blocked_until
 
         # Used to keep track of how many update intervals to wait before retrying spider
         self.spider_wait_interval = 0
@@ -169,6 +176,41 @@ class WemPortalApi:
                 "WEM Portal returned a rate-limit/forbidden (403) response. "
                 "Pausing ALL requests for %s minutes to avoid making it worse.",
                 seconds // 60,
+            )
+
+    def activate_expert_cooldown(self, seconds=EXPERT_FORBIDDEN_COOLDOWN_SECONDS):
+        """Back off the EXPERT (Fachmann) path only, after a 403 there.
+
+        Deliberately does NOT touch the global cooldown: an expert 403 is
+        frequently a rejected individual request rather than an IP-wide rate
+        limit, and pausing sensor polling because of it costs the user their
+        readings for no reason. Never shortens an existing backoff.
+        """
+        new_blocked_until = time.monotonic() + seconds
+        if new_blocked_until > self._expert_blocked_until:
+            self._expert_blocked_until = new_blocked_until
+            _LOGGER.warning(
+                "Expert (Fachmann) path returned 403. Pausing EXPERT requests "
+                "for %s minutes; sensor polling is unaffected.",
+                seconds // 60,
+            )
+
+    def check_expert_cooldown(self):
+        """Gate for the expert path: raise if either backoff is active.
+
+        Checks the global cooldown first - a genuine rate limit seen by the
+        API/scraper must still stop expert requests - then the expert-only one.
+        """
+        self.check_cooldown()
+        if self._expert_blocked_until and time.monotonic() < self._expert_blocked_until:
+            remaining = int(self._expert_blocked_until - time.monotonic())
+            if remaining >= 60:
+                remaining_str = f"~{(remaining + 59) // 60} min"
+            else:
+                remaining_str = f"{remaining}s"
+            raise ForbiddenError(
+                f"Expert path is backing off after a previous 403 "
+                f"({remaining_str} remaining). Sensor polling is unaffected."
             )
 
     def check_cooldown(self):

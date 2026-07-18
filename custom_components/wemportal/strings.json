@@ -37,6 +37,7 @@
         }
       },
       "configure": {
+        "description": "{status}",
         "data": {
           "scan_interval": "Web scraping interval (default = 1800 sec)",
           "api_scan_interval": "Api scan interval (default = 300 sec)",
@@ -85,7 +86,7 @@
       "invalid_module_arg": "Invalid module menu index: digits only (e.g. 6). Leave empty to use the default.",
       "duplicate_entityvalue": "This parameter is already selected in another slot. Each expert parameter can be used only once.",
       "discovery_failed": "Could not read from the portal. Try again later (the portal may be temporarily rate-limited).",
-      "discovery_blocked": "Portal access is currently paused after a 403 (rate limit) - no request was sent. Wait about 15 minutes and try again, without ticking the reload option.",
+      "discovery_blocked": "Expert access was not attempted: the portal rejected an expert request with 403, so this path is backing off briefly. Sensor polling is unaffected. The exact remaining time and the rejected request are shown at the top of this form. A 403 here does not necessarily mean your IP is rate-limited - it can also mean the portal did not accept that particular request.",
       "discovery_empty": "The search ran, but the selected module(s) returned no readable parameters. Try another module, or enter the entityvalue manually."
     },
     "abort": {

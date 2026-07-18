@@ -314,12 +314,24 @@ class WemPortalExpertClient:
 
     def _raise_if_forbidden(self, response):
         if response.status_code == 403:
-            # Engage the shared 403 cooldown (same window the API/scraper
-            # paths use) so the entire integration backs off, then raise.
+            # Name the offending request. A generic "403 during expert access"
+            # left more than a dozen possible call sites (login, postbacks,
+            # module GET) indistinguishable, which made every diagnosis
+            # guesswork. The URL comes straight off the response, so no call
+            # site has to pass anything.
+            where = getattr(response, "url", None) or "unknown URL"
+            _LOGGER.warning(
+                "Expert path: the portal rejected a request with 403. "
+                "Request: %s. Note that this does not necessarily mean a rate "
+                "limit - it can equally mean the portal did not accept this "
+                "particular request.", where,
+            )
+            # Backs off the EXPERT path only (see activate_expert_cooldown in
+            # wemportalapi.py); sensor polling keeps running.
             if self._cooldown_activate is not None:
                 self._cooldown_activate()
             raise ForbiddenError(
-                "WEM Portal web frontend returned 403 during expert parameter access."
+                f"WEM Portal returned 403 for an expert request ({where})."
             )
 
     # ------------------------------------------------------------------

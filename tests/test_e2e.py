@@ -535,12 +535,30 @@ async def test_discovery_blocked_by_cooldown_is_reported(hass, monkeypatch):
     entry = await _setup(hass, _entry(hass))
 
     def blocked(_selected):
-        raise ForbiddenError("cooling down")
+        raise ForbiddenError("backing off (~4 min remaining)")
 
     result = await _run_discovery_with(hass, entry, monkeypatch, blocked)
 
     assert result["step_id"] == "configure"
     assert result["errors"] == {"base": "discovery_blocked"}
+    # The specifics (remaining time, which request was rejected) reach the
+    # form, so the user does not have to read the log to find out.
+    assert "4 min remaining" in result["description_placeholders"]["status"]
+
+
+async def test_discovery_status_is_not_carried_into_the_next_form(hass, monkeypatch):
+    """A stale error from a previous run must not reappear later."""
+    entry = await _setup(hass, _entry(hass))
+
+    def blocked(_selected):
+        raise ForbiddenError("backing off")
+
+    await _run_discovery_with(hass, entry, monkeypatch, blocked)
+
+    result = await _open_options(hass, entry, "configure")
+
+    assert not result["errors"]
+    assert result["description_placeholders"]["status"] == ""
 
 
 async def test_discovery_failure_is_reported(hass, monkeypatch):

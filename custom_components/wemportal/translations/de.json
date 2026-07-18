@@ -39,6 +39,7 @@
         }
       },
       "configure": {
+        "description": "{status}",
         "data": {
           "scan_interval": "Web-Scraping-Intervall (Standard = 1800 Sek.)",
           "api_scan_interval": "API-Abfrageintervall (Standard = 300 Sek.)",
@@ -87,7 +88,7 @@
       "invalid_module_arg": "Ungültiger Modul-Menüindex: nur Ziffern (z. B. 6). Leer lassen für den Standardwert.",
       "duplicate_entityvalue": "Dieser Parameter ist bereits in einem anderen Slot ausgewählt. Jeder Fachmann-Parameter kann nur einmal verwendet werden.",
       "discovery_failed": "Konnte nicht vom Portal lesen. Bitte später erneut versuchen (das Portal ist evtl. kurzzeitig gesperrt/limitiert).",
-      "discovery_blocked": "Der Portalzugriff pausiert gerade nach einem 403 (Sperre) – es wurde keine Anfrage gesendet. Bitte etwa 15 Minuten warten und erneut versuchen, ohne die Option zum Neuladen anzuhaken.",
+      "discovery_blocked": "Der Fachmann-Zugriff wurde nicht versucht: Das Portal hat eine Fachmann-Anfrage mit 403 abgelehnt, daher pausiert dieser Pfad kurz. Die Sensor-Abfrage läuft normal weiter. Die genaue Restzeit und die abgelehnte Anfrage stehen oben in diesem Formular. Ein 403 bedeutet hier nicht zwingend eine IP-Sperre – es kann ebenso heißen, dass das Portal genau diese Anfrage nicht akzeptiert hat.",
       "discovery_empty": "Die Suche lief, aber die gewählten Module lieferten keine lesbaren Parameter. Ein anderes Modul versuchen oder die entityvalue-ID manuell eintragen."
     },
     "abort": {

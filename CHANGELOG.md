@@ -6,6 +6,27 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0b4] – 2026-07-18
+
+Pre-release. Corrects how a 403 on the expert path is interpreted.
+
+### Fixed
+- **A 403 on the expert (Fachmann) path no longer pauses sensor polling.**
+  Every 403 was treated as an IP-wide rate limit and paused the entire
+  integration for 15 minutes - but a 403 can equally mean the portal simply
+  did not accept that one request. This was confirmed in practice: the portal
+  was reachable in a browser while the integration considered itself blocked.
+  The expert path now backs off on its own for 5 minutes and leaves polling
+  alone. A 403 seen by the API or scraper still pauses everything, including
+  the expert path, because that is the actual rate-limit signal.
+- **A 403 now names the request that was rejected.** The previous message
+  covered more than a dozen possible call sites without saying which one,
+  which made every diagnosis guesswork.
+
+### Changed
+- The options form now shows the exact remaining backoff time and the
+  rejected request, instead of a vague "try again later".
+
 ## [1.10.0b3] – 2026-07-18
 
 Pre-release, based on first feedback from 1.10.0b2.
