@@ -20,7 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wemportal import expert_writer
-from custom_components.wemportal.exceptions import ParameterWriteError
+from custom_components.wemportal.exceptions import ForbiddenError, ParameterWriteError
 from custom_components.wemportal.const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
@@ -503,3 +503,62 @@ async def test_options_flow_discovery_fills_slot_dropdown(hass, monkeypatch):
     )
     options = schema[slot_key].config["options"]
     assert {"value": EV_B, "label": "Heating / Power limit (30 %)"} in options
+    assert not result["errors"], "a successful discovery must not report an error"
+
+
+async def _run_discovery_with(hass, entry, monkeypatch, discover):
+    """Drive the discovery path with a stubbed client's discover()."""
+    modules = [{"index": 6, "value": "m6", "label": "Heat pump"}]
+
+    class _StubClient:
+        def list_modules(self):
+            return modules
+
+        discover = None  # replaced below
+
+    _StubClient.discover = lambda self, selected: discover(selected)
+    monkeypatch.setattr(
+        "custom_components.wemportal.config_flow.WemportalOptionsFlow._expert_client",
+        lambda self: _StubClient(),
+    )
+
+    result = await _open_options(hass, entry, "discover_modules")
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"modules": ["6"], "refresh": False}
+    )
+
+
+async def test_discovery_blocked_by_cooldown_is_reported(hass, monkeypatch):
+    """A 403 cooldown aborts discovery BEFORE any request is sent. Silently
+    showing an empty dropdown made that indistinguishable from "the portal
+    has no parameters" - the user must be told the search never ran."""
+    entry = await _setup(hass, _entry(hass))
+
+    def blocked(_selected):
+        raise ForbiddenError("cooling down")
+
+    result = await _run_discovery_with(hass, entry, monkeypatch, blocked)
+
+    assert result["step_id"] == "configure"
+    assert result["errors"] == {"base": "discovery_blocked"}
+
+
+async def test_discovery_failure_is_reported(hass, monkeypatch):
+    entry = await _setup(hass, _entry(hass))
+
+    def boom(_selected):
+        raise RuntimeError("parsing went wrong")
+
+    result = await _run_discovery_with(hass, entry, monkeypatch, boom)
+
+    assert result["errors"] == {"base": "discovery_failed"}
+
+
+async def test_discovery_without_results_is_reported(hass, monkeypatch):
+    """The search ran but found nothing - a distinct case from a failure,
+    and the one that tells us the module page parsing needs work."""
+    entry = await _setup(hass, _entry(hass))
+
+    result = await _run_discovery_with(hass, entry, monkeypatch, lambda _s: [])
+
+    assert result["errors"] == {"base": "discovery_empty"}

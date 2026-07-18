@@ -67,14 +67,21 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
             or getattr(self, "_attr_state_class", None) is not None
         )
 
+        # A MISSING reading is expected, not invalid: the portal regularly
+        # reports "--" (or an empty string) for a parameter it has no current
+        # value for, and that is deliberately mapped to None so the sensor
+        # shows as unavailable instead of a fabricated 0.0. Logging this at
+        # warning level (as an "invalid value") made a normal condition look
+        # like a defect and drowned out real problems - so it is debug.
+        # Genuinely un-coercible values are still warned about below.
         if val is None:
-            _LOGGER.warning('Invalid sensor value for "%s": %r -> set to None', self._attr_name, val)
+            _LOGGER.debug('No value for "%s" this cycle -> unavailable', self._attr_name)
             return None
 
         if isinstance(val, str):
             val = val.strip()
             if val == "":
-                _LOGGER.warning('Invalid sensor value for "%s": %r -> set to None', self._attr_name, val)
+                _LOGGER.debug('Empty value for "%s" this cycle -> unavailable', self._attr_name)
                 return None
             if val.startswith("{"):
                 return "Programmed"

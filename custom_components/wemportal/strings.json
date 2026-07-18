@@ -76,7 +76,7 @@
         "description": "Select which modules to search. This opens a short portal session; searching many modules increases the risk of a temporary block (403).",
         "data": {
           "modules": "Modules to search",
-          "refresh": "Refresh the module list from the portal"
+          "refresh": "Reload the module list from the portal (rarely needed - the list is cached, and an extra portal login right after the first one can trigger a 403 block)"
         }
       }
     },
@@ -84,7 +84,9 @@
       "invalid_entityvalue": "Invalid entityvalue ID: must be a long hex string (0-9, A-F only; typically 36 characters). Short values like 0 are not a valid ID.",
       "invalid_module_arg": "Invalid module menu index: digits only (e.g. 6). Leave empty to use the default.",
       "duplicate_entityvalue": "This parameter is already selected in another slot. Each expert parameter can be used only once.",
-      "discovery_failed": "Could not read from the portal. Try again later (the portal may be temporarily rate-limited)."
+      "discovery_failed": "Could not read from the portal. Try again later (the portal may be temporarily rate-limited).",
+      "discovery_blocked": "Portal access is currently paused after a 403 (rate limit) - no request was sent. Wait about 15 minutes and try again, without ticking the reload option.",
+      "discovery_empty": "The search ran, but the selected module(s) returned no readable parameters. Try another module, or enter the entityvalue manually."
     },
     "abort": {
       "no_changes": "No changes to save - the integration was not reloaded."

@@ -78,7 +78,7 @@
         "description": "Wähle die zu durchsuchenden Module. Dies öffnet eine kurze Portal-Sitzung; viele Module erhöhen das Risiko einer vorübergehenden Sperre (403).",
         "data": {
           "modules": "Zu durchsuchende Module",
-          "refresh": "Modul-Liste neu vom Portal laden"
+          "refresh": "Modul-Liste neu vom Portal laden (selten nötig – die Liste ist gespeichert, und ein zusätzlicher Portal-Login direkt nach dem ersten kann eine 403-Sperre auslösen)"
         }
       }
     },
@@ -86,7 +86,9 @@
       "invalid_entityvalue": "Ungültige entityvalue-ID: muss eine lange Hex-Zeichenkette sein (nur 0-9, A-F; typisch 36 Zeichen). Kurze Werte wie 0 sind keine gültige ID.",
       "invalid_module_arg": "Ungültiger Modul-Menüindex: nur Ziffern (z. B. 6). Leer lassen für den Standardwert.",
       "duplicate_entityvalue": "Dieser Parameter ist bereits in einem anderen Slot ausgewählt. Jeder Fachmann-Parameter kann nur einmal verwendet werden.",
-      "discovery_failed": "Konnte nicht vom Portal lesen. Bitte später erneut versuchen (das Portal ist evtl. kurzzeitig gesperrt/limitiert)."
+      "discovery_failed": "Konnte nicht vom Portal lesen. Bitte später erneut versuchen (das Portal ist evtl. kurzzeitig gesperrt/limitiert).",
+      "discovery_blocked": "Der Portalzugriff pausiert gerade nach einem 403 (Sperre) – es wurde keine Anfrage gesendet. Bitte etwa 15 Minuten warten und erneut versuchen, ohne die Option zum Neuladen anzuhaken.",
+      "discovery_empty": "Die Suche lief, aber die gewählten Module lieferten keine lesbaren Parameter. Ein anderes Modul versuchen oder die entityvalue-ID manuell eintragen."
     },
     "abort": {
       "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen."

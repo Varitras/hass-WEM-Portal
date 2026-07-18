@@ -6,6 +6,26 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0b3] – 2026-07-18
+
+Pre-release, based on first feedback from 1.10.0b2.
+
+### Fixed
+- **A failed parameter discovery is now reported instead of silently
+  producing an empty dropdown.** Three cases are distinguished: portal access
+  paused after a 403 (no request was even sent), the search failed, and the
+  search ran but found nothing. Previously all three looked identical to the
+  user - an empty list with no explanation.
+- **A missing reading is no longer logged as an invalid value.** The portal
+  regularly reports no current value for a parameter, which correctly makes
+  the sensor unavailable; logging that at warning level made a normal
+  condition look like a defect. It is now debug. Values that genuinely cannot
+  be interpreted are still warned about.
+
+### Changed
+- The module-list reload option now states that it is rarely needed and that
+  an extra portal login right after the first one can trigger a 403 block.
+
 ## [1.10.0b2] – 2026-07-18
 
 Pre-release. Identical to 1.10.0b1 apart from the manifest key order, which

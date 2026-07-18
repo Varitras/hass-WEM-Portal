@@ -51,7 +51,7 @@ from .const import (
     MIN_SCAN_INTERVAL_SECONDS,
     MIN_SCAN_INTERVAL_API_SECONDS,
 )
-from .exceptions import AuthError
+from .exceptions import AuthError, ForbiddenError
 from .utils import close_api_sessions
 from .expert_writer import (
     WemPortalExpertClient,
@@ -232,6 +232,11 @@ class WemportalOptionsFlow(OptionsFlow):
     # configure). Not persisted; re-open re-discovers on demand.
     _discovered: list = []
     _selected_modules: list = []
+    # Error key from the last discovery run, shown on the configure form.
+    # Without this a failed discovery silently produced an EMPTY dropdown,
+    # which is indistinguishable from "the portal has no parameters" - the
+    # user had no way to tell that the search never actually ran.
+    _discovery_error: str | None = None
 
     async def async_step_init(self, user_input=None):
         """Options menu: configure directly, or discover expert parameters."""
@@ -243,6 +248,11 @@ class WemportalOptionsFlow(OptionsFlow):
     async def async_step_configure(self, user_input=None):
         """Manage the options."""
         errors = {}
+        # Surface a failed discovery here (the step the user is sent to
+        # afterwards), then clear it so it doesn't stick to a later save.
+        if self._discovery_error and user_input is None:
+            errors["base"] = self._discovery_error
+            self._discovery_error = None
         if user_input is not None:
             # Validate the ten expert slot IDs on save: an entityvalue must
             # be a plain hex string of a plausible length. Real entityvalues
@@ -484,6 +494,13 @@ class WemportalOptionsFlow(OptionsFlow):
             client = self._expert_client()
             try:
                 modules = await self.hass.async_add_executor_job(client.list_modules)
+            except ForbiddenError:
+                _LOGGER.warning(
+                    "Expert discovery: module list not read - portal access is "
+                    "in the 403 cooldown."
+                )
+                errors["base"] = "discovery_blocked"
+                modules = self.config_entry.options.get(CONF_EXPERT_MODULE_LIST) or []
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Expert discovery: reading module list failed")
                 errors["base"] = "discovery_failed"
@@ -512,7 +529,13 @@ class WemportalOptionsFlow(OptionsFlow):
         )
 
     async def async_step_run_discovery(self, user_input=None):
-        """Run discovery over the selected modules, then go to configure."""
+        """Run discovery over the selected modules, then go to configure.
+
+        Any outcome other than "found something" is reported on the configure
+        form. Previously every failure was only logged, so the user was sent
+        on to an empty dropdown with no indication that the search had been
+        blocked (or had never run at all).
+        """
         modules = self._selected_modules
         if modules:
             client = self._expert_client()
@@ -520,7 +543,25 @@ class WemportalOptionsFlow(OptionsFlow):
                 self._discovered = await self.hass.async_add_executor_job(
                     client.discover, modules
                 )
+            except ForbiddenError:
+                # The shared 403 cooldown is active (often triggered by a
+                # second portal login moments after the first one, e.g. the
+                # module-list refresh). discover() aborts BEFORE sending any
+                # request, so this is not evidence that discovery is broken.
+                _LOGGER.warning(
+                    "Expert discovery: portal access is in the 403 cooldown; "
+                    "no request was sent. Wait for it to expire and retry."
+                )
+                self._discovery_error = "discovery_blocked"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Expert discovery: parameter discovery failed")
+                self._discovery_error = "discovery_failed"
+            else:
+                if not self._discovered:
+                    _LOGGER.warning(
+                        "Expert discovery: the selected module(s) returned no "
+                        "readable parameters."
+                    )
+                    self._discovery_error = "discovery_empty"
         return await self.async_step_configure()
 
