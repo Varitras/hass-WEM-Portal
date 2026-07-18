@@ -305,3 +305,89 @@ def test_none_enabled_devices_still_polls_everything():
     api.get_data(enabled_devices=None)
 
     assert calls, "an unfiltered poll must still happen"
+
+
+def _expert_entity(api, entry_id="e1"):
+    """An expert number entity wired to `api` through a fake hass store."""
+    import types
+
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.const import DOMAIN
+
+    entry = types.SimpleNamespace(entry_id=entry_id, data={}, options={})
+    entity = expert_writer.WemPortalExpertNumber(entry, "expert_parameter_3", "A" * 36)
+    entity.hass = types.SimpleNamespace(data={DOMAIN: {entry_id: {"api": api}}})
+    return entity
+
+
+def test_entity_write_uses_the_expert_gate_not_the_global_one():
+    """A rejected slider write must back off the EXPERT path only.
+
+    This call site kept the GLOBAL cooldown when the expert-only backoff was
+    introduced, so one rejected write paused all sensor polling - the very
+    behaviour the expert backoff exists to end. The service and the auto-poll
+    were converted; this one was missed and no test noticed.
+    """
+    api = _api()
+    entity = _expert_entity(api)
+
+    assert entity._cooldown_activate() == api.activate_expert_cooldown
+    assert entity._cooldown_activate() != api._activate_cooldown
+    assert entity._cooldown_check() == api.check_expert_cooldown
+    assert entity._cooldown_check() != api.check_cooldown
+
+
+def test_entity_write_reuses_the_shared_session_cache():
+    """Without the shared jar every slider write performs a full login -
+    the request the portal rejects most readily."""
+    api = _api()
+    api.expert_cookies = {"cookies": {"ASP.NET_SessionId": "abc"}, "saved_at": 1.0}
+    entity = _expert_entity(api)
+
+    assert entity._cookie_jar() is api.expert_cookies
+
+
+def test_expert_accessors_degrade_safely_without_a_store():
+    """During unload the entry store is gone; the accessors must return None
+    rather than raise."""
+    import types
+
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.const import DOMAIN
+
+    entry = types.SimpleNamespace(entry_id="gone", data={}, options={})
+    entity = expert_writer.WemPortalExpertNumber(entry, "slot", "B" * 36)
+    entity.hass = types.SimpleNamespace(data={DOMAIN: {}})
+
+    assert entity._cookie_jar() is None
+    assert entity._cooldown_check() is None
+    assert entity._cooldown_activate() is None
+
+
+def test_api_swap_preserves_the_state_that_must_not_reset():
+    """The coordinator re-instantiates the api after repeated errors. Every
+    piece of state carried across that swap protects something: an active
+    backoff, the cached session, the discovered modules and the stable
+    scraper device id. None of it was covered by a test.
+    """
+    old = _api(cached_modules=CACHED_MODULES, scraper_device_id="0000")
+    old._activate_cooldown()
+    old.activate_expert_cooldown()
+    old.expert_cookies = {"cookies": {"ASP.NET_SessionId": "keep-me"}, "saved_at": 1.0}
+
+    new = WemPortalApi(
+        "user@example.org", "secret",
+        cached_modules=old.modules,
+        blocked_until=old._blocked_until,
+        expert_blocked_until=old._expert_blocked_until,
+        scraper_device_id=old.scraper_device_id,
+    )
+    new.expert_cookies = old.expert_cookies
+
+    with pytest.raises(exceptions.ForbiddenError):
+        new.check_cooldown()
+    with pytest.raises(exceptions.ForbiddenError):
+        new.check_expert_cooldown()
+    assert new.expert_cookies == old.expert_cookies
+    assert new.modules == CACHED_MODULES
+    assert new.scraper_device_id == "0000"

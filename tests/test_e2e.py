@@ -84,6 +84,27 @@ def _mock_portal(monkeypatch):
     monkeypatch.setattr(WemPortalApi, "api_login", lambda self, *a, **k: None)
     monkeypatch.setattr(WemPortalApi, "web_login", lambda self, *a, **k: None)
 
+    # The EXPERT client must be blocked too. It uses curl_cffi, which is not
+    # covered by the socket guard, so an expert path reached during a test
+    # really did contact wemportal.com - a failed login against a live
+    # third-party service, on every run. Every network entry point is stubbed
+    # here; tests that need specific behaviour override these.
+    def _no_network(*_a, **_k):
+        raise AssertionError(
+            "a test reached the real portal - stub the expert client instead"
+        )
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "_login", _no_network)
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "_full_login", _no_network)
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "read_many", lambda self, ids: {}
+    )
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "write_parameter", _no_network
+    )
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "list_modules", _no_network)
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "discover", _no_network)
+
 
 def _entry(hass, options=None, version=2):
     entry = MockConfigEntry(
@@ -580,3 +601,164 @@ async def test_discovery_without_results_is_reported(hass, monkeypatch):
     result = await _run_discovery_with(hass, entry, monkeypatch, lambda _s: [])
 
     assert result["errors"] == {"base": "discovery_empty"}
+
+
+async def test_first_refresh_does_not_filter_devices_away(hass, monkeypatch):
+    """On the first refresh nothing is known yet, so no device filter may be
+    sent.
+
+    The coordinator builds the "enabled devices" list from `api.data`, which
+    is empty until `get_devices()` runs INSIDE the fetch. Passing that empty
+    list as a filter means "poll nothing", so discovery never runs and no
+    entity is ever created - permanently, because platform setup does not
+    run again.
+    """
+    seen = []
+
+    def record(self, enabled_devices=None):
+        seen.append(enabled_devices)
+        return FAKE_DATA
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", record)
+
+    await _setup(hass, _entry(hass))
+
+    assert seen, "the coordinator never fetched"
+    assert seen[0] is None, (
+        "an empty device list was passed as a filter on the first refresh; "
+        "None means 'no filter', [] means 'poll nothing'"
+    )
+    assert hass.states.async_all("sensor"), "no entities were created"
+
+
+async def test_saving_options_keeps_options_that_are_not_form_fields(hass):
+    """Home Assistant REPLACES the options dict with what the flow returns.
+
+    Passing only the form fields silently dropped the cached module list, so
+    the next discovery had to read it from the portal again - an extra login,
+    which is the request the portal is most likely to reject.
+    """
+    from custom_components.wemportal.const import CONF_EXPERT_MODULE_LIST
+
+    modules = [{"index": 6, "value": "m6", "label": "Heat pump"}]
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_MODULE_LIST: modules}))
+
+    result = await _open_options(hass, entry, "configure")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], _configure_input(**{CONF_SCAN_INTERVAL: 900})
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_SCAN_INTERVAL] == 900
+    assert entry.options[CONF_EXPERT_MODULE_LIST] == modules
+
+
+async def test_submitting_no_module_is_reported(hass, monkeypatch):
+    """Distinct from "searched and found nothing": here the search never ran.
+
+    Submitting with nothing ticked used to fall through silently to an empty
+    dropdown. Note the existing "found nothing" test ticks a module, so it
+    exercises a DIFFERENT branch that happens to set the same error key.
+    """
+    entry = await _setup(hass, _entry(hass))
+
+    class _StubClient:
+        def list_modules(self):
+            return [{"index": 6, "value": "m6", "label": "Heat pump"}]
+
+        def discover(self, _selected):
+            raise AssertionError("nothing was selected, so nothing may be searched")
+
+    monkeypatch.setattr(
+        "custom_components.wemportal.config_flow.WemportalOptionsFlow._expert_client",
+        lambda self: _StubClient(),
+    )
+
+    result = await _open_options(hass, entry, "discover_modules")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"modules": [], "refresh": False}
+    )
+
+    assert result["step_id"] == "configure"
+    assert result["errors"] == {"base": "discovery_empty"}
+
+
+async def test_failed_first_refresh_closes_its_sessions(hass, monkeypatch):
+    """The api is not in hass.data yet when the first refresh fails, so the
+    normal unload path cannot close it - every setup retry leaked another."""
+    import custom_components.wemportal as wemportal_init
+
+    closed = []
+    monkeypatch.setattr(
+        wemportal_init, "close_api_sessions", lambda api: closed.append(api)
+    )
+
+    def boom(self, *_a, **_k):
+        raise ConnectionError("portal unreachable")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", boom)
+
+    entry = _entry(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is not ConfigEntryState.LOADED
+    assert closed, "a failed first refresh leaked its HTTP sessions"
+
+
+async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
+    """A poll in flight during unload must not schedule a successor.
+
+    `_poll` reschedules in a `finally`, which also runs on cancellation - and
+    it wrote the new timer into the store `_cancel` had already emptied, so
+    nothing could cancel it. One immortal chain per reload.
+    """
+    from custom_components.wemportal.const import (
+        CONF_EXPERT_AUTO_POLL,
+        CONF_EXPERT_WRITE,
+    )
+
+    scheduled = []
+
+    def fake_call_later(_hass, _delay, action):
+        scheduled.append(action)
+        return lambda: None
+
+    # Patch at the SOURCE: __init__.py imports async_call_later inside the
+    # function, so patching the module attribute would have no effect.
+    import homeassistant.helpers.event as ha_event
+
+    monkeypatch.setattr(ha_event, "async_call_later", fake_call_later)
+
+    # A configured slot is required: without an expert entity there is
+    # nothing to poll, so the timer chain is never armed in the first place.
+    entry = await _setup(
+        hass,
+        _entry(
+            hass,
+            {
+                CONF_EXPERT_WRITE: True,
+                CONF_EXPERT_AUTO_POLL: True,
+                CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+            },
+        ),
+    )
+    store = hass.data[DOMAIN][entry.entry_id]
+    assert store.get("expert_poll_started"), "auto-poll never started"
+    assert scheduled, "no poll was ever scheduled"
+    poll = scheduled[-1]
+
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Assert the BEHAVIOUR, not just that a flag was set: run the poll that
+    # was already in flight when the entry went away. Its `finally` must not
+    # arm a successor. (Asserting only the flag passed even with the guard
+    # removed - the flag was still being set, just ignored.)
+    before = len(scheduled)
+    await poll(None)
+
+    assert len(scheduled) == before, (
+        "an unloaded entry re-armed the auto-poll timer"
+    )

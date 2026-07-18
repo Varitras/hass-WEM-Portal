@@ -163,9 +163,18 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 continue
             enabled_devices.append(device_id)
 
+        # None and [] mean DIFFERENT things to the api: None is "no filter,
+        # do a full cycle", [] is "every known device is disabled, poll
+        # nothing". Before any device is known - a fresh install, and every
+        # restart, since self.api.data starts empty and is only filled by
+        # get_devices() INSIDE fetch_data - the loop above yields [], which
+        # must not be read as "poll nothing" or discovery never runs and no
+        # entities are ever created.
+        device_filter = enabled_devices if self.api.data else None
+
         async with asyncio.timeout(DEFAULT_TIMEOUT):
             try:
-                x = await self.hass.async_add_executor_job(self.api.fetch_data, enabled_devices)
+                x = await self.hass.async_add_executor_job(self.api.fetch_data, device_filter)
                 self.num_failed = 0
                 self.num_auth_failed = 0
                 await self._async_save_modules_cache()
