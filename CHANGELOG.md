@@ -6,6 +6,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0b7] – 2026-07-18
+
+Pre-release. Fixes found by a full audit of everything since 1.9.0, plus a
+re-audit of those fixes.
+
 ### Fixed
 - **The full `entityvalue` ID no longer leaks on a 403.** The rejected
   request's URL was logged verbatim at warning level and embedded in the
