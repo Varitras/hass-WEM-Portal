@@ -7,11 +7,13 @@ https://github.com/erikkastelec/hass-WEM-Portal
 """
 from datetime import timedelta
 import random
+import threading
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.config_entries import ConfigEntry
 from .const import (
@@ -36,7 +38,7 @@ from .coordinator import (
     get_scraper_device_store,
 )
 from .wemportalapi import WemPortalApi
-from .utils import deserialize_modules
+from .utils import deserialize_modules, close_api_sessions
 from homeassistant.helpers import device_registry, entity_registry
 
 def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):
@@ -51,21 +53,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 # Migrate values from previous versions
-async def migrate_unique_ids(
-    hass: HomeAssistant, config_entry: ConfigEntry, coordinator
-):
-    er = entity_registry.async_get(hass)
-    # Nothing to migrate yet if the first refresh came back empty (e.g. no
-    # devices found, or every device failed this cycle) - guard against
-    # this instead of crashing with an IndexError on an empty keys() list,
-    # which would otherwise abort the entire integration setup.
-    if not coordinator.data:
-        _LOGGER.debug("Skipping unique_id migration: coordinator has no data yet.")
-        return
-    # Do migration for first device if we have multiple
-    device_id = list(coordinator.data.keys())[0]
-    data = coordinator.data[device_id]
-
+def _migrate_device_unique_ids(er, config_entry, device_id, data) -> bool:
+    """Migrate one device's entities from old unique_id formats to the current
+    one. Returns True if any entity was updated. Factored out so migration can
+    run for EVERY device, not just the first."""
     change = False
     for unique_id, values in data.items():
         if isinstance(values, int):
@@ -119,6 +110,26 @@ async def migrate_unique_ids(
                     )
                     change = True
                 break
+    return change
+
+
+async def migrate_unique_ids(
+    hass: HomeAssistant, config_entry: ConfigEntry, coordinator
+):
+    er = entity_registry.async_get(hass)
+    # Nothing to migrate yet if the first refresh came back empty (e.g. no
+    # devices found, or every device failed this cycle) - guard against
+    # this instead of crashing with an IndexError on an empty keys() list,
+    # which would otherwise abort the entire integration setup.
+    if not coordinator.data:
+        _LOGGER.debug("Skipping unique_id migration: coordinator has no data yet.")
+        return
+    # Migrate EVERY device, not just the first: with multiple devices the
+    # others' old unique_ids (and their history) were previously left behind.
+    change = False
+    for device_id in coordinator.data:
+        if _migrate_device_unique_ids(er, config_entry, device_id, coordinator.data[device_id]):
+            change = True
 
     if change:
         # A debounced refresh is enough to update the migrated entities.
@@ -228,6 +239,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "api": api,
         # "config": entry.data,
         "coordinator": coordinator,
+        # Shared per-account lock: only one expert portal operation (a number
+        # entity write, the service, or the auto-poll read) may run at a time,
+        # so they don't collide on the same parameter or open parallel portal
+        # sessions. Acquired non-blocking by each expert path.
+        "expert_lock": threading.Lock(),
     }
 
     # Register the hub device so child devices can reference it via via_device
@@ -252,8 +268,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def _resolve_expert_entry(hass: HomeAssistant):
+    """Return (entry, api) of the single expert-write-enabled, loaded entry.
+
+    Returns None if none - or MORE THAN ONE - entry currently has expert
+    write enabled. The service is a single domain-wide registration; closing
+    over one specific entry (the former behaviour) meant a second account
+    could never be targeted and, worse, a write could hit the wrong account.
+    Resolving at call time and refusing when ambiguous makes mis-addressing a
+    heating parameter impossible rather than silent.
+    """
+    candidates = []
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if not entry.options.get(CONF_EXPERT_WRITE, False):
+            continue
+        store = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        api = store.get("api") if store else None
+        if api is not None:
+            candidates.append((entry, api))
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api) -> None:
-    """Register wemportal.set_expert_parameter (idempotent)."""
+    """Register wemportal.set_expert_parameter (idempotent).
+
+    The handler does NOT close over `entry`/`api`; it resolves the target
+    account on each call (see _resolve_expert_entry), so the single global
+    service addresses the correct account and refuses when it can't tell.
+    """
     from .expert_writer import WemPortalExpertClient, ev_digest, short_ev
 
     if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
@@ -266,64 +308,70 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
         entityvalue = call.data["entityvalue"].strip()
         value = call.data["value"]
 
+        resolved = _resolve_expert_entry(hass)
+        if resolved is None:
+            raise HomeAssistantError(
+                "WEM Portal expert write: could not determine the target account. "
+                "Enable expert write on exactly one config entry (multiple "
+                "expert-enabled entries are not yet supported for the service)."
+            )
+        target_entry, target_api = resolved
+
+        store = hass.data.get(DOMAIN, {}).get(target_entry.entry_id, {})
+        lock = store.get("expert_lock")
+        ev_short = short_ev(entityvalue)
+
         def _do_write():
-            # Own short-lived session per write; honors the global 403
-            # cooldown via the api object's check.
+            # Own short-lived session per write; honors the shared 403
+            # cooldown (check) and ENGAGES it on a 403 (activate).
             from .expert_writer import expert_client_options
             client = WemPortalExpertClient(
-                entry.data.get(CONF_USERNAME),
-                entry.data.get(CONF_PASSWORD),
-                cooldown_check=api.check_cooldown,
-                **expert_client_options(entry.options),
+                target_entry.data.get(CONF_USERNAME),
+                target_entry.data.get(CONF_PASSWORD),
+                cooldown_check=target_api.check_cooldown,
+                cooldown_activate=target_api._activate_cooldown,
+                **expert_client_options(target_entry.options),
             )
             return client.write_parameter(entityvalue, value)
 
-        async def _run_in_background():
-            # An expert write takes roughly 5-15s (login + minimal Fachmann
-            # navigation + write + verify) - still longer than a frontend
-            # service call comfortably waits, so run it detached and report
-            # the outcome via a persistent notification + the log.
-            # entityvalues are installation-specific; only a shortened form
-            # appears in log/notification TEXT (which people copy into
-            # issues/forums), and the internal notification_id uses a
-            # digest of the id (stable/unique, but nothing to leak if it
-            # ever surfaces in states or diagnostic dumps).
-            ev_short = short_ev(entityvalue)
-            try:
-                state = await hass.async_add_executor_job(_do_write)
-            except Exception as exc:  # pylint: disable=broad-except
-                _LOGGER.error("Expert write failed for %s: %s", ev_short, exc)
-                await hass.services.async_call(
-                    "persistent_notification", "create",
-                    {
-                        "title": "WEM Portal expert write failed",
-                        "message": f"Setting {ev_short} to {value} failed: {exc}",
-                        "notification_id": f"wemportal_expert_{ev_digest(entityvalue)}",
-                    },
-                    blocking=False,
-                )
-                return
-            _LOGGER.info(
-                "Expert parameter %s set to %s (allowed range %s..%s)",
-                ev_short, state.current, state.min_value, state.max_value,
+        # Only one expert portal operation per account at a time (shared with
+        # the entity writes and the auto-poll), so concurrent calls don't
+        # collide on the same parameter or open parallel portal sessions.
+        if lock is not None and not lock.acquire(blocking=False):
+            raise HomeAssistantError(
+                "WEM Portal expert write: another expert operation is already "
+                "in progress for this account; try again shortly."
             )
-            if entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
-                await hass.services.async_call(
-                    "persistent_notification", "create",
-                    {
-                        "title": "WEM Portal expert write",
-                        "message": f"{ev_short} set to {state.current}.",
-                        "notification_id": f"wemportal_expert_{ev_digest(entityvalue)}",
-                    },
-                    blocking=False,
-                )
-
-        # Return immediately; the write continues in the background.
-        # Task name also uses the digest (task names can appear in asyncio
-        # debug output), not the raw installation-specific id.
-        hass.async_create_background_task(
-            _run_in_background(), name=f"wemportal_expert_write_{ev_digest(entityvalue)}"
+        # Run synchronously and RAISE on failure so an automation calling this
+        # action can tell whether the write actually succeeded (HA action-
+        # exception guidance), instead of the old fire-and-forget that always
+        # reported success. An expert write takes ~5-15s (login + Fachmann
+        # navigation + write + verify) - acceptable for an explicit, on-demand
+        # action. Only a SHORTENED entityvalue appears in any user-facing text.
+        try:
+            state = await hass.async_add_executor_job(_do_write)
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.error("Expert write failed for %s: %s", ev_short, exc)
+            raise HomeAssistantError(
+                f"WEM Portal expert write for {ev_short} to {value} failed: {exc}"
+            ) from exc
+        finally:
+            if lock is not None:
+                lock.release()
+        _LOGGER.info(
+            "Expert parameter %s set to %s (allowed range %s..%s)",
+            ev_short, state.current, state.min_value, state.max_value,
         )
+        if target_entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
+            await hass.services.async_call(
+                "persistent_notification", "create",
+                {
+                    "title": "WEM Portal expert write",
+                    "message": f"{ev_short} set to {state.current}.",
+                    "notification_id": f"wemportal_expert_{ev_digest(entityvalue)}",
+                },
+                blocking=False,
+            )
 
     hass.services.async_register(
         DOMAIN,
@@ -394,12 +442,27 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
                     "Expert auto-poll: a write is in progress, skipping this cycle."
                 )
                 return
+            # Use the CURRENT api from the store (the coordinator swaps it on
+            # recovery); the closed-over `api` may be a discarded instance
+            # with a stale cooldown state.
+            current_api = store.get("api", api)
+            # Shared per-account lock: skip this cycle if a write (entity or
+            # service) is already using the portal for this account.
+            lock = store.get("expert_lock")
+            if lock is not None and not lock.acquire(blocking=False):
+                _LOGGER.debug(
+                    "Expert auto-poll: another expert operation in progress, "
+                    "skipping this cycle."
+                )
+                return
+
             def _do_read():
                 from .expert_writer import expert_client_options
                 client = WemPortalExpertClient(
                     entry.data.get(CONF_USERNAME),
                     entry.data.get(CONF_PASSWORD),
-                    cooldown_check=api.check_cooldown,
+                    cooldown_check=current_api.check_cooldown,
+                    cooldown_activate=current_api._activate_cooldown,
                     **expert_client_options(entry.options),
                 )
                 return client.read_many(entityvalues)
@@ -409,6 +472,9 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
             except Exception as exc:  # pylint: disable=broad-except
                 _LOGGER.warning("Expert auto-poll read failed: %s", exc)
                 return
+            finally:
+                if lock is not None:
+                    lock.release()
             # Per-id consecutive-failure tracking: a persistently failing id
             # (usually a typo'd entityvalue) would otherwise only produce an
             # hourly debug/warning nobody sees. After 3 consecutive failures
@@ -461,6 +527,12 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
         unsub = store.pop("expert_poll_unsub", None)
         if unsub is not None:
             unsub()
+        # Also cancel the initial poll if it is still running: it is a
+        # background task that would otherwise keep going after the entry is
+        # unloaded (only the scheduled timer was cancelled before).
+        task = store.pop("expert_poll_initial_task", None)
+        if task is not None and not task.done():
+            task.cancel()
 
     def _start():
         # Idempotent: only one timer chain per entry.
@@ -474,7 +546,10 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
             interval_min, int(EXPERT_POLL_JITTER_FRACTION * 100),
         )
         # Initial read shortly after startup; it reschedules itself afterwards.
-        hass.async_create_background_task(_poll(), name="wemportal_expert_initial_poll")
+        # Tracked so _cancel() can stop it if the entry is unloaded mid-run.
+        store["expert_poll_initial_task"] = hass.async_create_background_task(
+            _poll(), name="wemportal_expert_initial_poll"
+        )
 
     # If the entities already exist, start now; otherwise number.py will call
     # this once it has created them.
@@ -485,8 +560,12 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Handle schema migrations."""
-    # V1 to V2 migration is a no-op for the data schema, as entity ID migration
-    # is handled dynamically inside async_setup_entry via migrate_unique_ids.
+    # V1 -> V2 needs no data-schema change (entity-id migration happens
+    # dynamically in async_setup_entry via migrate_unique_ids). But the entry
+    # version must actually be bumped, otherwise HA keeps treating a V1 entry
+    # as migration-pending and re-runs this on every startup.
+    if config_entry.version < 2:
+        hass.config_entries.async_update_entry(config_entry, version=2)
     return True
 
 
@@ -510,10 +589,24 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )
     if unload_ok:
-        hass.data.get(DOMAIN, {}).pop(config_entry.entry_id, None)
-        # Remove the expert service (if registered) so a reload with the
-        # option disabled doesn't leave a stale service behind.
+        store = hass.data.get(DOMAIN, {}).pop(config_entry.entry_id, None)
+        # Close the API + scraper HTTP sessions so they don't linger with an
+        # open connection after the entry is unloaded/reloaded.
+        api = store.get("api") if store else None
+        if api is not None:
+            await hass.async_add_executor_job(close_api_sessions, api)
+        # The expert service is a single domain-wide registration shared by
+        # all entries. Only remove it once NO remaining loaded entry still
+        # has expert write enabled - previously unloading ANY entry removed
+        # it globally, killing the service for other accounts.
         if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
-            hass.services.async_remove(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
+            still_enabled = any(
+                other.entry_id != config_entry.entry_id
+                and other.options.get(CONF_EXPERT_WRITE, False)
+                and hass.data.get(DOMAIN, {}).get(other.entry_id) is not None
+                for other in hass.config_entries.async_entries(DOMAIN)
+            )
+            if not still_enabled:
+                hass.services.async_remove(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
 
     return unload_ok

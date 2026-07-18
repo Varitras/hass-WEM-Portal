@@ -122,6 +122,15 @@ CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
 # refreshes. This caps how often they're refreshed.
 STATISTICS_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
 
+# How long to wait before retrying when a statistics cycle failed for EVERY
+# device. The rate-limit timestamp is deliberately set BEFORE the fetch (so a
+# persistently failing portal can never be hammered), which would otherwise
+# make a single failure cost a full refresh interval. Shortening the wait on
+# failure keeps that protection while recovering sooner. Must stay well above
+# the coordinator's scan interval so a failing portal is still approached at a
+# calm pace.
+STATISTICS_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
+
 # Expert write access (web) - disabled by default. Only when enabled are
 # the wemportal.set_expert_parameter service and the configured expert
 # number entities registered.
@@ -356,6 +365,11 @@ EXPERT_MODULE_ICONMENU_STATE_TEMPLATE: Final = '{"logEntries":[],"selectedItemIn
 EXPERT_MODULE_MENU_TARGET: Final = "ctl00$rdMain$C$controlExtension$iconMenu$rmMenuLayer"
 EXPERT_MODULE_ARG_HEATPUMP: Final = "6"
 CONF_EXPERT_MODULE_ARG: Final = "expert_module_arg"
+# Cached Fachmann module list ([{index, value, label}]) from the last
+# discovery, so the options-flow module picker renders instantly on repeat
+# runs (with a "refresh" affordance). Installation-specific; stored in
+# options like the slot ids.
+CONF_EXPERT_MODULE_LIST: Final = "expert_module_list"
 # Timer postback that pulls live values after navigating to a module.
 EXPERT_TIMER_TARGET: Final = "ctl00$DeviceContextControl1$timerUpdateData"
 # Live-value loading after a module select. The dialog can come back empty

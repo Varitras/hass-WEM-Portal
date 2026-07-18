@@ -1,0 +1,22 @@
+name: Hassfest
+
+# Validate the integration manifest/structure against Home Assistant's own
+# tooling. The scheduled run keeps checking against the moving HA dev branch,
+# so a future HA change that breaks the manifest is caught early.
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+
+# Only needs to read the repository contents.
+permissions:
+  contents: read
+
+jobs:
+  hassfest:
+    name: hassfest
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v5"
+      - uses: "home-assistant/actions/hassfest@master"

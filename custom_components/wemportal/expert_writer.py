@@ -117,6 +117,127 @@ def _is_valid_entityvalue(entityvalue) -> bool:
     return bool(re.fullmatch(r"[0-9A-Fa-f]+", ev)) and len(ev) >= MIN_EXPERT_ENTITYVALUE_LENGTH
 
 
+# Matches the edit-icon onclick that opens the parameter dialog. lxml returns
+# the attribute with the entity decoded, so it reads `&readdata`, not
+# `&amp;readdata`.
+_EDIT_LINK_RE = re.compile(r"entityvalue=([0-9A-Fa-f]+)&readdata=(True|False)")
+
+# Module id values in the icon-menu RadMenu init are long hex strings; the
+# top-menu RadMenu uses short numeric values ("100"), so a length floor tells
+# them apart when reading the icon menu's own $create block.
+_MODULE_VALUE_RE = re.compile(r'"value":"([0-9A-Fa-f]{20,})"')
+
+
+def parse_parameter_list(html_content) -> list:
+    """Parse a Fachmann module overview page into a list of parameters.
+
+    Returns one dict per editable (readdata=True) row:
+    {group, name, entityvalue, value}. readdata=False rows (aggregate /
+    module-level entries) are skipped - they don't open a value dialog.
+    Static so it can be tested against saved pages.
+    """
+    results = []
+    try:
+        tree = html.fromstring(html_content)
+    except Exception as exc:  # pylint: disable=broad-except
+        _LOGGER.debug("Could not parse parameter list page: %s", exc)
+        return results
+    for panel in tree.xpath("//div[contains(@class, 'RadPanelBar')]"):
+        header = panel.xpath(".//span[contains(@id, '_HeaderTemplate_lblHeaderText')]")
+        group = header[0].text_content().strip() if header else ""
+        for icon in panel.xpath(".//input[contains(@class, 'EditIcon')]"):
+            match = _EDIT_LINK_RE.search(icon.get("onclick") or "")
+            if not match or match.group(2) != "True":
+                continue
+            row = icon.xpath("./ancestor::tr[1]")
+            if not row:
+                continue
+            name = row[0].xpath(".//span[contains(@class, 'simpleDataName')]")
+            value = row[0].xpath(".//span[contains(@class, 'simpleDataValue')]")
+            results.append(
+                {
+                    "group": group,
+                    "name": name[0].text_content().strip() if name else "",
+                    "entityvalue": match.group(1),
+                    "value": value[0].text_content().strip() if value else "",
+                }
+            )
+    return results
+
+
+def parse_module_list(html_content) -> list:
+    """Parse the Fachmann icon menu into a list of selectable modules.
+
+    Visible labels (li > a > span.rmText, document order) are zipped with the
+    module id values from the icon menu's RadMenu client-init block (same
+    order). Returns [{index, value, label}]; index is the menu position used
+    as the module-select postback argument. Static so it can be tested
+    against saved pages.
+    """
+    try:
+        tree = html.fromstring(html_content)
+    except Exception as exc:  # pylint: disable=broad-except
+        _LOGGER.debug("Could not parse module list page: %s", exc)
+        return []
+    menu = tree.xpath("//div[contains(@class, 'IconMenuControl')]")
+    labels = (
+        [
+            span.text_content().strip()
+            for span in menu[0].xpath(".//a//span[contains(@class, 'rmText')]")
+        ]
+        if menu
+        else []
+    )
+    values = []
+    for script in tree.xpath("//script"):
+        text = script.text or ""
+        if "iconMenu_rmMenuLayer_ClientState" in text and "itemData" in text:
+            values = _MODULE_VALUE_RE.findall(text)
+            break
+    return [
+        {"index": i, "value": value, "label": label}
+        # strict=False on purpose: if labels and values ever differ in count
+        # (unexpected portal change), pair up to the shorter instead of raising.
+        for i, (label, value) in enumerate(zip(labels, values, strict=False))
+    ]
+
+
+def discovery_option_list(discovered, current_ids) -> list:
+    """Build the slot-dropdown options from discovery + current selections.
+
+    Discovered parameters come first (labelled "group / name (value)"); any
+    already-configured id not among them is appended (labelled by its raw id)
+    so a stored selection stays selectable even without a fresh discovery.
+    De-duplicated by entityvalue; empty ids skipped.
+    """
+    options = []
+    seen = set()
+    for p in discovered or []:
+        ev = (p.get("entityvalue") or "").strip()
+        if not ev or ev in seen:
+            continue
+        seen.add(ev)
+        label = f"{p.get('group', '')} / {p.get('name', '')} ({p.get('value', '')})"
+        options.append({"value": ev, "label": label})
+    for ev in current_ids or []:
+        ev = (ev or "").strip()
+        if not ev or ev in seen:
+            continue
+        seen.add(ev)
+        options.append({"value": ev, "label": ev})
+    return options
+
+
+def duplicate_entityvalues(id_values) -> set:
+    """Return the set of entityvalues used more than once (non-empty)."""
+    counts = {}
+    for raw in id_values or []:
+        ev = (raw or "").strip()
+        if ev:
+            counts[ev] = counts.get(ev, 0) + 1
+    return {ev for ev, n in counts.items() if n > 1}
+
+
 class ExpertParameterState:
     """Parsed state of one expert parameter's edit form."""
 
@@ -136,13 +257,20 @@ class WemPortalExpertClient:
     fully independent of the polling scraper/API paths.
     """
 
-    def __init__(self, username, password, cooldown_check=None, module_arg=None,
+    def __init__(self, username, password, cooldown_check=None,
+                 cooldown_activate=None, module_arg=None,
                  enable_module_nav=None, enable_security_code=None):
         self.username = username
         self.password = password
         # Optional callable raising ForbiddenError while a 403 cooldown is
         # active (shared protection with the rest of the integration).
         self._cooldown_check = cooldown_check
+        # Optional callable that ENGAGES the shared 403 cooldown. On a 403
+        # here the whole integration should back off, not just this expert
+        # operation; without this the API/scraper paths kept hitting a portal
+        # that had just rate-limited us (the check-only callback could never
+        # trip because nothing set the cooldown from the expert path).
+        self._cooldown_activate = cooldown_activate
         # Icon-menu argument selecting the target module; defaults to the
         # heat pump index of the reference installation but is overridable
         # for other module layouts.
@@ -186,6 +314,10 @@ class WemPortalExpertClient:
 
     def _raise_if_forbidden(self, response):
         if response.status_code == 403:
+            # Engage the shared 403 cooldown (same window the API/scraper
+            # paths use) so the entire integration backs off, then raise.
+            if self._cooldown_activate is not None:
+                self._cooldown_activate()
             raise ForbiddenError(
                 "WEM Portal web frontend returned 403 during expert parameter access."
             )
@@ -638,8 +770,11 @@ class WemPortalExpertClient:
             # Dropdown present but empty: the session has no active
             # installation context (see _establish_context) or the
             # parameter could not be resolved for this entityvalue.
+            # Keep the snippet short: it is the dialog HTML (may include bulky
+            # ASP.NET __VIEWSTATE state) and only needs to reveal a format
+            # change, not the whole page.
             _LOGGER.debug(
-                "Expert parameter form with empty dropdown, response snippet: %.500s",
+                "Expert parameter form with empty dropdown, response snippet: %.200s",
                 html_content,
             )
             raise ValueError(
@@ -713,6 +848,86 @@ class WemPortalExpertClient:
         finally:
             self.close()
         return result
+
+    # ------------------------------------------------------------------
+    def list_modules(self) -> list:
+        """Login, read the Fachmann icon menu, return selectable modules.
+
+        Returns [{index, value, label}]; on-demand only (a single short
+        session). _establish_context leaves the Fachmann main page in
+        self._nav_html, which carries the icon menu we parse.
+        """
+        self._check_cooldown()
+        try:
+            self._login()
+            return parse_module_list(self._nav_html or "")
+        finally:
+            self.close()
+
+    def discover(self, modules) -> list:
+        """Login once, fetch each module's overview, return its parameters.
+
+        `modules` are dicts from list_modules(). Returns the concatenated
+        parse_parameter_list() results (readable rows only), de-duplicated by
+        entityvalue. A ForbiddenError (403) propagates so the shared cooldown
+        engages; other per-module errors are logged and skipped so one bad
+        module doesn't lose the rest.
+        """
+        result = []
+        seen = set()
+        self._check_cooldown()
+        try:
+            self._login()
+            for module in modules or []:
+                try:
+                    html_text = self._fetch_module_page(module)
+                except ForbiddenError:
+                    raise
+                except Exception as exc:  # pylint: disable=broad-except
+                    _LOGGER.warning(
+                        "Expert discovery: module %s failed: %s",
+                        module.get("label"), exc,
+                    )
+                    continue
+                for param in parse_parameter_list(html_text):
+                    ev = param["entityvalue"]
+                    if ev in seen:
+                        continue
+                    seen.add(ev)
+                    result.append(param)
+        finally:
+            self.close()
+        return result
+
+    def _fetch_module_page(self, module) -> str:
+        """Select a module via the icon-menu postback, then GET its page.
+
+        Uses the same module-select mechanism as _establish_context's
+        fallback path (icon-menu postback carrying the control's own client
+        state), addressed by the menu index. Then a plain GET Default.aspx
+        returns the module's full overview HTML (spec option (a)). Live-verify
+        (spec open item): confirm the postback registers server-side and the
+        follow-up GET renders the selected module rather than a stale default.
+        """
+        index = str(module.get("index"))
+        icon_menu_state = EXPERT_MODULE_ICONMENU_STATE_TEMPLATE % index
+        self._nav_html = self._postback(
+            WEB_MAIN_URL, self._nav_html,
+            event_target=EXPERT_MODULE_MENU_TARGET,
+            event_argument=index,
+            extra_fields={EXPERT_MODULE_ICONMENU_STATE_FIELD: icon_menu_state},
+        )
+        self._check_cooldown()
+        resp = self.session.get(
+            WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            headers={
+                "Referer": WEB_MAIN_URL,
+                "Accept": WEB_ACCEPT_NAV,
+                "Accept-Language": WEB_ACCEPT_LANGUAGE,
+            },
+        )
+        self._raise_if_forbidden(resp)
+        return resp.text
 
     def write_parameter(self, entityvalue: str, value) -> ExpertParameterState:
         """Login, set a new value via the edit form, verify, close session.
@@ -853,7 +1068,7 @@ class WemPortalExpertClient:
                 state = self.parse_parameter_form(resp.text)
                 _LOGGER.debug(
                     "Expert parameter %s: current=%s range=%s..%s (attempt %d)",
-                    entityvalue, state.current, state.min_value, state.max_value,
+                    short_ev(entityvalue), state.current, state.min_value, state.max_value,
                     attempt + 1,
                 )
                 return state
@@ -865,7 +1080,7 @@ class WemPortalExpertClient:
                 last_error = exc
                 _LOGGER.debug(
                     "Expert parameter %s not ready on attempt %d/%d: %s",
-                    entityvalue, attempt + 1, max_attempts, exc,
+                    short_ev(entityvalue), attempt + 1, max_attempts, exc,
                 )
                 if attempt < max_attempts - 1:
                     self._poll_live_values_once()
@@ -1050,13 +1265,28 @@ try:
             client_opts = expert_client_options(self._config_entry.options)
 
             def _do_write():
-                client = WemPortalExpertClient(
-                    self._config_entry.data.get(CONF_USERNAME),
-                    self._config_entry.data.get(CONF_PASSWORD),
-                    cooldown_check=self._cooldown_check(),
-                    **client_opts,
-                )
-                return client.write_parameter(self._entityvalue, value)
+                # Shared per-account lock: only one expert portal operation
+                # (this entity, the service, or the auto-poll) may run at a
+                # time, so concurrent writes/reads don't collide on the same
+                # heating parameter or open parallel portal sessions.
+                lock = self._expert_lock()
+                if lock is not None and not lock.acquire(blocking=False):
+                    raise HomeAssistantError(
+                        "Another expert operation is in progress for this "
+                        "account; try again shortly."
+                    )
+                try:
+                    client = WemPortalExpertClient(
+                        self._config_entry.data.get(CONF_USERNAME),
+                        self._config_entry.data.get(CONF_PASSWORD),
+                        cooldown_check=self._cooldown_check(),
+                        cooldown_activate=self._cooldown_activate(),
+                        **client_opts,
+                    )
+                    return client.write_parameter(self._entityvalue, value)
+                finally:
+                    if lock is not None:
+                        lock.release()
 
             try:
                 state = await self.hass.async_add_executor_job(_do_write)
@@ -1112,6 +1342,17 @@ try:
             entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
             api = entry_data.get("api") if entry_data else None
             return api.check_cooldown if api is not None else None
+
+        def _cooldown_activate(self):
+            """Fetch the shared 403-cooldown activation from the running api."""
+            entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
+            api = entry_data.get("api") if entry_data else None
+            return api._activate_cooldown if api is not None else None
+
+        def _expert_lock(self):
+            """Shared per-entry lock (only one expert portal op at a time)."""
+            entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
+            return entry_data.get("expert_lock") if entry_data else None
 
         @property
         def device_info(self) -> DeviceInfo:

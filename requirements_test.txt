@@ -3,6 +3,12 @@
 # release and the pytest plugin/fixtures used to test custom integrations.
 # The three runtime libs below are the integration's own manifest
 # requirements, needed so its modules import during collection.
+# Deliberately UNPINNED: this pulls in a matching Home Assistant release, and
+# CI should run against a CURRENT one. Users run current Home Assistant, and
+# only a current HA surfaces deprecations and API removals - an old pin makes
+# the integration look healthy while it is already broken. (Verified: pinning
+# to 0.13.205 / HA 2025.1.4 hid the removal of the OptionsFlow `_config_entry`
+# compatibility shim, which only showed up against HA 2026.7.2.)
 pytest-homeassistant-custom-component
 curl_cffi>=0.15.0
 lxml>=4.9.0

@@ -20,6 +20,10 @@ from homeassistant.helpers.selector import (
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    SelectOptionDict,
 )
 from .wemportalapi import WemPortalApi
 from .const import (
@@ -43,10 +47,18 @@ from .const import (
     CONF_EXPERT_ENABLE_MODULE_NAV,
     CONF_EXPERT_ENABLE_SECURITY_CODE,
     CONF_EXPERT_MODULE_ARG,
+    CONF_EXPERT_MODULE_LIST,
     MIN_SCAN_INTERVAL_SECONDS,
     MIN_SCAN_INTERVAL_API_SECONDS,
 )
 from .exceptions import AuthError
+from .utils import close_api_sessions
+from .expert_writer import (
+    WemPortalExpertClient,
+    expert_client_options,
+    discovery_option_list,
+    duplicate_entityvalues,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,6 +97,10 @@ async def validate_input(hass: HomeAssistant, data):
         raise InvalidAuth from exc
     except Exception as exc:
         raise CannotConnect from exc
+    finally:
+        # Close the throwaway validation session(s); config-flow validation
+        # otherwise left an open connection behind on every setup attempt.
+        await hass.async_add_executor_job(close_api_sessions, api)
 
     return data
 
@@ -161,27 +177,37 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
 
         errors = {}
         if user_input is not None:
-            new_data = {**entry.data, **user_input}
-            # Validate against the mode the entry actually runs in (options
-            # override the value stored at initial setup).
-            effective_mode = entry.options.get(
-                CONF_MODE, new_data.get(CONF_MODE, DEFAULT_MODE)
-            )
-            try:
-                await validate_input(
-                    self.hass, {**new_data, CONF_MODE: effective_mode}
-                )
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception during reauth")
-                errors["base"] = "unknown"
+            # Reauth must re-authenticate the SAME account. The username field
+            # is editable, so guard against silently switching the entry to a
+            # different login: require it to match the entry's existing
+            # account (case-insensitive, as portal usernames are emails).
+            # Only the password is actually updated.
+            original = (entry.data.get(CONF_USERNAME) or "").strip()
+            entered = (user_input.get(CONF_USERNAME) or "").strip()
+            if entered.lower() != original.lower():
+                errors["base"] = "wrong_account"
             else:
-                self.hass.config_entries.async_update_entry(entry, data=new_data)
-                await self.hass.config_entries.async_reload(entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
+                new_data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
+                # Validate against the mode the entry actually runs in (options
+                # override the value stored at initial setup).
+                effective_mode = entry.options.get(
+                    CONF_MODE, new_data.get(CONF_MODE, DEFAULT_MODE)
+                )
+                try:
+                    await validate_input(
+                        self.hass, {**new_data, CONF_MODE: effective_mode}
+                    )
+                except CannotConnect:
+                    errors["base"] = "cannot_connect"
+                except InvalidAuth:
+                    errors["base"] = "invalid_auth"
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Unexpected exception during reauth")
+                    errors["base"] = "unknown"
+                else:
+                    self.hass.config_entries.async_update_entry(entry, data=new_data)
+                    await self.hass.config_entries.async_reload(entry.entry_id)
+                    return self.async_abort(reason="reauth_successful")
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -201,7 +227,20 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
 class WemportalOptionsFlow(OptionsFlow):
     """Handle options."""
 
+    # Discovery result and the modules the user picked, held across the
+    # multi-step options flow (menu -> module select -> discovery ->
+    # configure). Not persisted; re-open re-discovers on demand.
+    _discovered: list = []
+    _selected_modules: list = []
+
     async def async_step_init(self, user_input=None):
+        """Options menu: configure directly, or discover expert parameters."""
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["configure", "discover_modules"],
+        )
+
+    async def async_step_configure(self, user_input=None):
         """Manage the options."""
         errors = {}
         if user_input is not None:
@@ -230,6 +269,16 @@ class WemportalOptionsFlow(OptionsFlow):
             user_input[CONF_EXPERT_MODULE_ARG] = module_arg
             if module_arg and not module_arg.isdigit():
                 errors[CONF_EXPERT_MODULE_ARG] = "invalid_module_arg"
+            # De-dup: the same entityvalue must not be selected in two slots.
+            slot_ids = [
+                (user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip()
+                for i in range(1, EXPERT_SLOT_COUNT + 1)
+            ]
+            dupes = duplicate_entityvalues(slot_ids)
+            if dupes:
+                for i in range(1, EXPERT_SLOT_COUNT + 1):
+                    if (user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip() in dupes:
+                        errors[CONF_EXPERT_SLOT_ID_TEMPLATE % i] = "duplicate_entityvalue"
             if not errors:
                 # No-op guard: writing a new options entry always triggers a
                 # full integration reload (and a fresh portal login). If the
@@ -255,8 +304,17 @@ class WemportalOptionsFlow(OptionsFlow):
             # an error redisplay, or the stored options otherwise.
             return source.get(key, fallback)
 
+        # Slot id dropdown options: discovered parameters (if a discovery ran
+        # this session) plus any already-configured ids, so a stored
+        # selection stays selectable even without a fresh discovery.
+        current_ids = [
+            self.config_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i, "")
+            for i in range(1, EXPERT_SLOT_COUNT + 1)
+        ]
+        id_options = discovery_option_list(self._discovered, current_ids)
+
         return self.async_show_form(
-            step_id="init",
+            step_id="configure",
             errors=errors,
             data_schema=vol.Schema(
                 {
@@ -348,23 +406,36 @@ class WemportalOptionsFlow(OptionsFlow):
                     # Ten generic expert-parameter slots (name + entityvalue
                     # hex ID). Added programmatically below so the block stays
                     # compact. Empty slots are ignored.
-                    **self._expert_slot_schema(opt),
+                    **self._expert_slot_schema(opt, id_options),
                 }
             ),
         )
 
-    def _expert_slot_schema(self, opt):
+    def _expert_slot_schema(self, opt, id_options):
         """Build the vol schema fields for the ten generic expert slots.
 
-        Each slot is a name field and an entityvalue-id field, both optional.
-        Prefilled values use `suggested_value` (via description), NOT
-        `default`: with `default`, a field the user clears on save falls
-        back to the stored value, making it impossible to delete a value
-        (e.g. a stray "0" left in a slot). `suggested_value` shows the
-        current value but lets an emptied field stay empty. The suggested
-        value prefers just-submitted input on an error redisplay so a
-        validation error never wipes what the user typed.
+        Each slot is a free-text name field and an entityvalue-id field. The
+        id field is a dropdown of discovered parameters (`id_options`:
+        [{value, label}]) with `custom_value=True`, so a discovered id can be
+        picked OR a raw id typed manually (fallback if discovery failed or a
+        field is missing). Prefilled values use `suggested_value` (via
+        description), NOT `default`: with `default`, a field the user clears
+        on save falls back to the stored value, making it impossible to
+        delete a value. `suggested_value` shows the current value but lets an
+        emptied field stay empty, and prefers just-submitted input on an
+        error redisplay so a validation error never wipes what the user typed.
         """
+        id_selector = SelectSelector(
+            SelectSelectorConfig(
+                options=[
+                    SelectOptionDict(value=o["value"], label=o["label"])
+                    for o in id_options
+                ],
+                mode=SelectSelectorMode.DROPDOWN,
+                custom_value=True,
+                sort=False,
+            )
+        )
         fields = {}
         for i in range(1, EXPERT_SLOT_COUNT + 1):
             name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % i
@@ -380,6 +451,76 @@ class WemportalOptionsFlow(OptionsFlow):
                     id_key,
                     description={"suggested_value": opt(id_key, "")},
                 )
-            ] = cv.string
+            ] = id_selector
         return fields
+
+    # --- Expert parameter discovery -----------------------------------
+    def _expert_client(self):
+        """Build a WemPortalExpertClient from the entry's credentials."""
+        entry = self.config_entry
+        client_opts = expert_client_options(entry.options)
+        api = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("api")
+        return WemPortalExpertClient(
+            entry.data.get(CONF_USERNAME),
+            entry.data.get(CONF_PASSWORD),
+            cooldown_check=api.check_cooldown if api is not None else None,
+            cooldown_activate=api._activate_cooldown if api is not None else None,
+            **client_opts,
+        )
+
+    async def async_step_discover_modules(self, user_input=None):
+        """Pick which modules to search. Module list is cached in options."""
+        errors = {}
+        modules = self.config_entry.options.get(CONF_EXPERT_MODULE_LIST) or []
+        if user_input is not None and not user_input.get("refresh"):
+            selected = user_input.get("modules", [])
+            self._selected_modules = [
+                m for m in modules if str(m["index"]) in selected
+            ]
+            return await self.async_step_run_discovery()
+
+        # (Re)fetch the module list if missing or a refresh was requested.
+        if not modules or (user_input is not None and user_input.get("refresh")):
+            client = self._expert_client()
+            try:
+                modules = await self.hass.async_add_executor_job(client.list_modules)
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Expert discovery: reading module list failed")
+                errors["base"] = "discovery_failed"
+                modules = self.config_entry.options.get(CONF_EXPERT_MODULE_LIST) or []
+            else:
+                # Cache the freshly parsed list for next time.
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    options={
+                        **self.config_entry.options,
+                        CONF_EXPERT_MODULE_LIST: modules,
+                    },
+                )
+
+        return self.async_show_form(
+            step_id="discover_modules",
+            errors=errors,
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("modules", default=[]): cv.multi_select(
+                        {str(m["index"]): m["label"] for m in modules}
+                    ),
+                    vol.Optional("refresh", default=False): cv.boolean,
+                }
+            ),
+        )
+
+    async def async_step_run_discovery(self, user_input=None):
+        """Run discovery over the selected modules, then go to configure."""
+        modules = self._selected_modules
+        if modules:
+            client = self._expert_client()
+            try:
+                self._discovered = await self.hass.async_add_executor_job(
+                    client.discover, modules
+                )
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Expert discovery: parameter discovery failed")
+        return await self.async_step_configure()
 

@@ -6,6 +6,105 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0b1] – 2026-07-18
+
+Pre-release. The expert-parameter discovery is new and has not yet been
+verified against a live portal - please report what the module list and the
+slot dropdowns actually show.
+
+### Added
+- **Discover expert (Fachmann) parameters from the options UI.** A new
+  options menu can search selected modules on the portal and list the
+  available expert parameters; each of the ten slots is now a dropdown of
+  discovered parameters (a parameter can't be picked twice). Manual entry of
+  an entityvalue still works. Discovery runs only on demand.
+
+### Fixed
+- **Switching mode `web` → `both` no longer crashes.** A web-only install
+  persists a placeholder scraper device id (`0000`); after a switch to
+  `both` it existed as a data key without matching API modules, so the API
+  refresh raised `KeyError` - which its own error handler then re-raised.
+  Scraper-only devices are now skipped by the API and statistics paths.
+- **Missing values no longer read as a real `0.0`.** A momentarily missing
+  value (`--`) now becomes unavailable (`None`) for every sensor, not just
+  energy/power - a briefly missing temperature no longer reports 0 °C and
+  can no longer trigger automations on a fabricated reading.
+- **A cycle in which every device's data fetch fails is now reported as a
+  failed update** (so backoff and eventual re-auth engage), instead of being
+  marked successful while serving stale values. A partial success (at least
+  one device refreshed) still counts as success.
+- **Disabled devices are no longer polled.** The coordinator's disabled-
+  device lookup now uses the same device identifier the entities register
+  (`<entry_id>:<device_id>`); previously it looked up a bare id that never
+  matched, so a disabled device kept being polled.
+- **The expert-write service now targets the correct account** when more
+  than one config entry exists: the target account is resolved per call (and
+  the call is refused when it is ambiguous) instead of being fixed to the
+  first-loaded entry, and the shared service is only removed once no
+  expert-enabled entry remains loaded.
+- **Re-authentication can no longer silently switch accounts.** The entered
+  username must match the entry's existing account (case-insensitive); only
+  the password is updated.
+- **A 403 during an expert (Fachmann) operation now engages the shared
+  cooldown**, so the API and scraper paths back off too - previously the
+  expert client could only *check* the cooldown, never set it, so an expert
+  403 kept the rest of the integration hitting a rate-limited portal.
+- **Concurrent expert operations can no longer collide.** A shared per-account
+  lock serialises entity writes, the service, and the auto-poll read, so two
+  operations can't target the same heating parameter or open parallel portal
+  sessions at once; a second concurrent operation is rejected.
+- **The auto-poll now uses the current API instance** after a session
+  recovery (it previously kept a reference to the discarded instance and its
+  stale cooldown state), and its initial background read is now cancelled on
+  unload instead of running on after the entry is gone.
+- **`beautifulsoup4` is now declared as a requirement** in the manifest (the
+  web-login path imports it); it previously worked only because Home
+  Assistant happens to ship the library.
+- **Config-entry migration now bumps the entry version**, so an old (v1)
+  entry is no longer treated as migration-pending on every startup.
+- **A rejected API write is no longer reported as success.** The write now
+  checks the portal's response `Status` (the portal can answer HTTP 200 with
+  `Status != 0`, as the login does) and raises instead of optimistically
+  showing the new value.
+- **`unique_id` migration now runs for every device**, not just the first, so
+  additional devices' old ids and history are migrated too.
+- **The full installation-specific entityvalue is no longer written to the
+  debug log** (only a shortened form), and the empty-form HTML snippet dump is
+  smaller.
+- **API writes and the poll cycle no longer run concurrently on the same
+  session/state.** A shared lock serialises a `change_value` write against a
+  `fetch_data` poll cycle, so they can't interleave and corrupt the HTTP
+  session or the in-memory data.
+- **HTTP sessions are now closed on unload and after config-flow validation**,
+  instead of leaving open connections behind on every reload/setup attempt.
+
+### Changed
+- **A failed energy-statistics cycle is retried after 15 minutes instead of a
+  full hour.** The rate-limit timestamp is still set before the fetch (so a
+  portal that keeps failing is never asked more often than that), but a cycle
+  that failed for every device no longer costs a whole refresh interval.
+- **The `wemportal.set_expert_parameter` service now runs synchronously and
+  raises on failure** instead of returning immediately and only reporting via
+  a notification, so automations can tell whether the write actually
+  succeeded. The write still takes a few seconds (portal navigation); the
+  number-entity slider keeps its background behaviour.
+- The manifest now declares `integration_type: hub`.
+- **Percent sensors no longer report the `power_factor` device class.** Values
+  like power limit, heating/cooling output, pump speed and power demand are
+  not a power factor (cos phi), so the label was simply wrong. They keep their
+  `%` unit and `measurement` state class, so history and long-term statistics
+  are unaffected - only the icon and any `device_class`-based filtering
+  change. Operating-hour sensors keep `duration` / `total_increasing`.
+- **Development only:** the test suite gained end-to-end tests that run
+  against a real Home Assistant instance (entry setup/unload, the schema
+  migration, the config/options/reauth flows and the expert service). They
+  are marked `e2e` and deselected in the default run; CI runs the full suite
+  with `-m ""` against the current Home Assistant release.
+- **Development only:** the API data mapper and the web scraper's page
+  parsing are now covered by tests (both were untested). These pin down
+  which platform each portal parameter becomes, how values and units are
+  parsed, and that malformed input costs only the affected data point.
+
 ## [1.9.0] – 2026-07-08
 
 ### Fixed

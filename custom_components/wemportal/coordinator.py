@@ -22,7 +22,7 @@ from .const import (
 )
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from .wemportalapi import WemPortalApi
-from .utils import serialize_modules
+from .utils import serialize_modules, device_identifier
 
 # Version of the on-disk format used to persist discovered device/module/
 # parameter metadata (see get_modules_store()). Bump this if the structure
@@ -151,7 +151,13 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         device_registry = dr.async_get(self.hass)
         enabled_devices = []
         for device_id in self.api.data:
-            device_entry = device_registry.async_get_device(identifiers={(DOMAIN, str(device_id))})
+            # Look the device up under the SAME identifier the entity
+            # platforms register (utils.device_identifier); previously this
+            # used a bare (DOMAIN, device_id), which never matched, so a
+            # disabled device kept being polled.
+            device_entry = device_registry.async_get_device(
+                identifiers={device_identifier(self.config_entry.entry_id, str(device_id))}
+            )
             if device_entry is not None and device_entry.disabled_by is not None:
                 _LOGGER.debug("Skipping disabled device %s", device_id)
                 continue

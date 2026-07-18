@@ -5,6 +5,7 @@ Weishaupt webscraping and API library
 
 import copy
 import time
+import threading
 from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
@@ -46,6 +47,7 @@ from .const import (
     FORBIDDEN_COOLDOWN_SECONDS,
     CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
     STATISTICS_REFRESH_INTERVAL_SECONDS,
+    STATISTICS_RETRY_INTERVAL_SECONDS,
     API_REQUEST_TIMEOUT_SECONDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     SCRAPER_FALLBACK_DEVICE_ID,
@@ -101,6 +103,12 @@ class WemPortalApi:
         self.valid_login = False
         self.language = config.get(CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE)
         self.session = None
+        # Serialises a full poll cycle (fetch_data) against on-demand writes
+        # (change_value): both run in executor threads and share self.session
+        # and self.data, so without this they could interleave and corrupt the
+        # session/state. A plain Lock is safe - writes never call fetch_data
+        # and vice versa, so the two never nest on one thread.
+        self._api_lock = threading.Lock()
         self.webscraping_cookie = {}
         # Persistent scraper instance, kept across coordinator cycles so
         # its underlying HTTP session (TCP connection + TLS handshake) is
@@ -213,6 +221,13 @@ class WemPortalApi:
         return self.scraper_device_id
 
     def fetch_data(self, enabled_devices=None):
+        """Run a full poll cycle under the shared API lock, so it can't
+        interleave with an on-demand write (change_value) on the same
+        session/state."""
+        with self._api_lock:
+            return self._fetch_data(enabled_devices)
+
+    def _fetch_data(self, enabled_devices=None):
         # Fail fast, without any network activity at all, if we're still
         # within a cooldown window from a previous 403 (see
         # _activate_cooldown). This is checked again inside
@@ -849,6 +864,23 @@ class WemPortalApi:
         numeric_value,
         login=True,
     ):
+        """Change a value under the shared API lock, so a write can't
+        interleave with a poll cycle on the same session/state."""
+        with self._api_lock:
+            return self._change_value(
+                device_id, parameter_id, module_index, module_type,
+                numeric_value, login=login,
+            )
+
+    def _change_value(
+        self,
+        device_id,
+        parameter_id,
+        module_index,
+        module_type,
+        numeric_value,
+        login=True,
+    ):
         """POST request to API to change a specific value"""
         _LOGGER.debug("Changing value for %s", parameter_id)
 
@@ -870,7 +902,7 @@ class WemPortalApi:
         # _LOGGER.info(data)
 
         try:
-            self.make_api_call(
+            response = self.make_api_call(
                 API_DATA_ACCESS_WRITE_URL,
                 data=data,
                 do_retry=True
@@ -879,6 +911,18 @@ class WemPortalApi:
             raise ParameterChangeError(
                 f"Error changing parameter {parameter_id} value"
             ) from exc
+        # The portal can answer with HTTP 200 but an application-level error
+        # (Status != 0) - the same pattern the login uses. Treat a non-zero
+        # Status as a rejected write instead of optimistically reporting
+        # success. If the response has no Status field, behaviour is unchanged.
+        try:
+            status = response.json().get("Status")
+        except Exception:  # pylint: disable=broad-except
+            status = None
+        if status is not None and status != 0:
+            raise ParameterChangeError(
+                f"Portal rejected the write for parameter {parameter_id} (Status {status})."
+            )
 
     # Refresh data and retrieve new data
     def get_data(self, enabled_devices=None):
@@ -893,6 +937,8 @@ class WemPortalApi:
         _LOGGER.debug("Fetching fresh api data. enabled_devices=%s, self.data.keys()=%s", enabled_devices, list(self.data.keys()))
         target_devices = enabled_devices if enabled_devices else list(self.data.keys())
         _LOGGER.debug("Computed target_devices=%s", target_devices)
+        successes = 0
+        failures = 0
         for device_id in target_devices:
             # Normalize once: self.data is keyed by str, but callers may
             # pass ints. Previously the membership check used str() while
@@ -902,13 +948,34 @@ class WemPortalApi:
             _LOGGER.debug("Processing device_id=%s. Is in self.data? %s", device_id, device_id in self.data)
             if device_id not in self.data:
                 continue
+            # Skip devices that only exist on the web-scraper side (e.g. the
+            # persisted "0000" placeholder of a web->both install): they have
+            # no API-discovered modules, so the API refresh below has nothing
+            # to fetch and self.modules[device_id] would raise KeyError.
+            # Their scraped sensors are handled entirely by the scraper path.
+            if device_id not in self.modules:
+                _LOGGER.debug("Skipping device %s: no API modules (scraper-only).", device_id)
+                continue
             if not self._fetch_device_status(device_id):
                 continue
-            self._fetch_parameter_values(device_id)
+            if self._fetch_parameter_values(device_id):
+                successes += 1
+            else:
+                failures += 1
             self._fetch_circuit_times(device_id)
 
         # Fetch Energy Statistics (rate limited internally)
         self.get_statistics(enabled_devices)
+
+        # If every attempted device failed to refresh its parameters (and at
+        # least one was attempted), surface it so the coordinator treats the
+        # cycle as failed (backoff / eventual reauth) instead of marking stale
+        # values as a successful update. A partial success (at least one
+        # device refreshed) is still treated as success.
+        if failures and not successes:
+            raise WemPortalError(
+                "All API parameter fetches failed this cycle; see the warnings above."
+            )
 
     def _fetch_device_status(self, device_id: str) -> bool:
         """Fetch the device's connection status and error sensors.
@@ -980,8 +1047,13 @@ class WemPortalApi:
             _LOGGER.warning("Failed to fetch Device Status: %s", exc)
         return True
 
-    def _fetch_parameter_values(self, device_id: str) -> None:
-        """Refresh and read all known parameter values for one device."""
+    def _fetch_parameter_values(self, device_id: str) -> bool:
+        """Refresh and read all known parameter values for one device.
+
+        Returns True if the values were refreshed, False if the fetch failed
+        (logged). get_data() counts these so a cycle in which every device
+        failed is reported as a failed update instead of a successful one.
+        """
         try:
             data = {
                 "DeviceID": int(device_id),
@@ -999,7 +1071,10 @@ class WemPortalApi:
                 ],
             }
         except KeyError as exc:
-            _LOGGER.debug("%s: %s", DATA_GATHERING_ERROR, self.modules[device_id])
+            # Don't re-index self.modules[device_id] here: if that key is the
+            # one missing, the log call itself would raise a second KeyError
+            # and escape this handler unhandled.
+            _LOGGER.debug("%s: missing module data for device %s", DATA_GATHERING_ERROR, device_id)
             raise WemPortalError(DATA_GATHERING_ERROR) from exc
 
         try:
@@ -1023,8 +1098,10 @@ class WemPortalApi:
                 mode=self.mode,
                 api_data=self.data,
             )
+            return True
         except Exception as exc:
             _LOGGER.warning("Failed to fetch parameter data... %s", exc)
+            return False
 
     def _fetch_circuit_times(self, device_id: str) -> None:
         """Fetch heating schedules (DataType == 6), throttled per schedule."""
@@ -1107,13 +1184,28 @@ class WemPortalApi:
             _LOGGER.warning("Error processing CircuitTimes: %s", exc)
 
     def get_statistics(self, enabled_devices=None):
-        """Fetch historical statistics from the API, rate limited to once per hour."""
+        """Fetch historical statistics from the API, rate limited to once per hour.
+
+        The timestamp is set BEFORE fetching, on purpose: it records the last
+        ATTEMPT, so a portal that keeps failing (or is rate-limiting us) is
+        never asked more than once per interval. The downside is that a single
+        failure would otherwise cost a full hour of statistics, so a cycle that
+        failed for every device shortens the wait to
+        STATISTICS_RETRY_INTERVAL_SECONDS instead (see the end of this method).
+        """
         now = time.time()
         if self.last_statistics_fetch is not None and (now - self.last_statistics_fetch) < STATISTICS_REFRESH_INTERVAL_SECONDS:
             return
 
         self.last_statistics_fetch = now
         _LOGGER.debug("Fetching statistics data")
+
+        # Track per-device outcomes so a completely failed cycle can retry
+        # sooner. Only the outer (per-device) call counts: individual
+        # statistics groups are routinely rejected (status 3001) for modules
+        # they don't apply to, which is expected and not a failure.
+        attempted = 0
+        succeeded = 0
 
         target_devices = enabled_devices if enabled_devices else list(self.data.keys())
         for device_id in target_devices:
@@ -1122,6 +1214,11 @@ class WemPortalApi:
             device_id = str(device_id)
             if device_id not in self.data:
                 continue
+            # Scraper-only devices (e.g. the "0000" placeholder) have no API
+            # statistics; skip them so int("0000")=0 isn't sent to the portal.
+            if device_id not in self.modules:
+                continue
+            attempted += 1
             try:
                 refresh_resp = self.make_api_call(
                     API_STATISTICS_REFRESH_URL,
@@ -1226,5 +1323,25 @@ class WemPortalApi:
                         else:
                             _LOGGER.warning("Failed to fetch Statistics for group %s: %s", group_id, exc)
 
+                succeeded += 1
+
             except Exception as exc:
                 _LOGGER.warning("Error processing Statistics: %s", exc)
+
+        # Every attempted device failed: back-date the timestamp so the next
+        # cycle retries after the shorter retry interval rather than waiting a
+        # full refresh interval. The guard itself stays intact - a portal that
+        # keeps failing is still only asked once per retry interval, never on
+        # every coordinator cycle.
+        if attempted and not succeeded:
+            self.last_statistics_fetch = now - max(
+                0,
+                STATISTICS_REFRESH_INTERVAL_SECONDS - STATISTICS_RETRY_INTERVAL_SECONDS,
+            )
+            _LOGGER.debug(
+                "Statistics failed for all %d device(s); retrying in ~%d min "
+                "instead of %d min.",
+                attempted,
+                STATISTICS_RETRY_INTERVAL_SECONDS // 60,
+                STATISTICS_REFRESH_INTERVAL_SECONDS // 60,
+            )

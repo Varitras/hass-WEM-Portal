@@ -2,6 +2,8 @@
 survival on a failed device refresh, and str-normalisation of device ids.
 """
 
+import time
+
 import pytest
 import requests as real_requests
 
@@ -111,11 +113,85 @@ def test_get_statistics_accepts_int_device_ids():
     """int device ids must not be skipped (self.data is str-keyed)."""
     api = _api()
     api.data = {"1234": {}}
+    # A real API device is in self.modules too; get_statistics now skips
+    # scraper-only devices (no API modules, e.g. the "0000" placeholder).
+    api.modules = {"1234": {}}
     calls = []
     api.make_api_call = lambda url, **k: calls.append(url) or FakeResponse({"GroupTypeDescriptions": []})
     api.last_statistics_fetch = 0.0
     api.get_statistics(enabled_devices=[1234])
     assert calls, "statistics refresh was skipped for an int device id"
+
+
+def _statistics_api(call_recorder, fail=False):
+    """An api whose statistics refresh either works or always fails."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api.last_statistics_fetch = 0.0
+
+    def make_api_call(url, **_k):
+        call_recorder.append(url)
+        if fail:
+            raise exceptions.WemPortalError("portal unavailable")
+        return FakeResponse({"GroupTypeDescriptions": []})
+
+    api.make_api_call = make_api_call
+    return api
+
+
+def test_successful_statistics_fetch_waits_a_full_interval():
+    calls = []
+    api = _statistics_api(calls)
+
+    api.get_statistics(enabled_devices=["1234"])
+    assert len(calls) == 1
+
+    # A second call right away must be rate limited away.
+    api.get_statistics(enabled_devices=["1234"])
+    assert len(calls) == 1, "statistics were refetched inside the interval"
+
+
+def test_failed_statistics_cycle_retries_after_the_short_interval():
+    """The timestamp is set BEFORE fetching, so a failure would otherwise
+    cost a full refresh interval. A cycle that failed for every device
+    shortens the wait instead - without giving up the rate limit."""
+    calls = []
+    api = _statistics_api(calls, fail=True)
+
+    api.get_statistics(enabled_devices=["1234"])
+    assert len(calls) == 1
+
+    waited = time.time() - api.last_statistics_fetch
+    remaining = wemportalapi.STATISTICS_REFRESH_INTERVAL_SECONDS - waited
+
+    assert remaining <= wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert remaining > 0, "the rate limit must not be dropped entirely"
+
+
+def test_failed_statistics_cycle_is_still_rate_limited():
+    """A failing portal must not be retried on every coordinator cycle."""
+    calls = []
+    api = _statistics_api(calls, fail=True)
+
+    api.get_statistics(enabled_devices=["1234"])
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert len(calls) == 1, "a failing portal was retried immediately"
+
+
+def test_statistics_timestamp_is_kept_when_nothing_was_attempted():
+    """No eligible device means nothing failed - the shorter retry must not
+    kick in just because the loop had nothing to do."""
+    calls = []
+    api = _statistics_api(calls)
+    api.modules = {}  # scraper-only: every device is skipped
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert calls == []
+    waited = time.time() - api.last_statistics_fetch
+    assert waited < 5, "timestamp should record this attempt as 'just now'"
 
 
 def test_get_data_accepts_int_device_ids():

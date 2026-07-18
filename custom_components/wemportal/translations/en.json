@@ -21,7 +21,8 @@
     "error": {
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "wrong_account": "The username does not match this account. Re-authentication keeps the same account; only the password can be changed."
     },
     "abort": {
       "already_configured": "Account is already configured",
@@ -32,6 +33,12 @@
   "options": {
     "step": {
       "init": {
+        "menu_options": {
+          "configure": "Configure settings and expert slots",
+          "discover_modules": "Discover expert parameters from the portal"
+        }
+      },
+      "configure": {
         "data": {
           "scan_interval": "Web scraping interval (default = 1800 sec)",
           "api_scan_interval": "Api scan interval (default = 300 sec)",
@@ -65,11 +72,21 @@
           "expert_enable_security_code": "⚠ Enable security-code step (default = off). Note: normally unnecessary - only enable this if you know what you are doing.",
           "expert_notify_on_success": "Show a notification after a successful expert write (default = off; failures are always reported)"
         }
+      },
+      "discover_modules": {
+        "title": "Discover expert parameters",
+        "description": "Select which modules to search. This opens a short portal session; searching many modules increases the risk of a temporary block (403).",
+        "data": {
+          "modules": "Modules to search",
+          "refresh": "Refresh the module list from the portal"
+        }
       }
     },
     "error": {
       "invalid_entityvalue": "Invalid entityvalue ID: must be a long hex string (0-9, A-F only; typically 36 characters). Short values like 0 are not a valid ID.",
-      "invalid_module_arg": "Invalid module menu index: digits only (e.g. 6). Leave empty to use the default."
+      "invalid_module_arg": "Invalid module menu index: digits only (e.g. 6). Leave empty to use the default.",
+      "duplicate_entityvalue": "This parameter is already selected in another slot. Each expert parameter can be used only once.",
+      "discovery_failed": "Could not read from the portal. Try again later (the portal may be temporarily rate-limited)."
     },
     "abort": {
       "no_changes": "No changes to save - the integration was not reloaded."

@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a problem with the WEM Portal integration
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Thanks for reporting! This is a personal hobby/test fork provided
+        as-is, so responses are best-effort. Please **redact anything
+        sensitive** from logs and screenshots before posting - in particular
+        your credentials and installation-specific `entityvalue` IDs.
+  - type: input
+    id: version
+    attributes:
+      label: Integration version
+      description: The installed version (e.g. 1.9.0). Please reproduce on the latest release.
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options: ["api", "web", "both"]
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected vs. what actually happened, and steps to reproduce.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output (redacted)
+      description: Debug logs help. Remove credentials and full entityvalue IDs first.
+      render: text

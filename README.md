@@ -1,4 +1,4 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://hacs.xyz/docs/faq/custom_repositories)
 [![buy me a coffee](https://img.shields.io/badge/If%20you%20like%20it-Buy%20me%20a%20coffee-yellow.svg?style=for-the-badge)](https://www.buymeacoffee.com/erikkastelec)
 [![License](https://img.shields.io/github/license/Varitras/hass-WEM-Portal?style=for-the-badge)](LICENSE)
 
@@ -138,14 +138,18 @@ enabled - otherwise the value is only read as part of a write. After a
 successful write (or the first periodic read), the entity shows the
 verified value and its min/max tighten to the device's real allowed range.
 
-A write runs as a **background task**: setting the number or calling the
-service returns immediately, and the outcome is written to the log once
-finished. A second write is rejected while one is still running.
+Setting the **number entity** runs as a **background task** and returns
+immediately; its outcome is written to the log and, on failure, a
+**persistent notification**. Calling the **`set_expert_parameter` service**
+runs **synchronously** and **raises an error on failure**, so an automation
+can tell whether the write actually succeeded (the write still takes a few
+seconds for the portal navigation). Only **one** expert operation runs per
+account at a time - a second concurrent write, or a write during the periodic
+read-back, is rejected.
 
-Failed writes always raise a **persistent notification**. Successful writes
-do **not** notify by default (that gets noisy when setting several values);
-enable **`Notify on successful expert write`** in the options if you want a
-confirmation popup on success too.
+Successful writes do **not** notify by default (that gets noisy when setting
+several values); enable **`Notify on successful expert write`** in the options
+if you want a confirmation popup on success too.
 
 ### Periodic read-back (optional, off by default)
 

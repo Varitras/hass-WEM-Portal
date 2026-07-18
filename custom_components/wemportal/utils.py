@@ -11,12 +11,46 @@ from homeassistant.const import (
 )
 
 from .const import (
+    _LOGGER,
     MISSING_DATA_STRINGS,
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
-    ENERGY_POWER_KEYWORDS,
     DOMAIN,
 )
+
+
+def device_identifier(entry_id, device_id):
+    """Return the device-registry identifier for a WEM Portal sub-device.
+
+    Single source of truth so the entity platforms (via build_device_info)
+    and the coordinator's disabled-device lookup use the SAME tuple.
+    Previously the entities registered "<entry>:<device>" while the
+    coordinator looked up "<device>" alone, so the lookup never matched and
+    disabled devices were still polled.
+    """
+    return (DOMAIN, f"{entry_id}:{device_id}")
+
+
+def close_api_sessions(api) -> None:
+    """Best-effort close of a WemPortalApi's HTTP sessions.
+
+    Closes the API `requests` session and the persistent scraper (its own
+    curl_cffi session) so they don't linger with an open connection after an
+    entry is unloaded/reloaded or after config-flow validation. Never raises -
+    the objects are being discarded anyway.
+    """
+    session = getattr(api, "session", None)
+    if session is not None:
+        try:
+            session.close()
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.debug("Ignoring error closing API session: %s", exc)
+    reset_scraper = getattr(api, "_reset_scraper", None)
+    if callable(reset_scraper):
+        try:
+            reset_scraper()
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.debug("Ignoring error closing scraper session: %s", exc)
 
 
 def build_device_info(entry_id, device_id, sw_version=None):
@@ -30,7 +64,7 @@ def build_device_info(entry_id, device_id, sw_version=None):
     API version to report).
     """
     info = {
-        "identifiers": {(DOMAIN, f"{entry_id}:{device_id}")},
+        "identifiers": {device_identifier(entry_id, device_id)},
         "via_device": (DOMAIN, entry_id),
         "name": str(device_id),
         "manufacturer": "Weishaupt",
@@ -97,12 +131,14 @@ def sanitize_value(value_str, unit=None, name=""):
         return None
 
     if val_lower in [x.strip() for x in MISSING_DATA_STRINGS]:
-        name_lower = name.lower()
-        if any(x in name_lower for x in ENERGY_POWER_KEYWORDS):
-            # Energy/Power sensors MUST be None (not 0.0) to avoid Energy
-            # Dashboard spikes/false readings when data is temporarily missing.
-            return None
-        return 0.0
+        # Missing data is missing for EVERY sensor, not just energy/power:
+        # return None (HA shows the sensor "unavailable") instead of a
+        # fabricated 0.0. Previously non-energy/power sensors fell through to
+        # 0.0, so a momentarily missing temperature read as 0 C and could
+        # fire automations. This matches the empty-string branch above and
+        # the project's "None over fabrication" principle (energy/power
+        # already returned None; now the same honesty applies to all).
+        return None
 
     if val_lower in BOOLEAN_OFF_STRINGS:
         return 0.0
@@ -198,8 +234,16 @@ def uom_to_device_class(uom):
     """Return the device_class of this unit of measurement, if any."""
 
     # see: <https://developers.home-assistant.io/docs/core/entity/sensor/#available-device-classes>
+    #
+    # NOTE: "%" deliberately has NO device class. It used to be mapped to
+    # POWER_FACTOR, but the percent sensors here are things like power limit,
+    # heating/cooling output, pump speed and power demand - none of which is a
+    # power factor (cos phi, the real/apparent power ratio). Home Assistant
+    # accepted the combination, so nothing broke, but the label was simply
+    # wrong. Percent sensors keep their "%" unit and MEASUREMENT state class
+    # (see uom_to_state_class), so history and long-term statistics are
+    # unaffected; only the icon and any device_class-based filtering change.
     return {
-        "%": SensorDeviceClass.POWER_FACTOR,
         UnitOfTemperature.CELSIUS:                  SensorDeviceClass.TEMPERATURE,
         UnitOfTemperature.KELVIN:                   SensorDeviceClass.TEMPERATURE,
         UnitOfEnergy.KILO_WATT_HOUR:                SensorDeviceClass.ENERGY,

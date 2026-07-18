@@ -84,9 +84,8 @@ def test_login_error_message_excludes_response_body(monkeypatch, caplog):
     api = WemPortalApi("user@example.org", "secret")
     monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: FakeSession(response))
 
-    with caplog.at_level(logging.WARNING):
-        with pytest.raises(exceptions.AuthError) as excinfo:
-            api.api_login()
+    with caplog.at_level(logging.WARNING), pytest.raises(exceptions.AuthError) as excinfo:
+        api.api_login()
 
     message = str(excinfo.value)
     assert "SECRET-SERVER-PAGE" not in message

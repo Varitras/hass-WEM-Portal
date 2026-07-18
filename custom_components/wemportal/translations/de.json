@@ -21,7 +21,8 @@
     "error": {
       "cannot_connect": "Verbindung fehlgeschlagen",
       "invalid_auth": "Ungültige Anmeldedaten",
-      "unknown": "Unerwarteter Fehler"
+      "unknown": "Unerwarteter Fehler",
+      "wrong_account": "Der Benutzername stimmt nicht mit diesem Konto überein. Die Neuanmeldung behält dasselbe Konto; nur das Passwort kann geändert werden."
     },
     "abort": {
       "already_configured": "Konto ist bereits konfiguriert",
@@ -32,6 +33,12 @@
   "options": {
     "step": {
       "init": {
+        "menu_options": {
+          "configure": "Einstellungen und Fachmann-Slots konfigurieren",
+          "discover_modules": "Fachmann-Parameter aus dem Portal auslesen"
+        }
+      },
+      "configure": {
         "data": {
           "scan_interval": "Web-Scraping-Intervall (Standard = 1800 Sek.)",
           "api_scan_interval": "API-Abfrageintervall (Standard = 300 Sek.)",
@@ -65,11 +72,21 @@
           "expert_enable_security_code": "⚠ Sicherheitscode-Schritt aktivieren (Standard = aus). Hinweis: normalerweise nicht nötig – nur aktivieren, wenn du weißt, was du tust.",
           "expert_notify_on_success": "Bei erfolgreichem Experten-Schreibvorgang eine Benachrichtigung anzeigen (Standard = aus; Fehler werden immer gemeldet)"
         }
+      },
+      "discover_modules": {
+        "title": "Fachmann-Parameter auslesen",
+        "description": "Wähle die zu durchsuchenden Module. Dies öffnet eine kurze Portal-Sitzung; viele Module erhöhen das Risiko einer vorübergehenden Sperre (403).",
+        "data": {
+          "modules": "Zu durchsuchende Module",
+          "refresh": "Modul-Liste neu vom Portal laden"
+        }
       }
     },
     "error": {
       "invalid_entityvalue": "Ungültige entityvalue-ID: muss eine lange Hex-Zeichenkette sein (nur 0-9, A-F; typisch 36 Zeichen). Kurze Werte wie 0 sind keine gültige ID.",
-      "invalid_module_arg": "Ungültiger Modul-Menüindex: nur Ziffern (z. B. 6). Leer lassen für den Standardwert."
+      "invalid_module_arg": "Ungültiger Modul-Menüindex: nur Ziffern (z. B. 6). Leer lassen für den Standardwert.",
+      "duplicate_entityvalue": "Dieser Parameter ist bereits in einem anderen Slot ausgewählt. Jeder Fachmann-Parameter kann nur einmal verwendet werden.",
+      "discovery_failed": "Konnte nicht vom Portal lesen. Bitte später erneut versuchen (das Portal ist evtl. kurzzeitig gesperrt/limitiert)."
     },
     "abort": {
       "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen."
