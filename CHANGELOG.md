@@ -6,270 +6,73 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [1.10.0b9] – 2026-07-18
+## [1.10.0] – 2026-07-18
 
-Pre-release.
+### Upgrading from 1.9.0 - please read
 
-### Changed
-- **The `set_expert_parameter` action is now translatable.** Its name, its
-  description and both field descriptions moved from `services.yaml` into
-  `strings.json` and the translations, which is where Home Assistant reads
-  them from; German installations showed English text before. Selectors and
-  examples stay in `services.yaml`.
-
-### Fixed
-- Web scraping is now also skipped when only the scraper's own device is
-  disabled while other devices stay enabled. The all-disabled case was
-  covered, the membership check itself was not.
-
-## [1.10.0b8] – 2026-07-18
-
-Pre-release. Third audit round.
-
-### Fixed
-- **The coordinator now catches its own update timeout.** `asyncio.timeout`
-  cancels the task, and `CancelledError` is a `BaseException`, so the inner
-  catch-all never saw it: the failure was not counted and the extra backoff
-  never engaged for the one failure mode where waiting longer matters most.
-- **Waiting for the shared API lock is bounded**, and a lock timeout now
-  raises its own error type. As a generic portal error the coordinator read
-  it as "session corrupted" and re-instantiated the API - closing the HTTP
-  sessions the still-running thread was using and handing the next poll a
-  fresh lock, which removed the serialization and doubled the load on a
-  portal that was already too slow. Reachable with the default settings.
-- **Web scraping honours the enabled-device filter**, in `web` and `both`
-  mode. It ignored it entirely, so disabling every device still triggered a
-  full portal scrape - the heaviest request the integration makes.
-
-### Changed
-- README: a 403 pauses the expert feature rather than the whole integration,
-  the expert session is cached for up to 15 minutes, and the enforced
-  scan-interval floors are documented instead of silently applied.
-
-## [1.10.0b7] – 2026-07-18
-
-Pre-release. Fixes found by a full audit of everything since 1.9.0, plus a
-re-audit of those fixes.
-
-### Fixed
-- **The full `entityvalue` ID no longer leaks on a 403.** The rejected
-  request's URL was logged verbatim at warning level and embedded in the
-  raised error - and the parameter-dialog URLs carry the installation-specific
-  ID in their query string, so it reached the log, persistent notifications
-  and service-call errors. The URL is now reduced to its endpoint, which is
-  all the diagnostics needed. A cookieless ASP.NET session id in the path is
-  stripped as well.
-- **A fully disabled installation is no longer polled.** An empty
-  "enabled devices" list was treated as "no filter given" and every device was
-  polled - the exact opposite of what the caller asked for.
-- **Expert writes from a number entity now behave like every other expert
-  path.** They used the global cooldown, so a single rejected write paused all
-  sensor polling, and they did not use the shared session cache, so they
-  always performed a full login. Both were fixed for the service and the
-  auto-poll earlier; this call site was missed.
-- **Opening the parameter discovery no longer reloads the integration.**
-  Caching the module list wrote to the config entry mid-flow, which triggered
-  a full reload (fresh login and a complete poll), reset the 403 backoff and
-  discarded the cached session. The list is now persisted with the final save.
-- **Saving options no longer discards the cached module list** (and any other
-  option that is not a form field): the stored options are merged instead of
-  replaced.
-- **The expert auto-poll can no longer outlive its config entry.** A poll that
-  was in flight during unload could schedule a fresh timer into the discarded
-  store, leaving a chain nothing could cancel - one more per reload.
-- **A failed first refresh no longer leaks HTTP sessions.** The API object is
-  not in `hass.data` yet at that point, so the normal unload path could not
-  close it; every setup retry added another.
-- The cached expert session now survives the API re-instantiation the
-  coordinator performs after repeated errors.
-- Running discovery without selecting a module now reports that nothing was
-  searched instead of silently showing an empty list.
-
-### Changed
-- README: corrected the expert section, which still described the pre-1.10
-  behaviour (a 403 pausing the whole integration, and a fresh login for every
-  expert operation).
-
-## [1.10.0b6] – 2026-07-18
-
-Pre-release. Stops the expert path from logging in for every operation.
-
-### Fixed
-- **The expert (Fachmann) path now reuses its web session instead of logging
-  in every time.** Each expert operation - opening the discovery dialog,
-  running discovery, every write, every auto-poll - performed a full login.
-  That is the request the portal rejects most readily: a 403 on `Login.aspx`
-  was observed while the same portal answered a browser normally (including
-  in a fresh incognito session) and while the scraper, which has reused its
-  cookies for exactly this reason, kept working.
-
-  Cookies are cached in memory only - never written to disk, since a live
-  session cookie is credential-equivalent - and reused for at most 15
-  minutes. A dead session falls back to a full login. A 403 during a reuse
-  attempt is not retried with a login, so a rejection cannot turn into a
-  second rejected request.
-
-## [1.10.0b5] – 2026-07-18
-
-Pre-release. Addresses the discovery finding a live test produced: the
-search ran without being blocked, but returned no parameters.
-
-### Fixed
-- **Expert discovery now reads the module page from the postback response.**
-  Selecting a module is an async postback whose response already contains the
-  re-rendered module panel. That response was discarded in favour of a plain
-  `GET Default.aspx`, which live-testing showed returning no readable
-  parameters. The postback response is now used whenever it carries rows -
-  it is the server's direct answer to "show me this module", and it saves a
-  request. The previous `GET` remains as a fallback.
-- Discovery logs how many parameters each source yielded, so a remaining
-  failure identifies itself instead of needing another round of guessing.
-
-## [1.10.0b4] – 2026-07-18
-
-Pre-release. Corrects how a 403 on the expert path is interpreted.
-
-### Fixed
-- **A 403 on the expert (Fachmann) path no longer pauses sensor polling.**
-  Every 403 was treated as an IP-wide rate limit and paused the entire
-  integration for 15 minutes - but a 403 can equally mean the portal simply
-  did not accept that one request. This was confirmed in practice: the portal
-  was reachable in a browser while the integration considered itself blocked.
-  The expert path now backs off on its own for 5 minutes and leaves polling
-  alone. A 403 seen by the API or scraper still pauses everything, including
-  the expert path, because that is the actual rate-limit signal.
-- **A 403 now names the request that was rejected.** The previous message
-  covered more than a dozen possible call sites without saying which one,
-  which made every diagnosis guesswork.
-
-### Changed
-- The options form now shows the exact remaining backoff time and the
-  rejected request, instead of a vague "try again later".
-
-## [1.10.0b3] – 2026-07-18
-
-Pre-release, based on first feedback from 1.10.0b2.
-
-### Fixed
-- **A failed parameter discovery is now reported instead of silently
-  producing an empty dropdown.** Three cases are distinguished: portal access
-  paused after a 403 (no request was even sent), the search failed, and the
-  search ran but found nothing. Previously all three looked identical to the
-  user - an empty list with no explanation.
-- **A missing reading is no longer logged as an invalid value.** The portal
-  regularly reports no current value for a parameter, which correctly makes
-  the sensor unavailable; logging that at warning level made a normal
-  condition look like a defect. It is now debug. Values that genuinely cannot
-  be interpreted are still warned about.
-
-### Changed
-- The module-list reload option now states that it is rarely needed and that
-  an extra portal login right after the first one can trigger a 403 block.
-
-## [1.10.0b2] – 2026-07-18
-
-Pre-release. Identical to 1.10.0b1 apart from the manifest key order, which
-hassfest requires to be `domain`, `name`, then alphabetical. No functional
-change - 1.10.0b1 runs fine, it only failed the linter.
-
-## [1.10.0b1] – 2026-07-18
-
-Pre-release. The expert-parameter discovery is new and has not yet been
-verified against a live portal - please report what the module list and the
-slot dropdowns actually show.
+- **The config entry is migrated** on first start. Take a backup of your Home
+  Assistant configuration (at least `.storage`) beforehand.
+- **Percent sensors lost the `power_factor` device class.** Values like power
+  limit, pump speed or heating output are not a power factor, so the label was
+  simply wrong. The icon changes; unit, state class, history and long-term
+  statistics are unaffected.
+- **`wemportal.set_expert_parameter` now runs synchronously and raises on
+  failure** instead of returning immediately and only reporting via a
+  notification. Automations can finally tell whether a write succeeded - but
+  the action now takes a few seconds, and one that used to "succeed" silently
+  may now surface a real error.
 
 ### Added
-- **Discover expert (Fachmann) parameters from the options UI.** A new
-  options menu can search selected modules on the portal and list the
-  available expert parameters; each of the ten slots is now a dropdown of
-  discovered parameters (a parameter can't be picked twice). Manual entry of
-  an entityvalue still works. Discovery runs only on demand.
+- **Discover expert (Fachmann) parameters from the options UI.** Pick which
+  modules to search, then choose a parameter per slot from a dropdown labelled
+  `group / name (current value)`; the same parameter cannot be picked twice.
+  Entering an entityvalue by hand still works in the same field. Discovery
+  runs only on demand, never in the background, and reports which of three
+  things happened if it cannot run.
 
 ### Fixed
-- **Switching mode `web` → `both` no longer crashes.** A web-only install
-  persists a placeholder scraper device id (`0000`); after a switch to
-  `both` it existed as a data key without matching API modules, so the API
-  refresh raised `KeyError` - which its own error handler then re-raised.
-  Scraper-only devices are now skipped by the API and statistics paths.
-- **Missing values no longer read as a real `0.0`.** A momentarily missing
-  value (`--`) now becomes unavailable (`None`) for every sensor, not just
-  energy/power - a briefly missing temperature no longer reports 0 °C and
-  can no longer trigger automations on a fabricated reading.
-- **A cycle in which every device's data fetch fails is now reported as a
-  failed update** (so backoff and eventual re-auth engage), instead of being
-  marked successful while serving stale values. A partial success (at least
-  one device refreshed) still counts as success.
-- **Disabled devices are no longer polled.** The coordinator's disabled-
-  device lookup now uses the same device identifier the entities register
-  (`<entry_id>:<device_id>`); previously it looked up a bare id that never
-  matched, so a disabled device kept being polled.
-- **The expert-write service now targets the correct account** when more
-  than one config entry exists: the target account is resolved per call (and
-  the call is refused when it is ambiguous) instead of being fixed to the
-  first-loaded entry, and the shared service is only removed once no
-  expert-enabled entry remains loaded.
-- **Re-authentication can no longer silently switch accounts.** The entered
-  username must match the entry's existing account (case-insensitive); only
-  the password is updated.
-- **A 403 during an expert (Fachmann) operation now engages the shared
-  cooldown**, so the API and scraper paths back off too - previously the
-  expert client could only *check* the cooldown, never set it, so an expert
-  403 kept the rest of the integration hitting a rate-limited portal.
-- **Concurrent expert operations can no longer collide.** A shared per-account
-  lock serialises entity writes, the service, and the auto-poll read, so two
-  operations can't target the same heating parameter or open parallel portal
-  sessions at once; a second concurrent operation is rejected.
-- **The auto-poll now uses the current API instance** after a session
-  recovery (it previously kept a reference to the discarded instance and its
-  stale cooldown state), and its initial background read is now cancelled on
-  unload instead of running on after the entry is gone.
-- **`beautifulsoup4` is now declared as a requirement** in the manifest (the
-  web-login path imports it); it previously worked only because Home
-  Assistant happens to ship the library.
-- **Config-entry migration now bumps the entry version**, so an old (v1)
-  entry is no longer treated as migration-pending on every startup.
-- **A rejected API write is no longer reported as success.** The write now
-  checks the portal's response `Status` (the portal can answer HTTP 200 with
-  `Status != 0`, as the login does) and raises instead of optimistically
-  showing the new value.
-- **`unique_id` migration now runs for every device**, not just the first, so
-  additional devices' old ids and history are migrated too.
-- **The full installation-specific entityvalue is no longer written to the
-  debug log** (only a shortened form), and the empty-form HTML snippet dump is
-  smaller.
-- **API writes and the poll cycle no longer run concurrently on the same
-  session/state.** A shared lock serialises a `change_value` write against a
-  `fetch_data` poll cycle, so they can't interleave and corrupt the HTTP
-  session or the in-memory data.
-- **HTTP sessions are now closed on unload and after config-flow validation**,
-  instead of leaving open connections behind on every reload/setup attempt.
+- **The full `entityvalue` no longer leaks on a 403.** The rejected request's
+  URL was logged verbatim and embedded in the raised error, and the
+  parameter-dialog URLs carry the installation-specific ID in their query
+  string - so it reached the log, notifications and service errors alike.
+- **A 403 on the expert path no longer pauses sensor polling.** Every 403 was
+  treated as an IP-wide rate limit, but it can equally mean the portal simply
+  rejected that one request. The expert path backs off on its own; a 403 seen
+  by the normal polling still pauses everything, because that is the real
+  rate-limit signal.
+- **The expert path reuses its web session** instead of logging in for every
+  operation - the login is the request the portal rejects most readily.
+  Cookies are held in memory only, never written to disk.
+- **Switching mode `web` → `both` no longer crashes**, and disabled devices
+  are no longer polled - including a fully disabled installation, and the web
+  scraper, which ignored the filter entirely.
+- **A missing reading no longer reads as `0.0`.** It now makes the sensor
+  unavailable instead of reporting a fabricated value that automations could
+  act on.
+- **A cycle in which every device fails is reported as failed** instead of
+  silently serving stale values, so backoff and eventual re-authentication
+  engage. The coordinator also counts its own update timeouts now.
+- **Re-authentication can no longer switch accounts**, and the expert service
+  resolves its target account per call, refusing when it is ambiguous.
+- **The config entry version is actually bumped**, so the migration no longer
+  re-runs on every startup, and entity unique_ids are migrated for every
+  device rather than just the first.
+- Numerous smaller fixes: HTTP sessions closed on unload, on a failed first
+  refresh and after config-flow validation; bounded waiting for the shared API
+  lock; statistics retried after 15 minutes rather than a full hour;
+  `beautifulsoup4` declared in the manifest.
 
 ### Changed
-- **A failed energy-statistics cycle is retried after 15 minutes instead of a
-  full hour.** The rate-limit timestamp is still set before the fetch (so a
-  portal that keeps failing is never asked more often than that), but a cycle
-  that failed for every device no longer costs a whole refresh interval.
-- **The `wemportal.set_expert_parameter` service now runs synchronously and
-  raises on failure** instead of returning immediately and only reporting via
-  a notification, so automations can tell whether the write actually
-  succeeded. The write still takes a few seconds (portal navigation); the
-  number-entity slider keeps its background behaviour.
-- The manifest now declares `integration_type: hub`.
-- **Percent sensors no longer report the `power_factor` device class.** Values
-  like power limit, heating/cooling output, pump speed and power demand are
-  not a power factor (cos phi), so the label was simply wrong. They keep their
-  `%` unit and `measurement` state class, so history and long-term statistics
-  are unaffected - only the icon and any `device_class`-based filtering
-  change. Operating-hour sensors keep `duration` / `total_increasing`.
-- **Development only:** the test suite gained end-to-end tests that run
-  against a real Home Assistant instance (entry setup/unload, the schema
-  migration, the config/options/reauth flows and the expert service). They
-  are marked `e2e` and deselected in the default run; CI runs the full suite
-  with `-m ""` against the current Home Assistant release.
-- **Development only:** the API data mapper and the web scraper's page
-  parsing are now covered by tests (both were untested). These pin down
-  which platform each portal parameter becomes, how values and units are
-  parsed, and that malformed input costs only the affected data point.
+- The `set_expert_parameter` action is translatable, and its entityvalue field
+  carries an explicit "installation-specific - do not share publicly" warning.
+- README rewritten around the two ways to obtain an entityvalue, with the
+  manual route kept in full.
+
+### Development
+- The test suite grew from 15 to 110 tests, including end-to-end tests against
+  a real Home Assistant instance. Every fix above is guarded by a regression
+  test, and the tests themselves were verified by re-introducing the bugs they
+  guard.
 
 ## [1.9.0] – 2026-07-08
 
