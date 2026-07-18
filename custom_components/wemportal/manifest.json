@@ -1,19 +1,19 @@
 {
   "domain": "wemportal",
   "name": "Weishaupt WEM Portal",
-  "documentation": "https://github.com/Varitras/hass-WEM-Portal",
-  "issue_tracker": "https://github.com/Varitras/hass-WEM-Portal/issues",
-  "dependencies": [],
-  "version": "1.10.0b1",
   "codeowners": [
     "@Varitras"
   ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/Varitras/hass-WEM-Portal",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/Varitras/hass-WEM-Portal/issues",
   "requirements": [
     "curl_cffi>=0.15.0",
     "lxml>=4.9.0",
     "beautifulsoup4>=4.9.0"
   ],
-  "iot_class": "cloud_polling",
-  "integration_type": "hub",
-  "config_flow": true
+  "version": "1.10.0b1"
 }
