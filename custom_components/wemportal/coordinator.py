@@ -223,6 +223,11 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     # Point hass.data at the new instance so other consumers
                     # (e.g. the expert writer's shared cooldown check) use
                     # the current api, not the discarded one.
+                    # Carry the cached expert web session over too. A fresh
+                    # instance starts with an empty jar, so the expert path
+                    # would fall back to a full login - the request the portal
+                    # rejects most readily - right after a recovery.
+                    self.api.expert_cookies = getattr(old_api, "expert_cookies", {})
                     entry_store = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
                     if entry_store is not None:
                         entry_store["api"] = self.api

@@ -269,3 +269,39 @@ def test_get_data_accepts_int_device_ids():
     )
     api.get_data(enabled_devices=[1234])
     assert api.data["1234"]["1234-ConnectionStatus"]["value"] == "offline"
+
+
+def test_empty_enabled_devices_polls_nothing():
+    """An EMPTY list means "every device is disabled", not "no filter".
+
+    Truthiness made `[]` fall back to polling all devices - the exact
+    opposite of what the coordinator asked for.
+    """
+    calls = []
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api.make_api_call = lambda url, **k: calls.append(url) or FakeResponse(
+        {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
+    )
+    api.last_statistics_fetch = 0.0
+
+    api.get_data(enabled_devices=[])
+    api.get_statistics(enabled_devices=[])
+
+    assert calls == [], "a fully disabled installation was still polled"
+
+
+def test_none_enabled_devices_still_polls_everything():
+    """None keeps meaning "no filter given"."""
+    calls = []
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api.make_api_call = lambda url, **k: calls.append(url) or FakeResponse(
+        {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
+    )
+
+    api.get_data(enabled_devices=None)
+
+    assert calls, "an unfiltered poll must still happen"

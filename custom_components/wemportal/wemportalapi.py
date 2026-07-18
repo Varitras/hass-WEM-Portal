@@ -982,7 +982,12 @@ class WemPortalApi:
         former inline blocks are unchanged.
         """
         _LOGGER.debug("Fetching fresh api data. enabled_devices=%s, self.data.keys()=%s", enabled_devices, list(self.data.keys()))
-        target_devices = enabled_devices if enabled_devices else list(self.data.keys())
+        # `is not None`, NOT truthiness: an EMPTY list means "every device is
+        # disabled", and treating that as "no filter given" polled all of them -
+        # the exact opposite of what the caller asked for.
+        target_devices = (
+            enabled_devices if enabled_devices is not None else list(self.data.keys())
+        )
         _LOGGER.debug("Computed target_devices=%s", target_devices)
         successes = 0
         failures = 0
@@ -1254,7 +1259,12 @@ class WemPortalApi:
         attempted = 0
         succeeded = 0
 
-        target_devices = enabled_devices if enabled_devices else list(self.data.keys())
+        # `is not None`, NOT truthiness: an EMPTY list means "every device is
+        # disabled", and treating that as "no filter given" polled all of them -
+        # the exact opposite of what the caller asked for.
+        target_devices = (
+            enabled_devices if enabled_devices is not None else list(self.data.keys())
+        )
         for device_id in target_devices:
             # Same str-normalization as in get_data(): self.data is keyed
             # by str, callers may pass ints.

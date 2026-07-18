@@ -94,3 +94,47 @@ def test_login_error_message_excludes_response_body(monkeypatch, caplog):
         rec.getMessage() for rec in caplog.records if rec.levelno >= logging.WARNING
     )
     assert "user@example.org" not in warning_text
+
+
+def test_forbidden_url_is_redacted_before_it_reaches_a_log_or_message():
+    """A 403 must stay diagnosable without publishing the entityvalue.
+
+    The parameter-dialog requests carry the full installation-specific ID in
+    the query string, so logging `response.url` verbatim leaked it to the
+    WARNING log, to persistent notifications and to service-call errors.
+    """
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import ForbiddenError
+
+    secret = "D" * 36
+    url = (
+        "https://www.wemportal.com/Web/UControls/Weishaupt/DataDisplay/"
+        f"WwpsParameterDetails.aspx?entityvalue={secret}&readdata=True"
+    )
+
+    class _Resp:
+        status_code = 403
+
+    resp = _Resp()
+    resp.url = url
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    with pytest.raises(ForbiddenError) as excinfo:
+        client._raise_if_forbidden(resp)
+
+    assert secret not in str(excinfo.value)
+    assert "entityvalue" not in str(excinfo.value)
+    # The endpoint must survive - that is the whole point of naming the request.
+    assert "WwpsParameterDetails.aspx" in str(excinfo.value)
+
+
+def test_forbidden_url_drops_a_cookieless_session_id():
+    """ASP.NET can put the session id in the PATH; that is credential-grade."""
+    from custom_components.wemportal import expert_writer
+
+    redacted = expert_writer.redact_url(
+        "https://www.wemportal.com/(S(livesessiontoken))/Web/Default.aspx"
+    )
+
+    assert "livesessiontoken" not in redacted
+    assert redacted.endswith("/Web/Default.aspx")

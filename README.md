@@ -87,8 +87,11 @@ services exist and the integration behaves exactly as before.
 
 ### How it works
 
-- Reaching an expert parameter is a **minimal** web navigation: log in,
-  switch to the Fachmann submenu, then fetch the parameter's edit form.
+- Reaching an expert parameter is a **minimal** web navigation: reach the
+  Fachmann submenu, then fetch the parameter's edit form. The web session is
+  cached in memory for a few minutes and reused, so consecutive operations
+  do not log in again - the login is the request the portal is most likely
+  to reject.
 - Writing happens **on demand** on a short-lived web session.
 - The new value is validated against the option list of the device's own
   edit form, so only values your heat pump actually accepts can be sent.
@@ -96,8 +99,11 @@ services exist and the integration behaves exactly as before.
   the value; unconfirmed writes raise an error.
 - Optionally, the configured parameters can also be **read back on a
   timer** (see *Periodic read-back* below) - off by default.
-- A rate-limit response (403) from the server pauses this feature together
-  with the rest of the integration.
+- A 403 from the server on an **expert** request pauses only the expert
+  feature, briefly - sensor polling keeps running. A 403 is not proof of an
+  IP-wide rate limit; it can equally mean the portal did not accept that one
+  request. A 403 seen by the **normal polling** (mobile API or scraper) is
+  the real rate-limit signal and still pauses everything, expert included.
 
 ### Finding the entityvalue ID of a parameter
 
@@ -236,9 +242,10 @@ different portal or module layout needs them:
   30 if the portal shows 30) and check the portal still shows the same
   value afterwards, before making real changes.
 - **This path is heavier than the mobile API.** Every read or write is a
-  fresh web login plus navigation. It runs only on explicit, on-demand
-  writes - or, if you enable it, on the periodic read-back timer. Both
-  respect the same 403 cooldown as the rest of the integration. If you
+  web navigation (the session is reused where possible, so not necessarily
+  a fresh login). It runs only on explicit, on-demand writes - or, if you
+  enable it, on the periodic read-back timer. Both respect the expert
+  backoff described above. If you
   enable periodic read-back, keep the interval generous (the minimum is
   15 minutes) so you don't provoke a temporary block.
 

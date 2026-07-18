@@ -202,6 +202,46 @@ def test_expert_module_page_falls_back_to_the_plain_get():
     assert html_content == page
 
 
+def test_session_cache_round_trip_survives_a_new_client():
+    """The point of the cache is that the NEXT operation skips the login.
+
+    Three mutations of `_save_session` survived the suite before this test:
+    the cache could be silently disabled and everything stayed green.
+    """
+    from custom_components.wemportal import expert_writer
+
+    jar = {}
+    first = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    first.session = _CookieSession({"ASP.NET_SessionId": "session-one"})
+    first._save_session()
+
+    assert jar["cookies"] == {"ASP.NET_SessionId": "session-one"}
+
+    # A later, independent client must restore exactly those cookies.
+    restored = {}
+    second = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    second._full_login = lambda: _fail("cached session must be reused")
+    second._establish_context = lambda: restored.update(second.session.cookies)
+
+    second._login()
+
+    assert restored == {"ASP.NET_SessionId": "session-one"}
+
+
+class _CookieSession:
+    """Minimal stand-in for a curl_cffi session's cookie jar."""
+
+    def __init__(self, cookies):
+        self.cookies = dict(cookies)
+
+    def close(self):
+        pass
+
+
 def _client_with_jar(jar):
     from custom_components.wemportal import expert_writer
 
@@ -221,14 +261,16 @@ def test_expert_session_is_reused_instead_of_logging_in():
     rejected exactly that (403 on Login.aspx) while the cookie-reusing
     scraper kept working. A young cached session must be continued."""
 
-    jar = {"cookies": {"ASP.NET_SessionId": "abc"}, "saved_at": time.monotonic()}
+    jar = {"cookies": {"ASP.NET_SessionId": "abc"}, "saved_at": time.monotonic() - 100}
+    before = jar["saved_at"]
     client = _client_with_jar(jar)
     client._establish_context = lambda: None
 
     client._login()
 
-    # Cookies refreshed for the next operation.
-    assert jar["saved_at"] >= 0
+    # `saved_at >= 0` proved nothing - monotonic() is always >= 0 and the
+    # fixture had just set it. Assert the cache was really refreshed.
+    assert jar["saved_at"] > before, "session cache was not refreshed"
 
 
 def test_expired_cache_logs_in_again():
@@ -244,11 +286,17 @@ def test_expired_cache_logs_in_again():
         "user@example.org", "secret", cookie_jar=jar
     )
     called = []
+    attempts = []
     client._full_login = lambda: called.append(True)
-    client._establish_context = lambda: _fail("must not try the stale session")
+    # NOT a raising guard: _try_cached_session wraps _establish_context in a
+    # broad `except Exception`, which swallows the AssertionError and falls
+    # through to the login - so a raising guard passes even when the age cap
+    # is ignored entirely (verified by mutation). Count the calls instead.
+    client._establish_context = lambda: attempts.append(True)
 
     client._login()
 
+    assert attempts == [], "a stale session must not even be probed"
     assert called == [True]
 
 

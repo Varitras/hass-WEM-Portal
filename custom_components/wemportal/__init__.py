@@ -222,7 +222,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, api, entry, timedelta(seconds=update_interval)
     )
 
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception:
+        # The api is not in hass.data yet, so async_unload_entry cannot close
+        # it: a failed first refresh (portal down, 403, auth) would leak its
+        # HTTP sessions, once more per setup retry.
+        await hass.async_add_executor_job(close_api_sessions, api)
+        raise
 
     # Is there an on_update function that we can add listener to?
     _LOGGER.info("Migrating entity names for wemportal")
@@ -517,6 +524,13 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
             _schedule_next()
 
     def _schedule_next():
+        # Never re-arm after the entry was unloaded. _poll's `finally` runs
+        # even when the entry went away mid-read, so without this an in-flight
+        # poll would schedule a fresh timer into the orphaned store - a chain
+        # nothing can cancel any more, one more per reload.
+        if store.get("expert_poll_stopped"):
+            _LOGGER.debug("Expert auto-poll: entry unloaded, not rescheduling.")
+            return
         delay = _next_delay_seconds()
         unsub = async_call_later(hass, delay, _poll)
         store["expert_poll_unsub"] = unsub
@@ -526,6 +540,7 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
         )
 
     def _cancel():
+        store["expert_poll_stopped"] = True
         unsub = store.pop("expert_poll_unsub", None)
         if unsub is not None:
             unsub()

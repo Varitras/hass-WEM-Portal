@@ -242,6 +242,9 @@ class WemportalOptionsFlow(OptionsFlow):
     # translations, so the specifics go here instead of leaving the user to
     # guess how long "try again later" means.
     _discovery_detail: str = ""
+    # Module list fetched during THIS flow. Persisted only by the final save,
+    # so discovery never triggers an integration reload mid-flow.
+    _module_list: list | None = None
 
     async def async_step_init(self, user_input=None):
         """Options menu: configure directly, or discover expert parameters."""
@@ -307,9 +310,20 @@ class WemportalOptionsFlow(OptionsFlow):
                 # needlessly also risks the portal's 403 rate limit.
                 current = dict(self.config_entry.options)
                 merged = {**current, **user_input}
+                # A module list fetched during this flow is persisted here -
+                # the only place options are written, so no mid-flow reload.
+                if self._module_list is not None:
+                    merged[CONF_EXPERT_MODULE_LIST] = self._module_list
                 if merged == current:
                     return self.async_abort(reason="no_changes")
-                return self.async_create_entry(title="", data=user_input)
+                # Write the MERGED options, not just the form fields: Home
+                # Assistant REPLACES the options dict with what is passed
+                # here. Passing only `user_input` silently dropped every
+                # option that is not a form field - notably the cached module
+                # list - so each save cost another portal login on the next
+                # discovery. It also makes the no-op comparison above and the
+                # value actually written agree on the same dict.
+                return self.async_create_entry(title="", data=merged)
 
         # On an error redisplay, prefill the form with what the user just
         # typed (so nothing has to be re-entered); otherwise with the
@@ -473,6 +487,12 @@ class WemportalOptionsFlow(OptionsFlow):
             ] = id_selector
         return fields
 
+    def _known_modules(self) -> list:
+        """Module list for this flow: freshly fetched one first, else stored."""
+        if self._module_list is not None:
+            return self._module_list
+        return self.config_entry.options.get(CONF_EXPERT_MODULE_LIST) or []
+
     # --- Expert parameter discovery -----------------------------------
     def _expert_client(self):
         """Build a WemPortalExpertClient from the entry's credentials."""
@@ -491,7 +511,7 @@ class WemportalOptionsFlow(OptionsFlow):
     async def async_step_discover_modules(self, user_input=None):
         """Pick which modules to search. Module list is cached in options."""
         errors = {}
-        modules = self.config_entry.options.get(CONF_EXPERT_MODULE_LIST) or []
+        modules = self._known_modules()
         if user_input is not None and not user_input.get("refresh"):
             selected = user_input.get("modules", [])
             self._selected_modules = [
@@ -510,20 +530,20 @@ class WemportalOptionsFlow(OptionsFlow):
                     "in the 403 cooldown."
                 )
                 errors["base"] = "discovery_blocked"
-                modules = self.config_entry.options.get(CONF_EXPERT_MODULE_LIST) or []
+                modules = self._known_modules()
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Expert discovery: reading module list failed")
                 errors["base"] = "discovery_failed"
-                modules = self.config_entry.options.get(CONF_EXPERT_MODULE_LIST) or []
+                modules = self._known_modules()
             else:
-                # Cache the freshly parsed list for next time.
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    options={
-                        **self.config_entry.options,
-                        CONF_EXPERT_MODULE_LIST: modules,
-                    },
-                )
+                # Hold the list on the flow and let the final save persist it.
+                # Writing it here called async_update_entry, which fires the
+                # update listener -> async_reload: a full integration reload
+                # (fresh login + full scrape) in the middle of the flow. That
+                # reload also RESET the 403 backoff and discarded the cached
+                # session, so one click on "discover" cost two logins - the
+                # exact load this feature exists to avoid.
+                self._module_list = modules
 
         return self.async_show_form(
             step_id="discover_modules",
@@ -547,6 +567,12 @@ class WemportalOptionsFlow(OptionsFlow):
         blocked (or had never run at all).
         """
         modules = self._selected_modules
+        if not modules:
+            # Submitting without ticking a module used to fall through
+            # silently to an empty dropdown - the very "user cannot tell the
+            # search never ran" case the error keys were added for.
+            _LOGGER.debug("Expert discovery: no module selected, nothing to do.")
+            self._discovery_error = "discovery_empty"
         if modules:
             client = self._expert_client()
             try:

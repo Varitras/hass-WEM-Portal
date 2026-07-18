@@ -6,6 +6,45 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **The full `entityvalue` ID no longer leaks on a 403.** The rejected
+  request's URL was logged verbatim at warning level and embedded in the
+  raised error - and the parameter-dialog URLs carry the installation-specific
+  ID in their query string, so it reached the log, persistent notifications
+  and service-call errors. The URL is now reduced to its endpoint, which is
+  all the diagnostics needed. A cookieless ASP.NET session id in the path is
+  stripped as well.
+- **A fully disabled installation is no longer polled.** An empty
+  "enabled devices" list was treated as "no filter given" and every device was
+  polled - the exact opposite of what the caller asked for.
+- **Expert writes from a number entity now behave like every other expert
+  path.** They used the global cooldown, so a single rejected write paused all
+  sensor polling, and they did not use the shared session cache, so they
+  always performed a full login. Both were fixed for the service and the
+  auto-poll earlier; this call site was missed.
+- **Opening the parameter discovery no longer reloads the integration.**
+  Caching the module list wrote to the config entry mid-flow, which triggered
+  a full reload (fresh login and a complete poll), reset the 403 backoff and
+  discarded the cached session. The list is now persisted with the final save.
+- **Saving options no longer discards the cached module list** (and any other
+  option that is not a form field): the stored options are merged instead of
+  replaced.
+- **The expert auto-poll can no longer outlive its config entry.** A poll that
+  was in flight during unload could schedule a fresh timer into the discarded
+  store, leaving a chain nothing could cancel - one more per reload.
+- **A failed first refresh no longer leaks HTTP sessions.** The API object is
+  not in `hass.data` yet at that point, so the normal unload path could not
+  close it; every setup retry added another.
+- The cached expert session now survives the API re-instantiation the
+  coordinator performs after repeated errors.
+- Running discovery without selecting a module now reports that nothing was
+  searched instead of silently showing an empty list.
+
+### Changed
+- README: corrected the expert section, which still described the pre-1.10
+  behaviour (a 403 pausing the whole integration, and a fresh login for every
+  expert operation).
+
 ## [1.10.0b6] – 2026-07-18
 
 Pre-release. Stops the expert path from logging in for every operation.

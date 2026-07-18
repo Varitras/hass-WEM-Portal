@@ -14,6 +14,7 @@ import hashlib
 import re
 import time
 import random
+from urllib.parse import urlsplit
 
 from curl_cffi import requests
 from lxml import html
@@ -76,6 +77,33 @@ EXPERT_PARAMETER_URL = (
 
 # Form field carrying the value in the edit dialog.
 VALUE_FIELD_ID = "ctl00_DialogContent_ddlNewValue"
+
+
+# ASP.NET embeds a cookieless session id in the PATH as /(S(<id>))/ - that is
+# credential-equivalent, so it must never reach a log or a user-facing string.
+_COOKIELESS_SESSION_RE = re.compile(r"/\(S\([^)]*\)\)")
+
+
+def redact_url(url) -> str:
+    """Return only the endpoint of a portal URL, stripped of identifying data.
+
+    A 403 has to stay diagnosable ("which request did the portal reject?")
+    without publishing anything installation-specific. Two parts have to go:
+    the QUERY, which carries the full entityvalue on the parameter-dialog
+    requests, and a cookieless ASP.NET session id in the PATH. The endpoint
+    alone answers the diagnostic question.
+    """
+    if not url:
+        return "unknown URL"
+    try:
+        parts = urlsplit(str(url))
+        path = _COOKIELESS_SESSION_RE.sub("", parts.path)
+        if parts.netloc:
+            return f"{parts.scheme}://{parts.netloc}{path}"
+        return path or "unknown URL"
+    except Exception:  # pylint: disable=broad-except
+        # Redaction must never be the thing that breaks error handling.
+        return "unknown URL"
 
 
 def short_ev(entityvalue: str) -> str:
@@ -327,7 +355,9 @@ class WemPortalExpertClient:
             # module GET) indistinguishable, which made every diagnosis
             # guesswork. The URL comes straight off the response, so no call
             # site has to pass anything.
-            where = getattr(response, "url", None) or "unknown URL"
+            # REDACTED: the raw url carries the full entityvalue on the
+            # parameter-dialog requests (params={"entityvalue": ...}).
+            where = redact_url(getattr(response, "url", None))
             _LOGGER.warning(
                 "Expert path: the portal rejected a request with 403. "
                 "Request: %s. Note that this does not necessarily mean a rate "
@@ -1395,6 +1425,7 @@ try:
                         self._config_entry.data.get(CONF_PASSWORD),
                         cooldown_check=self._cooldown_check(),
                         cooldown_activate=self._cooldown_activate(),
+                        cookie_jar=self._cookie_jar(),
                         **client_opts,
                     )
                     return client.write_parameter(self._entityvalue, value)
@@ -1452,16 +1483,37 @@ try:
             )
 
         def _cooldown_check(self):
-            """Fetch the shared 403-cooldown check from the running api."""
+            """Cooldown gate for this entity's writes.
+
+            Uses the EXPERT gate, like the service and the auto-poll do: it
+            honours a genuine portal-wide rate limit AND the expert-only
+            backoff. Previously this used the global check, so an entity
+            write ignored an active expert backoff.
+            """
             entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
             api = entry_data.get("api") if entry_data else None
-            return api.check_cooldown if api is not None else None
+            return api.check_expert_cooldown if api is not None else None
 
         def _cooldown_activate(self):
-            """Fetch the shared 403-cooldown activation from the running api."""
+            """Engage the EXPERT-ONLY backoff on a 403 from this write.
+
+            Previously this returned the GLOBAL activation, so a single
+            rejected slider write paused all sensor polling - the very
+            behaviour the expert-only backoff was introduced to end. The
+            service and the auto-poll always used the expert one; this call
+            site was missed.
+            """
             entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
             api = entry_data.get("api") if entry_data else None
-            return api._activate_cooldown if api is not None else None
+            return api.activate_expert_cooldown if api is not None else None
+
+        def _cookie_jar(self):
+            """Shared in-memory session cache, so entity writes reuse the
+            web session instead of logging in every time (the login is the
+            request the portal rejects most readily)."""
+            entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
+            api = entry_data.get("api") if entry_data else None
+            return api.expert_cookies if api is not None else None
 
         def _expert_lock(self):
             """Shared per-entry lock (only one expert portal op at a time)."""
