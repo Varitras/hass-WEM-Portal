@@ -103,7 +103,38 @@ services exist and the integration behaves exactly as before.
 
 Each writable parameter has a unique hex ID (`entityvalue`) that is
 **specific to your installation** - treat it like a serial number and do
-not post it publicly. To find it:
+not post it publicly.
+
+There are two ways to get it: let the integration look it up for you, or
+read it out of the portal yourself.
+
+#### Option A: discover them from the options UI (recommended)
+
+The integration can search the portal for you and offer the parameters it
+finds as a dropdown, so you never have to handle the raw hex ID:
+
+1. Go to `Settings > Devices & Services > WEM Portal > CONFIGURE`.
+2. Choose **`Discover expert parameters from the portal`**.
+3. Tick the modules to search (e.g. *Wärmepumpe*) and submit. Searching one
+   module at a time is gentler on the portal - each one opens a short
+   session, and hammering it risks a temporary 403 block.
+4. You land back on the settings form. Each of the ten slot ID fields is a
+   dropdown listing what was found, labelled `group / name (current value)` -
+   for example `Pumpe / Leistung Heizen (100 %)`. Pick one per slot.
+
+The same parameter cannot be selected in two slots. A discovery only runs
+when you ask for it, never in the background, and the module list is cached
+so re-opening the dialog does not hit the portal again.
+
+If discovery cannot run, the form says which of three things happened:
+portal access is briefly backing off after a 403, the search failed, or the
+search ran but found nothing.
+
+#### Option B: read the ID from the portal yourself
+
+Still fully supported, and the way to go if discovery does not find the
+parameter you want - the slot ID fields accept a typed-in value as well as
+a picked one.
 
 1. Log into [wemportal.com](https://www.wemportal.com) in your browser and
    navigate to the Fachmann page showing the parameter (e.g.
@@ -128,7 +159,9 @@ tools **Network** tab.
 2. Enable `Expert write access via web`.
 3. Fill in one or more of the **ten generic expert-parameter slots**. Each
    slot has a *name* (free text - becomes the entity's friendly name) and
-   an *entityvalue* (the hex ID from the step above). Leave unused slots
+   an *entityvalue*. The ID field is a dropdown of whatever a discovery
+   found (Option A above) and also accepts an ID typed in by hand
+   (Option B), so both ways work in the same field. Leave unused slots
    empty. A slot with an ID but no name gets a default name.
 4. Save - the integration reloads.
 

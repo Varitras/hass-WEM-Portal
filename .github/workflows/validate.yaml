@@ -15,7 +15,7 @@ jobs:
     name: HACS validation
     runs-on: "ubuntu-latest"
     steps:
-      - uses: "actions/checkout@v5"
+      - uses: "actions/checkout@v7"
       - name: HACS validation
         # Pinned to a commit SHA (supply-chain hygiene): a mutable branch
         # ref like @main could silently start running different code.
