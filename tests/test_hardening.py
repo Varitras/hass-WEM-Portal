@@ -391,3 +391,120 @@ def test_api_swap_preserves_the_state_that_must_not_reset():
     assert new.expert_cookies == old.expert_cookies
     assert new.modules == CACHED_MODULES
     assert new.scraper_device_id == "0000"
+
+
+def test_api_lock_wait_is_bounded(monkeypatch):
+    """A poll whose await timed out keeps its executor thread - and the lock.
+
+    An unbounded acquire parked the next operation behind it indefinitely,
+    with no feedback at all. It must fail with a message instead.
+    """
+    # Shorten the wait: the point is that it is BOUNDED, not that it is 30s.
+    monkeypatch.setattr(wemportalapi, "API_LOCK_TIMEOUT_SECONDS", 0.05)
+    api = _api()
+    api._api_lock.acquire()
+    try:
+        with pytest.raises(exceptions.ApiBusyError, match="free"):
+            api._acquire_api_lock("test")
+    finally:
+        api._api_lock.release()
+
+
+def test_api_lock_is_released_after_a_failing_poll():
+    """The bounded acquire replaced a `with` block - the release must still
+    happen on the error path, or the next cycle blocks forever."""
+    api = _api()
+
+    def boom(*_a, **_k):
+        raise exceptions.WemPortalError("portal down")
+
+    api._fetch_data = boom
+    with pytest.raises(exceptions.WemPortalError):
+        api.fetch_data()
+
+    # Free again: acquiring must succeed immediately.
+    assert api._api_lock.acquire(blocking=False)
+    api._api_lock.release()
+
+
+def _web_api(mode, scraped=None):
+    api = _api(config={"mode": mode}, scraper_device_id="0000")
+    api.modules = {}
+    api._scrape_calls = []
+
+    def fake_scrape():
+        api._scrape_calls.append(True)
+        return scraped if scraped is not None else [{"cookie": {}}]
+
+    api.fetch_webscraping_data = fake_scrape
+    api._merge_webscraping_data = lambda *_a, **_k: None
+    api.get_devices = lambda *_a, **_k: None
+    api.get_data = lambda *_a, **_k: None
+    api.get_statistics = lambda *_a, **_k: None
+    api.get_parameters = lambda *_a, **_k: None
+    api.api_login = lambda *_a, **_k: None
+    api.web_login = lambda *_a, **_k: None
+    api._devices_fetched_this_session = True
+    api.modules = {"0000": {}}
+    return api
+
+
+def test_web_mode_honours_a_fully_disabled_installation():
+    """Scraping is the heaviest request the integration makes, and it
+    ignored the device filter entirely - so disabling every device still
+    triggered a full portal scrape."""
+    api = _web_api("web")
+
+    api.fetch_data(enabled_devices=[])
+
+    assert api._scrape_calls == [], "a disabled installation was still scraped"
+
+
+def test_both_mode_honours_a_fully_disabled_installation():
+    api = _web_api("both")
+
+    api.fetch_data(enabled_devices=[])
+
+    assert api._scrape_calls == [], "a disabled installation was still scraped"
+
+
+def test_web_mode_still_scrapes_when_its_device_is_enabled():
+    """The filter must not switch scraping off wholesale."""
+    api = _web_api("web")
+
+    api.fetch_data(enabled_devices=["0000"])
+
+    assert api._scrape_calls, "an enabled scraper device was skipped"
+
+
+def test_web_mode_scrapes_when_no_filter_is_given():
+    """None means "no filter" - and the first scrape is what decides the
+    scraper device id in the first place."""
+    api = _web_api("web")
+    api.scraper_device_id = None
+
+    api.fetch_data(enabled_devices=None)
+
+    assert api._scrape_calls, "an unfiltered cycle skipped the scrape"
+
+
+def test_lock_timeout_is_not_treated_as_a_corrupted_session():
+    """ApiBusyError must NOT be a plain WemPortalError to the coordinator's
+    recovery heuristic: re-instantiating the api would close the sessions the
+    still-running thread is using and hand the next poll a fresh lock,
+    removing the serialization and doubling the load on a slow portal."""
+    assert issubclass(exceptions.ApiBusyError, exceptions.WemPortalError)
+    # ...but it is a distinct type the coordinator can single out first.
+    assert exceptions.ApiBusyError is not exceptions.WemPortalError
+
+
+def test_disabled_installation_is_honoured_even_before_the_id_is_known():
+    """The undecided-scraper-id escape must not override an EXPLICIT
+    "everything is disabled" filter - that was the guard's own failure mode
+    (reachable after an api swap where no scrape ever succeeded)."""
+    api = _web_api("web")
+    api.scraper_device_id = None
+
+    api.fetch_data(enabled_devices=[])
+
+    assert api._scrape_calls == [], "scraped despite an all-disabled filter"

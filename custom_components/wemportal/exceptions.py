@@ -39,3 +39,15 @@ class ParameterChangeError(WemPortalError):
 
 class ParameterWriteError(WemPortalError):
     """Raised when an expert-parameter write is not confirmed by the portal."""
+
+
+class ApiBusyError(WemPortalError):
+    """A previous poll is still running and holds the shared API lock.
+
+    Deliberately its own type: the coordinator treats a WemPortalError as
+    "the session may be corrupted" and re-instantiates the api after two of
+    them - which would close the HTTP sessions the still-running thread is
+    using, and hand the next poll a FRESH lock, removing the very
+    serialization this error reports. The condition is the opposite of a
+    broken session: everything works, it is just still busy.
+    """

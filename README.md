@@ -70,9 +70,11 @@ Configuration variables during initial setup:
 Optional settings (available via `CONFIGURE` after setup):
 
 - `scan_interval`: Update frequency of web scraping in seconds (defaults to
-  30 min). Setting it below 15 min is not recommended.
+  30 min). Setting it below 15 min is not recommended; values below 60 s are
+  clamped to 60 s.
 - `api_scan_interval`: Update frequency for API data fetching in seconds
-  (defaults to 5 min, should not be lower than 3 min).
+  (defaults to 5 min, should not be lower than 3 min); values below 10 s are
+  clamped to 10 s.
 
 ## Expert write access (web)
 
@@ -89,7 +91,7 @@ services exist and the integration behaves exactly as before.
 
 - Reaching an expert parameter is a **minimal** web navigation: reach the
   Fachmann submenu, then fetch the parameter's edit form. The web session is
-  cached in memory for a few minutes and reused, so consecutive operations
+  cached in memory for up to 15 minutes and reused, so consecutive operations
   do not log in again - the login is the request the portal is most likely
   to reject.
 - Writing happens **on demand** on a short-lived web session.
@@ -199,8 +201,8 @@ are then read in **one shared session** at that interval, with a small
 random jitter so the timing is less regular.
 
 > **Warning:** each read is a full Fachmann navigation. Polling too
-> frequently can trigger a **temporary IP block (403)** from the portal,
-> which pauses the whole integration until it clears. Keep the interval
+> frequently can trigger a **temporary block (403)** from the portal,
+> which pauses the expert feature until it clears (sensor polling keeps running). Keep the interval
 > generous; the 15-minute floor is enforced for this reason.
 
 Independent of the number entities, the service

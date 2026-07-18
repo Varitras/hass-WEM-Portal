@@ -12,7 +12,7 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.helpers.storage import Store
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
-from .exceptions import ForbiddenError, WemPortalError, AuthError
+from .exceptions import ApiBusyError, ForbiddenError, WemPortalError, AuthError
 from .const import (
     _LOGGER,
     AUTH_ERROR_ESCALATION_THRESHOLD,
@@ -172,6 +172,32 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # entities are ever created.
         device_filter = enabled_devices if self.api.data else None
 
+        # asyncio.timeout does NOT raise TimeoutError where you await - it
+        # CANCELS the task, and CancelledError derives from BaseException, so
+        # the `except Exception` inside the block below never sees it. The
+        # TimeoutError only appears when the context manager exits, i.e.
+        # outside that try. The catch-all's own comment claimed to handle
+        # timeouts; it never did, so num_failed was not incremented and the
+        # extra backoff never engaged for the one failure mode where waiting
+        # longer matters most. Caught here instead of re-indenting the whole
+        # error-handling block into an outer try.
+        try:
+            return await self._update_within_timeout(device_filter)
+        except TimeoutError as exc:
+            self.num_failed += 1
+            _LOGGER.warning(
+                "Fetching WEM Portal data timed out after %ds. Note the "
+                "underlying request keeps running in its worker thread - "
+                "Python cannot cancel it - so the next operation may briefly "
+                "wait for it.", DEFAULT_TIMEOUT,
+            )
+            raise UpdateFailed(
+                f"Timed out fetching data from wemportal after {DEFAULT_TIMEOUT}s"
+            ) from exc
+
+    async def _update_within_timeout(self, device_filter):
+        """The guarded update itself. Split out so the timeout can be caught
+        around it without moving the error handling one level in."""
         async with asyncio.timeout(DEFAULT_TIMEOUT):
             try:
                 x = await self.hass.async_add_executor_job(self.api.fetch_data, device_filter)
@@ -199,6 +225,15 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     self.num_auth_failed, AUTH_ERROR_ESCALATION_THRESHOLD, exc,
                 )
                 raise UpdateFailed(f"Authentication error, will retry: {exc}") from exc
+            except ApiBusyError as exc:
+                # NOT a corrupted session: a previous poll is still running.
+                # Must be caught BEFORE the WemPortalError handler below, or
+                # the recovery there would close the sessions that thread is
+                # actively using and give the next poll a fresh lock -
+                # removing the serialization and doubling the load on a
+                # portal that was already too slow to answer in time.
+                _LOGGER.debug("Skipping this cycle: %s", exc)
+                raise UpdateFailed(str(exc)) from exc
             except (WemPortalError, ForbiddenError) as exc:
                 self.num_failed += 1
                 if self.num_failed >= 2:
@@ -262,12 +297,12 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # Catch-all safety net: covers cases that don't come from
                 # fetch_data() itself (which already wraps its own
                 # unexpected errors as WemPortalError) - most notably
-                # TimeoutError raised by the asyncio.timeout()
-                # context above when a very large installation's discovery
-                # genuinely takes longer than DEFAULT_TIMEOUT. Without this,
-                # such an error would propagate out of the coordinator
-                # unwrapped, without the same retry/backoff bookkeeping as
-                # every other failure mode gets.
+                # unexpected errors from the executor job itself.
+                # NOTE: it does NOT catch the asyncio.timeout() timeout -
+                # that arrives as CancelledError (a BaseException) and is
+                # handled by the outer `except TimeoutError` in
+                # _async_update_data. Do not remove that handler on the
+                # assumption this one covers it; it does not.
                 self.num_failed += 1
                 _LOGGER.warning("Unexpected error updating WEM Portal data: %s", exc)
                 raise UpdateFailed(f"Unexpected error fetching data from wemportal: {exc}") from exc

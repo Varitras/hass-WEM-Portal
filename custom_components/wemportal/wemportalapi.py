@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 import requests as reqs
 from homeassistant.const import CONF_SCAN_INTERVAL
 from .exceptions import (
+    ApiBusyError,
     AuthError,
     ForbiddenError,
     UnknownAuthError,
@@ -49,6 +50,7 @@ from .const import (
     CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
     STATISTICS_REFRESH_INTERVAL_SECONDS,
     STATISTICS_RETRY_INTERVAL_SECONDS,
+    API_LOCK_TIMEOUT_SECONDS,
     API_REQUEST_TIMEOUT_SECONDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     SCRAPER_FALLBACK_DEVICE_ID,
@@ -267,12 +269,56 @@ class WemPortalApi:
             self.scraper_device_id = SCRAPER_FALLBACK_DEVICE_ID
         return self.scraper_device_id
 
+    def _scraper_enabled(self, enabled_devices) -> bool:
+        """Whether the web scraper's pseudo-device is in the caller's filter.
+
+        Scraping produces exactly ONE device (see resolve_scraper_device_id).
+        The device filter was only honoured on the API and statistics paths,
+        so disabling every device still triggered a full portal scrape - the
+        heaviest request the integration makes.
+
+        `None` means "no filter". An undecided scraper id means nothing is
+        known yet, so there is nothing to filter on and the scrape must run
+        (that first scrape is what decides the id). Deliberately reads the
+        stored id instead of resolve_scraper_device_id(), which would lock
+        one in as a side effect.
+        """
+        if enabled_devices is None:
+            return True
+        if not enabled_devices:
+            # An EXPLICIT empty list means every known device is disabled.
+            # That is unambiguous even when the scraper id is not decided
+            # yet - previously the undecided-id escape below let the scrape
+            # run anyway, which is this guard's own failure mode.
+            return False
+        device_id = self.scraper_device_id
+        if not device_id:
+            return True
+        return str(device_id) in {str(d) for d in enabled_devices}
+
+    def _acquire_api_lock(self, what):
+        """Take the shared API lock, or fail with a message the user can act on.
+
+        Blocking forever was the old behaviour: a poll whose await had already
+        timed out keeps its executor thread - and this lock - so the next
+        operation hung with no feedback.
+        """
+        if not self._api_lock.acquire(timeout=API_LOCK_TIMEOUT_SECONDS):
+            raise ApiBusyError(
+                f"Timed out waiting for the WEM Portal connection to become "
+                f"free ({what}). A previous poll is still running; try again "
+                f"in a moment."
+            )
+
     def fetch_data(self, enabled_devices=None):
         """Run a full poll cycle under the shared API lock, so it can't
         interleave with an on-demand write (change_value) on the same
         session/state."""
-        with self._api_lock:
+        self._acquire_api_lock("poll cycle")
+        try:
             return self._fetch_data(enabled_devices)
+        finally:
+            self._api_lock.release()
 
     def _fetch_data(self, enabled_devices=None):
         # Fail fast, without any network activity at all, if we're still
@@ -318,15 +364,23 @@ class WemPortalApi:
             # Select data source based on mode
             if self.mode == "web":
                 # Get data by web scraping
-                webscraping_data = self.fetch_webscraping_data()
-                self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
+                if self._scraper_enabled(enabled_devices):
+                    webscraping_data = self.fetch_webscraping_data()
+                    self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
+                else:
+                    _LOGGER.debug("Skipping web scrape: its device is disabled.")
             elif self.mode == "api":
                 # Get data using API
                 self.get_data(enabled_devices)
             else:
                 # Get data using web scraping if it hasn't been updated recently,
                 # otherwise use API to get data
-                if self.last_scraping_update is None or (
+                # The device filter is checked FIRST: `last_scraping_update
+                # is None` short-circuits the rest of this condition on the
+                # first cycle, so a guard placed inside the or-branch never
+                # ran when it mattered most.
+                if self._scraper_enabled(enabled_devices) and (
+                    self.last_scraping_update is None or (
                     (
                         (
                             datetime.now()
@@ -336,7 +390,7 @@ class WemPortalApi:
                         > self.scan_interval
                     )
                     and self.spider_wait_interval == 0
-                ):
+                )):
                     # Get data by web scraping
                     try:
                         webscraping_data = self.fetch_webscraping_data()
@@ -913,11 +967,14 @@ class WemPortalApi:
     ):
         """Change a value under the shared API lock, so a write can't
         interleave with a poll cycle on the same session/state."""
-        with self._api_lock:
+        self._acquire_api_lock("parameter write")
+        try:
             return self._change_value(
                 device_id, parameter_id, module_index, module_type,
                 numeric_value, login=login,
             )
+        finally:
+            self._api_lock.release()
 
     def _change_value(
         self,

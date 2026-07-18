@@ -16,6 +16,19 @@ DOMAIN: Final = "wemportal"
 # with fork-specific behaviour land here and not at the upstream project.
 GITHUB_PROJECT_URL: Final = "https://github.com/Varitras/hass-WEM-Portal/issues"
 DEFAULT_TIMEOUT: Final = 360
+
+# How long an on-demand operation waits for the shared API lock.
+#
+# asyncio.timeout cancels the AWAIT, not the executor thread, so a poll
+# that overran DEFAULT_TIMEOUT keeps running - and keeps the lock. An
+# unbounded acquire then parked the next write behind it with no feedback
+# at all. Failing with a clear message beats hanging silently.
+# Longer than a normal poll on purpose: a routine collision between a
+# user's write and a running poll should QUEUE and succeed, not fail
+# after 30s. This bound exists for the pathological case (a poll whose
+# await already timed out but whose thread lives on), not for normal
+# contention.
+API_LOCK_TIMEOUT_SECONDS: Final = 420
 WEB_MAIN_URL: Final = "https://www.wemportal.com/Web/Default.aspx"
 # The portal origin, sent on every postback (confirmed via HAR) - both
 # full and async postbacks include it. Async postbacks additionally

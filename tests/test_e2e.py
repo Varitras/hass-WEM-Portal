@@ -762,3 +762,60 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
     assert len(scheduled) == before, (
         "an unloaded entry re-armed the auto-poll timer"
     )
+
+
+async def test_update_timeout_is_counted_and_reported(hass, monkeypatch):
+    """asyncio.timeout CANCELS the task; CancelledError is a BaseException,
+    so the coordinator's `except Exception` never saw it and num_failed was
+    never incremented - the extra backoff stayed off for the one failure mode
+    where waiting longer matters most.
+    """
+    import asyncio as _asyncio
+
+    from custom_components.wemportal import coordinator as coord_mod
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    before = coordinator.num_failed
+
+    monkeypatch.setattr(coord_mod, "DEFAULT_TIMEOUT", 0.05)
+
+    async def never_returns(*_a, **_k):
+        await _asyncio.sleep(5)
+
+    monkeypatch.setattr(hass, "async_add_executor_job", never_returns)
+
+    with pytest.raises(UpdateFailed, match="[Tt]imed out"):
+        await coordinator._async_update_data()
+
+    assert coordinator.num_failed == before + 1, (
+        "a timeout did not count as a failure, so the backoff never engages"
+    )
+
+
+async def test_a_busy_api_does_not_trigger_the_recovery_swap(hass, monkeypatch):
+    """A lock timeout means "still busy", not "session corrupted".
+
+    Treated as the latter, the coordinator re-instantiated the api - closing
+    the HTTP sessions the still-running thread was using and handing the next
+    poll a FRESH lock, so the two ran concurrently against a portal that was
+    already too slow.
+    """
+    from custom_components.wemportal.exceptions import ApiBusyError
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    api_before = coordinator.api
+    coordinator.num_failed = 1  # one more failure would trip the swap
+
+    def busy(self, *_a, **_k):
+        raise ApiBusyError("Timed out waiting for the connection to become free")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", busy)
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert coordinator.api is api_before, "a busy api was replaced as if broken"
