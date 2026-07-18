@@ -94,5 +94,21 @@
     "abort": {
       "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen."
     }
+  },
+  "services": {
+    "set_expert_parameter": {
+      "name": "Fachmann-Parameter setzen",
+      "description": "Schreibt einen Fachmann-Parameter über das Web-Frontend des WEM Portals. Nur verfügbar, solange die Option „Experten-Schreibzugriff über Web“ aktiviert ist. Der Wert wird gegen den vom Gerät erlaubten Bereich geprüft, und der Schreibvorgang wird durch erneutes Lesen verifiziert.",
+      "fields": {
+        "entityvalue": {
+          "name": "Entity-Value",
+          "description": "Hex-Parameter-ID DEINER Anlage, aus der URL des Bearbeiten-Dialogs im Portal (entityvalue=...). Anlagenspezifisch – nicht öffentlich teilen."
+        },
+        "value": {
+          "name": "Wert",
+          "description": "Neuer Wert. Muss einer der vom Gerät angebotenen Optionen entsprechen."
+        }
+      }
+    }
   }
 }

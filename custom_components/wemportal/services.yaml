@@ -1,10 +1,7 @@
+# Name and description live in strings.json / translations (services.<name>),
+# which is where Home Assistant reads them from and the only way they can be
+# translated. Selectors, examples and `required` stay here.
 set_expert_parameter:
-  name: Set expert parameter
-  description: >-
-    Writes a Fachmann/expert parameter via the WEM Portal web frontend.
-    Only available while the "Expert write access (web)" option is enabled.
-    The value is validated against the device's own allowed range and the
-    write is verified by re-reading the parameter afterwards.
   fields:
     entityvalue:
       name: Entity value

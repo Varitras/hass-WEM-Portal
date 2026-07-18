@@ -508,3 +508,44 @@ def test_disabled_installation_is_honoured_even_before_the_id_is_known():
     api.fetch_data(enabled_devices=[])
 
     assert api._scrape_calls == [], "scraped despite an all-disabled filter"
+
+
+def test_scrape_is_skipped_when_only_its_own_device_is_disabled():
+    """The realistic case: other devices stay enabled, the scraper's own
+    pseudo-device is switched off.
+
+    The all-disabled tests pass an empty list, which an early return handles;
+    the positive tests only guard against over-blocking. Neither exercises the
+    membership check itself, so the gate could be reduced to "always allow"
+    without either noticing.
+    """
+    api = _web_api("both")
+
+    api.fetch_data(enabled_devices=["1234", "5678"])
+
+    assert api._scrape_calls == [], (
+        "the scraper device was disabled but the portal was scraped anyway"
+    )
+
+
+def test_service_texts_exist_in_every_translation_file():
+    """Home Assistant reads service name/description from strings.json, not
+    services.yaml. A key missing in one file shows up only as untranslated
+    text in the UI, so check all three - including the privacy warning on
+    the entityvalue field, which must not get lost in translation."""
+    import json
+    from pathlib import Path
+
+    base = Path(__file__).resolve().parent.parent / "custom_components" / "wemportal"
+    for name in ("strings.json", "translations/en.json", "translations/de.json"):
+        data = json.loads((base / name).read_text(encoding="utf-8"))
+        service = data["services"]["set_expert_parameter"]
+        assert service["name"] and service["description"], name
+        fields = service["fields"]
+        assert set(fields) == {"entityvalue", "value"}, name
+        for field in fields.values():
+            assert field["name"] and field["description"], name
+        # The entityvalue is installation-specific; the warning is part of
+        # the contract with the user, not decoration.
+        warning = fields["entityvalue"]["description"].lower()
+        assert "not share" in warning or "nicht öffentlich" in warning, name

@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0b9] – 2026-07-18
+
+Pre-release.
+
+### Changed
+- **The `set_expert_parameter` action is now translatable.** Its name, its
+  description and both field descriptions moved from `services.yaml` into
+  `strings.json` and the translations, which is where Home Assistant reads
+  them from; German installations showed English text before. Selectors and
+  examples stay in `services.yaml`.
+
+### Fixed
+- Web scraping is now also skipped when only the scraper's own device is
+  disabled while other devices stay enabled. The all-disabled case was
+  covered, the membership check itself was not.
+
 ## [1.10.0b8] – 2026-07-18
 
 Pre-release. Third audit round.
