@@ -6,6 +6,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0b2] – 2026-07-18
+
+Pre-release. Identical to 1.10.0b1 apart from the manifest key order, which
+hassfest requires to be `domain`, `name`, then alphabetical. No functional
+change - 1.10.0b1 runs fine, it only failed the linter.
+
 ## [1.10.0b1] – 2026-07-18
 
 Pre-release. The expert-parameter discovery is new and has not yet been
