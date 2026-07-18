@@ -912,14 +912,17 @@ class WemPortalExpertClient:
         return result
 
     def _fetch_module_page(self, module) -> str:
-        """Select a module via the icon-menu postback, then GET its page.
+        """Select a module via the icon-menu postback and return its HTML.
 
-        Uses the same module-select mechanism as _establish_context's
-        fallback path (icon-menu postback carrying the control's own client
-        state), addressed by the menu index. Then a plain GET Default.aspx
-        returns the module's full overview HTML (spec option (a)). Live-verify
-        (spec open item): confirm the postback registers server-side and the
-        follow-up GET renders the selected module rather than a stale default.
+        The module select is a Telerik async postback, so its response is a
+        delta stream that ALREADY carries the re-rendered module panel. That
+        is preferred: it is the server's answer to "show me this module", it
+        needs no second request, and it cannot be a stale default page.
+
+        The original implementation discarded that response and issued a plain
+        `GET Default.aspx` instead (spec option (a)). Live-testing showed that
+        path returning no readable parameters, so the GET is now only the
+        fallback for the case where the delta carries no rows.
         """
         index = str(module.get("index"))
         icon_menu_state = EXPERT_MODULE_ICONMENU_STATE_TEMPLATE % index
@@ -929,6 +932,15 @@ class WemPortalExpertClient:
             event_argument=index,
             extra_fields={EXPERT_MODULE_ICONMENU_STATE_FIELD: icon_menu_state},
         )
+        delta_rows = len(parse_parameter_list(self._nav_html))
+        if delta_rows:
+            _LOGGER.debug(
+                "Expert discovery: module %s -> %d parameter(s) from the "
+                "postback response; no extra request needed.",
+                module.get("label"), delta_rows,
+            )
+            return self._nav_html
+
         self._check_cooldown()
         resp = self.session.get(
             WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
@@ -939,6 +951,16 @@ class WemPortalExpertClient:
             },
         )
         self._raise_if_forbidden(resp)
+        # Log both sources' yield: if discovery still comes up empty, this
+        # says immediately whether the postback or the follow-up GET is the
+        # one that fails to deliver the module - no guesswork needed.
+        _LOGGER.debug(
+            "Expert discovery: module %s -> postback response had no editable "
+            "rows (%d bytes); GET Default.aspx yielded %d parameter(s) "
+            "(%d bytes).",
+            module.get("label"), len(self._nav_html or ""),
+            len(parse_parameter_list(resp.text)), len(resp.text),
+        )
         return resp.text
 
     def write_parameter(self, entityvalue: str, value) -> ExpertParameterState:

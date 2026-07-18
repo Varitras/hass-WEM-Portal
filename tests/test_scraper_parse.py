@@ -10,6 +10,8 @@ no installation-specific ids in the repository). That covers the parsing
 LOGIC; it does not prove the real portal still emits this structure.
 """
 
+import types
+
 import pytest
 
 from custom_components.wemportal.scraper import WemPortalScraper
@@ -164,6 +166,73 @@ def test_rows_of_several_panels_do_not_collide(scraper):
 
     assert data["heating_circuit_1-temperatur"]["value"] == 30.0
     assert data["heating_circuit_2-temperatur"]["value"] == 40.0
+
+
+def test_expert_module_page_prefers_the_postback_response():
+    """The module select is an async postback whose response already carries
+    the re-rendered module panel. Discarding it and issuing a separate
+    `GET Default.aspx` returned no parameters in practice, so the postback
+    response is used when it has editable rows - and no second request is
+    sent."""
+    from custom_components.wemportal import expert_writer
+
+    delta = _delta_with_parameter("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client._postback = lambda *a, **k: delta
+    client.session = _ExplodingSession()
+
+    html_content = client._fetch_module_page({"index": 6, "label": "Heat pump"})
+
+    assert html_content is delta
+
+
+def test_expert_module_page_falls_back_to_the_plain_get():
+    """If the postback response carries no rows, the previous behaviour is
+    kept rather than giving up."""
+    from custom_components.wemportal import expert_writer
+
+    page = _delta_with_parameter("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client._postback = lambda *a, **k: "<html><body>no panel here</body></html>"
+    client.session = _StubSession(page)
+
+    html_content = client._fetch_module_page({"index": 6, "label": "Heat pump"})
+
+    assert html_content == page
+
+
+def _delta_with_parameter(entityvalue):
+    """A Telerik delta stream carrying one editable parameter row.
+
+    Shaped like the real thing: length|type|id|<html fragment>|, i.e. the
+    panel markup is embedded in a non-HTML envelope.
+    """
+    fragment = f"""
+    <div class="RadPanelBar">
+      <span id="x_HeaderTemplate_lblHeaderText">Heating</span>
+      <table><tr>
+        <td><span>Power limit</span></td>
+        <td><span>30 %</span></td>
+        <td><input class="EditIcon" type="button"
+             onclick="window.open('WwpsParameterDetails.aspx?entityvalue={entityvalue}&readdata=True')"/></td>
+      </tr></table>
+    </div>"""
+    return f"1234|updatePanel|ctl00_UpdatePanel|{fragment}|"
+
+
+class _StubSession:
+    def __init__(self, text):
+        self._text = text
+
+    def get(self, *_a, **_k):
+        return types.SimpleNamespace(status_code=200, text=self._text, url="https://x/")
+
+
+class _ExplodingSession:
+    """Fails the test if a second request is made."""
+
+    def get(self, *_a, **_k):
+        raise AssertionError("no follow-up request should be sent")
 
 
 def test_incomplete_row_is_skipped_without_losing_the_rest(scraper):

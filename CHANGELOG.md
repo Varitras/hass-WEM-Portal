@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0b5] – 2026-07-18
+
+Pre-release. Addresses the discovery finding a live test produced: the
+search ran without being blocked, but returned no parameters.
+
+### Fixed
+- **Expert discovery now reads the module page from the postback response.**
+  Selecting a module is an async postback whose response already contains the
+  re-rendered module panel. That response was discarded in favour of a plain
+  `GET Default.aspx`, which live-testing showed returning no readable
+  parameters. The postback response is now used whenever it carries rows -
+  it is the server's direct answer to "show me this module", and it saves a
+  request. The previous `GET` remains as a fallback.
+- Discovery logs how many parameters each source yielded, so a remaining
+  failure identifies itself instead of needing another round of guessing.
+
 ## [1.10.0b4] – 2026-07-18
 
 Pre-release. Corrects how a 403 on the expert path is interpreted.
