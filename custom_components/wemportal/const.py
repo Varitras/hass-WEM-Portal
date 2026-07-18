@@ -144,6 +144,19 @@ STATISTICS_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
 # everything, including the expert path, because that IS the rate-limit signal.
 EXPERT_FORBIDDEN_COOLDOWN_SECONDS: Final = 300  # 5 minutes
 
+# How long a cached expert web session may be reused before we log in again.
+#
+# Every expert operation used to perform a FULL login, which is the one thing
+# the portal reliably rejected (403 on Login.aspx) while the very same portal
+# stayed reachable in a browser. The scraper has had cookie reuse for exactly
+# this reason; the expert path now does too.
+#
+# The age cap is deliberate: a reuse attempt that fails costs two extra
+# requests before falling back to a login, so we only try while the session is
+# plausibly still alive. Kept in memory only - a session cookie is as good as
+# a credential and has no business on disk.
+EXPERT_SESSION_MAX_AGE_SECONDS: Final = 900  # 15 minutes
+
 # Expert write access (web) - disabled by default. Only when enabled are
 # the wemportal.set_expert_parameter service and the configured expert
 # number entities registered.

@@ -152,6 +152,11 @@ class WemPortalApi:
         # rate limit seen by the API/scraper pauses the expert path too, via
         # check_expert_cooldown() consulting check_cooldown() first.
         self._expert_blocked_until = expert_blocked_until
+        # In-memory cookie cache shared by the short-lived expert clients,
+        # so they can continue an existing web session instead of logging in
+        # for every single operation (see expert_writer._try_cached_session).
+        # Never persisted: a live session cookie is credential-equivalent.
+        self.expert_cookies = {}
 
         # Used to keep track of how many update intervals to wait before retrying spider
         self.spider_wait_interval = 0

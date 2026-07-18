@@ -6,6 +6,25 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0b6] – 2026-07-18
+
+Pre-release. Stops the expert path from logging in for every operation.
+
+### Fixed
+- **The expert (Fachmann) path now reuses its web session instead of logging
+  in every time.** Each expert operation - opening the discovery dialog,
+  running discovery, every write, every auto-poll - performed a full login.
+  That is the request the portal rejects most readily: a 403 on `Login.aspx`
+  was observed while the same portal answered a browser normally (including
+  in a fresh incognito session) and while the scraper, which has reused its
+  cookies for exactly this reason, kept working.
+
+  Cookies are cached in memory only - never written to disk, since a live
+  session cookie is credential-equivalent - and reused for at most 15
+  minutes. A dead session falls back to a full login. A 403 during a reuse
+  attempt is not retried with a login, so a rejection cannot turn into a
+  second rejected request.
+
 ## [1.10.0b5] – 2026-07-18
 
 Pre-release. Addresses the discovery finding a live test produced: the

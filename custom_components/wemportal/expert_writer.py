@@ -21,6 +21,7 @@ from lxml import html
 from .exceptions import AuthError, ForbiddenError, ParameterWriteError
 from .const import (
     _LOGGER,
+    EXPERT_SESSION_MAX_AGE_SECONDS,
     WEB_LOGIN_URL,
     WEB_MAIN_URL,
     WEB_PORTAL_ORIGIN,
@@ -259,9 +260,16 @@ class WemPortalExpertClient:
 
     def __init__(self, username, password, cooldown_check=None,
                  cooldown_activate=None, module_arg=None,
-                 enable_module_nav=None, enable_security_code=None):
+                 enable_module_nav=None, enable_security_code=None,
+                 cookie_jar=None):
         self.username = username
         self.password = password
+        # Shared, in-memory cookie cache for session reuse across operations
+        # (a plain dict owned by the WemPortalApi, passed by reference, so
+        # every short-lived client instance sees the same one). Structure:
+        # {"cookies": {...}, "saved_at": monotonic}. Never persisted - a live
+        # session cookie is credential-equivalent.
+        self._cookie_jar = cookie_jar if cookie_jar is not None else {}
         # Optional callable raising ForbiddenError while a 403 cooldown is
         # active (shared protection with the rest of the integration).
         self._cooldown_check = cooldown_check
@@ -336,6 +344,74 @@ class WemPortalExpertClient:
 
     # ------------------------------------------------------------------
     def _login(self):
+        """Reach the Fachmann context, reusing a cached session if possible.
+
+        A full login is what the portal rejects most readily (observed: 403 on
+        Login.aspx while the same portal answered a browser normally, and while
+        the scraper - which reuses its cookies - kept working). Every expert
+        operation used to log in from scratch, so this path did far more logins
+        than any other part of the integration.
+
+        Reuse is attempted only while the cached session is young enough
+        (EXPERT_SESSION_MAX_AGE_SECONDS), because a failed attempt costs two
+        requests before falling back. A dead session falls back to a full
+        login; a 403 is NOT swallowed - it must reach the caller so the
+        backoff engages instead of us immediately retrying with a login.
+        """
+        if self._try_cached_session():
+            return
+        self._full_login()
+
+    def _try_cached_session(self) -> bool:
+        """Try to continue with the cached cookies. True if we got there."""
+        cookies = self._cookie_jar.get("cookies")
+        saved_at = self._cookie_jar.get("saved_at")
+        if not cookies or saved_at is None:
+            return False
+        age = time.monotonic() - saved_at
+        if age > EXPERT_SESSION_MAX_AGE_SECONDS:
+            _LOGGER.debug(
+                "Expert session cache is %.0fs old (max %ds), logging in fresh.",
+                age, EXPERT_SESSION_MAX_AGE_SECONDS,
+            )
+            return False
+
+        self.session = requests.Session(impersonate="chrome146")
+        try:
+            self.session.cookies.update(cookies)
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.debug("Could not restore cached expert cookies: %s", exc)
+            return False
+
+        try:
+            self._establish_context()
+        except ForbiddenError:
+            # A real rejection by the portal - propagate so the caller backs
+            # off. Retrying with a full login here would only add another
+            # rejected request.
+            raise
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.debug(
+                "Cached expert session no longer usable (%s), logging in fresh.", exc
+            )
+            self.close()
+            return False
+
+        self._save_session()
+        _LOGGER.debug("Expert path reused the cached session (no login needed).")
+        return True
+
+    def _save_session(self):
+        """Remember the current cookies for the next operation."""
+        try:
+            self._cookie_jar["cookies"] = dict(self.session.cookies)
+            self._cookie_jar["saved_at"] = time.monotonic()
+        except Exception as exc:  # pylint: disable=broad-except
+            # Caching is an optimisation; failing to cache only means the
+            # next operation logs in again.
+            _LOGGER.debug("Could not cache expert session cookies: %s", exc)
+
+    def _full_login(self):
         """Perform a fresh web login on a new session."""
         self.session = requests.Session(impersonate="chrome146")
 
@@ -364,6 +440,10 @@ class WemPortalExpertClient:
             raise AuthError("Expert client: login failed.")
 
         self._establish_context()
+        # Only cache once the full navigation succeeded: cookies from a
+        # session that never reached the Fachmann context are worthless and
+        # would just cost a failed reuse attempt next time.
+        self._save_session()
 
     def _establish_context(self):
         """Reproduce the browser navigation that reaches the Fachmann view.

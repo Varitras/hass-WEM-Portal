@@ -484,6 +484,7 @@ class WemportalOptionsFlow(OptionsFlow):
             entry.data.get(CONF_PASSWORD),
             cooldown_check=api.check_expert_cooldown if api is not None else None,
             cooldown_activate=api.activate_expert_cooldown if api is not None else None,
+            cookie_jar=api.expert_cookies if api is not None else None,
             **client_opts,
         )
 

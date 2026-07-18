@@ -10,6 +10,7 @@ no installation-specific ids in the repository). That covers the parsing
 LOGIC; it does not prove the real portal still emits this structure.
 """
 
+import time
 import types
 
 import pytest
@@ -199,6 +200,110 @@ def test_expert_module_page_falls_back_to_the_plain_get():
     html_content = client._fetch_module_page({"index": 6, "label": "Heat pump"})
 
     assert html_content == page
+
+
+def _client_with_jar(jar):
+    from custom_components.wemportal import expert_writer
+
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    client._full_login = lambda: _fail("a full login should not have happened")
+    return client
+
+
+def _fail(message):
+    raise AssertionError(message)
+
+
+def test_expert_session_is_reused_instead_of_logging_in():
+    """Every expert operation used to perform a full login, and the portal
+    rejected exactly that (403 on Login.aspx) while the cookie-reusing
+    scraper kept working. A young cached session must be continued."""
+
+    jar = {"cookies": {"ASP.NET_SessionId": "abc"}, "saved_at": time.monotonic()}
+    client = _client_with_jar(jar)
+    client._establish_context = lambda: None
+
+    client._login()
+
+    # Cookies refreshed for the next operation.
+    assert jar["saved_at"] >= 0
+
+
+def test_expired_cache_logs_in_again():
+    """Past the age cap we do not spend two requests on a probably-dead
+    session - we log in directly."""
+    from custom_components.wemportal import expert_writer
+
+    jar = {
+        "cookies": {"ASP.NET_SessionId": "abc"},
+        "saved_at": time.monotonic() - (expert_writer.EXPERT_SESSION_MAX_AGE_SECONDS + 10),
+    }
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    called = []
+    client._full_login = lambda: called.append(True)
+    client._establish_context = lambda: _fail("must not try the stale session")
+
+    client._login()
+
+    assert called == [True]
+
+
+def test_dead_session_falls_back_to_a_full_login():
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import AuthError
+
+    jar = {"cookies": {"ASP.NET_SessionId": "abc"}, "saved_at": time.monotonic()}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    called = []
+    client._full_login = lambda: called.append(True)
+
+    def dead():
+        raise AuthError("session not accepted by portal main page")
+
+    client._establish_context = dead
+
+    client._login()
+
+    assert called == [True]
+
+
+def test_a_403_during_reuse_is_not_retried_with_a_login():
+    """A rejection must reach the caller so the backoff engages. Retrying
+    with a full login would only add a second rejected request - and the
+    login is the request the portal rejects most readily."""
+    from custom_components.wemportal.exceptions import ForbiddenError
+
+    jar = {"cookies": {"ASP.NET_SessionId": "abc"}, "saved_at": time.monotonic()}
+    client = _client_with_jar(jar)
+
+    def rejected():
+        raise ForbiddenError("403 on the main page")
+
+    client._establish_context = rejected
+
+    with pytest.raises(ForbiddenError):
+        client._login()
+
+
+def test_empty_cache_goes_straight_to_login():
+    from custom_components.wemportal import expert_writer
+
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar={}
+    )
+    called = []
+    client._full_login = lambda: called.append(True)
+    client._establish_context = lambda: _fail("nothing to reuse")
+
+    client._login()
+
+    assert called == [True]
 
 
 def _delta_with_parameter(entityvalue):

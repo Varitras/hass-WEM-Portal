@@ -330,6 +330,7 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
                 target_entry.data.get(CONF_PASSWORD),
                 cooldown_check=target_api.check_expert_cooldown,
                 cooldown_activate=target_api.activate_expert_cooldown,
+                cookie_jar=target_api.expert_cookies,
                 **expert_client_options(target_entry.options),
             )
             return client.write_parameter(entityvalue, value)
@@ -463,6 +464,7 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
                     entry.data.get(CONF_PASSWORD),
                     cooldown_check=current_api.check_expert_cooldown,
                     cooldown_activate=current_api.activate_expert_cooldown,
+                    cookie_jar=current_api.expert_cookies,
                     **expert_client_options(entry.options),
                 )
                 return client.read_many(entityvalues)
