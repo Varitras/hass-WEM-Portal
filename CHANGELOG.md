@@ -6,6 +6,30 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0b8] – 2026-07-18
+
+Pre-release. Third audit round.
+
+### Fixed
+- **The coordinator now catches its own update timeout.** `asyncio.timeout`
+  cancels the task, and `CancelledError` is a `BaseException`, so the inner
+  catch-all never saw it: the failure was not counted and the extra backoff
+  never engaged for the one failure mode where waiting longer matters most.
+- **Waiting for the shared API lock is bounded**, and a lock timeout now
+  raises its own error type. As a generic portal error the coordinator read
+  it as "session corrupted" and re-instantiated the API - closing the HTTP
+  sessions the still-running thread was using and handing the next poll a
+  fresh lock, which removed the serialization and doubled the load on a
+  portal that was already too slow. Reachable with the default settings.
+- **Web scraping honours the enabled-device filter**, in `web` and `both`
+  mode. It ignored it entirely, so disabling every device still triggered a
+  full portal scrape - the heaviest request the integration makes.
+
+### Changed
+- README: a 403 pauses the expert feature rather than the whole integration,
+  the expert session is cached for up to 15 minutes, and the enforced
+  scan-interval floors are documented instead of silently applied.
+
 ## [1.10.0b7] – 2026-07-18
 
 Pre-release. Fixes found by a full audit of everything since 1.9.0, plus a
