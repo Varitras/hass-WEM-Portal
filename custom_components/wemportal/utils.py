@@ -2,6 +2,7 @@
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
+    UnitOfPressure,
     UnitOfEnergy,
     UnitOfPower,
     UnitOfVolumeFlowRate,
@@ -243,7 +244,13 @@ def uom_to_device_class(uom):
     # wrong. Percent sensors keep their "%" unit and MEASUREMENT state class
     # (see uom_to_state_class), so history and long-term statistics are
     # unaffected; only the icon and any device_class-based filtering change.
-    return {
+    # Matched case-insensitively: the portal delivers e.g. "BAR" where the
+    # Home Assistant constant is "bar", which silently missed and left the
+    # sensor without a device class (and thus without a proper icon).
+    if uom is None:
+        return None
+    mapping = {
+        UnitOfPressure.BAR:                         SensorDeviceClass.PRESSURE,
         UnitOfTemperature.CELSIUS:                  SensorDeviceClass.TEMPERATURE,
         UnitOfTemperature.KELVIN:                   SensorDeviceClass.TEMPERATURE,
         UnitOfEnergy.KILO_WATT_HOUR:                SensorDeviceClass.ENERGY,
@@ -253,7 +260,30 @@ def uom_to_device_class(uom):
         UnitOfTime.HOURS:                           SensorDeviceClass.DURATION,
         UnitOfFrequency.HERTZ:                      SensorDeviceClass.FREQUENCY,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorDeviceClass.VOLUME_FLOW_RATE,
-    }.get(uom) # return None if no device class is available
+    }
+    # Both sides normalised - the KEYS above are Home Assistant constants
+    # in their own casing ("kW", "°C", "K"), so lowering only the lookup
+    # value would miss every one of them.
+    return {str(k).strip().lower(): v for k, v in mapping.items()}.get(
+        str(uom).strip().lower()
+    )
+
+
+def uom_to_icon(uom):
+    """Icon for a unit - or None to let Home Assistant decide.
+
+    Returning None is the important part: an explicitly set icon ALWAYS
+    beats the one Home Assistant derives from the device class, so the old
+    blanket "mdi:flash" default overrode correct, consistent icons on every
+    sensor that had a device class (duration, power, energy, flow, ...).
+    An icon is only supplied where HA has nothing to go on.
+    """
+    if uom_to_device_class(uom) is not None:
+        return None
+    return {
+        "%": "mdi:percent",
+        "rpm": "mdi:fan",
+    }.get(str(uom).strip().lower() if uom else "", "mdi:flash")
 
 def uom_to_state_class(uom):
     """Return the state class of this unit of measurement, if any."""

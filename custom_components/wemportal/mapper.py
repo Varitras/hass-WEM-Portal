@@ -1,10 +1,9 @@
 """Data mapper for mapping API values to Home Assistant platforms."""
 
 import re
-from collections import defaultdict
 from .translations import friendly_name_mapper, translate
 from .const import WemDataType, _LOGGER
-from .utils import sanitize_value
+from .utils import sanitize_value, uom_to_icon
 
 
 def get_min_max(param_id: str, data_type: int, min_val, max_val) -> tuple[float, float]:
@@ -40,8 +39,6 @@ class WemPortalDataMapper:
         api_data: dict,
     ):
         """Processes the read values JSON and maps it to api_data."""
-        icon_mapper = defaultdict(lambda: "mdi:flash")
-        icon_mapper["°C"] = "mdi:thermometer"
 
         parsed_sensors = {}
 
@@ -126,7 +123,7 @@ class WemPortalDataMapper:
                             "friendlyName": parsed_sensors[name]["friendlyName"],
                             "ParameterID": param_id,
                             "unit": value.get("Unit"),
-                            "icon": icon_mapper[value.get("Unit")],
+                            "icon": uom_to_icon(value.get("Unit")),
                             "value": final_value,
                             "DataType": data_type,
                             "ModuleIndex": module["ModuleIndex"],
@@ -216,7 +213,7 @@ class WemPortalDataMapper:
                             "value": sensor.get("value"),
                             "name": api_data[device_id].get(scraped_entity, {}).get("name"),
                             "unit": api_data[device_id].get(scraped_entity, {}).get("unit", sensor.get("unit")),
-                            "icon": api_data[device_id].get(scraped_entity, {}).get("icon", icon_mapper[sensor.get("unit")]),
+                            "icon": api_data[device_id].get(scraped_entity, {}).get("icon", uom_to_icon(sensor.get("unit"))),
                             "friendlyName": api_data[device_id].get(scraped_entity, {}).get("friendlyName", sensor.get("friendlyName")),
                             "ParameterID": scraped_entity,
                             "platform": "sensor",
@@ -234,7 +231,7 @@ class WemPortalDataMapper:
                         "value": sensor["value"],
                         "ParameterID": sensor["ParameterID"],
                         "unit": final_unit,
-                        "icon": icon_mapper.get(final_unit, "mdi:flash"),
+                        "icon": uom_to_icon(final_unit),
                         "friendlyName": sensor["friendlyName"],
                         "platform": "sensor",
                     }

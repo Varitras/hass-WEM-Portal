@@ -1,7 +1,6 @@
 """Web scraping scraper for WEM Portal using curl_cffi."""
 
 import time
-from collections import defaultdict
 from curl_cffi import requests
 from lxml import html
 
@@ -17,13 +16,12 @@ from .const import (
     PERCENTAGE_KEYWORDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
 )
-from .utils import sanitize_value
+from .utils import sanitize_value, uom_to_icon
 
 # Unit -> icon mapping for scraped sensors. Defined once at module level
 # instead of being re-created for every single table row during parsing
 # (it never changes, so per-row construction was pure waste).
-ICON_MAPPER = defaultdict(lambda: "mdi:flash")
-ICON_MAPPER["°C"] = "mdi:thermometer"
+
 
 
 class WemPortalScraper:
@@ -270,7 +268,7 @@ class WemPortalScraper:
                         output[name] = {
                             "value": value,
                             "name": name,
-                            "icon": ICON_MAPPER[unit],
+                            "icon": uom_to_icon(unit),
                             "unit": unit,
                             "platform": "sensor",
                             "friendlyName": friendly_name,

@@ -115,7 +115,9 @@ def test_read_only_parameter_becomes_a_sensor():
     assert sensor["platform"] == "sensor"
     assert sensor["value"] == 12.5
     assert sensor["unit"] == "°C"
-    assert sensor["icon"] == "mdi:thermometer"
+    # No icon on purpose: °C carries a temperature device class, and an
+    # explicit icon would override the one Home Assistant derives from it.
+    assert sensor["icon"] is None
 
 
 @pytest.mark.parametrize(

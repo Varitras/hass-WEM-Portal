@@ -1416,7 +1416,6 @@ class WemPortalApi:
                             "ModuleIndex": -1,
                             "ModuleType": -1,
                             "platform": "sensor",
-                            "icon": "mdi:lightning-bolt",
                             "device_class": "energy",
                             "state_class": "total_increasing"
                         }

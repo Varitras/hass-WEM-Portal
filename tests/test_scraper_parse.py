@@ -75,7 +75,7 @@ def test_value_and_unit_are_split(scraper):
     assert sensor["value"] == 12.5
     assert sensor["unit"] == "°C"
     assert sensor["platform"] == "sensor"
-    assert sensor["icon"] == "mdi:thermometer"
+    assert sensor["icon"] is None, "a unit with a device class must not force an icon"
     assert sensor["friendlyName"] == "Heat pump - Outside temperature"
 
 
@@ -412,3 +412,16 @@ def test_incomplete_row_is_skipped_without_losing_the_rest(scraper):
 
     assert "heat_pump-no_value" not in data
     assert data["heat_pump-good"]["value"] == 7.0
+
+
+def test_units_without_a_device_class_keep_a_useful_icon(scraper):
+    """Percent and rpm have no device class in Home Assistant, so an explicit
+    icon is the only way they get a meaningful one - just not a lightning
+    bolt, which is what every non-Celsius unit used to receive."""
+    from custom_components.wemportal.utils import uom_to_icon
+
+    assert uom_to_icon("%") == "mdi:percent"
+    assert uom_to_icon("rpm") == "mdi:fan"
+    # ...while anything Home Assistant can classify gets no icon from us.
+    for unit in ("BAR", "kWh", "kW", "h", "m³/h", "°C", "K", "W"):
+        assert uom_to_icon(unit) is None, unit

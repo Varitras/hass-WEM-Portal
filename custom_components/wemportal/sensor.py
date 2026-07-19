@@ -119,7 +119,12 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
         # KeyError that would abort setup for every sensor on this device.
         self._parameter_id = entity_data.get("ParameterID", _unique_id)
         self._data_key = _unique_id
-        self._attr_icon = entity_data.get("icon", "mdi:flash")
+        # Only set an icon when the data actually carries one. Defaulting to
+        # "mdi:flash" here overrode the icon Home Assistant derives from the
+        # device class on every sensor that has one.
+        icon = entity_data.get("icon")
+        if icon:
+            self._attr_icon = icon
         self._attr_native_unit_of_measurement = uom
         # Set device_class/state_class BEFORE validating the native value:
         # _validated_native_value() uses them (in addition to uom) to

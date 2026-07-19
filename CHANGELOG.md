@@ -6,6 +6,27 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.1] – 2026-07-18
+
+### Fixed
+- **Sensor icons are no longer all lightning bolts.** Every unit except `°C`
+  received `mdi:flash`, and an explicitly set icon always beats the one Home
+  Assistant derives from the device class - so correct classes (power, energy,
+  duration, flow rate, temperature) were overridden on nearly every sensor.
+  No icon is supplied where a device class exists; Home Assistant picks one
+  that matches the rest of the interface.
+- **Pressure sensors get a device class.** The portal reports `BAR` in
+  uppercase while the Home Assistant constant is `bar`, so the lookup missed
+  and the sensor had no class at all. Units are now matched
+  case-insensitively.
+- Percent and rpm sensors, which have no device class in Home Assistant, get
+  `mdi:percent` and `mdi:fan` instead of a lightning bolt.
+- Energy statistics sensors set their icon in a second place, so the same
+  `kWh` quantity could appear with two different icons.
+
+Values, units, history and long-term statistics are unaffected - this changes
+only which icon is shown.
+
 ## [1.10.0] – 2026-07-18
 
 ### Upgrading from 1.9.0 - please read
