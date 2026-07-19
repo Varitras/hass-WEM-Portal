@@ -6,6 +6,19 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.2] – 2026-07-19
+
+### Fixed
+- **Pressure sensors no longer log a warning on every reading.** 1.10.1 made
+  the device-class lookup case-insensitive so that the portal's `BAR` is
+  recognised as pressure - but the unit itself still reached the entity as
+  `BAR`, and Home Assistant only accepts `bar` for that device class. The
+  unit is now normalised along with the lookup.
+
+  Note: the three pressure sensors change their unit from `BAR` to `bar`.
+  Home Assistant may raise a repair notice about the changed unit for their
+  long-term statistics; the readings themselves are identical.
+
 ## [1.10.1] – 2026-07-18
 
 ### Fixed

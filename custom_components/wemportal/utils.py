@@ -227,6 +227,11 @@ def fix_value_and_uom(val, uom):
         "kw (w)h":  UnitOfEnergy.WATT_HOUR,
         "h":        UnitOfTime.HOURS,
         "hz":       UnitOfFrequency.HERTZ,
+        # The portal writes "BAR"; Home Assistant only accepts "bar" for the
+        # pressure device class and logs a warning for anything else. The
+        # device-class lookup is case-insensitive, but the UNIT that reaches
+        # the entity has to be the canonical spelling too.
+        "bar":      UnitOfPressure.BAR,
         "m3/h":     UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
     }.get(uom.lower(), uom)
     return val, uom

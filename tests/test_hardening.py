@@ -549,3 +549,15 @@ def test_service_texts_exist_in_every_translation_file():
         # the contract with the user, not decoration.
         warning = fields["entityvalue"]["description"].lower()
         assert "not share" in warning or "nicht öffentlich" in warning, name
+
+
+def test_portal_units_are_normalised_to_home_assistant_spelling():
+    """A device class is not enough - the UNIT must match what Home Assistant
+    accepts for it. The portal writes "BAR"; HA logs a warning for every
+    reading unless it is "bar"."""
+    from custom_components.wemportal.utils import fix_value_and_uom, uom_to_device_class
+
+    value, unit = fix_value_and_uom(2.5, "BAR")
+
+    assert (value, unit) == (2.5, "bar")
+    assert uom_to_device_class(unit) == "pressure"
