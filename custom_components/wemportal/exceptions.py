@@ -51,3 +51,13 @@ class ApiBusyError(WemPortalError):
     serialization this error reports. The condition is the opposite of a
     broken session: everything works, it is just still busy.
     """
+
+
+class PortalMaintenanceError(WemPortalError):
+    """The portal is down for planned maintenance.
+
+    Deliberately NOT an AuthError: the credentials are fine, the backend is
+    simply unavailable. Counting it as an auth failure escalated to
+    ConfigEntryAuthFailed after AUTH_ERROR_ESCALATION_THRESHOLD cycles and
+    asked the user to re-enter working credentials.
+    """

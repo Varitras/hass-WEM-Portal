@@ -561,3 +561,93 @@ def test_portal_units_are_normalised_to_home_assistant_spelling():
 
     assert (value, unit) == (2.5, "bar")
     assert uom_to_device_class(unit) == "pressure"
+
+
+# Trimmed from a real maintenance page. The login form stays fully present
+# and submittable - only the backend behind it is down - so the notice
+# container is the only thing that sets the two states apart.
+MAINTENANCE_PAGE = """<html><body>
+  <div id="ctl00_MasterContent" class="MasterContentLogin">
+    <div class="offlinecontent">
+      Sehr geehrter Kunde,<br><br>
+      aufgrund von Wartungsarbeiten ist der Server zwischen 28.07.2026 16:00 Uhr
+      und 28.07.2026 19:00 Uhr nicht erreichbar.
+    </div>
+    <div id="ctl00_content_dvLogin" class="dvLogin">
+      <input type="hidden" id="__VIEWSTATE" name="__VIEWSTATE" value="x">
+      <input type="hidden" id="__EVENTVALIDATION" name="__EVENTVALIDATION" value="y">
+      <input name="ctl00$content$tbxUserName" type="text">
+      <input name="ctl00$content$tbxPassword" type="password">
+      <input name="ctl00$content$btnLogin" type="submit" value="Anmelden">
+    </div>
+  </div>
+</body></html>"""
+
+NORMAL_LOGIN_PAGE = MAINTENANCE_PAGE.replace("offlinecontent", "someothercontent")
+
+
+def test_maintenance_notice_is_detected_and_quoted():
+    from custom_components.wemportal.utils import maintenance_notice
+
+    notice = maintenance_notice(MAINTENANCE_PAGE)
+
+    assert notice is not None
+    # The actual window belongs in the log - that is what tells the user
+    # when to expect the integration back.
+    assert "28.07.2026 19:00" in notice
+
+
+def test_a_normal_login_page_is_not_mistaken_for_maintenance():
+    """The dangerous direction: wrong credentials must still reach the reauth
+    flow. Matching loosely (e.g. on the word "Wartungsarbeiten" anywhere)
+    would risk swallowing a genuine credential failure forever."""
+    from custom_components.wemportal.utils import maintenance_notice
+
+    assert maintenance_notice(NORMAL_LOGIN_PAGE) is None
+    assert maintenance_notice("") is None
+    assert maintenance_notice(None) is None
+
+
+def test_web_login_reports_maintenance_without_sending_credentials(monkeypatch):
+    """Bailing out before the POST matters twice: the credentials are not
+    sent to a page that cannot process them, and the failure is not
+    misreported as "invalid username or password"."""
+    posted = []
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_a, **_k):
+            return FakeResponse_html(MAINTENANCE_PAGE)
+
+        def post(self, *_a, **_k):
+            posted.append(True)
+            return FakeResponse_html("")
+
+    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    api = _api()
+
+    with pytest.raises(exceptions.PortalMaintenanceError):
+        api.web_login()
+
+    assert posted == [], "credentials were sent to the maintenance page"
+
+
+def test_maintenance_is_not_an_auth_error():
+    """It must not feed the reauth escalation: the portal serves a working
+    login form during maintenance, so three cycles of it used to ask the user
+    to re-enter credentials that were correct all along."""
+    assert not issubclass(exceptions.PortalMaintenanceError, exceptions.AuthError)
+    assert issubclass(exceptions.PortalMaintenanceError, exceptions.WemPortalError)
+
+
+class FakeResponse_html:
+    """A response carrying HTML rather than JSON."""
+
+    def __init__(self, text, status_code=200):
+        self.text = text
+        self.status_code = status_code
+        self.url = "https://www.wemportal.com/Web/Login.aspx"
+
+    def raise_for_status(self):
+        pass

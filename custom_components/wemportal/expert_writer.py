@@ -19,7 +19,12 @@ from urllib.parse import urlsplit
 from curl_cffi import requests
 from lxml import html
 
-from .exceptions import AuthError, ForbiddenError, ParameterWriteError
+from .exceptions import (
+    AuthError,
+    ForbiddenError,
+    ParameterWriteError,
+    PortalMaintenanceError,
+)
 from .const import (
     _LOGGER,
     EXPERT_SESSION_MAX_AGE_SECONDS,
@@ -447,6 +452,10 @@ class WemPortalExpertClient:
 
         r1 = self.session.get(WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
         self._raise_if_forbidden(r1)
+        from .utils import maintenance_notice
+        notice = maintenance_notice(r1.text)
+        if notice:
+            raise PortalMaintenanceError(notice)
         tree = html.fromstring(r1.text)
         viewstate = tree.xpath("//*[@id='__VIEWSTATE']/@value")
         eventval = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")

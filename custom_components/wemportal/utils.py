@@ -12,6 +12,7 @@ from homeassistant.const import (
 )
 
 from .const import (
+    WEB_MAINTENANCE_MARKER,
     _LOGGER,
     MISSING_DATA_STRINGS,
     BOOLEAN_OFF_STRINGS,
@@ -307,3 +308,30 @@ def uom_to_state_class(uom):
         UnitOfFrequency.HERTZ:                      SensorStateClass.MEASUREMENT,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorStateClass.MEASUREMENT,
     }.get(uom) # return None if no state class is available
+
+
+def maintenance_notice(html_text):
+    """Return the portal's maintenance notice, or None if there is none.
+
+    Detected via the dedicated `offlinecontent` container (see
+    WEB_MAINTENANCE_MARKER), not via keywords: the announcement text is
+    localised and changes every time, the class does not. The text is only
+    read out afterwards, to put the actual window into the log.
+    """
+    if not html_text or WEB_MAINTENANCE_MARKER not in html_text:
+        return None
+    try:
+        from lxml import html as lxml_html
+
+        tree = lxml_html.fromstring(html_text)
+        for div in tree.xpath(
+            "//*[contains(concat(' ', normalize-space(@class), ' '),"
+            " ' " + WEB_MAINTENANCE_MARKER + " ')]"
+        ):
+            text = " ".join(div.text_content().split())
+            if text:
+                return text
+    except Exception as exc:  # pylint: disable=broad-except
+        _LOGGER.debug("Could not read the maintenance notice: %s", exc)
+    # Marker present but unreadable - still a maintenance page.
+    return "The portal reports scheduled maintenance."

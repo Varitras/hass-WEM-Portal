@@ -50,6 +50,14 @@ WEB_ACCEPT_NAV: Final = (
 )
 WEB_ACCEPT_AJAX: Final = "*/*"
 WEB_LOGIN_URL: Final = "https://www.wemportal.com/Web/Login.aspx"
+
+# The portal announces planned downtime by rendering this container on the
+# login page. Matched on the CSS class, NOT on its text: the wording changes
+# per announcement and is localised, while the class is purpose-built and
+# language-independent. Note the login form stays fully present and
+# submittable during maintenance - only the backend behind it is down - so
+# "is there a form?" cannot tell the two apart.
+WEB_MAINTENANCE_MARKER: Final = "offlinecontent"
 CONF_SCAN_INTERVAL_API: Final = "api_scan_interval"
 CONF_LANGUAGE: Final = "language"
 CONF_MODE: Final = "mode"

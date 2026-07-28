@@ -13,6 +13,7 @@ import requests as reqs
 from homeassistant.const import CONF_SCAN_INTERVAL
 from .exceptions import (
     ApiBusyError,
+    PortalMaintenanceError,
     AuthError,
     ForbiddenError,
     UnknownAuthError,
@@ -668,6 +669,16 @@ class WemPortalApi:
             initial_response.raise_for_status()
         except reqs.exceptions.RequestException as exc:
             raise UnknownAuthError(f"Failed to load the login page: {exc}") from exc
+
+        # Planned downtime: bail out BEFORE posting the credentials. The form
+        # is fully present during maintenance, so submitting would just fail
+        # as "invalid username or password" and, after three cycles, ask the
+        # user to re-enter working credentials. It also avoids sending the
+        # password to a page that cannot process it.
+        from .utils import maintenance_notice
+        notice = maintenance_notice(initial_response.text)
+        if notice:
+            raise PortalMaintenanceError(notice)
 
         # Step 2: Parse the login page and extract hidden form fields
         soup = BeautifulSoup(initial_response.text, "html.parser")

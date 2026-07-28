@@ -6,6 +6,24 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.11.0b1] – 2026-07-28
+
+### Added
+- **Planned portal maintenance is recognised as such.** During announced
+  downtime the portal serves a fully working login form whose backend is
+  down, so the login "failed" like a wrong password - and after three cycles
+  Home Assistant asked for credentials that were correct all along.
+
+  The maintenance notice is now detected before the credentials are
+  submitted, reported as its own error, and kept out of the re-authentication
+  counter. The announced window appears in the log. The password is no longer
+  sent to a page that cannot process it.
+
+  Detection matches the portal's dedicated notice container, not its wording,
+  which is localised and changes per announcement. Based on a single observed
+  maintenance page: if a future announcement uses different markup, detection
+  simply does not fire and the previous behaviour applies.
+
 ## [1.10.2] – 2026-07-19
 
 ### Fixed

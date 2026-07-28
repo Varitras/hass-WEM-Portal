@@ -12,7 +12,13 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.helpers.storage import Store
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
-from .exceptions import ApiBusyError, ForbiddenError, WemPortalError, AuthError
+from .exceptions import (
+    ApiBusyError,
+    AuthError,
+    ForbiddenError,
+    PortalMaintenanceError,
+    WemPortalError,
+)
 from .const import (
     _LOGGER,
     AUTH_ERROR_ESCALATION_THRESHOLD,
@@ -206,6 +212,16 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 await self._async_save_modules_cache()
                 await self._async_save_scraper_device_id()
                 return x
+            except PortalMaintenanceError as exc:
+                # Announced downtime, not a credential problem. Counted as a
+                # normal failure (so backoff engages) but NOT as an auth
+                # failure: the portal serves a working login form during
+                # maintenance, so the login "fails" and three cycles of that
+                # used to escalate into a reauth prompt for credentials that
+                # were correct all along.
+                self.num_failed += 1
+                _LOGGER.warning("WEM Portal is in maintenance: %s", exc)
+                raise UpdateFailed(f"WEM Portal maintenance: {exc}") from exc
             except AuthError as exc:
                 self.num_failed += 1
                 self.num_auth_failed += 1
