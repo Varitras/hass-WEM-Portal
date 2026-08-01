@@ -13,7 +13,7 @@ from homeassistant.const import EntityCategory
 
 from .const import _LOGGER, DOMAIN
 from . import get_wemportal_unique_id
-from .utils import (fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
+from .utils import (device_model, fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
 
 
 async def async_setup_entry(
@@ -169,7 +169,8 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
         if hasattr(self.coordinator.api, "api_version") and self.coordinator.api.api_version:
             sw_version = self.coordinator.api.api_version
         return build_device_info(
-            self._config_entry.entry_id, self._device_id, sw_version=sw_version
+            self._config_entry.entry_id, self._device_id, sw_version=sw_version,
+            model=device_model(self.coordinator.api, self._device_id),
         )
 
     @property

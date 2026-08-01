@@ -6,6 +6,33 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.11.0b2] – 2026-07-28
+
+Cross-checked against a third-party reverse-engineered API reference. Most of
+it confirmed what this integration already does; these are the differences
+that were worth acting on.
+
+### Added
+- **Devices are named by their reported type.** `Device/Read` reports whether
+  a device is a heat pump or a combi boiler, which was ignored - every device
+  showed the generic "WEM Portal" as its model.
+
+### Fixed
+- **Energy statistics pick the newest entry by its date, not by its position
+  in the list.** The API happens to return the newest day last, so the code
+  took the last element and never looked at the date it carried. That is an
+  assumption about ordering rather than a check; a differently sorted
+  response would silently yield the wrong day's reading.
+- **`DataAccess/Read` now passes the `JobID` returned by `DataAccess/Refresh`.**
+  Reading without it works - the server falls back to the most recent job -
+  but two overlapping refreshes could then return the other one's values.
+
+### Changed
+- The minimum API scan interval is 60 seconds instead of 10, and the options
+  form now states the recommended value (>= 180 s). The floor is only a
+  guard against a stray tiny value; an existing configuration keeps running
+  at whatever it is set to.
+
 ## [1.11.0b1] – 2026-07-28
 
 ### Added

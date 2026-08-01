@@ -73,6 +73,14 @@ PLATFORMS = ["number", "select", "sensor", "switch"]
 # See WemPortalApi.resolve_scraper_device_id() for how this is locked in
 # once and then persisted.
 SCRAPER_FALLBACK_DEVICE_ID: Final = "0000"
+
+# DeviceType as reported by Device/Read. Only used for the device model
+# shown in Home Assistant; an unknown value falls back to the generic name.
+DEVICE_TYPE_NAMES: Final = {
+    1: "Combi boiler",
+    2: "Heat pump",
+}
+DEFAULT_DEVICE_MODEL: Final = "WEM Portal"
 DATA_GATHERING_ERROR: Final = (
     "An error occurred while gathering data. This issue should resolve by "
     f"itself. If this problem persists, open an issue at {GITHUB_PROJECT_URL}"
@@ -91,7 +99,11 @@ DEFAULT_CONF_SCAN_INTERVAL_VALUE: Final = 1800
 # seconds, so without a floor a stray tiny value (e.g. "1") would poll the
 # portal continuously and reliably trigger the IP-wide 403 rate limit.
 MIN_SCAN_INTERVAL_SECONDS: Final = 60  # web scraping interval floor
-MIN_SCAN_INTERVAL_API_SECONDS: Final = 10  # mobile-API interval floor
+# Raised from 10s: the API is Weishaupt's own app backend, and polling it
+# too often risks a temporary block. This is still only a nonsense guard
+# (matching the web floor) - the actual recommendation lives in the
+# options form, so a deliberate choice is not overridden.
+MIN_SCAN_INTERVAL_API_SECONDS: Final = 60  # mobile-API interval floor
 DEFAULT_CONF_LANGUAGE_VALUE: Final = "en"
 API_LOGIN_URL: Final = "https://www.wemportal.com/app/Account/Login"
 API_DEVICE_READ_URL: Final = "https://www.wemportal.com/app/Device/Read"

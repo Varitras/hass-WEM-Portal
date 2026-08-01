@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, _LOGGER, BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
 from . import get_wemportal_unique_id
-from .utils import build_device_info
+from .utils import build_device_info, device_model
 import difflib
 
 
@@ -161,7 +161,10 @@ class WemPortalSelect(CoordinatorEntity, SelectEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Get device information."""
-        return build_device_info(self._config_entry.entry_id, self._device_id)
+        return build_device_info(
+            self._config_entry.entry_id, self._device_id,
+            model=device_model(self.coordinator.api, self._device_id),
+        )
 
     @property
     def available(self):

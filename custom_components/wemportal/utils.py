@@ -12,6 +12,8 @@ from homeassistant.const import (
 )
 
 from .const import (
+    DEFAULT_DEVICE_MODEL,
+    DEVICE_TYPE_NAMES,
     WEB_MAINTENANCE_MARKER,
     _LOGGER,
     MISSING_DATA_STRINGS,
@@ -55,7 +57,7 @@ def close_api_sessions(api) -> None:
             _LOGGER.debug("Ignoring error closing scraper session: %s", exc)
 
 
-def build_device_info(entry_id, device_id, sw_version=None):
+def build_device_info(entry_id, device_id, sw_version=None, model=None):
     """Build the DeviceInfo dict for a WEM Portal sub-device.
 
     Every entity platform (number, select, sensor, switch) exposes the same
@@ -70,7 +72,7 @@ def build_device_info(entry_id, device_id, sw_version=None):
         "via_device": (DOMAIN, entry_id),
         "name": str(device_id),
         "manufacturer": "Weishaupt",
-        "model": "WEM Portal",
+        "model": model or DEFAULT_DEVICE_MODEL,
     }
     if sw_version:
         info["sw_version"] = sw_version
@@ -335,3 +337,33 @@ def maintenance_notice(html_text):
         _LOGGER.debug("Could not read the maintenance notice: %s", exc)
     # Marker present but unreadable - still a maintenance page.
     return "The portal reports scheduled maintenance."
+
+
+def device_model(api, device_id):
+    """Human-readable model for a device, from its reported DeviceType.
+
+    Returns None when the type is unknown or was never reported, so
+    build_device_info falls back to the generic name.
+    """
+    types = getattr(api, "device_types", None) or {}
+    return DEVICE_TYPE_NAMES.get(types.get(str(device_id)))
+
+
+def latest_statistics_entry(values):
+    """Pick the newest statistics entry by its Date, not by list position.
+
+    The API returns one entry per day and the newest happens to be last, so
+    the code used values[-1] and never looked at Date. That is an assumption
+    about ordering, not a check: a differently sorted response, or a trailing
+    placeholder, would silently yield the wrong day's reading. Sorting by the
+    Date the entry carries removes the assumption; entries without a usable
+    Date fall back to the previous positional behaviour.
+    """
+    if not values:
+        return None
+    dated = [v for v in values if isinstance(v, dict) and v.get("Date")]
+    if not dated:
+        return values[-1]
+    # ISO-8601 ("2026-04-27T00:00:00") sorts correctly as text, so no date
+    # parsing - and thus no locale or format surprises - is needed.
+    return max(dated, key=lambda v: str(v["Date"]))

@@ -130,6 +130,9 @@ class WemPortalApi:
             "Accept": "*/*",
             "Host": "www.wemportal.com"
         }
+        # DeviceType per device id, as reported by Device/Read. Only feeds
+        # the model name shown in Home Assistant.
+        self.device_types = {}
         self.scraping_mapper = {}
         self.last_statistics_fetch = 0.0
         # Timestamp (per device+parameter) of the last time a heating
@@ -879,6 +882,10 @@ class WemPortalApi:
                     module_entry["parameters"] = cached_module["parameters"]
                 new_modules[device_id_str][module_key] = module_entry
             new_data[device_id_str]["ConnectionStatus"] = device["ConnectionStatus"]
+            # Kept out of new_data: the entity platforms iterate that dict
+            # and would try to build an entity from it.
+            if device.get("DeviceType") is not None:
+                self.device_types[device_id_str] = device["DeviceType"]
         self.modules = new_modules
         self.data = new_data
 
@@ -1198,14 +1205,27 @@ class WemPortalApi:
             raise WemPortalError(DATA_GATHERING_ERROR) from exc
 
         try:
-            self.make_api_call(
+            refresh_response = self.make_api_call(
                 API_REFRESH_URL,
                 data=data,
             )
+            # /Refresh answers with the JobID of the measurement it started,
+            # and /Read accepts it to identify which one to return. Reading
+            # without it works - the server falls back to the most recent job
+            # - but then two overlapping refreshes can hand back the other
+            # one's values. Passed through when present, omitted otherwise, so
+            # a response without a JobID behaves exactly as before.
+            read_data = data
+            try:
+                job_id = refresh_response.json().get("JobID")
+            except (ValueError, AttributeError):
+                job_id = None
+            if job_id is not None:
+                read_data = {**data, "JobID": job_id}
             time.sleep(5)
             values = self.make_api_call(
                 API_DATA_ACCESS_READ_URL,
-                data=data,
+                data=read_data,
                 do_retry=True
             ).json()
             from .mapper import WemPortalDataMapper
@@ -1398,9 +1418,15 @@ class WemPortalApi:
                         if not values:
                             continue
 
-                        # The last value in the array is the current day's consumption
-                        latest_stat = values[-1]
+                        # Pick by the Date the entry carries, not by list
+                        # position - see utils.latest_statistics_entry.
+                        from .utils import latest_statistics_entry
+                        latest_stat = latest_statistics_entry(values)
                         current_value = latest_stat.get("Value")
+                        _LOGGER.debug(
+                            "Statistics group %s: using entry dated %s of %d",
+                            group_id, latest_stat.get("Date", "?"), len(values),
+                        )
 
                         sensor_name = f"Energy_{group_id}"
 

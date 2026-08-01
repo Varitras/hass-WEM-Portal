@@ -40,7 +40,7 @@
         "description": "{status}",
         "data": {
           "scan_interval": "Web scraping interval (default = 1800 sec)",
-          "api_scan_interval": "Api scan interval (default = 300 sec)",
+          "api_scan_interval": "Api scan interval in seconds (default = 300, recommended >= 180)",
           "language": "Language (default = en)",
           "mode": "Mode(default = api)",
           "expert_write_enabled": "Expert write access via web (default = off)",

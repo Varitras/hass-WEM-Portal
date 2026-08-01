@@ -651,3 +651,106 @@ class FakeResponse_html:
 
     def raise_for_status(self):
         pass
+
+
+def test_data_read_carries_the_job_id_from_refresh():
+    """/Refresh answers with the JobID of the measurement it started, and
+    /Read accepts it. Reading without it works - the server falls back to
+    the newest job - but two overlapping refreshes can then hand back the
+    other one's values."""
+    api = _api()
+    api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
+    calls = []
+
+    def make_api_call(url, data=None, **_k):
+        calls.append((url, data))
+        if url == wemportalapi.API_REFRESH_URL:
+            return FakeResponse({"Status": 0, "JobID": 100000001})
+        return FakeResponse({"Modules": []})
+
+    api.make_api_call = make_api_call
+    api._fetch_parameter_values("1234")
+
+    read = next(d for url, d in calls if url == wemportalapi.API_DATA_ACCESS_READ_URL)
+    assert read["JobID"] == 100000001
+    # The refresh itself must NOT carry a JobID - it is what creates one.
+    refresh = next(d for url, d in calls if url == wemportalapi.API_REFRESH_URL)
+    assert "JobID" not in refresh
+
+
+def test_data_read_omits_the_job_id_when_refresh_returns_none():
+    """A response without a JobID must behave exactly as before rather than
+    sending "JobID": null."""
+    api = _api()
+    api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
+    calls = []
+
+    def make_api_call(url, data=None, **_k):
+        calls.append((url, data))
+        return FakeResponse({"Modules": []} if "Read" in url else {"Status": 0})
+
+    api.make_api_call = make_api_call
+    api._fetch_parameter_values("1234")
+
+    read = next(d for url, d in calls if url == wemportalapi.API_DATA_ACCESS_READ_URL)
+    assert "JobID" not in read
+
+
+def test_statistics_entry_is_chosen_by_date_not_position():
+    """The API happens to return the newest day last, so the code took
+    values[-1] and never looked at Date. That is an assumption about
+    ordering: a differently sorted response yields the wrong day's reading
+    with no sign that anything went wrong."""
+    from custom_components.wemportal.utils import latest_statistics_entry
+
+    out_of_order = [
+        {"Date": "2026-04-28T00:00:00", "Value": 8.0},
+        {"Date": "2026-04-26T00:00:00", "Value": 5.0},
+        {"Date": "2026-04-27T00:00:00", "Value": 7.3},
+    ]
+
+    assert latest_statistics_entry(out_of_order)["Value"] == 8.0
+
+
+def test_statistics_falls_back_to_the_last_entry_without_dates():
+    """No Date means no better information - keep the previous behaviour
+    rather than guessing."""
+    from custom_components.wemportal.utils import latest_statistics_entry
+
+    assert latest_statistics_entry([{"Value": 1.0}, {"Value": 2.0}])["Value"] == 2.0
+    assert latest_statistics_entry([]) is None
+
+
+def test_device_model_comes_from_the_reported_device_type():
+    """DeviceType 2 is a heat pump; Home Assistant showed the generic
+    "WEM Portal" for every device regardless."""
+    from custom_components.wemportal.utils import build_device_info, device_model
+
+    api = _api()
+    api.device_types = {"1234": 2, "5678": 1}
+
+    assert device_model(api, "1234") == "Heat pump"
+    assert device_model(api, 1234) == "Heat pump", "int device ids must work too"
+    assert device_model(api, "5678") == "Combi boiler"
+    # Unknown or unreported type -> generic name via build_device_info.
+    assert device_model(api, "9999") is None
+    assert build_device_info("e1", "9999", model=None)["model"] == "WEM Portal"
+    assert build_device_info("e1", "1234", model="Heat pump")["model"] == "Heat pump"
+
+
+def test_device_type_is_recorded_but_kept_out_of_the_entity_data():
+    """The entity platforms iterate the data dict and would try to build an
+    entity from a stray value."""
+    api = _api()
+    device_json = {
+        "Devices": [
+            {"ID": 1234, "DeviceType": 2, "ConnectionStatus": 0,
+             "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}]}
+        ]
+    }
+    api.make_api_call = lambda *a, **k: FakeResponse(device_json)
+
+    api.get_devices()
+
+    assert api.device_types == {"1234": 2}
+    assert "DeviceType" not in api.data["1234"]

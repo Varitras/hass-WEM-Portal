@@ -288,6 +288,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     # would fall back to a full login - the request the portal
                     # rejects most readily - right after a recovery.
                     self.api.expert_cookies = getattr(old_api, "expert_cookies", {})
+                    # Re-fetched by get_devices() anyway, but carrying it
+                    # over avoids a generic model name for one cycle.
+                    self.api.device_types = getattr(old_api, "device_types", {})
                     entry_store = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
                     if entry_store is not None:
                         entry_store["api"] = self.api

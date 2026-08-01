@@ -42,7 +42,7 @@
         "description": "{status}",
         "data": {
           "scan_interval": "Web-Scraping-Intervall (Standard = 1800 Sek.)",
-          "api_scan_interval": "API-Abfrageintervall (Standard = 300 Sek.)",
+          "api_scan_interval": "API-Abfrageintervall in Sekunden (Standard 300, empfohlen >= 180)",
           "language": "Sprache der Sensor-/Parameternamen (Standard = en)",
           "mode": "Modus (Standard = api)",
           "expert_write_enabled": "Experten-Schreibzugriff über Web (Standard = aus)",
