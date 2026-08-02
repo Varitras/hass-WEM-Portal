@@ -401,6 +401,41 @@ def test_a_device_the_scraper_does_not_write_into_keeps_its_own_key():
     assert data["heat_pump-outside"]["value"] == 11.0, "another device's row was rewritten"
 
 
+def test_a_malformed_parameter_does_not_cost_the_others(caplog):
+    """One bad data point must not abort the device's whole update.
+
+    The broad handler in the per-value loop exists for this, and it is the
+    most fragile thing in the function: the read-only bookkeeping entry is
+    written BEFORE the writeable entity is built, so a failure halfway
+    through leaves a half-processed parameter behind on purpose. Any
+    restructuring that builds both and assigns them together at the end
+    would silently drop the surviving half.
+    """
+    import logging
+
+    modules = _modules(
+        # EnumValues of non-dicts: the SELECT branch subscripts them and
+        # raises, which no malformed VALUE could trigger.
+        _parameter("Broken", IsWriteable=True, DataType=WemDataType.SELECT,
+                   EnumValues=["not-a-dict"]),
+        _parameter("Healthy"),
+    )
+    values = _values(
+        _value("Broken", string="Auto"),
+        _value("Healthy", numeric=12.5, unit="°C"),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        data = _process(modules, values)
+
+    assert "Broken" in caplog.text, "the skipped parameter went unreported"
+    # The parameter after the failure still has to be processed.
+    assert data["Heat pump-Healthy"]["value"] == 12.5
+    # And the failed one still surfaces, as a plain sensor, from the entry
+    # written before the exception.
+    assert data["Heat pump-Broken"]["platform"] == "sensor"
+
+
 def test_an_empty_api_value_does_not_erase_the_scraped_one():
     """Both paths feed the same entity in `both` mode.
 

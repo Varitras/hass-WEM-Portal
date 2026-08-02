@@ -89,5 +89,47 @@
     "old": "    if data_type == WemDataType.SWITCH:\n        return 0.0, 1.0",
     "new": "    if False:\n        return 0.0, 1.0",
     "tests": "mapper_output_is_unchanged"
+  },
+  {
+    "label": "net: the cached-mapping path must be frozen",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                    if param_id not in scraping_mapper:\n                        for scraped_data in api_data[device_id].values():",
+    "new": "                    if True:\n                        for scraped_data in api_data[device_id].values():",
+    "tests": "extra_mapper_output_is_unchanged or extra_cases_reach"
+  },
+  {
+    "label": "net: the scraping_mapper fallback assignment must be frozen",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                            scraping_mapper[param_id] = [key]",
+    "new": "                            scraping_mapper[param_id] = []",
+    "tests": "extra_mapper_output_is_unchanged or extra_cases_reach"
+  },
+  {
+    "label": "net: falsy scraped fields must not fall back to the api value",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                            \"unit\": previous.get(\"unit\", sensor.get(\"unit\")),",
+    "new": "                            \"unit\": previous.get(\"unit\") or sensor.get(\"unit\"),",
+    "tests": "extra_mapper_output_is_unchanged"
+  },
+  {
+    "label": "net: the partial write on a malformed parameter must be frozen",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                except Exception as exc:  # pylint: disable=broad-except",
+    "new": "                except ZeroDivisionError as exc:  # pylint: disable=broad-except",
+    "tests": "malformed_parameter"
+  },
+  {
+    "label": "net: skipping a non-dict entry must be frozen",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                            if not isinstance(scraped_data, dict):\n                                continue",
+    "new": "                            if False:\n                                continue",
+    "tests": "extra_mapper_output_is_unchanged"
+  },
+  {
+    "label": "net: the IndexError guard must be frozen",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                                scraped_part = scraped_entity_id.split(\"-\")[1]",
+    "new": "                                scraped_part = scraped_entity_id.split(\"-\")[-1]",
+    "tests": "extra_mapper_output_is_unchanged"
   }
 ]

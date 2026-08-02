@@ -1,17 +1,30 @@
 """A frozen record of what the mapper produces, for every input shape.
 
 process_api_values decides which Home Assistant entity every portal value
-becomes and what it carries. It is 229 lines with 28 branches, and a mistake
-in it is SILENT: the integration still starts, it just exposes the wrong
-entity type, the wrong unit, or a value that quietly stops updating. One of
-this session's audit findings lived in exactly that function for that reason.
+becomes and what it carries. It is 229 lines over 56 branch arcs, and a
+mistake in it is SILENT: the integration still starts, it just exposes the
+wrong entity type, the wrong unit, or a value that quietly stops updating.
+One of this project's audit findings lived in exactly that function for that
+reason.
 
 The branch tests next door say "these cases still behave"; they cannot say
 "nothing else changed", which is the question a refactor asks. So this walks a
-deterministic matrix over the whole input space - data type, writeability,
+deterministic matrix over the input space - data type, bounds, writeability,
 value shape, unit, language, mode, and whether the device is the one the
 scraper writes into - and compares the ENTIRE resulting structure against a
 recorded snapshot.
+
+The matrix holds two things fixed that production does not: it always passes
+ONE parameter and an EMPTY scraping_mapper. On its own it therefore reaches
+86% of the module, and the states it misses are not exotic - see the second
+half of this file, which covers them as additive cases. Together with the
+branch tests next door the module is fully covered, arcs included; that was
+measured, not assumed:
+
+    python -m coverage run --branch \\
+        --source=custom_components.wemportal.mapper \\
+        -m pytest tests/test_mapper_golden.py tests/test_mapper.py -q -m ""
+    python -m coverage report -m
 
 Regenerate only when a change to the output is intended, and read the diff
 line by line before you do:
@@ -194,5 +207,201 @@ def test_the_mapper_output_is_unchanged(request):
     # Compared key by key: a whole-dict assertion prints thousands of lines
     # and hides which input actually moved.
     assert sorted(current) == sorted(expected), "the set of covered inputs changed"
+    for case in sorted(expected):
+        assert current[case] == expected[case], f"output changed for: {case}"
+
+
+# --- the states the matrix above cannot reach --------------------------
+#
+# The matrix varies one parameter in one module and always starts with an
+# empty scraping_mapper. Measured, it covers 78% of mapper.py on its own -
+# and the gap is not incidental. scraping_mapper is a long-lived dict on the
+# api object, so from the SECOND poll cycle onwards production always takes
+# the cached path at mapper.py:224. The hottest path in the field was the one
+# with no recording at all.
+#
+# Deliberately a SEPARATE fixture rather than new axes on the matrix above:
+# adding an axis to the case key renames all 1944 existing keys, which turns
+# the diff into pure churn and destroys the one property everything else
+# rests on - that the previously recorded outputs did not move. Additive
+# cases keep `git diff tests/fixtures/mapper_golden.json` empty, and that is
+# checkable.
+
+EXTRA_GOLDEN = Path(__file__).parent / "fixtures" / "mapper_golden_extra.json"
+
+
+def _scraped_row(param_id, **overrides):
+    row = {
+        "value": 11.0, "name": param_id, "unit": "°C", "icon": "mdi:thermometer",
+        "friendlyName": "Heat pump - Outside", "ParameterID": param_id,
+        "platform": "sensor",
+    }
+    row.update(overrides)
+    return row
+
+
+def _param(param_id, **overrides):
+    parameter = {
+        "ParameterID": param_id, "IsWriteable": False, "DataType": None,
+        "MinValue": 10, "MaxValue": 30, "EnumValues": ENUMS,
+    }
+    parameter.update(overrides)
+    return parameter
+
+
+def _extra_case(parameters, existing, scraping_mapper, mode="both",
+                language="en", is_scraper_device=True):
+    """One call with full control over what the matrix holds fixed."""
+    modules = {
+        DEVICE: {
+            MODULE_KEY: {
+                "Name": "Heat pump",
+                "parameters": {p["ParameterID"]: p for p in parameters},
+            }
+        }
+    }
+    values = {
+        "Modules": [
+            {
+                "ModuleIndex": MODULE_KEY[0],
+                "ModuleType": MODULE_KEY[1],
+                "Values": [
+                    {
+                        "ParameterID": p["ParameterID"],
+                        "NumericValue": 21.5,
+                        "StringValue": "",
+                        "Unit": "°C",
+                    }
+                    for p in parameters
+                ],
+            }
+        ]
+    }
+    api_data = {DEVICE: dict(existing)}
+    mapper_state = {k: list(v) for k, v in scraping_mapper.items()}
+    WemPortalDataMapper.process_api_values(
+        DEVICE, values, modules, language, mapper_state, mode, api_data,
+        DEVICE if is_scraper_device else "9999",
+    )
+    # Both are recorded. scraping_mapper is mutated in place and carried
+    # across poll cycles, so leaving it out leaves its two write sites frozen
+    # nowhere - the matrix above discards it entirely.
+    return {"api_data": api_data[DEVICE], "scraping_mapper": mapper_state}
+
+
+def build_extra_snapshot():
+    snapshot = {}
+
+    # The cached path (mapper.py:201->224), which production takes on every
+    # cycle after the first and the matrix never does.
+    snapshot["cached_mapping"] = _extra_case(
+        [_param("Outside")],
+        {"heat_pump-outside": _scraped_row("heat_pump-outside")},
+        {"Outside": ["heat_pump-outside"]},
+    )
+    # Cached, but pointing at a row that no longer exists: the mapper has to
+    # create it rather than fail (mapper.py:248).
+    snapshot["cached_mapping_missing_row"] = _extra_case(
+        [_param("Outside")], {}, {"Outside": ["heat_pump-gone"]},
+    )
+    # A cached mapping onto SEVERAL rows, so the loop at :224 runs twice.
+    snapshot["cached_mapping_two_targets"] = _extra_case(
+        [_param("Outside")],
+        {
+            "heat_pump-outside": _scraped_row("heat_pump-outside"),
+            "heat_pump-outside2": _scraped_row("heat_pump-outside2", value=12.0),
+        },
+        {"Outside": ["heat_pump-outside", "heat_pump-outside2"]},
+    )
+
+    # A row whose ParameterID carries no "-": split("-")[1] raises, and the
+    # guard at :218-219 is load-bearing rather than defensive noise - the
+    # writes phase 1 makes itself look exactly like this.
+    snapshot["row_without_a_dash"] = _extra_case(
+        [_param("Outside")], {"Outside": _scraped_row("Outside")}, {},
+    )
+    # A non-dict entry in the device dict, reaching the skip at :204.
+    snapshot["non_dict_entry"] = _extra_case(
+        [_param("Outside")], {"ConnectionStatus": 0}, {},
+    )
+    # Rows that match nothing, so the scan runs to the end and the fallback
+    # at :222 assigns the key itself (arc 216->202).
+    snapshot["no_row_matches"] = _extra_case(
+        [_param("Outside")],
+        {"heat_pump-unrelated": _scraped_row(
+            "heat_pump-unrelated", friendlyName="Heat pump - Pressure")},
+        {},
+    )
+
+    # Two parameters in one module: phase 1 writes the writeable one, whose
+    # entry then becomes a scan candidate for the read-only one.
+    snapshot["two_parameters"] = _extra_case(
+        [
+            _param("Setpoint", IsWriteable=True,
+                   DataType=WemDataType.NUMBER_STEP_ONE),
+            _param("Outside"),
+        ],
+        {"heat_pump-outside": _scraped_row("heat_pump-outside")},
+        {},
+    )
+
+    # No EnumValues at all - the only way a writeable value reaches the plain
+    # sanitize path at mapper.py:93-95.
+    for label, data_type in (("switch", WemDataType.SWITCH),
+                             ("select", WemDataType.SELECT),
+                             ("number", WemDataType.NUMBER_STEP_ONE)):
+        snapshot[f"no_enum_values_{label}"] = _extra_case(
+            [_param("P", IsWriteable=True, DataType=data_type, EnumValues=[])],
+            {}, {}, mode="api",
+        )
+
+    # A scraped row carrying explicit None fields: the difference between
+    # `.get(key, default)` and `or default` at :236-241 is invisible unless
+    # the stored value is falsy but present.
+    snapshot["falsy_scraped_fields"] = _extra_case(
+        [_param("Outside")],
+        {"heat_pump-outside": _scraped_row(
+            "heat_pump-outside", value=None, unit=None, icon=None, name=None,
+            friendlyName=None)},
+        {"Outside": ["heat_pump-outside"]},
+    )
+    return snapshot
+
+
+def test_the_extra_cases_reach_what_the_matrix_cannot():
+    """Guards the guard: each case exists for a specific uncovered branch, so
+    one that stopped reaching its branch has to be noticed rather than
+    silently recorded as whatever it does now."""
+    snapshot = build_extra_snapshot()
+
+    # The cached case must NOT have rebuilt the mapping - if it did, it is
+    # exercising the scan again and proves nothing about :224.
+    assert snapshot["cached_mapping"]["scraping_mapper"] == {
+        "Outside": ["heat_pump-outside"]
+    }
+    # And where nothing matched, the fallback assignment must have happened.
+    assert snapshot["no_row_matches"]["scraping_mapper"] == {
+        "Outside": ["Heat pump-Outside"]
+    }
+
+
+def test_the_extra_mapper_output_is_unchanged(request):
+    current = _normalise(build_extra_snapshot())
+
+    if request.config.getoption("--update-golden"):
+        EXTRA_GOLDEN.parent.mkdir(exist_ok=True)
+        EXTRA_GOLDEN.write_text(
+            json.dumps(current, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        pytest.skip("extra snapshot rewritten - review the diff before committing")
+
+    assert EXTRA_GOLDEN.exists(), (
+        "no extra snapshot recorded yet - run: pytest tests/test_mapper_golden.py "
+        "--update-golden"
+    )
+    expected = json.loads(EXTRA_GOLDEN.read_text(encoding="utf-8"))
+
+    assert sorted(current) == sorted(expected), "the set of extra cases changed"
     for case in sorted(expected):
         assert current[case] == expected[case], f"output changed for: {case}"

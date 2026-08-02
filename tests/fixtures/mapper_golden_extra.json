@@ -1,0 +1,245 @@
+{
+  "cached_mapping": {
+    "api_data": {
+      "heat_pump-outside": {
+        "ParameterID": "heat_pump-outside",
+        "friendlyName": "Heat pump - Outside",
+        "icon": "mdi:thermometer",
+        "name": "heat_pump-outside",
+        "platform": "sensor",
+        "unit": "°C",
+        "value": ""
+      }
+    },
+    "scraping_mapper": {
+      "Outside": [
+        "heat_pump-outside"
+      ]
+    }
+  },
+  "cached_mapping_missing_row": {
+    "api_data": {
+      "heat_pump-gone": {
+        "ParameterID": "heat_pump-gone",
+        "friendlyName": "Heat Pump Outside",
+        "icon": null,
+        "name": null,
+        "platform": "sensor",
+        "unit": "°C",
+        "value": ""
+      }
+    },
+    "scraping_mapper": {
+      "Outside": [
+        "heat_pump-gone"
+      ]
+    }
+  },
+  "cached_mapping_two_targets": {
+    "api_data": {
+      "heat_pump-outside": {
+        "ParameterID": "heat_pump-outside",
+        "friendlyName": "Heat pump - Outside",
+        "icon": "mdi:thermometer",
+        "name": "heat_pump-outside",
+        "platform": "sensor",
+        "unit": "°C",
+        "value": ""
+      },
+      "heat_pump-outside2": {
+        "ParameterID": "heat_pump-outside2",
+        "friendlyName": "Heat pump - Outside",
+        "icon": "mdi:thermometer",
+        "name": "heat_pump-outside2",
+        "platform": "sensor",
+        "unit": "°C",
+        "value": ""
+      }
+    },
+    "scraping_mapper": {
+      "Outside": [
+        "heat_pump-outside",
+        "heat_pump-outside2"
+      ]
+    }
+  },
+  "falsy_scraped_fields": {
+    "api_data": {
+      "heat_pump-outside": {
+        "ParameterID": "heat_pump-outside",
+        "friendlyName": null,
+        "icon": null,
+        "name": null,
+        "platform": "sensor",
+        "unit": null,
+        "value": ""
+      }
+    },
+    "scraping_mapper": {
+      "Outside": [
+        "heat_pump-outside"
+      ]
+    }
+  },
+  "no_enum_values_number": {
+    "api_data": {
+      "Heat pump-P": {
+        "DataType": 3,
+        "ModuleIndex": 0,
+        "ModuleType": 1,
+        "ParameterID": "P",
+        "friendlyName": "Heat Pump P",
+        "icon": null,
+        "max_value": 30.0,
+        "min_value": 10.0,
+        "platform": "number",
+        "step": 1,
+        "unit": "°C",
+        "value": 21.5
+      }
+    },
+    "scraping_mapper": {}
+  },
+  "no_enum_values_select": {
+    "api_data": {
+      "Heat pump-P": {
+        "DataType": 1,
+        "ModuleIndex": 0,
+        "ModuleType": 1,
+        "ParameterID": "P",
+        "friendlyName": "Heat Pump P",
+        "icon": null,
+        "options": [],
+        "optionsNames": [],
+        "platform": "select",
+        "unit": "°C",
+        "value": 21.5
+      }
+    },
+    "scraping_mapper": {}
+  },
+  "no_enum_values_switch": {
+    "api_data": {
+      "Heat pump-P": {
+        "DataType": 2,
+        "ModuleIndex": 0,
+        "ModuleType": 1,
+        "ParameterID": "P",
+        "friendlyName": "Heat Pump P",
+        "icon": null,
+        "max_value": 30.0,
+        "min_value": 10.0,
+        "platform": "number",
+        "step": 1,
+        "unit": "°C",
+        "value": 21.5
+      }
+    },
+    "scraping_mapper": {}
+  },
+  "no_row_matches": {
+    "api_data": {
+      "Heat pump-Outside": {
+        "ParameterID": "Heat pump-Outside",
+        "friendlyName": "Heat Pump Outside",
+        "icon": null,
+        "name": null,
+        "platform": "sensor",
+        "unit": "°C",
+        "value": ""
+      },
+      "heat_pump-unrelated": {
+        "ParameterID": "heat_pump-unrelated",
+        "friendlyName": "Heat pump - Pressure",
+        "icon": "mdi:thermometer",
+        "name": "heat_pump-unrelated",
+        "platform": "sensor",
+        "unit": "°C",
+        "value": 11.0
+      }
+    },
+    "scraping_mapper": {
+      "Outside": [
+        "Heat pump-Outside"
+      ]
+    }
+  },
+  "non_dict_entry": {
+    "api_data": {
+      "ConnectionStatus": 0,
+      "Heat pump-Outside": {
+        "ParameterID": "Heat pump-Outside",
+        "friendlyName": "Heat Pump Outside",
+        "icon": null,
+        "name": null,
+        "platform": "sensor",
+        "unit": "°C",
+        "value": ""
+      }
+    },
+    "scraping_mapper": {
+      "Outside": [
+        "Heat pump-Outside"
+      ]
+    }
+  },
+  "row_without_a_dash": {
+    "api_data": {
+      "Heat pump-Outside": {
+        "ParameterID": "Heat pump-Outside",
+        "friendlyName": "Heat Pump Outside",
+        "icon": null,
+        "name": null,
+        "platform": "sensor",
+        "unit": "°C",
+        "value": ""
+      },
+      "Outside": {
+        "ParameterID": "Outside",
+        "friendlyName": "Heat pump - Outside",
+        "icon": "mdi:thermometer",
+        "name": "Outside",
+        "platform": "sensor",
+        "unit": "°C",
+        "value": 11.0
+      }
+    },
+    "scraping_mapper": {
+      "Outside": [
+        "Heat pump-Outside"
+      ]
+    }
+  },
+  "two_parameters": {
+    "api_data": {
+      "Heat pump-Setpoint": {
+        "DataType": 3,
+        "ModuleIndex": 0,
+        "ModuleType": 1,
+        "ParameterID": "Setpoint",
+        "friendlyName": "Heat Pump Setpoint",
+        "icon": null,
+        "max_value": 30.0,
+        "min_value": 10.0,
+        "platform": "number",
+        "step": 1,
+        "unit": "°C",
+        "value": ""
+      },
+      "heat_pump-outside": {
+        "ParameterID": "heat_pump-outside",
+        "friendlyName": "Heat pump - Outside",
+        "icon": "mdi:thermometer",
+        "name": "heat_pump-outside",
+        "platform": "sensor",
+        "unit": "°C",
+        "value": ""
+      }
+    },
+    "scraping_mapper": {
+      "Outside": [
+        "heat_pump-outside"
+      ]
+    }
+  }
+}
