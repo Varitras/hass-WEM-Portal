@@ -14,6 +14,7 @@ from homeassistant.config_entries import (
 
 from homeassistant import exceptions
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
+from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.core import callback, HomeAssistant
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.selector import (
@@ -152,7 +153,12 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 # once could both pass it.
                 account = account_unique_id(user_input[CONF_USERNAME])
                 await self.async_set_unique_id(account)
-                self._abort_if_unique_id_configured()
+                # reload_on_update=False: the default would reload the
+                # existing entry from inside this flow, while the entry also
+                # carries an update listener that reloads. Home Assistant
+                # deprecated that combination in 2026.6 and rejects it from
+                # 2026.12. The listener stays the single reload path.
+                self._abort_if_unique_id_configured(reload_on_update=False)
                 # Belt and braces: an entry created before unique_ids were
                 # used only gets one from _backfill_account_unique_id in
                 # async_setup_entry, which needs the entry to have been set
@@ -173,6 +179,13 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                         }
                 )
 
+            except AbortFlow:
+                # How Home Assistant ENDS a flow, not an error in it:
+                # _abort_if_unique_id_configured and async_set_unique_id both
+                # raise it. Swallowed by the catch-all below, the user got a
+                # bare "unknown" instead of "already_configured" /
+                # "already_in_progress".
+                raise
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
@@ -234,8 +247,12 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     _LOGGER.exception("Unexpected exception during reauth")
                     errors["base"] = "unknown"
                 else:
+                    # No explicit reload here. async_update_entry already
+                    # fires the update listener registered in
+                    # async_setup_entry, which reloads - doing both is the
+                    # double reload (and race) Home Assistant deprecated in
+                    # 2026.6 and rejects from 2026.12.
                     self.hass.config_entries.async_update_entry(entry, data=new_data)
-                    await self.hass.config_entries.async_reload(entry.entry_id)
                     return self.async_abort(reason="reauth_successful")
 
         return self.async_show_form(

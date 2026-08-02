@@ -425,3 +425,79 @@ def test_units_without_a_device_class_keep_a_useful_icon(scraper):
     # ...while anything Home Assistant can classify gets no icon from us.
     for unit in ("BAR", "kWh", "kW", "h", "m³/h", "°C", "K", "W"):
         assert uom_to_icon(unit) is None, unit
+
+
+# --- session reuse: what counts as "the expert page" -------------------
+
+
+class _ReuseResponse:
+    def __init__(self, text, status_code=200, url="https://www.wemportal.com/Web/Default.aspx"):
+        self.text = text
+        self.status_code = status_code
+        self.url = url
+
+
+class _ReuseSession:
+    """Answers the GET with a usable form page and the POST with whatever
+    the test wants the portal to have replied."""
+
+    def __init__(self, post_response):
+        self._post_response = post_response
+        self.cookies = {}
+
+    def get(self, *_a, **_k):
+        return _ReuseResponse(
+            "<html><body>"
+            "<input id='__VIEWSTATE' value='vs'/>"
+            "<input id='__EVENTVALIDATION' value='ev'/>"
+            "</body></html>"
+        )
+
+    def post(self, *_a, **_k):
+        return self._post_response
+
+
+def _reuse_scraper(post_response):
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _ReuseSession(post_response)
+    return scraper
+
+
+def test_an_error_page_is_not_accepted_as_the_expert_page():
+    """The reuse path checked for a 403 and for a redirect to the login, but
+    never at the status code itself.
+
+    A 500 was handed back like a real page and parsed: the cycle counted as a
+    successful scrape and the sensors took on whatever fell out of the error
+    page. Returning None sends the caller into the full login, which either
+    works or fails with a clear error.
+    """
+    scraper = _reuse_scraper(
+        _ReuseResponse("<html><body>Internal Server Error</body></html>", status_code=500)
+    )
+
+    assert scraper._load_expert_page() is None
+
+
+def test_maintenance_is_recognised_on_the_reuse_path_too():
+    """Announced downtime was only detected during a full login, so a reused
+    session ran into the maintenance page unchecked and the failure looked
+    like something else entirely."""
+    from custom_components.wemportal.exceptions import PortalMaintenanceError
+
+    scraper = _reuse_scraper(
+        _ReuseResponse(
+            "<html><body><div class='offlinecontent'>"
+            "Wartungsarbeiten bis 18:00 Uhr</div></body></html>"
+        )
+    )
+
+    with pytest.raises(PortalMaintenanceError):
+        scraper._load_expert_page()
+
+
+def test_a_healthy_expert_page_still_comes_back():
+    """The guards must not swallow the normal case."""
+    scraper = _reuse_scraper(_ReuseResponse("<html><body>expert data</body></html>"))
+
+    assert "expert data" in scraper._load_expert_page()

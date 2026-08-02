@@ -108,6 +108,26 @@ class WemPortalScraper:
         if WEB_LOGIN_URL.lower() in r_expert.url.lower():
             return None
 
+        # A non-200 body is an error page, not the expert view. Returned
+        # unchecked it was parsed like a real page: the scrape counted as
+        # successful and the sensors took on whatever fell out of a 500.
+        # Falling back to the full login (the caller's behaviour for a None)
+        # is the right answer - it either succeeds or fails with a clear
+        # ServerError.
+        if r_expert.status_code != 200:
+            _LOGGER.debug(
+                "Session reuse: expert tab answered %s, discarding the page.",
+                r_expert.status_code,
+            )
+            return None
+
+        # Same check as in _full_login. Without it, planned downtime on this
+        # path only surfaced one full login later - two extra requests
+        # against a portal that has just announced it cannot serve them.
+        notice = maintenance_notice(r_expert.text)
+        if notice:
+            raise PortalMaintenanceError(notice)
+
         return r_expert.text
 
     def scrape(self):
@@ -132,10 +152,11 @@ class WemPortalScraper:
             else:
                 try:
                     reused_html = self._load_expert_page()
-                except ForbiddenError:
-                    # The server just rate-limited us. Falling through to the
-                    # full login would fire two MORE requests immediately
-                    # after that signal - the opposite of backing off.
+                except (ForbiddenError, PortalMaintenanceError):
+                    # Both are answers, not reuse failures. Falling through to
+                    # the full login would fire two MORE requests right after
+                    # the server said "rate limited" or "we are down" - the
+                    # opposite of backing off.
                     raise
                 except Exception as exc:
                     _LOGGER.debug(

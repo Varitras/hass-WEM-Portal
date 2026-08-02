@@ -5,6 +5,14 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Coverage output. Not just build noise: .coverage records the absolute
+# paths of the machine that produced it, so committing it would publish a
+# local directory layout along with it.
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
 # Local-only test suite: fast unit tests that run against a minimal HA stub
 # without installing Home Assistant (kept out of the repo). The committed
 # CI test suite lives in /tests/ and runs against real Home Assistant on

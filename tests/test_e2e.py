@@ -1038,3 +1038,86 @@ async def test_an_in_flight_expert_write_is_cancelled_on_unload(hass, monkeypatc
     assert entity._write_task.cancelled() or entity._write_task.done(), (
         "an unloaded entry left a write running against the portal"
     )
+
+
+async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):
+    """The threshold is documented as CONSECUTIVE auth failures.
+
+    The counter only ever went up, though: a timeout, a maintenance window or
+    a 403 in between left it standing, so auth failures spread over hours - a
+    portal that hands out the odd login page - still added up to a reauth
+    prompt for credentials that were correct the whole time.
+    """
+    from custom_components.wemportal import coordinator as coord_mod
+    from custom_components.wemportal.exceptions import AuthError, WemPortalError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+
+    failures = []
+
+    def flaky(self, *_a, **_k):
+        raise failures.pop(0)
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", flaky)
+
+    # Two auth failures, then something entirely unrelated.
+    failures.extend([AuthError("login page"), AuthError("login page"),
+                     WemPortalError("portal unreachable")])
+    for _ in range(3):
+        with pytest.raises(Exception):
+            await coordinator._async_update_data()
+
+    assert coordinator.num_auth_failed == 0, "the streak was not broken"
+    assert entry.entry_id not in coord_mod._AUTH_FAILURES
+
+
+async def test_reauth_reloads_the_entry_exactly_once(hass, monkeypatch):
+    """Updating the entry already fires the update listener, which reloads.
+
+    Reloading from the flow as well is the double reload (and race) Home
+    Assistant deprecated in 2026.6 and rejects from 2026.12.
+    """
+    entry = await _setup(hass, _entry(hass))
+    reloads = []
+    original = hass.config_entries.async_reload
+
+    async def counting_reload(entry_id):
+        reloads.append(entry_id)
+        return await original(entry_id)
+
+    monkeypatch.setattr(hass.config_entries, "async_reload", counting_reload)
+    monkeypatch.setattr(WemPortalApi, "api_login", lambda self: None)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "new-secret"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data[CONF_PASSWORD] == "new-secret"
+    assert reloads == [entry.entry_id], f"reloaded {len(reloads)} times"
+
+
+async def test_adding_a_configured_account_says_so(hass):
+    """AbortFlow is how Home Assistant ENDS a flow, not an error in it.
+
+    Caught by the step's catch-all, the abort raised by
+    _abort_if_unique_id_configured turned into a bare "unknown" - the user
+    was told something went wrong instead of that the account is already set
+    up.
+    """
+    await _setup(hass, _entry(hass))
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_USERNAME: USER.upper(), CONF_PASSWORD: "secret", CONF_MODE: "api"},
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"

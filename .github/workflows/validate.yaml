@@ -17,9 +17,11 @@ jobs:
     steps:
       - uses: "actions/checkout@v7"
       - name: HACS validation
-        # Pinned to a commit SHA (supply-chain hygiene): a mutable branch
-        # ref like @main could silently start running different code.
-        # hacs/action main as of 2026-07-08; bump deliberately when needed.
+        # Pinned to a commit SHA so the action DEFINITION cannot change under
+        # us; hacs/action main as of 2026-07-08, bump deliberately when
+        # needed. Note this is not full immutability: the pinned definition
+        # runs ghcr.io/hacs/action:main, a mutable image tag, so the code
+        # that actually executes can still change without this SHA moving.
         uses: "hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa"
         with:
           category: "integration"

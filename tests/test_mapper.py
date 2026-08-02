@@ -399,3 +399,34 @@ def test_a_device_the_scraper_does_not_write_into_keeps_its_own_key():
 
     assert data["Heat pump-Outside"]["value"] == 12.5
     assert data["heat_pump-outside"]["value"] == 11.0, "another device's row was rewritten"
+
+
+def test_an_empty_api_value_does_not_erase_the_scraped_one():
+    """Both paths feed the same entity in `both` mode.
+
+    The API value was written over the scraped one unconditionally, so a
+    parameter the API happened to return empty wiped a reading the web scrape
+    had just collected successfully - turning a partial API failure into an
+    unknown sensor.
+    """
+    data = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=None, string="")),
+        mode="both",
+        existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
+    )
+
+    assert data["heat_pump-outside"]["value"] == 11.0
+
+
+def test_a_real_api_value_still_wins_over_the_scraped_one():
+    """The API reading is the fresher of the two - only an EMPTY one is
+    ignored, otherwise the merge would stop updating at all."""
+    data = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=12.5, unit="°C")),
+        mode="both",
+        existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
+    )
+
+    assert data["heat_pump-outside"]["value"] == 12.5

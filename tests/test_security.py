@@ -158,3 +158,28 @@ def test_a_successful_login_does_not_log_the_username(monkeypatch, caplog):
     assert api.valid_login is True
     assert "login successful" in caplog.text.lower(), "the log line is gone entirely"
     assert "user@example.org" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.wemportal.com/(S(livesessiontoken))/Web/Default.aspx",
+        # ASP.NET does not treat the token letter as case-sensitive.
+        "https://www.wemportal.com/(s(livesessiontoken))/Web/Default.aspx",
+        # Several tokens can share one segment.
+        "https://www.wemportal.com/(A(x)S(livesessiontoken)F(y))/Web/Default.aspx",
+    ],
+)
+def test_every_cookieless_session_form_is_redacted(url):
+    """The regex matched only the single upper-case example from the docs.
+
+    A cookieless session id is credential-equivalent - it is the session -
+    so any form that ASP.NET actually emits has to go, not just the one that
+    happened to be in front of us when the pattern was written.
+    """
+    from custom_components.wemportal import expert_writer
+
+    redacted = expert_writer.redact_url(url)
+
+    assert "livesessiontoken" not in redacted
+    assert redacted.endswith("/Web/Default.aspx")

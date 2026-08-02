@@ -393,18 +393,25 @@ class WemPortalApi:
                 # is None` short-circuits the rest of this condition on the
                 # first cycle, so a guard placed inside the or-branch never
                 # ran when it mattered most.
-                if self._scraper_enabled(enabled_devices) and (
-                    self.last_scraping_update is None or (
-                    (
-                        (
+                # spider_wait_interval is checked at the TOP level, not inside
+                # the or-branch. As part of that branch, `last_scraping_update
+                # is None` short-circuited past it - and that is true on every
+                # fresh WemPortalApi, which the coordinator builds whenever it
+                # recovers from repeated errors. The scrape backoff was
+                # therefore skipped right after the failures that set it.
+                if (
+                    self._scraper_enabled(enabled_devices)
+                    and self.spider_wait_interval == 0
+                    and (
+                        self.last_scraping_update is None
+                        or (
                             datetime.now()
                             - self.last_scraping_update
                             + timedelta(seconds=10)
                         )
                         > self.scan_interval
                     )
-                    and self.spider_wait_interval == 0
-                )):
+                ):
                     # Get data by web scraping
                     try:
                         webscraping_data = self.fetch_webscraping_data()
@@ -1095,6 +1102,17 @@ class WemPortalApi:
         try:
             status = response.json().get("Status")
         except Exception:  # pylint: disable=broad-except
+            # An empty body stays acceptable - that is how a bare
+            # acknowledgement looks, and it was accepted before. A body that
+            # is present but is not JSON is something else entirely: an HTML
+            # error or maintenance page served with HTTP 200. Reporting that
+            # as a completed write told the user their heating parameter had
+            # been changed when it had not.
+            if getattr(response, "content", b""):
+                raise ParameterChangeError(
+                    f"Portal answered the write for parameter {parameter_id} "
+                    "with a page instead of a result; the value was not changed."
+                ) from None
             status = None
         if status is not None and status != 0:
             raise ParameterChangeError(
@@ -1317,6 +1335,19 @@ class WemPortalApi:
                 data=read_data,
                 do_retry=True
             ).json()
+            # An HTTP 200 with nothing in it is not a refreshed device. The
+            # mapper simply finds no modules to walk, so this used to return
+            # True and count as a success: the cycle was reported as good and
+            # every entity kept presenting its previous reading as current.
+            # Guarded by what we ASKED for, so a device that genuinely has no
+            # modules is not turned into a failure.
+            if data.get("Modules") and not values.get("Modules"):
+                _LOGGER.warning(
+                    "Device %s answered the value read without any modules; "
+                    "treating the cycle as failed rather than keeping stale "
+                    "readings.", device_id,
+                )
+                return False
             from .mapper import WemPortalDataMapper
             WemPortalDataMapper.process_api_values(
                 device_id=device_id,

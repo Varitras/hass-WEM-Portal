@@ -217,6 +217,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             return await self._update_within_timeout(device_filter)
         except TimeoutError as exc:
             self.num_failed += 1
+            self._reset_auth_failures()
             _LOGGER.warning(
                 "Fetching WEM Portal data timed out after %ds. Note the "
                 "underlying request keeps running in its worker thread - "
@@ -227,6 +228,19 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 f"Timed out fetching data from wemportal after {DEFAULT_TIMEOUT}s"
             ) from exc
 
+    def _reset_auth_failures(self) -> None:
+        """Clear the consecutive-auth-failure count.
+
+        Called on success AND on every failure that is not an auth failure.
+        The threshold is documented as CONSECUTIVE, but the counter only ever
+        went up: a timeout, a maintenance window or a 403 in between left it
+        standing, so auth failures spread over hours - a portal that hands
+        out the odd login page - still added up to a reauth prompt for
+        credentials that were correct the whole time.
+        """
+        self.num_auth_failed = 0
+        _AUTH_FAILURES.pop(self.config_entry.entry_id, None)
+
     async def _update_within_timeout(self, device_filter):
         """The guarded update itself. Split out so the timeout can be caught
         around it without moving the error handling one level in."""
@@ -234,8 +248,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             try:
                 x = await self.hass.async_add_executor_job(self.api.fetch_data, device_filter)
                 self.num_failed = 0
-                self.num_auth_failed = 0
-                _AUTH_FAILURES.pop(self.config_entry.entry_id, None)
+                self._reset_auth_failures()
                 await self._async_save_modules_cache()
                 await self._async_save_scraper_device_id()
                 return x
@@ -247,6 +260,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # used to escalate into a reauth prompt for credentials that
                 # were correct all along.
                 self.num_failed += 1
+                self._reset_auth_failures()
                 _LOGGER.warning("WEM Portal is in maintenance: %s", exc)
                 raise UpdateFailed(f"WEM Portal maintenance: {exc}") from exc
             except AuthError as exc:
@@ -280,6 +294,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed(str(exc)) from exc
             except (WemPortalError, ForbiddenError) as exc:
                 self.num_failed += 1
+                self._reset_auth_failures()
                 if self.num_failed >= 2:
                     _LOGGER.info("API errors persistent. Re-instantiating WemPortalApi to recover from potentially corrupted session/state.")
                     old_session = getattr(self.api, "session", None)
@@ -351,6 +366,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # _async_update_data. Do not remove that handler on the
                 # assumption this one covers it; it does not.
                 self.num_failed += 1
+                self._reset_auth_failures()
                 _LOGGER.warning("Unexpected error updating WEM Portal data: %s", exc)
                 raise UpdateFailed(f"Unexpected error fetching data from wemportal: {exc}") from exc
             finally:

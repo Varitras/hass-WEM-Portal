@@ -222,12 +222,23 @@ class WemPortalDataMapper:
                             scraping_mapper[param_id] = [key]
 
                     for scraped_entity in scraping_mapper[param_id]:
+                        # An API read that came back empty must not erase a
+                        # web value that was scraped successfully in the same
+                        # cycle. Both paths feed this one entity, and writing
+                        # None over a good reading turned a partial API
+                        # failure into an unknown sensor.
+                        api_value = sensor.get("value")
+                        previous = api_data[device_id].get(scraped_entity, {})
                         sensor_dict = {
-                            "value": sensor.get("value"),
-                            "name": api_data[device_id].get(scraped_entity, {}).get("name"),
-                            "unit": api_data[device_id].get(scraped_entity, {}).get("unit", sensor.get("unit")),
-                            "icon": api_data[device_id].get(scraped_entity, {}).get("icon", uom_to_icon(sensor.get("unit"))),
-                            "friendlyName": api_data[device_id].get(scraped_entity, {}).get("friendlyName", sensor.get("friendlyName")),
+                            "value": (
+                                previous.get("value") if api_value is None else api_value
+                            ),
+                            "name": previous.get("name"),
+                            "unit": previous.get("unit", sensor.get("unit")),
+                            "icon": previous.get("icon", uom_to_icon(sensor.get("unit"))),
+                            "friendlyName": previous.get(
+                                "friendlyName", sensor.get("friendlyName")
+                            ),
                             "ParameterID": scraped_entity,
                             "platform": "sensor",
                         }

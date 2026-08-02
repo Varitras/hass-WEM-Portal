@@ -1109,3 +1109,156 @@ def test_a_returning_device_becomes_eligible_for_parameter_discovery():
 
     assert api._fetch_device_status("1234") is True
     assert api.data["1234"]["ConnectionStatus"] == 0, "the discovery gate stayed stale"
+
+
+# --- what counts as a successful API answer ---------------------------
+
+
+def test_an_empty_value_read_is_not_a_refreshed_device():
+    """HTTP 200 with no modules in it is not data.
+
+    The mapper simply finds nothing to walk, so this returned True and the
+    cycle was reported as successful - leaving every entity presenting its
+    previous reading as current.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
+    api.make_api_call = lambda *a, **k: FakeResponse({"Modules": []})
+
+    assert api._fetch_parameter_values("1234") is False
+
+
+def test_a_device_without_modules_is_not_turned_into_a_failure():
+    """The guard keys on what was REQUESTED, so a device that genuinely has
+    no modules must not start failing every cycle."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api.make_api_call = lambda *a, **k: FakeResponse({"Modules": []})
+
+    assert api._fetch_parameter_values("1234") is True
+
+
+class _BodyResponse(FakeResponse):
+    """A response whose body is present but is not JSON - an HTML error or
+    maintenance page served with HTTP 200."""
+
+    def __init__(self, content):
+        super().__init__({})
+        self.content = content
+
+    def json(self):
+        raise ValueError("not json")
+
+
+def test_a_write_answered_with_a_page_is_not_a_completed_write():
+    """Reported as success, this told the user their heating parameter had
+    been changed when it had not."""
+    api = _api()
+    api.make_api_call = lambda *a, **k: _BodyResponse(b"<html>Service unavailable</html>")
+
+    with pytest.raises(exceptions.ParameterChangeError):
+        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+
+
+def test_an_empty_write_response_stays_acceptable():
+    """A bare acknowledgement with no body is how the portal confirms some
+    writes; only a body that is present but unparsable is the error case."""
+    api = _api()
+    api.make_api_call = lambda *a, **k: _BodyResponse(b"")
+
+    api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+
+
+# --- the scrape backoff is not skipped after a recovery ---------------
+
+
+def test_the_scrape_backoff_survives_a_fresh_api_instance():
+    """`last_scraping_update is None` short-circuited past the backoff check.
+
+    That is true on every fresh WemPortalApi - and the coordinator builds one
+    whenever it recovers from repeated errors, so the scrape backoff was
+    skipped precisely after the failures that set it.
+    """
+    from custom_components.wemportal.const import CONF_MODE
+
+    api = _api(config={CONF_MODE: "both"})
+    api.spider_wait_interval = 3
+    api.last_scraping_update = None
+    api.valid_login = True
+    api._devices_fetched_this_session = True
+    api.modules = {}
+    scrapes = []
+    api.fetch_webscraping_data = lambda: scrapes.append(True) or {}
+    api.get_data = lambda *_a, **_k: None
+
+    api._fetch_data(enabled_devices=None)
+
+    assert scrapes == [], "the scraper ran while its backoff was active"
+    assert api.spider_wait_interval == 2, "the backoff must count down instead"
+
+
+# --- an unloaded entry must not keep writing to the portal ------------
+
+
+def _write_entity(api, monkeypatch):
+    """An expert entity whose executor runs inline and whose portal client
+    records that it was constructed at all."""
+    import types
+
+    from custom_components.wemportal import expert_writer
+
+    entity = _expert_entity(api)
+    built = []
+
+    class _Client:
+        def __init__(self, *_a, **_k):
+            built.append(True)
+
+        def write_parameter(self, *_a, **_k):
+            return types.SimpleNamespace(current=21.0, min_value=None, max_value=None)
+
+    monkeypatch.setattr(expert_writer, "WemPortalExpertClient", _Client)
+
+    async def run_inline(func, *args):
+        return func(*args)
+
+    entity.hass.async_add_executor_job = run_inline
+    entity.hass.async_create_task = lambda coro: coro.close()
+    entity.async_write_ha_state = lambda: None
+    return entity, built
+
+
+def test_a_removed_entity_does_not_open_a_portal_session(monkeypatch):
+    """Cancelling the task cannot stop the write.
+
+    The portal call runs in an executor thread, and cancelling cancels the
+    AWAIT, not the thread - so a write kept going against the portal with the
+    credentials of an entry that was being torn down. Python cannot kill a
+    thread; what it can do is refuse to START, which is exactly the case that
+    matters (teardown races the thread pool).
+    """
+    import asyncio
+
+    api = _api()
+    entity, built = _write_entity(api, monkeypatch)
+    entity._removed = True
+
+    asyncio.run(entity._async_write_in_background(21.0))
+
+    assert built == [], "a write opened a portal session after removal"
+    assert entity._write_in_progress is False
+
+
+def test_a_normal_write_still_reaches_the_portal(monkeypatch):
+    """The guard must not disable writing altogether."""
+    import asyncio
+
+    api = _api()
+    entity, built = _write_entity(api, monkeypatch)
+
+    asyncio.run(entity._async_write_in_background(21.0))
+
+    assert built == [True]
+    assert entity.native_value == 21.0

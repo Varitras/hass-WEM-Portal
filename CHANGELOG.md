@@ -6,6 +6,104 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Findings from several rounds of auditing 1.11.0b2, plus a re-audit of the
+fixes themselves. Mostly correctness and safety: who may write a heating
+parameter, what counts as a successful update, and which failures are allowed
+to ask the user for new credentials.
+
+### Security
+- **Writing an expert parameter now requires an administrator.** The service
+  was registered with no permission check at all, so any authenticated Home
+  Assistant user could change a heating setting. The opt-in option and the
+  installation-specific parameter id were obscurity, not access control.
+- **The service only accepts parameters configured in the integration's
+  options.** Without that it was a generic write primitive for any parameter
+  of the installation, including ones never exposed to Home Assistant.
+- **Portal URLs are stripped before they reach a log.** A rejected request
+  used to be logged verbatim, publishing the installation-specific parameter
+  id from the query string and, on cookieless sessions, a session id from the
+  path. Neither the account nor those ids appear in the log any more.
+
+### Added
+- **Every device reports its own availability.** The coordinator only knew
+  whether a CYCLE succeeded, so on a multi-device installation a device that
+  had been offline for days still presented its last reading as current. Its
+  entities now go unavailable, while the connection-status, error and
+  error-message sensors stay available to explain why.
+- **A relabelled portal row is reported.** Scraped sensors are keyed by their
+  portal labels, so a wording change at the portal silently produces a new
+  entity and leaves the history behind on the old one. Nothing can prevent
+  that, but it is now visible in the log instead of being noticed weeks later.
+- **Config entries carry a normalised account id.** Adding the same account
+  twice with different capitalisation created a second entry polling the same
+  installation. Existing entries are given the id on their next start.
+
+### Fixed
+- **Planned maintenance is recognised on the web path as well.** It was only
+  detected during a full login, so a reused session ran into the maintenance
+  page unchecked.
+- **Network problems are no longer counted as wrong credentials.** A timeout,
+  a DNS failure or a 5xx from the portal was reported as an authentication
+  error, so three portal outages in a row could ask for a password that was
+  correct. The re-authentication counter is now genuinely consecutive: any
+  other kind of failure in between resets it.
+- **Re-authentication is actually reachable during startup.** The counter
+  lived on the coordinator, and a failed first refresh makes Home Assistant
+  build a new one - so a password changed while Home Assistant was off left
+  the entry retrying forever instead of asking for a new one.
+- **A rate-limited session reuse no longer triggers an immediate login.** The
+  403 was swallowed and answered with two more requests - the opposite of
+  backing off. For the same reason the scrape backoff is no longer skipped on
+  the first cycle after the integration recovers from repeated errors.
+- **An error page is no longer parsed as a successful scrape.** The session
+  reuse path never checked the status code, so the sensors took on whatever
+  fell out of a 500.
+- **An empty API answer is no longer counted as a refreshed device**, and a
+  write answered with a page instead of a result is no longer reported as a
+  completed change.
+- **A device that was offline at startup is discovered once it returns.**
+  Parameter discovery gated on a status field written only during the initial
+  device fetch, so the device stayed empty for the rest of the session and
+  only a reload fixed it.
+- **An unreachable device no longer fails the whole cycle.** That took every
+  other entity down with it, discarded a web scrape that had already
+  succeeded, and started a backoff of up to six hours, so the device coming
+  back was noticed late.
+- **A missing switch reading is reported as unknown, not as off.** Any
+  automation watching the switch saw a real state change.
+- **An empty API reading no longer overwrites a web reading** collected in the
+  same cycle, and a statistics group with no value is skipped instead of
+  being reported as zero - which the Energy Dashboard reads as a meter reset.
+- **In `both` mode with more than one device, a reading no longer appears
+  twice.** The API value was merged into its scraped counterpart only on
+  single-device installations; elsewhere both survived as separate entities
+  whose values drifted apart.
+- **Configuration is validated the way it will actually be used.** A setup
+  using the mobile API could be accepted on the strength of a web login and
+  then fail on every single update.
+- **Adding an account that is already configured says so**, instead of
+  reporting an unknown error.
+- **The service no longer restricts values to 0-100 in steps of one.** Expert
+  parameters include temperatures, times and curves, and half steps that the
+  data model itself defines were rejected before they reached the portal.
+- **Scan intervals stored by an older release are held to the current
+  minimum**, instead of being used exactly as they were saved.
+- **A write in progress is stopped when the integration is unloaded** as far
+  as that is possible: a request already on the wire cannot be aborted, but
+  one that has not opened a portal session yet no longer starts.
+
+### Changed
+- **The minimum supported Home Assistant version is 2024.12.0.** The options
+  flow relies on an attribute that does not exist in 2024.11, so the declared
+  minimum was wrong rather than merely conservative.
+- Home Assistant reloads the integration through exactly one path now. Doing
+  it from the configuration flow as well is deprecated as of 2026.6 and
+  rejected from 2026.12.
+- YAML configuration is explicitly declared unsupported, so a stray
+  `wemportal:` block is reported instead of being ignored.
+- Sensor icons follow the device class where Home Assistant provides one,
+  rather than every entity showing the same generic icon.
+
 ## [1.11.0b2] – 2026-07-28
 
 Cross-checked against a third-party reverse-engineered API reference. Most of

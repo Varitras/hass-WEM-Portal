@@ -84,9 +84,20 @@ EXPERT_PARAMETER_URL = (
 VALUE_FIELD_ID = "ctl00_DialogContent_ddlNewValue"
 
 
-# ASP.NET embeds a cookieless session id in the PATH as /(S(<id>))/ - that is
-# credential-equivalent, so it must never reach a log or a user-facing string.
-_COOKIELESS_SESSION_RE = re.compile(r"/\(S\([^)]*\)\)")
+# ASP.NET embeds a cookieless session id in the PATH - credential-equivalent,
+# so it must never reach a log or a user-facing string. The documented form is
+# /(S(<id>))/, but the token letter is not case-sensitive and several tokens
+# can share one segment (/(A(..)S(..)F(..))/), so match the general shape
+# rather than the single upper-case example.
+_COOKIELESS_SESSION_RE = re.compile(r"/\((?:[A-Za-z]\([^)]*\))+\)")
+
+
+class _EntityRemoved(Exception):
+    """Raised inside a background write when its entity is already gone.
+
+    Its own type so the caller can tell "we deliberately stopped" apart from
+    "the portal rejected the write" and skip the user-facing notification.
+    """
 
 
 def redact_url(url) -> str:
@@ -1355,6 +1366,10 @@ try:
             # running in the background (the write takes roughly 5-15s).
             self._write_task = None
             self._write_in_progress = False
+            # Set once the entity is on its way out, so a queued write can
+            # bail out before it opens a portal session. See
+            # async_will_remove_from_hass for why cancelling is not enough.
+            self._removed = False
 
         async def async_added_to_hass(self):
             """Restore the last known value after a restart."""
@@ -1419,11 +1434,34 @@ try:
             )
 
         async def async_will_remove_from_hass(self) -> None:
-            """Cancel a write still in flight when the entity is removed."""
+            """Stop an in-flight write as far as that is actually possible.
+
+            Cancelling the task alone does NOT stop the write: the portal
+            call runs in an executor thread (async_add_executor_job below),
+            and cancelling cancels the AWAIT, not the thread - the same
+            distinction API_LOCK_TIMEOUT_SECONDS documents for the poll lock.
+            A request already on the wire therefore finishes, writing a
+            heating parameter with the credentials of an entry that is being
+            torn down. Python cannot kill a thread, so what is left is a
+            cooperative stop:
+
+            - `_removed` is checked before the portal session is opened,
+              which covers the job the thread pool has not picked up yet -
+              the realistic case, since teardown and the executor race.
+            - the task is still cancelled so the awaiting coroutine does not
+              outlive the entity.
+
+            Deliberately NOT awaited: that would hold up the whole unload for
+            as long as the portal takes (5-15s), and the request cannot be
+            aborted by waiting for it either.
+            """
+            self._removed = True
             task = getattr(self, "_write_task", None)
             if task is not None and not task.done():
                 _LOGGER.debug(
-                    "Cancelling the in-flight expert write for %s.", self._attr_name
+                    "Expert write for %s is still running; it will stop before "
+                    "contacting the portal if it has not started yet.",
+                    self._attr_name,
                 )
                 task.cancel()
             await super().async_will_remove_from_hass()
@@ -1433,6 +1471,14 @@ try:
             client_opts = expert_client_options(self._config_entry.options)
 
             def _do_write():
+                # Last chance to stay out of the portal: the entity may have
+                # been removed while this job was still queued in the thread
+                # pool. Once the request below is on the wire nothing can
+                # stop it (see async_will_remove_from_hass).
+                if self._removed:
+                    raise _EntityRemoved(
+                        "the entity was removed before the write started"
+                    )
                 # Shared per-account lock: only one expert portal operation
                 # (this entity, the service, or the auto-poll) may run at a
                 # time, so concurrent writes/reads don't collide on the same
@@ -1459,6 +1505,12 @@ try:
 
             try:
                 state = await self.hass.async_add_executor_job(_do_write)
+            except _EntityRemoved as exc:
+                # Not a failure the user needs a notification about - the
+                # configuration this write belonged to is gone.
+                _LOGGER.debug("Expert write for %s stopped: %s", self._attr_name, exc)
+                self._write_in_progress = False
+                return
             except Exception as exc:  # pylint: disable=broad-except
                 _LOGGER.error("Expert write failed for %s: %s", self._attr_name, exc)
                 self._notify(
