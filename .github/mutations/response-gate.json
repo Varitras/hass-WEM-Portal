@@ -1,0 +1,37 @@
+[
+  {
+    "label": "gate: an unguarded request must be noticed",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "    def close(self):",
+    "new": "    def _unguarded_request(self):\n        return self.session.get(WEB_MAIN_URL).text\n\n    def close(self):",
+    "tests": "every_request_passes_through_the_gate"
+  },
+  {
+    "label": "gate: dropping the status check must be noticed",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if status >= 400:\n            raise ServerError(f\"WEM Portal returned {status} for the {what}.\")\n",
+    "new": "",
+    "tests": "gate_is_where_the_status_is_actually_handled or error_page_is_not_accepted"
+  },
+  {
+    "label": "scraper: dropping the status check must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        if status >= 400:\n            raise ServerError(f\"WEM Portal returned {status} for the {what}.\")\n",
+    "new": "",
+    "tests": "broken_main_page or error_page_is_not_accepted"
+  },
+  {
+    "label": "marker probe: reporting more than once per site must be noticed",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    if what in _MARKER_REPORTED:\n        _LOGGER.debug(\"Maintenance marker seen again on the %s.\", what)\n        return\n    _MARKER_REPORTED.add(what)\n",
+    "new": "",
+    "tests": "once_per_request_label"
+  },
+  {
+    "label": "write: accepting anything but an explicit success must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if status != 0:",
+    "new": "        if status is not None and status != 0:",
+    "tests": "explicit_success_is_a_rejection"
+  }
+]

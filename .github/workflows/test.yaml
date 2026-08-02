@@ -62,3 +62,12 @@ jobs:
       # the marker would become a silent coverage gap.
       - name: Run test suite
         run: pytest tests/ -q -m ""
+      # A green suite says the tests pass, not that they would catch anything.
+      # Every worthless test written here so far was green while the feature
+      # was broken, and every one was found by breaking the code on purpose
+      # rather than by reading the test. Only on one job: the answer does not
+      # depend on the Home Assistant version, and the mutations edit files in
+      # the workspace, so running it twice in parallel would be unsound.
+      - name: Verify the tests actually catch a broken fix
+        if: matrix.name == 'current HA'
+        run: python .github/scripts/mutate.py .github/mutations/response-gate.json
