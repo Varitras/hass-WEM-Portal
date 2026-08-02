@@ -1262,3 +1262,117 @@ def test_a_normal_write_still_reaches_the_portal(monkeypatch):
 
     assert built == [True]
     assert entity.native_value == 21.0
+
+
+def test_a_rejected_refresh_is_not_read_as_a_fresh_measurement():
+    """The portal answers a REFUSED refresh with HTTP 200 and a non-zero
+    Status, exactly like the login does.
+
+    Only JobID was read, so a rejection went unnoticed - and without a JobID
+    the read falls back to the most recent job, which is the PREVIOUS
+    measurement. Its values were then booked as a fresh reading.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
+    urls = []
+
+    def make_api_call(url, **_k):
+        urls.append(url)
+        return FakeResponse({"Status": 3, "Message": "refresh refused"})
+
+    api.make_api_call = make_api_call
+
+    assert api._fetch_parameter_values("1234") is False
+    assert len(urls) == 1, "the read must not happen after a refused refresh"
+
+
+def test_a_refresh_without_a_status_field_still_works():
+    """Not every response carries Status; absence must not fail the cycle."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
+    api.make_api_call = lambda *a, **k: FakeResponse(
+        {"Modules": [{"ModuleIndex": 0, "ModuleType": 1, "Values": []}]}
+    )
+
+    assert api._fetch_parameter_values("1234") is True
+
+
+def test_a_fresh_api_without_carried_state_starts_clean():
+    """A normal first start must not inherit anything."""
+    api = _api()
+
+    assert api.scraper_backoff == (0, 0, None)
+
+
+class _RecordingSession:
+    """Fails the test if anything is actually sent."""
+
+    def __init__(self):
+        self.posts = []
+
+    def post(self, url, **kwargs):
+        self.posts.append(url)
+        raise AssertionError("the write reached the portal")
+
+    def close(self):
+        pass
+
+
+def test_the_write_is_stopped_directly_before_the_portal_is_changed():
+    """The gate that matters sits immediately before the writing request.
+
+    An unload can land at any point, and everything up to that request is
+    reads - the login alone is several requests and takes seconds. So the
+    abort is made TRUE only once the form has been read, which no earlier
+    check can catch: only the gate in front of the POST can.
+    """
+    from custom_components.wemportal import expert_writer
+
+    unloaded = []
+
+    def gate():
+        if unloaded:
+            raise expert_writer.ExpertOperationAborted("unloaded")
+
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", abort_check=gate,
+    )
+    session = _RecordingSession()
+    client.session = session
+    client._login = lambda: None
+    client.close = lambda: None
+
+    def fetch_form(*_a, **_k):
+        # The unload happens WHILE the form is being read, i.e. after every
+        # gate except the last one.
+        unloaded.append(True)
+        return expert_writer.ExpertParameterState(20.0, [20.0, 21.0], {})
+
+    client._fetch_form = fetch_form
+
+    with pytest.raises(expert_writer.ExpertOperationAborted):
+        client.write_parameter("A" * 36, 21.0)
+
+    assert session.posts == [], "the parameter was written after the unload"
+
+
+def test_a_write_without_an_abort_still_goes_through():
+    """The gate must not block ordinary writes - without it the test above
+    would pass on a client that never writes anything at all."""
+    from custom_components.wemportal import expert_writer
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    session = _RecordingSession()
+    client.session = session
+    client._login = lambda: None
+    client.close = lambda: None
+    client._fetch_form = lambda *a, **k: expert_writer.ExpertParameterState(
+        20.0, [20.0, 21.0], {}
+    )
+
+    with pytest.raises(AssertionError, match="reached the portal"):
+        client.write_parameter("A" * 36, 21.0)
+
+    assert session.posts, "the write never got as far as the portal"

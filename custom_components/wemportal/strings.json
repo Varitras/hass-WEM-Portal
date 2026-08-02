@@ -24,6 +24,7 @@
     },
     "abort": {
       "already_configured": "Account is already configured",
+      "already_in_progress": "Setup for this account is already in progress",
       "reauth_successful": "Re-authentication was successful",
       "unknown": "Unexpected error"
     }

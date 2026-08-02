@@ -153,11 +153,11 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 # once could both pass it.
                 account = account_unique_id(user_input[CONF_USERNAME])
                 await self.async_set_unique_id(account)
-                # reload_on_update=False: the default would reload the
-                # existing entry from inside this flow, while the entry also
-                # carries an update listener that reloads. Home Assistant
-                # deprecated that combination in 2026.6 and rejects it from
-                # 2026.12. The listener stays the single reload path.
+                # reload_on_update=False: the default also OVERWRITES the
+                # existing entry's data with what was typed here and reloads
+                # it. Someone re-adding an account by mistake would silently
+                # replace the stored password of a working entry. Aborting is
+                # the whole answer; nothing about the existing entry changes.
                 self._abort_if_unique_id_configured(reload_on_update=False)
                 # Belt and braces: an entry created before unique_ids were
                 # used only gets one from _backfill_account_unique_id in
@@ -247,13 +247,14 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     _LOGGER.exception("Unexpected exception during reauth")
                     errors["base"] = "unknown"
                 else:
-                    # No explicit reload here. async_update_entry already
-                    # fires the update listener registered in
-                    # async_setup_entry, which reloads - doing both is the
-                    # double reload (and race) Home Assistant deprecated in
-                    # 2026.6 and rejects from 2026.12.
-                    self.hass.config_entries.async_update_entry(entry, data=new_data)
-                    return self.async_abort(reason="reauth_successful")
+                    # Reloads even when the entry is unchanged, which is the
+                    # whole point here: someone re-entering the SAME password
+                    # is telling us the portal rejected a login it should
+                    # accept, and the entry is very likely sitting in a failed
+                    # setup. Updating alone would change nothing and still
+                    # report success. There is no update listener to collide
+                    # with (see async_setup_entry).
+                    return self.async_update_reload_and_abort(entry, data=new_data)
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -369,6 +370,15 @@ class WemportalOptionsFlow(OptionsFlow):
                 # list - so each save cost another portal login on the next
                 # discovery. It also makes the no-op comparison above and the
                 # value actually written agree on the same dict.
+                # Options only take effect on a reload (scan intervals, mode,
+                # expert access are all read during setup). With no update
+                # listener doing it implicitly, the flow has to say so.
+                # Scheduled rather than awaited: it runs as a task after the
+                # flow manager has written the options, so the reload sees
+                # the new values and not the old ones.
+                self.hass.config_entries.async_schedule_reload(
+                    self.config_entry.entry_id
+                )
                 return self.async_create_entry(title="", data=merged)
 
         # On an error redisplay, prefill the form with what the user just

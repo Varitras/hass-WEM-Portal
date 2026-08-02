@@ -92,8 +92,8 @@ VALUE_FIELD_ID = "ctl00_DialogContent_ddlNewValue"
 _COOKIELESS_SESSION_RE = re.compile(r"/\((?:[A-Za-z]\([^)]*\))+\)")
 
 
-class _EntityRemoved(Exception):
-    """Raised inside a background write when its entity is already gone.
+class ExpertOperationAborted(Exception):
+    """Raised when the configuration a portal operation belongs to is gone.
 
     Its own type so the caller can tell "we deliberately stopped" apart from
     "the portal rejected the write" and skip the user-facing notification.
@@ -305,7 +305,7 @@ class WemPortalExpertClient:
     def __init__(self, username, password, cooldown_check=None,
                  cooldown_activate=None, module_arg=None,
                  enable_module_nav=None, enable_security_code=None,
-                 cookie_jar=None):
+                 cookie_jar=None, abort_check=None):
         self.username = username
         self.password = password
         # Shared, in-memory cookie cache for session reuse across operations
@@ -317,6 +317,12 @@ class WemPortalExpertClient:
         # Optional callable raising ForbiddenError while a 403 cooldown is
         # active (shared protection with the rest of the integration).
         self._cooldown_check = cooldown_check
+        # Optional callable raising ExpertOperationAborted when the entry this
+        # operation belongs to is being torn down. Checked at the same points
+        # as the cooldown, and once more directly before the request that
+        # WRITES - Python cannot cancel the executor thread this runs in, so
+        # the only way to stop a write is to look before making it.
+        self._abort_check = abort_check
         # Optional callable that ENGAGES the shared 403 cooldown. On a 403
         # here the whole integration should back off, not just this expert
         # operation; without this the API/scraper paths kept hitting a portal
@@ -363,6 +369,11 @@ class WemPortalExpertClient:
     def _check_cooldown(self):
         if self._cooldown_check is not None:
             self._cooldown_check()
+
+    def _check_abort(self):
+        """Stop if the configuration this operation belongs to is gone."""
+        if self._abort_check is not None:
+            self._abort_check()
 
     def _raise_if_forbidden(self, response):
         if response.status_code == 403:
@@ -1108,8 +1119,13 @@ class WemPortalExpertClient:
         """
         self._validate_entityvalue(entityvalue)
         self._check_cooldown()
+        self._check_abort()
         try:
             self._login()
+            # Again after the login: it is the slow part (several requests),
+            # and an unload during it used to be noticed only after the write
+            # had already happened.
+            self._check_abort()
             state = self._fetch_form(entityvalue)
 
             # Validate against the live option list; option values are the
@@ -1135,6 +1151,9 @@ class WemPortalExpertClient:
             post_data["ctl00$DialogContent$ddlNewValue"] = value_str
 
             self._check_cooldown()
+            # The last gate before the request that actually CHANGES a
+            # heating parameter. Everything up to here is reads.
+            self._check_abort()
             resp = self.session.post(
                 EXPERT_PARAMETER_URL,
                 params={"entityvalue": entityvalue, "readdata": "True",
@@ -1466,19 +1485,29 @@ try:
                 task.cancel()
             await super().async_will_remove_from_hass()
 
+        def _raise_if_removed(self) -> None:
+            """Abort gate handed to the portal client.
+
+            Called from the worker thread, so it must only read state - it is
+            a plain flag check on purpose.
+            """
+            if self._removed:
+                raise ExpertOperationAborted(
+                    f"{self._attr_name}: the entity was removed before the "
+                    "write reached the portal"
+                )
+
         async def _async_write_in_background(self, value: float) -> None:
             """Perform the actual (slow) write off the service-call path."""
             client_opts = expert_client_options(self._config_entry.options)
 
             def _do_write():
-                # Last chance to stay out of the portal: the entity may have
-                # been removed while this job was still queued in the thread
-                # pool. Once the request below is on the wire nothing can
-                # stop it (see async_will_remove_from_hass).
-                if self._removed:
-                    raise _EntityRemoved(
-                        "the entity was removed before the write started"
-                    )
+                # Checked here AND handed to the client, which re-checks it
+                # after the login and directly before the writing request.
+                # One check at the top only covered a job the thread pool had
+                # not started yet; an unload during the login (several
+                # requests, seconds) still ran through to the write.
+                self._raise_if_removed()
                 # Shared per-account lock: only one expert portal operation
                 # (this entity, the service, or the auto-poll) may run at a
                 # time, so concurrent writes/reads don't collide on the same
@@ -1496,6 +1525,7 @@ try:
                         cooldown_check=self._cooldown_check(),
                         cooldown_activate=self._cooldown_activate(),
                         cookie_jar=self._cookie_jar(),
+                        abort_check=self._raise_if_removed,
                         **client_opts,
                     )
                     return client.write_parameter(self._entityvalue, value)
@@ -1505,7 +1535,7 @@ try:
 
             try:
                 state = await self.hass.async_add_executor_job(_do_write)
-            except _EntityRemoved as exc:
+            except ExpertOperationAborted as exc:
                 # Not a failure the user needs a notification about - the
                 # configuration this write belonged to is gone.
                 _LOGGER.debug("Expert write for %s stopped: %s", self._attr_name, exc)

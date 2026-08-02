@@ -280,7 +280,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+    # Deliberately NO update listener. Home Assistant deprecated combining one
+    # with a reloading flow method in 2026.6 and rejects it from 2026.12, and
+    # its check is literally `if entry.update_listeners`. Of the sanctioned
+    # ways out, this is the one that holds in every case: the flows reload
+    # explicitly.
+    #
+    # Relying on the listener instead looked equivalent and was not. It only
+    # fires when the entry actually CHANGED, so re-authenticating with the
+    # same password reloaded nothing while the flow still reported success -
+    # and it is registered here, at the end of a successful setup, so a reauth
+    # that fixes a failed setup had no listener to fire at all. That is the
+    # case reauth exists for.
 
     # Expert write access (web): register the service only while the
     # option is enabled. Everything lives in expert_writer.py - the
@@ -360,16 +371,35 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
         lock = store.get("expert_lock")
         ev_short = short_ev(entityvalue)
 
+        def _raise_if_unloaded():
+            """Abort gate for a write whose entry is going away.
+
+            The write runs in an executor thread and cannot be cancelled, so
+            the only way to stop it is to look before each step. Unloading the
+            entry removes its store, which is the signal: continuing would
+            write a heating parameter with the credentials of a configuration
+            that no longer exists. Previously the service path had no such
+            check at all.
+            """
+            from .expert_writer import ExpertOperationAborted
+            if target_entry.entry_id not in hass.data.get(DOMAIN, {}):
+                raise ExpertOperationAborted(
+                    "the integration was unloaded before the write reached "
+                    "the portal"
+                )
+
         def _do_write():
             # Own short-lived session per write; honors the shared 403
             # cooldown (check) and ENGAGES it on a 403 (activate).
             from .expert_writer import expert_client_options
+            _raise_if_unloaded()
             client = WemPortalExpertClient(
                 target_entry.data.get(CONF_USERNAME),
                 target_entry.data.get(CONF_PASSWORD),
                 cooldown_check=target_api.check_expert_cooldown,
                 cooldown_activate=target_api.activate_expert_cooldown,
                 cookie_jar=target_api.expert_cookies,
+                abort_check=_raise_if_unloaded,
                 **expert_client_options(target_entry.options),
             )
             return client.write_parameter(entityvalue, value)
@@ -655,20 +685,6 @@ def _backfill_account_unique_id(hass: HomeAssistant, entry: ConfigEntry) -> None
         )
         return
     hass.config_entries.async_update_entry(entry, unique_id=wanted)
-
-
-async def _async_entry_updated(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-    """Handle entry updates."""
-    entry_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
-    if entry_data is None or "coordinator" not in entry_data:
-        _LOGGER.debug("No coordinator found for %s during entry update; skipping migration.", config_entry.entry_id)
-    else:
-        _LOGGER.info("Migrating entity names for wemportal because of config entry update")
-        try:
-            await migrate_unique_ids(hass, config_entry, entry_data["coordinator"])
-        except Exception as exc:  # pylint: disable=broad-except
-            _LOGGER.warning("Unique_id migration failed, continuing without it: %s", exc)
-    await hass.config_entries.async_reload(config_entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:

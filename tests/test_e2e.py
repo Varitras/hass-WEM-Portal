@@ -1048,6 +1048,8 @@ async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):
     portal that hands out the odd login page - still added up to a reauth
     prompt for credentials that were correct the whole time.
     """
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
     from custom_components.wemportal import coordinator as coord_mod
     from custom_components.wemportal.exceptions import AuthError, WemPortalError
 
@@ -1064,8 +1066,10 @@ async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):
     # Two auth failures, then something entirely unrelated.
     failures.extend([AuthError("login page"), AuthError("login page"),
                      WemPortalError("portal unreachable")])
+    # UpdateFailed, not a bare Exception: catching anything would pass just as
+    # happily on a TypeError from a mistyped test double.
     for _ in range(3):
-        with pytest.raises(Exception):
+        with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
 
     assert coordinator.num_auth_failed == 0, "the streak was not broken"
@@ -1121,3 +1125,123 @@ async def test_adding_a_configured_account_says_so(hass):
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def test_reauth_with_the_same_password_still_reloads(hass, monkeypatch):
+    """The case reauth exists for.
+
+    Relying on the update listener looked equivalent to reloading and was
+    not: Home Assistant only fires it when the entry actually CHANGED, so
+    re-entering the same password reloaded nothing while the flow still
+    reported success. Someone whose portal had been rejecting a correct
+    password was left with a dead entry and a green confirmation.
+    """
+    entry = await _setup(hass, _entry(hass))
+    reloads = []
+    original = hass.config_entries.async_reload
+
+    async def counting_reload(entry_id):
+        reloads.append(entry_id)
+        return await original(entry_id)
+
+    monkeypatch.setattr(hass.config_entries, "async_reload", counting_reload)
+    monkeypatch.setattr(WemPortalApi, "api_login", lambda self: None)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        # Deliberately unchanged - this is the whole point.
+        {CONF_USERNAME: USER, CONF_PASSWORD: entry.data[CONF_PASSWORD]},
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert reloads == [entry.entry_id], f"reloaded {len(reloads)} times"
+
+
+async def test_the_entry_carries_no_update_listener(hass):
+    """Home Assistant's own deprecation check is `if entry.update_listeners`.
+
+    Keeping one while the flows reload is what breaks in 2026.12, so this
+    pins the decision rather than the symptom - a listener added back later
+    would reintroduce the double reload silently.
+    """
+    entry = await _setup(hass, _entry(hass))
+
+    assert not entry.update_listeners
+
+
+async def test_saving_options_reloads_the_entry(hass, monkeypatch):
+    """With no listener doing it implicitly, the options flow has to.
+
+    Every option is read during setup - scan intervals, mode, expert access -
+    so without a reload the form would appear to save and change nothing.
+    """
+    entry = await _setup(hass, _entry(hass))
+    reloads = []
+    original = hass.config_entries.async_reload
+
+    async def counting_reload(entry_id):
+        reloads.append(entry_id)
+        return await original(entry_id)
+
+    monkeypatch.setattr(hass.config_entries, "async_reload", counting_reload)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "configure"}
+    )
+    # Submit what the form itself declares, so this does not have to track
+    # every field the options step happens to offer.
+    schema_keys = {str(marker) for marker in result["data_schema"].schema}
+    payload = {k: v for k, v in entry.options.items() if k in schema_keys}
+    payload[CONF_SCAN_INTERVAL] = 2400
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], payload
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_SCAN_INTERVAL] == 2400
+    assert reloads == [entry.entry_id], f"reloaded {len(reloads)} times"
+
+
+async def test_the_scrape_backoff_survives_the_real_coordinator_swap(hass, monkeypatch):
+    """Driven through the actual swap, not by constructing the replacement.
+
+    The coordinator rebuilds the api after repeated errors, and everything
+    that must not reset is carried across - the scrape backoff was the piece
+    left behind, so the recovery discarded the backoff the failures had just
+    earned. A test that builds the new instance itself proves only that the
+    constructor accepts the value, which is exactly how this was missed the
+    first time.
+    """
+    from datetime import datetime
+
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+
+    stamp = datetime(2026, 8, 2, 12, 0, 0)
+    coordinator.api.spider_wait_interval = 3
+    coordinator.api.spider_retry_count = 3
+    coordinator.api.last_scraping_update = stamp
+    before = coordinator.api
+
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data",
+        lambda self, *a, **k: (_ for _ in ()).throw(WemPortalError("portal broken")),
+    )
+
+    # The swap happens from the second consecutive failure onwards.
+    for _ in range(2):
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+
+    assert coordinator.api is not before, "the api was never swapped - test says nothing"
+    assert coordinator.api.spider_wait_interval == 3
+    assert coordinator.api.spider_retry_count == 3
+    assert coordinator.api.last_scraping_update == stamp

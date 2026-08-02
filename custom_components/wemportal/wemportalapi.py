@@ -63,7 +63,9 @@ from .const import (
 class WemPortalApi:
     """Wrapper class for Weishaupt WEM Portal"""
 
-    def __init__(self, username, password, config=None, existing_data=None, cached_modules=None, blocked_until=0.0, scraper_device_id=None, expert_blocked_until=0.0) -> None:
+    def __init__(self, username, password, config=None, existing_data=None,
+                 cached_modules=None, blocked_until=0.0, scraper_device_id=None,
+                 expert_blocked_until=0.0, scraper_backoff=None) -> None:
         if config is None:
             config = {}
         self.data = copy.deepcopy(existing_data) if existing_data else {}
@@ -126,7 +128,6 @@ class WemPortalApi:
         # skips the login *requests*) is separate from this - keeping the
         # instance also skips the per-cycle connection setup itself.
         self._scraper = None
-        self.last_scraping_update = None
         # Headers used for all API calls
         self.headers = {
             "User-Agent": "WeishauptWEMApp",
@@ -174,11 +175,34 @@ class WemPortalApi:
         # Never persisted: a live session cookie is credential-equivalent.
         self.expert_cookies = {}
 
+        # Scrape backoff, carried across a coordinator swap when given.
+        #
+        # The coordinator builds a fresh WemPortalApi to recover from repeated
+        # errors, and a fresh instance started at zero - so the backoff the
+        # scraper had just earned was discarded by the very recovery those
+        # failures triggered, and the next cycle scraped immediately.
+        # `last_scraping_update` belongs to the same state: without it the
+        # interval check has no reference point and scrapes at once.
+        wait_interval, retry_count, last_update = scraper_backoff or (0, 0, None)
         # Used to keep track of how many update intervals to wait before retrying spider
-        self.spider_wait_interval = 0
+        self.spider_wait_interval = wait_interval
         # Used to keep track of the number of times the spider consecutively fails
-        self.spider_retry_count = 0
+        self.spider_retry_count = retry_count
+        self.last_scraping_update = last_update
         self.api_version = None
+
+    @property
+    def scraper_backoff(self):
+        """The scrape backoff as the constructor takes it back.
+
+        Exposed as one value so a caller carrying state across an instance
+        swap cannot pick up two of the three and silently lose the third.
+        """
+        return (
+            self.spider_wait_interval,
+            self.spider_retry_count,
+            self.last_scraping_update,
+        )
 
     def _activate_cooldown(self, seconds=FORBIDDEN_COOLDOWN_SECONDS):
         """Pause ALL further outbound requests for a while after being
@@ -1324,9 +1348,24 @@ class WemPortalApi:
             # a response without a JobID behaves exactly as before.
             read_data = data
             try:
-                job_id = refresh_response.json().get("JobID")
+                refresh_payload = refresh_response.json()
             except (ValueError, AttributeError):
-                job_id = None
+                refresh_payload = {}
+            # The portal answers a REJECTED refresh with HTTP 200 and a
+            # non-zero Status, exactly like the login does. Only JobID was
+            # read here, so a rejection went unnoticed: without a JobID the
+            # read below falls back to the most recent job, which is the
+            # PREVIOUS measurement, and its values were then booked as a
+            # fresh reading.
+            refresh_status = refresh_payload.get("Status")
+            if refresh_status is not None and refresh_status != 0:
+                _LOGGER.warning(
+                    "Device %s refused the measurement refresh (Status %s); "
+                    "not reading the previous job's values as current.",
+                    device_id, refresh_status,
+                )
+                return False
+            job_id = refresh_payload.get("JobID")
             if job_id is not None:
                 read_data = {**data, "JobID": job_id}
             time.sleep(5)

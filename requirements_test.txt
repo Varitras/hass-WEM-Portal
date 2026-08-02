@@ -1,16 +1,22 @@
-# Test dependencies for local use and for the "current HA" CI job.
+# Test dependencies for LOCAL use.
 #
 # pytest-homeassistant-custom-component pulls in a matching Home Assistant
 # release plus the pytest plugin/fixtures for custom integrations.
 #
-# Deliberately UNPINNED: users run current Home Assistant, and only a current
-# one surfaces deprecations and API removals - an old pin makes the
-# integration look healthy while it is already broken. (Verified: pinning to
-# 0.13.205 / HA 2025.1.4 hid the removal of the OptionsFlow `_config_entry`
-# compatibility shim, which only showed up against HA 2026.7.2.)
+# Deliberately UNPINNED here: locally you want whatever is current, and only a
+# current Home Assistant surfaces deprecations and API removals - an old pin
+# makes the integration look healthy while it is already broken. (Verified:
+# pinning to 0.13.205 / HA 2025.1.4 hid the removal of the OptionsFlow
+# `_config_entry` compatibility shim, which only showed up against HA 2026.7.2.)
+#
+# CI does NOT install this file. Both matrix jobs install the plugin directly,
+# because unpinned is not good enough there: the plugin publishes a normal
+# release for every Home Assistant BETA too, so "newest" quietly became a beta
+# and nothing tested the release people run. See .github/workflows/test.yaml
+# and .github/scripts/resolve_phcc.py.
 #
 # The OPPOSITE mistake - using an API that does not exist yet on the declared
 # minimum - is caught by the "minimum" job of the test workflow, which pins
-# the plugin release matching hacs.json. See .github/workflows/test.yaml.
+# the plugin release matching hacs.json.
 pytest-homeassistant-custom-component
 -r requirements_runtime.txt

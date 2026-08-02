@@ -111,15 +111,17 @@ class WemPortalScraper:
         # A non-200 body is an error page, not the expert view. Returned
         # unchecked it was parsed like a real page: the scrape counted as
         # successful and the sensors took on whatever fell out of a 500.
-        # Falling back to the full login (the caller's behaviour for a None)
-        # is the right answer - it either succeeds or fails with a clear
-        # ServerError.
+        #
+        # Raised rather than returned as None, and for both callers. None
+        # means "this session is no longer valid", which the full login turns
+        # into an AuthError - so a plain server error was reported as a wrong
+        # password and fed the re-authentication counter, where three outages
+        # in a row could ask the user to re-enter working credentials. It also
+        # stops the reuse path from answering a 500 with two more requests.
         if r_expert.status_code != 200:
-            _LOGGER.debug(
-                "Session reuse: expert tab answered %s, discarding the page.",
-                r_expert.status_code,
+            raise ServerError(
+                f"WEM Portal returned {r_expert.status_code} for the expert page."
             )
-            return None
 
         # Same check as in _full_login. Without it, planned downtime on this
         # path only surfaced one full login later - two extra requests
@@ -152,11 +154,13 @@ class WemPortalScraper:
             else:
                 try:
                     reused_html = self._load_expert_page()
-                except (ForbiddenError, PortalMaintenanceError):
-                    # Both are answers, not reuse failures. Falling through to
-                    # the full login would fire two MORE requests right after
-                    # the server said "rate limited" or "we are down" - the
-                    # opposite of backing off.
+                except (ForbiddenError, PortalMaintenanceError, ServerError):
+                    # All three are answers, not reuse failures. Falling
+                    # through to the full login would fire two MORE requests
+                    # right after the server said "rate limited", "we are
+                    # down" or "something broke" - the opposite of backing
+                    # off, and for a server error it would also relabel the
+                    # outage as an authentication problem.
                     raise
                 except Exception as exc:
                     _LOGGER.debug(
@@ -323,6 +327,16 @@ class WemPortalScraper:
                         }
                 except (IndexError, ValueError):
                     continue
+
+        # A page that parsed to nothing is not a successful scrape. The XPaths
+        # above simply find no panels on an error or placeholder page served
+        # with HTTP 200, which left `output` empty - and the caller then reset
+        # the retry counter and timestamp as if data had arrived, so the
+        # existing readings stayed on display looking current.
+        if not output:
+            raise ServerError(
+                "The WEM Portal expert page contained no readable panels."
+            )
 
         # Save cookies for next run (extracted from requests Session)
         cookies_dict = dict(self.session.cookies)

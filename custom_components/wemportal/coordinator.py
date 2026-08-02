@@ -322,6 +322,13 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                         # id, so the swap doesn't re-decide it (and possibly
                         # move scraped sensors to a different device).
                         scraper_device_id=getattr(self.api, "scraper_device_id", None),
+                        # The scrape backoff belongs to the same category as
+                        # the 403 cooldowns above and was the one piece left
+                        # behind: a fresh instance started at zero, so the
+                        # backoff the scraper had just earned was thrown away
+                        # by the very recovery those failures triggered, and
+                        # the next cycle went straight back at the portal.
+                        scraper_backoff=getattr(self.api, "scraper_backoff", None),
                     )
                     # Point hass.data at the new instance so other consumers
                     # (e.g. the expert writer's shared cooldown check) use

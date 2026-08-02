@@ -36,7 +36,3 @@ wem_dump/
 
 # Build artifacts
 *.zip
-
-# Living project runbook - local working document, not part of the shipped
-# integration or the public repo.
-RUNBOOK.md

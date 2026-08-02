@@ -90,7 +90,30 @@ to ask the user for new credentials.
   minimum**, instead of being used exactly as they were saved.
 - **A write in progress is stopped when the integration is unloaded** as far
   as that is possible: a request already on the wire cannot be aborted, but
-  one that has not opened a portal session yet no longer starts.
+  the write is now abandoned at every step before it - including directly
+  before the request that changes the parameter. The service call is covered
+  as well, not just the entity.
+- **Re-authentication actually reloads the integration.** It reported success
+  while doing nothing whenever the entry was unchanged - re-entering the same
+  password - or when the failed setup it was meant to repair meant there was
+  nothing listening for the update in the first place.
+- **Saving options applies them.** Every option is read during setup, and the
+  reload that used to happen as a side effect of the same mechanism.
+- **A server error on the web path is no longer reported as a wrong
+  password.** A 4xx/5xx while loading the expert page was turned into an
+  authentication failure, so three portal outages in a row could ask for
+  credentials that were correct.
+- **A page that contains no readings is no longer counted as a scrape.** An
+  error or placeholder page served with HTTP 200 simply parses to nothing,
+  which reset the retry counter and left the previous values on display
+  looking current.
+- **A refused measurement refresh is not read as a fresh one.** The portal
+  answers a rejection with HTTP 200 and a non-zero status; unnoticed, the
+  following read fell back to the previous measurement and its values were
+  booked as new.
+- **The scrape backoff survives the internal recovery.** Rebuilding the API
+  connection after repeated errors discarded the backoff those very errors
+  had just earned.
 
 ### Changed
 - **The minimum supported Home Assistant version is 2024.12.0.** The options

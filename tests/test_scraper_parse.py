@@ -136,9 +136,14 @@ def test_enum_value_cells_are_parsed_too(scraper):
 
 def test_panel_without_a_header_is_skipped(scraper):
     """Without a header there is no stable sensor name, so the whole panel
-    is dropped instead of producing unnamed entities."""
-    page = """
-    <html><body>
+    is dropped instead of producing unnamed entities - while the rest of the
+    page is still read.
+
+    Paired with a healthy panel on purpose: a page that parses to NOTHING is
+    a different situation and is rejected outright (see the test below), so
+    the header-less panel needs a companion to be observable at all.
+    """
+    headerless = """
       <div class="RadPanelBar RadPanelBar_Default rpbSimpleData">
         <div class="rpTemplate">
           <table class="simpleDataTable"><tbody>
@@ -148,12 +153,25 @@ def test_panel_without_a_header_is_skipped(scraper):
             </tr>
           </tbody></table>
         </div>
-      </div>
-    </body></html>"""
+      </div>"""
 
-    data = _parse(scraper, page)
+    data = _parse(scraper, _page(headerless, _panel("Heating", [("Outside", "11 °C")])))
 
-    assert [key for key in data if key != "cookie"] == []
+    assert [key for key in data if key != "cookie"] == ["heating-outside"]
+
+
+def test_a_page_that_parses_to_nothing_is_not_a_successful_scrape(scraper):
+    """An error or placeholder page served with HTTP 200 simply contains no
+    panels, which used to yield a cookie-only result.
+
+    The caller took that for data: it reset the retry counter and the
+    timestamp, so the previous readings stayed on display and looked current
+    while nothing was being read at all.
+    """
+    from custom_components.wemportal.exceptions import ServerError
+
+    with pytest.raises(ServerError):
+        scraper.parse_expert_page("<html><body>We'll be right back</body></html>")
 
 
 def test_rows_of_several_panels_do_not_collide(scraper):
@@ -465,18 +483,23 @@ def _reuse_scraper(post_response):
 
 def test_an_error_page_is_not_accepted_as_the_expert_page():
     """The reuse path checked for a 403 and for a redirect to the login, but
-    never at the status code itself.
+    never at the status code itself, so a 500 was parsed like a real page.
 
-    A 500 was handed back like a real page and parsed: the cycle counted as a
-    successful scrape and the sensors took on whatever fell out of the error
-    page. Returning None sends the caller into the full login, which either
-    works or fails with a clear error.
+    Raised as a ServerError rather than returned as None: None means "this
+    session is no longer valid", which the full login turns into an
+    AuthError - a plain outage would have been reported as a wrong password
+    and counted towards re-authentication.
     """
+    from custom_components.wemportal.exceptions import AuthError, ServerError
+
     scraper = _reuse_scraper(
         _ReuseResponse("<html><body>Internal Server Error</body></html>", status_code=500)
     )
 
-    assert scraper._load_expert_page() is None
+    with pytest.raises(ServerError) as excinfo:
+        scraper._load_expert_page()
+
+    assert not isinstance(excinfo.value, AuthError), "an outage is not a credential problem"
 
 
 def test_maintenance_is_recognised_on_the_reuse_path_too():
