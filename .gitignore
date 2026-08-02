@@ -27,8 +27,12 @@ wem_debug.txt
 wem_dump/
 
 # Local HA dev instance / scratch
-ha_config
-scripts/
+/ha_config
+# Anchored to the repo root. Unanchored, this pattern matches a directory
+# named `scripts` at ANY depth - it silently swallowed .github/scripts/,
+# so a workflow referring to a script there would have failed with a file
+# that exists locally and was never committed.
+/scripts/
 
 # Build artifacts
 *.zip

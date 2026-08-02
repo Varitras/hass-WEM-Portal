@@ -21,8 +21,9 @@ jobs:
     # cannot see that class of bug at all.
     #
     # "current" catches the opposite: an API that has since been REMOVED.
-    # pytest-homeassistant-custom-component is unpinned there on purpose (see
-    # requirements_test.txt), so it always pulls the newest Home Assistant.
+    # Its plugin version is resolved at run time to the newest release that
+    # pins a FINAL Home Assistant - see .github/scripts/resolve_phcc.py for
+    # why an unpinned install silently tested a beta instead.
     name: pytest (${{ matrix.name }})
     runs-on: "ubuntu-latest"
     strategy:
@@ -38,17 +39,22 @@ jobs:
             phcc: "pytest-homeassistant-custom-component==0.13.190"
           - name: "current HA"
             python-version: "3.14"
-            phcc: "pytest-homeassistant-custom-component"
+            # Resolved by the step below, not a literal requirement.
+            phcc: "latest-stable-ha"
     steps:
       - uses: "actions/checkout@v7"
       - name: Set up Python
         uses: "actions/setup-python@v7"
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Resolve the plugin version to install
+        # tee, not a plain redirect: the chosen version has to be visible in
+        # the log too, or a job that disagrees with a local run is guesswork.
+        run: python .github/scripts/resolve_phcc.py "${{ matrix.phcc }}" | tee -a "$GITHUB_ENV"
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install "${{ matrix.phcc }}" -r requirements_runtime.txt
+          pip install "$PHCC_SPEC" -r requirements_runtime.txt
       - name: Show the Home Assistant version under test
         run: python -c "from homeassistant.const import __version__; print(__version__)"
       # -m "" cancels the `-m "not e2e"` default from pytest.ini, so the slow
