@@ -952,3 +952,57 @@ async def test_entities_of_an_offline_device_go_unavailable(hass, monkeypatch):
     assert _state("outside_temperature", "5678").state == "unavailable"
     # The diagnostic sensor must survive - it is what explains the rest.
     assert _state("connection_status", "5678").state == "offline"
+
+
+async def test_a_differently_capitalised_account_is_still_a_duplicate(hass):
+    """Portal usernames are email addresses, so casing is not meaningful -
+    but the check compared them verbatim, so the same account added with a
+    different capitalisation became a second entry polling the same
+    installation twice."""
+    _entry(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_USERNAME: "  USER@Example.ORG ",
+            CONF_PASSWORD: "secret",
+            CONF_LANGUAGE: "en",
+            CONF_MODE: "api",
+        },
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+
+
+async def test_setup_backfills_the_account_unique_id(hass):
+    """Entries created before unique_ids were used have none, so the
+    duplicate check cannot see them at all."""
+    entry = _entry(hass)
+    assert entry.unique_id is None
+
+    await _setup(hass, entry)
+
+    assert entry.unique_id == USER
+
+
+async def test_a_duplicate_account_is_not_given_a_second_unique_id(hass):
+    """Two entries for one account is exactly what the unique_id prevents
+    from now on - but an installation that already has both must still load
+    rather than fail on a duplicate id."""
+    first = _entry(hass)
+    second = _entry(hass)
+
+    # Setting up the component sets up EVERY entry of the domain, so one
+    # call covers both - and which of them is reached first is not defined.
+    await _setup(hass, first)
+
+    ids = sorted((e.unique_id for e in (first, second)), key=lambda v: v or "")
+    assert ids == [None, USER], "the account id must be claimed exactly once"
+    assert first.state is ConfigEntryState.LOADED
+    assert second.state is ConfigEntryState.LOADED, (
+        "a pre-existing duplicate must still load, not fail on a clashing id"
+    )

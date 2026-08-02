@@ -79,6 +79,17 @@ DATA_SCHEMA = vol.Schema(
 )
 
 
+def account_unique_id(username) -> str:
+    """Normalised account id used as the config entry's unique_id.
+
+    Portal usernames are email addresses, so casing and stray whitespace are
+    not meaningful - but a raw comparison treated "Max@example.org" and
+    "max@example.org" as two accounts, which meant two entries polling the
+    same installation twice.
+    """
+    return (username or "").strip().lower()
+
+
 async def validate_input(hass: HomeAssistant, data):
     """Validate the user input allows us to connect."""
     # Create API object for authentication check
@@ -132,11 +143,26 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             try:
-                info = await validate_input(self.hass, user_input)
-                for existing_entry in self._async_current_entries(include_ignore=False):
-                    if existing_entry.data[CONF_USERNAME] == user_input[CONF_USERNAME]:
+                # Claimed BEFORE validating: the previous manual scan ran
+                # after a full portal login, so re-adding an existing account
+                # cost a needless request - the one the portal is most likely
+                # to reject. It also compared usernames verbatim, so a
+                # different capitalisation slipped through as a second entry,
+                # and a hand-rolled loop takes no lock, so two flows opened at
+                # once could both pass it.
+                account = account_unique_id(user_input[CONF_USERNAME])
+                await self.async_set_unique_id(account)
+                self._abort_if_unique_id_configured()
+                # Belt and braces: an entry created before unique_ids were
+                # used only gets one when async_migrate_entry backfills it,
+                # which needs the entry to have been loaded at least once.
+                # Until then the check above cannot see it, so compare the
+                # normalised usernames as well. Costs nothing - no network.
+                for existing in self._async_current_entries(include_ignore=False):
+                    if account_unique_id(existing.data.get(CONF_USERNAME)) == account:
                         return self.async_abort(reason="already_configured")
 
+                info = await validate_input(self.hass, user_input)
                 return self.async_create_entry(
                     title=info[CONF_USERNAME], data=user_input, options={
                         CONF_SCAN_INTERVAL: 1800,
@@ -184,9 +210,9 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             # different login: require it to match the entry's existing
             # account (case-insensitive, as portal usernames are emails).
             # Only the password is actually updated.
-            original = (entry.data.get(CONF_USERNAME) or "").strip()
-            entered = (user_input.get(CONF_USERNAME) or "").strip()
-            if entered.lower() != original.lower():
+            original = account_unique_id(entry.data.get(CONF_USERNAME))
+            entered = account_unique_id(user_input.get(CONF_USERNAME))
+            if entered != original:
                 errors["base"] = "wrong_account"
             else:
                 new_data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}

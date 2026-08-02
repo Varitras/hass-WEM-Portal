@@ -163,6 +163,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ),
         )
 
+    _backfill_account_unique_id(hass, entry)
+
     dr = device_registry.async_get(hass)
     devices = [
         device
@@ -608,6 +610,40 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     if config_entry.version < 2:
         hass.config_entries.async_update_entry(config_entry, version=2)
     return True
+
+
+def _backfill_account_unique_id(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Give an older entry the account unique_id it predates.
+
+    Deliberately NOT in async_migrate_entry: Home Assistant only calls that
+    when the entry version differs from the handler's, so every entry already
+    at the current version - i.e. everyone who has run a recent release -
+    would never be reached. This runs on every setup and does nothing once
+    the id is in place.
+    """
+    if entry.unique_id is not None:
+        return
+    from .config_flow import account_unique_id
+
+    wanted = account_unique_id(entry.data.get(CONF_USERNAME))
+    if not wanted:
+        _LOGGER.debug("No username on entry %s; leaving it without an id.", entry.entry_id)
+        return
+    taken = {
+        other.unique_id
+        for other in hass.config_entries.async_entries(DOMAIN)
+        if other.entry_id != entry.entry_id
+    }
+    if wanted in taken:
+        # Two entries for one account - exactly what the unique_id prevents
+        # from now on. Assigning it twice is not allowed, so this entry is
+        # left as it is rather than failing to load.
+        _LOGGER.warning(
+            "Another config entry already covers this WEM Portal account, so "
+            "this one keeps no account id. Consider removing the duplicate."
+        )
+        return
+    hass.config_entries.async_update_entry(entry, unique_id=wanted)
 
 
 async def _async_entry_updated(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
