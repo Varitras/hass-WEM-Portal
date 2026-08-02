@@ -280,6 +280,34 @@
     "tests": "saving_without_a_change_is_not_a_write"
   },
   {
+    "label": "base: an unreachable device must still take its entities offline",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        return self.coordinator.last_update_success and device_is_reachable(\n            self.coordinator.data, self._device_id\n        )",
+    "new": "        return self.coordinator.last_update_success",
+    "tests": "unreachable_device_takes_its_entities"
+  },
+  {
+    "label": "base: the shared identity formula must stay the recorded one",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "            self._config_entry.entry_id, str(self._device_id), str(_unique_id)",
+    "new": "            self._config_entry.entry_id, str(_unique_id), str(self._device_id)",
+    "tests": "identity_is_built_the_same_way"
+  },
+  {
+    "label": "base: a row's own icon must still win over the derived one",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        icon = entity_data.get(\"icon\")\n        if icon:\n            self._attr_icon = icon",
+    "new": "        icon = entity_data.get(\"icon\")\n        if not icon:\n            self._attr_icon = icon",
+    "tests": "an_icon_from_the_data_is_used"
+  },
+  {
+    "label": "base: entities must keep naming themselves after the device",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        self._attr_has_entity_name = True",
+    "new": "        self._attr_has_entity_name = False",
+    "tests": "identity_is_built_the_same_way"
+  },
+  {
     "label": "load path: the expert module must stay unimported while disabled",
     "path": "custom_components/wemportal/number.py",
     "old": "    if config_entry.options.get(CONF_EXPERT_WRITE, False):\n        from .expert_writer import create_expert_number_entities",

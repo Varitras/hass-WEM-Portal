@@ -6,12 +6,10 @@ from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from . import get_wemportal_unique_id
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers import entity_registry as er
 from .const import _LOGGER, CONF_EXPERT_WRITE, DOMAIN
-from .utils import (device_is_reachable, device_model, fix_value_and_uom, uom_to_device_class, build_device_info)
+from .utils import fix_value_and_uom, uom_to_device_class
+from .entity import WemPortalEntity
 
 
 async def async_setup_entry(
@@ -91,7 +89,7 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
             _LOGGER.warning("Could not migrate expert entity %s: %s", entity_id, exc)
 
 
-class WemPortalNumber(CoordinatorEntity, NumberEntity):
+class WemPortalNumber(WemPortalEntity, NumberEntity):
     """Representation of a WEM Portal number."""
 
     def _validated_native_value(self, val):
@@ -128,7 +126,7 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
         self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
         # .get() with sensible fallbacks rather than direct indexing: an
         # unexpected/malformed data point should degrade gracefully
@@ -137,27 +135,11 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
         # device.
         val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
 
-        self._config_entry = config_entry
-        self._device_id = device_id
-        self._attr_has_entity_name = True
-        self._attr_name = entity_data.get("friendlyName", _unique_id)
-        self._attr_unique_id = get_wemportal_unique_id(
-            self._config_entry.entry_id, str(self._device_id), str(_unique_id)
-        )
-        self._last_updated = None
-        self._parameter_id = entity_data.get("ParameterID", _unique_id)
-        self._data_key = _unique_id
-        # Only when the data carries one: an explicit icon overrides the
-        # one Home Assistant derives from the device class.
-        icon = entity_data.get("icon")
-        if icon:
-            self._attr_icon = icon
         self._attr_native_unit_of_measurement = uom
         self._attr_native_value = self._validated_native_value(val)
         self._attr_native_min_value = entity_data.get("min_value", 0.0)
         self._attr_native_max_value = entity_data.get("max_value", 100.0)
         self._attr_native_step = entity_data.get("step", 1)
-        self._attr_should_poll = False
         self._module_index = entity_data.get("ModuleIndex")
         self._module_type = entity_data.get("ModuleType")
 
@@ -180,21 +162,6 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
         )
         self._attr_native_value = value  # type: ignore
         self.async_write_ha_state()
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Get device information."""
-        return build_device_info(
-            self._config_entry.entry_id, self._device_id,
-            model=device_model(self.coordinator.api, self._device_id),
-        )
-
-    @property
-    def available(self):
-        """Return if entity is available."""
-        return self.coordinator.last_update_success and device_is_reachable(
-            self.coordinator.data, self._device_id
-        )
 
     @callback
     def _handle_coordinator_update(self) -> None:

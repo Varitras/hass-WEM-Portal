@@ -8,12 +8,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.const import EntityCategory
 
 from .const import _LOGGER
-from . import get_wemportal_unique_id
 from .utils import (device_is_reachable, device_model, fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
+from .entity import WemPortalEntity
 
 
 async def async_setup_entry(
@@ -43,7 +42,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class WemPortalSensor(CoordinatorEntity, RestoreSensor):
+class WemPortalSensor(WemPortalEntity, RestoreSensor):
     """Representation of a WEM Portal Sensor."""
 
     def _validated_native_value(self, val, uom):
@@ -99,32 +98,12 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
         self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
         # .get() like the other platforms: one malformed data point must not
         # abort setup for every sensor on this device with a KeyError.
         val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
 
-        self._last_updated = None
-        self._config_entry = config_entry
-        self._device_id = device_id
-        self._attr_has_entity_name = True
-        self._attr_name = entity_data.get("friendlyName", _unique_id)
-        self._attr_unique_id = get_wemportal_unique_id(
-            self._config_entry.entry_id, str(self._device_id), str(_unique_id)
-        )
-        # .get() with a sensible fallback rather than direct indexing: an
-        # unexpected/malformed data point should degrade gracefully (skip
-        # this one entity's optional metadata) instead of raising a
-        # KeyError that would abort setup for every sensor on this device.
-        self._parameter_id = entity_data.get("ParameterID", _unique_id)
-        self._data_key = _unique_id
-        # Only set an icon when the data actually carries one. Defaulting to
-        # "mdi:flash" here overrode the icon Home Assistant derives from the
-        # device class on every sensor that has one.
-        icon = entity_data.get("icon")
-        if icon:
-            self._attr_icon = icon
         self._attr_native_unit_of_measurement = uom
         # Set device_class/state_class BEFORE validating the native value:
         # _validated_native_value() uses them (in addition to uom) to
@@ -133,7 +112,6 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
         self._attr_device_class = entity_data.get("device_class")
         self._attr_state_class = entity_data.get("state_class")
         self._attr_native_value = self._validated_native_value(val, uom)
-        self._attr_should_poll = False
 
         _LOGGER.debug(
             'Init sensor: %s: "%s" [%s]',

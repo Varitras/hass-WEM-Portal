@@ -5,13 +5,11 @@ Switch platform for wemportal component
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import _LOGGER
-from . import get_wemportal_unique_id
-from .utils import (device_is_reachable, device_model, fix_value_and_uom, build_device_info)
+from .utils import fix_value_and_uom
+from .entity import WemPortalEntity
 
 # Recognized "on" values, covering both the numeric form (API path) and the
 # German/English text forms a value may arrive in (e.g. depending on the
@@ -47,19 +45,19 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
+class WemPortalSwitch(WemPortalEntity, SwitchEntity):
     """Representation of a WEM Portal Sensor."""
 
     def __init__(
         self,
-        coordinator: CoordinatorEntity,
+        coordinator,
         config_entry: ConfigEntry,
         device_id,
         _unique_id,
         entity_data,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
         # .get() with sensible fallbacks rather than direct indexing: an
         # unexpected/malformed data point should degrade gracefully
@@ -68,41 +66,16 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         # device.
         val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
 
-        self._last_updated = None
-        self._config_entry = config_entry
-        self._device_id = device_id
-        self._attr_has_entity_name = True
-        self._attr_name = entity_data.get("friendlyName", _unique_id)
-        self._attr_unique_id = get_wemportal_unique_id(
-            self._config_entry.entry_id, str(self._device_id), str(_unique_id)
-        )
-
-        self._parameter_id = entity_data.get("ParameterID", _unique_id)
-        self._data_key = _unique_id
-        # Only when the data carries one: an explicit icon overrides the
-        # one Home Assistant derives from the device class.
-        icon = entity_data.get("icon")
-        if icon:
-            self._attr_icon = icon
         self._attr_unit = uom
         # None means "no reading this cycle", which is not the same as
         # off: `None in WEM_SWITCH_ON_VALUES` is False, so a missing value
         # used to look like a real state change to any automation.
         self._attr_is_on = None if val is None else val in WEM_SWITCH_ON_VALUES
-        self._attr_should_poll = False
         self._attr_device_class = SwitchDeviceClass.SWITCH
         self._module_index = entity_data.get("ModuleIndex")
         self._module_type = entity_data.get("ModuleType")
 
         _LOGGER.debug('Init switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Get device information."""
-        return build_device_info(
-            self._config_entry.entry_id, self._device_id,
-            model=device_model(self.coordinator.api, self._device_id),
-        )
 
     async def async_turn_on(self, **kwargs) -> None:
         await self.hass.async_add_executor_job(
@@ -127,13 +100,6 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         )
         self._attr_is_on = False
         self.async_write_ha_state()
-
-    @property
-    def available(self):
-        """Return if entity is available."""
-        return self.coordinator.last_update_success and device_is_reachable(
-            self.coordinator.data, self._device_id
-        )
 
     @callback
     def _handle_coordinator_update(self) -> None:
