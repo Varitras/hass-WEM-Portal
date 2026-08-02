@@ -959,6 +959,131 @@ async def test_a_poll_skips_when_another_expert_operation_holds_the_lock(hass, m
     lock.release()
 
 
+async def _submit_options(hass, entry, changes, omit=()):
+    """Submit the configure form with `changes` applied to what is stored.
+
+    `omit` drops keys entirely, which is what a browser does for an empty
+    optional field - the distinction the slot handling depends on, and one a
+    payload built from defaults would never produce.
+    """
+    result = await _open_options(hass, entry, "configure")
+    schema_keys = {str(marker) for marker in result["data_schema"].schema}
+    payload = {k: v for k, v in entry.options.items() if k in schema_keys}
+    payload.update(changes)
+    for key in omit:
+        payload.pop(key, None)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], payload
+    )
+    await hass.async_block_till_done()
+    return result
+
+
+async def test_clearing_a_slot_id_actually_clears_it(hass):
+    """The form's slot fields are Optional with no default, so a field the
+    browser leaves empty is absent from user_input entirely.
+
+    The step materialises them anyway, and that is load-bearing: the options
+    are stored as {**current, **user_input}, so without the materialisation
+    the STORED id survives the merge and clearing a slot silently does
+    nothing. That was a real bug once (1.8.3); this is what keeps it fixed.
+    """
+    entry = await _setup(
+        hass,
+        _entry(hass, {
+            CONF_EXPERT_WRITE: True,
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+            CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot one",
+        }),
+    )
+
+    await _submit_options(hass, entry, {}, omit=[CONF_EXPERT_SLOT_ID_TEMPLATE % 1])
+
+    assert entry.options[CONF_EXPERT_SLOT_ID_TEMPLATE % 1] == "", (
+        "the cleared slot kept its stored id"
+    )
+
+
+async def test_a_slot_id_is_stored_stripped(hass):
+    """Whitespace from a copy/paste would otherwise travel into the request
+    URL."""
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+
+    await _submit_options(
+        hass, entry, {CONF_EXPERT_SLOT_ID_TEMPLATE % 1: f"  {EV_A}  "}
+    )
+
+    assert entry.options[CONF_EXPERT_SLOT_ID_TEMPLATE % 1] == EV_A
+
+
+async def test_an_invalid_slot_id_is_rejected_and_nothing_is_stored(hass):
+    """A short or non-hex entry is a typo, not an id, and would only produce
+    a failing portal request later."""
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    before = dict(entry.options)
+
+    result = await _submit_options(
+        hass, entry, {CONF_EXPERT_SLOT_ID_TEMPLATE % 1: "abc"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"].get(CONF_EXPERT_SLOT_ID_TEMPLATE % 1) == "invalid_entityvalue"
+    assert entry.options == before, "a rejected form still changed the options"
+
+
+async def test_a_rejected_form_shows_what_the_user_typed(hass):
+    """The redisplay prefills from user_input, not from the stored options -
+    otherwise a validation error would throw away everything else the user
+    had just entered."""
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+
+    result = await _submit_options(
+        hass, entry, {
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: "abc",
+            CONF_EXPERT_SLOT_NAME_TEMPLATE % 2: "typed but not saved",
+        },
+    )
+
+    suggestions = {
+        str(marker): (marker.description or {}).get("suggested_value")
+        for marker in result["data_schema"].schema
+    }
+    assert suggestions[CONF_EXPERT_SLOT_NAME_TEMPLATE % 2] == "typed but not saved"
+
+
+async def test_saving_keeps_options_that_are_not_form_fields(hass):
+    """The options dict is REPLACED with what the step returns, so anything
+    not on the form has to be merged back in. The cached module list is the
+    one that matters: losing it costs another portal login on the next
+    discovery."""
+    from custom_components.wemportal.const import CONF_EXPERT_MODULE_LIST
+
+    cached = [{"index": "6", "label": "Heat pump"}]
+    entry = await _setup(
+        hass, _entry(hass, {CONF_EXPERT_WRITE: True, CONF_EXPERT_MODULE_LIST: cached})
+    )
+
+    await _submit_options(hass, entry, {CONF_SCAN_INTERVAL_API: 600})
+
+    assert entry.options[CONF_EXPERT_MODULE_LIST] == cached
+    assert entry.options[CONF_SCAN_INTERVAL_API] == 600
+
+
+async def test_saving_without_a_change_is_not_a_write(hass):
+    """Every save reloads the integration - a full login and scrape. A form
+    submitted unchanged must not pay that."""
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    # The first save is NOT a no-op: it materialises the ten slot keys that
+    # the form is the sole producer of. From then on an unchanged form must
+    # change nothing.
+    await _submit_options(hass, entry, {})
+
+    result = await _submit_options(hass, entry, {})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "no_changes"
+
+
 async def test_update_timeout_is_counted_and_reported(hass, monkeypatch):
     """asyncio.timeout CANCELS the task; CancelledError is a BaseException,
     so the coordinator's `except Exception` never saw it and num_failed was

@@ -229,5 +229,40 @@
     "old": "            if lock is not None and not lock.acquire(blocking=False):",
     "new": "            if False:",
     "tests": "holds_the_lock"
+  },
+  {
+    "label": "options: materialising the slot ids is load-bearing, not cosmetic",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                user_input[id_key] = raw  # persist the stripped value",
+    "new": "                pass  # persist the stripped value",
+    "tests": "clearing_a_slot_id or slot_id_is_stored_stripped"
+  },
+  {
+    "label": "options: an invalid entityvalue must be rejected",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                    errors[id_key] = \"invalid_entityvalue\"",
+    "new": "                    pass",
+    "tests": "invalid_slot_id_is_rejected"
+  },
+  {
+    "label": "options: a rejected form must prefill from what was typed",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "        source = user_input if user_input is not None else self.config_entry.options",
+    "new": "        source = self.config_entry.options",
+    "tests": "rejected_form_shows_what_the_user_typed"
+  },
+  {
+    "label": "options: options outside the form must survive the save",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                merged = {**current, **user_input}",
+    "new": "                merged = dict(user_input)",
+    "tests": "keeps_options_that_are_not_form_fields"
+  },
+  {
+    "label": "options: an unchanged form must not trigger a reload",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                if merged == current:\n                    return self.async_abort(reason=\"no_changes\")",
+    "new": "                if False:\n                    return self.async_abort(reason=\"no_changes\")",
+    "tests": "saving_without_a_change_is_not_a_write"
   }
 ]
