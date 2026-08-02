@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, _LOGGER, BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
 from . import get_wemportal_unique_id
-from .utils import build_device_info, device_model
+from .utils import build_device_info, device_is_reachable, device_model
 import difflib
 
 
@@ -173,7 +173,9 @@ class WemPortalSelect(CoordinatorEntity, SelectEntity):
     @property
     def available(self):
         """Return if entity is available."""
-        return self.coordinator.last_update_success
+        return self.coordinator.last_update_success and device_is_reachable(
+            self.coordinator.data, self._device_id
+        )
 
     @property
     def options(self) -> list[str]:

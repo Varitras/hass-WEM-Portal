@@ -10,7 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import get_wemportal_unique_id
 from homeassistant.helpers.device_registry import DeviceInfo
 from .const import _LOGGER, DOMAIN
-from .utils import (device_model, fix_value_and_uom, uom_to_device_class, build_device_info)
+from .utils import (device_is_reachable, device_model, fix_value_and_uom, uom_to_device_class, build_device_info)
 
 
 async def async_setup_entry(
@@ -188,7 +188,9 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
     @property
     def available(self):
         """Return if entity is available."""
-        return self.coordinator.last_update_success
+        return self.coordinator.last_update_success and device_is_reachable(
+            self.coordinator.data, self._device_id
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:

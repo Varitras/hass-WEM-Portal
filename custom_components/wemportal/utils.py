@@ -367,3 +367,31 @@ def latest_statistics_entry(values):
     # ISO-8601 ("2026-04-27T00:00:00") sorts correctly as text, so no date
     # parsing - and thus no locale or format surprises - is needed.
     return max(dated, key=lambda v: str(v["Date"]))
+
+
+# Connection states that mean the device is definitively not reachable, as
+# opposed to momentarily busy. Kept deliberately narrow: `busy` (8) is
+# transient and `unknown` covers a status we failed to read, and treating
+# either as unavailable would make entities flicker on a healthy system.
+UNREACHABLE_CONNECTION_STATES = ("offline", "wrong_secret")
+
+
+def device_is_reachable(coordinator_data, device_id) -> bool:
+    """Whether this device answered, as far as the portal knows.
+
+    The coordinator's `last_update_success` covers the CYCLE, not the single
+    device: with several devices, one that has been offline for days still
+    counted as available and kept presenting its last reading as current.
+
+    Anything other than a definitively-dead state counts as reachable, and so
+    does a device with no status at all - notably the scraper's pseudo device,
+    which never gets one. Being strict there would mark every scraped sensor
+    unavailable forever and take out `web` mode entirely.
+    """
+    device_data = (coordinator_data or {}).get(device_id)
+    if not isinstance(device_data, dict):
+        return True
+    status = device_data.get(f"{device_id}-ConnectionStatus")
+    if not isinstance(status, dict):
+        return True
+    return status.get("value") not in UNREACHABLE_CONNECTION_STATES

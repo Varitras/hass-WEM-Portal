@@ -917,3 +917,38 @@ async def test_a_successful_cycle_clears_the_auth_failure_count(hass):
     await hass.data[DOMAIN][entry.entry_id]["coordinator"]._async_update_data()
 
     assert entry.entry_id not in coord_mod._AUTH_FAILURES
+
+
+async def test_entities_of_an_offline_device_go_unavailable(hass, monkeypatch):
+    """One device offline among several must not keep serving its last
+    readings as current - while the healthy device stays untouched."""
+    two_devices = {
+        "1234": {
+            "1234-ConnectionStatus": {
+                "value": "online", "unit": None, "platform": "sensor",
+                "friendlyName": "Connection Status", "ParameterID": "ConnectionStatus",
+            },
+            "Outside temperature": _sensor(),
+        },
+        "5678": {
+            "5678-ConnectionStatus": {
+                "value": "offline", "unit": None, "platform": "sensor",
+                "friendlyName": "Connection Status", "ParameterID": "ConnectionStatus",
+            },
+            "Outside temperature": _sensor(),
+        },
+    }
+    monkeypatch.setattr(WemPortalApi, "fetch_data", lambda self, *a, **k: two_devices)
+
+    await _setup(hass, _entry(hass))
+
+    def _state(entity_id_part, device):
+        return next(
+            s for s in hass.states.async_all("sensor")
+            if entity_id_part in s.entity_id and device in s.entity_id
+        )
+
+    assert _state("outside_temperature", "1234").state == "12.5"
+    assert _state("outside_temperature", "5678").state == "unavailable"
+    # The diagnostic sensor must survive - it is what explains the rest.
+    assert _state("connection_status", "5678").state == "offline"

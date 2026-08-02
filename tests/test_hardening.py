@@ -836,3 +836,38 @@ def test_missing_switch_reading_is_unknown_not_off(value, expected):
     """`None in WEM_SWITCH_ON_VALUES` is False, so a missing reading looked
     exactly like a real switch-off to any automation watching it."""
     assert _switch(value).is_on is expected
+
+
+def _status(value):
+    return {"1234": {"1234-ConnectionStatus": {"value": value}}}
+
+
+@pytest.mark.parametrize("state", ["offline", "wrong_secret"])
+def test_a_dead_device_is_not_reachable(state):
+    """`last_update_success` covers the CYCLE, not the device: with several
+    devices, one offline for days still counted as available and kept
+    presenting its last reading as current."""
+    from custom_components.wemportal.utils import device_is_reachable
+
+    assert device_is_reachable(_status(state), "1234") is False
+
+
+@pytest.mark.parametrize("state", ["online", "busy", "unknown"])
+def test_a_transient_state_stays_reachable(state):
+    """Only definitively-dead states count. `busy` is momentary and
+    `unknown` just means the status could not be read - treating either as
+    unavailable would make entities flicker on a healthy system."""
+    from custom_components.wemportal.utils import device_is_reachable
+
+    assert device_is_reachable(_status(state), "1234") is True
+
+
+def test_a_device_without_a_status_stays_reachable():
+    """The scraper's pseudo device never gets a ConnectionStatus. Being
+    strict here would mark every scraped sensor unavailable forever and take
+    out `web` mode entirely."""
+    from custom_components.wemportal.utils import device_is_reachable
+
+    assert device_is_reachable({"0000": {"some-sensor": {"value": 1}}}, "0000") is True
+    assert device_is_reachable({}, "0000") is True
+    assert device_is_reachable(None, "0000") is True

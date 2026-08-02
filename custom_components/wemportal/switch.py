@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import _LOGGER, DOMAIN
 from . import get_wemportal_unique_id
-from .utils import (device_model, fix_value_and_uom, build_device_info)
+from .utils import (device_is_reachable, device_model, fix_value_and_uom, build_device_info)
 
 # Recognized "on" values, covering both the numeric form (API path) and the
 # German/English text forms a value may arrive in (e.g. depending on the
@@ -131,7 +131,9 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def available(self):
         """Return if entity is available."""
-        return self.coordinator.last_update_success
+        return self.coordinator.last_update_success and device_is_reachable(
+            self.coordinator.data, self._device_id
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:

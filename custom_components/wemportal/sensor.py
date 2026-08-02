@@ -13,7 +13,7 @@ from homeassistant.const import EntityCategory
 
 from .const import _LOGGER, DOMAIN
 from . import get_wemportal_unique_id
-from .utils import (device_model, fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
+from .utils import (device_is_reachable, device_model, fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
 
 
 async def async_setup_entry(
@@ -176,7 +176,16 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
     @property
     def available(self):
         """Return if entity is available."""
-        return self.coordinator.last_update_success
+        if not self.coordinator.last_update_success:
+            return False
+        # The diagnostic sensors stay available even for an unreachable
+        # device: they are what explains WHY everything else went away.
+        if any(
+            x in self._attr_unique_id
+            for x in ("ConnectionStatus", "HasErrors", "ErrorMessages")
+        ):
+            return True
+        return device_is_reachable(self.coordinator.data, self._device_id)
 
     @callback
     def _handle_coordinator_update(self) -> None:
