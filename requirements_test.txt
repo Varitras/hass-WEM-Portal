@@ -1,15 +1,16 @@
-# Test dependencies for the CI suite (GitHub Actions, real Home Assistant).
+# Test dependencies for local use and for the "current HA" CI job.
+#
 # pytest-homeassistant-custom-component pulls in a matching Home Assistant
-# release and the pytest plugin/fixtures used to test custom integrations.
-# The three runtime libs below are the integration's own manifest
-# requirements, needed so its modules import during collection.
-# Deliberately UNPINNED: this pulls in a matching Home Assistant release, and
-# CI should run against a CURRENT one. Users run current Home Assistant, and
-# only a current HA surfaces deprecations and API removals - an old pin makes
-# the integration look healthy while it is already broken. (Verified: pinning
-# to 0.13.205 / HA 2025.1.4 hid the removal of the OptionsFlow `_config_entry`
+# release plus the pytest plugin/fixtures for custom integrations.
+#
+# Deliberately UNPINNED: users run current Home Assistant, and only a current
+# one surfaces deprecations and API removals - an old pin makes the
+# integration look healthy while it is already broken. (Verified: pinning to
+# 0.13.205 / HA 2025.1.4 hid the removal of the OptionsFlow `_config_entry`
 # compatibility shim, which only showed up against HA 2026.7.2.)
+#
+# The OPPOSITE mistake - using an API that does not exist yet on the declared
+# minimum - is caught by the "minimum" job of the test workflow, which pins
+# the plugin release matching hacs.json. See .github/workflows/test.yaml.
 pytest-homeassistant-custom-component
-curl_cffi>=0.15.0
-lxml>=4.9.0
-beautifulsoup4
+-r requirements_runtime.txt

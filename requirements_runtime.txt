@@ -1,0 +1,7 @@
+# The integration's own manifest requirements, needed so its modules import
+# during test collection. Kept separate from requirements_test.txt so the CI
+# matrix can pair them with a specific pytest-homeassistant-custom-component
+# version (which pins the Home Assistant release) without duplicating them.
+curl_cffi>=0.15.0
+lxml>=4.9.0
+beautifulsoup4

@@ -12,23 +12,45 @@ permissions:
 
 jobs:
   pytest:
-    name: pytest (real Home Assistant)
+    # Two ends of the supported range, because they catch opposite mistakes.
+    #
+    # "minimum" catches using an API that does not exist yet on the version
+    # hacs.json declares. That is not hypothetical: the options flow relies on
+    # OptionsFlow.config_entry, which only appeared in 2024.12 - while the
+    # manifest still claimed 2024.11 support. A single current-version job
+    # cannot see that class of bug at all.
+    #
+    # "current" catches the opposite: an API that has since been REMOVED.
+    # pytest-homeassistant-custom-component is unpinned there on purpose (see
+    # requirements_test.txt), so it always pulls the newest Home Assistant.
+    name: pytest (${{ matrix.name }})
     runs-on: "ubuntu-latest"
+    strategy:
+      # Both results matter; a failure at one end must not hide the other.
+      fail-fast: false
+      matrix:
+        include:
+          - name: "minimum HA 2024.12"
+            python-version: "3.12"
+            # Pinned to the plugin release that ships exactly the Home
+            # Assistant version hacs.json declares as the minimum. Raise both
+            # together, never one alone.
+            phcc: "pytest-homeassistant-custom-component==0.13.190"
+          - name: "current HA"
+            python-version: "3.14"
+            phcc: "pytest-homeassistant-custom-component"
     steps:
       - uses: "actions/checkout@v7"
       - name: Set up Python
         uses: "actions/setup-python@v7"
         with:
-          # pytest-homeassistant-custom-component is deliberately unpinned
-          # (see requirements_test.txt), so this installs the CURRENT Home
-          # Assistant - which requires Python >= 3.14. An older Python here
-          # would silently resolve to an outdated HA and hide exactly the
-          # API removals this suite is meant to catch.
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements_test.txt
+          pip install "${{ matrix.phcc }}" -r requirements_runtime.txt
+      - name: Show the Home Assistant version under test
+        run: python -c "from homeassistant.const import __version__; print(__version__)"
       # -m "" cancels the `-m "not e2e"` default from pytest.ini, so the slow
       # end-to-end tests against a real Home Assistant run here. Without it
       # the marker would become a silent coverage gap.
