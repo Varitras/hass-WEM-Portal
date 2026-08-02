@@ -110,6 +110,9 @@ async def validate_input(hass: HomeAssistant, data):
     except AuthError as exc:
         raise InvalidAuth from exc
     except Exception as exc:
+        # Broad on purpose: this runs during the config flow, where any
+        # failure that is not an auth rejection has to reach the user as
+        # "cannot connect" rather than as an unhandled flow error.
         raise CannotConnect from exc
     finally:
         # Close the throwaway validation session(s); config-flow validation

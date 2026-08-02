@@ -463,6 +463,9 @@ class WemPortalApi:
                         # Update last_scraping_update timestamp
                         self.last_scraping_update = datetime.now()
                     except Exception as exc:
+                        # Broad: the scrape is the optional half of
+                        # `both` mode. No scraper failure may cost the
+                        # API readings that follow.
                         _LOGGER.warning("Web scraper failed this cycle. Falling back to API only. Error: %s", exc)
                         # We intentionally do not raise, so the API can still fetch the bulk of the data
 
@@ -482,6 +485,9 @@ class WemPortalApi:
             return self.data
 
         except Exception as exc:
+            # Broad: this is the outermost boundary of a coordinator
+            # cycle. Anything unexpected has to arrive at Home Assistant
+            # as an update failure, not as a crashed integration.
             if isinstance(exc, WemPortalError):
                 # Re-raise known errors so we don't wrap them twice
                 raise
@@ -1190,6 +1196,9 @@ class WemPortalApi:
                 do_retry=True
             )
         except Exception as exc:
+            # Broad: every way a write can fail must reach the caller as
+            # one failure type, so the service and the entities can
+            # report it. The original is kept as the cause.
             raise ParameterChangeError(
                 f"Error changing parameter {parameter_id} value"
             ) from exc
@@ -1412,6 +1421,9 @@ class WemPortalApi:
                 _LOGGER.info("Device %s is back online.", device_id)
 
         except Exception as exc:
+            # Broad: an unreadable status must not stop the poll. The
+            # caller treats "unknown" as reachable, which is the safe
+            # side - see device_is_reachable.
             _LOGGER.warning("Failed to fetch Device Status: %s", exc)
         return True
 
@@ -1530,6 +1542,9 @@ class WemPortalApi:
             )
             return True
         except Exception as exc:
+            # Broad: one device's parameter read failing must not take
+            # the other devices' readings with it. False tells the
+            # caller this device did not succeed.
             _LOGGER.warning("Failed to fetch parameter data... %s", exc)
             return False
 
@@ -1608,8 +1623,12 @@ class WemPortalApi:
                                 self._last_circuit_times_fetch[cache_key] = time.time()
 
                             except Exception as exc:
+                                # Broad: one heating program failing is
+                                # not a reason to skip the rest.
                                 _LOGGER.warning("Failed to fetch CircuitTimes for %s: %s", param_id, exc)
         except Exception as exc:
+            # Broad: heating programs are extra detail on top of the
+            # readings. Losing them must never cost the update itself.
             _LOGGER.warning("Error processing CircuitTimes: %s", exc)
 
     def _statistics_devices(self, enabled_devices=None) -> list:
@@ -1799,6 +1818,9 @@ class WemPortalApi:
                 self._fetch_device_statistics(device_id)
                 succeeded += 1
             except Exception as exc:
+                # Broad: one device's statistics failing must not stop
+                # the others. `succeeded` stays unincremented, which is
+                # what the retry back-dating below reads.
                 _LOGGER.warning("Error processing Statistics: %s", exc)
 
         # Every attempted device failed: back-date the timestamp so the next

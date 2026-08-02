@@ -161,6 +161,8 @@ class WemPortalScraper:
             try:
                 self.session.cookies.update(self.cookie)
             except Exception as exc:
+                # Broad: restoring a cached cookie is an optimisation.
+                # Whatever goes wrong, the full login below still works.
                 _LOGGER.debug(
                     "Could not restore cached WEM Portal cookies, skipping "
                     "session-reuse fast path: %s", exc
@@ -177,6 +179,9 @@ class WemPortalScraper:
                     # outage as an authentication problem.
                     raise
                 except Exception as exc:
+                    # Broad, but the three answers that must NOT be
+                    # retried are re-raised above. Everything left is a
+                    # reuse failure, and the full login handles those.
                     _LOGGER.debug(
                         "Session-reuse attempt failed, falling back to full login: %s", exc
                     )
