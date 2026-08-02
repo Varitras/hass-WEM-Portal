@@ -1569,3 +1569,91 @@ def test_a_successful_write_records_the_answer_at_debug(caplog):
     assert "Write response for P1" in caplog.text
     # And nothing about the write ends up at warning level.
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+# --- is the maintenance marker safe to check everywhere? --------------
+
+
+MAINTENANCE_HTML = (
+    "<html><body><div class='offlinecontent'>Wartungsarbeiten bis 18:00"
+    "</div></body></html>"
+)
+
+
+def _gate_probe():
+    """A scraper whose gate is driven directly, with a clean report set."""
+    from custom_components.wemportal import utils
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    utils._MARKER_REPORTED.clear()
+    return WemPortalScraper("user@example.org", "secret")
+
+
+class _Page:
+    def __init__(self, text, status_code=200):
+        self.text = text
+        self.status_code = status_code
+        self.url = "https://www.wemportal.com/Web/Default.aspx"
+
+
+def test_a_marker_where_it_is_not_acted_on_is_reported(caplog):
+    """The open question is whether the marker can appear on a HEALTHY page.
+
+    Enabling the check everywhere on the assumption that it cannot would
+    trade a known gap for an unknown false positive - the portal reported as
+    down while it is serving fine. So the assumption is measured: this fires
+    only if the marker turns up somewhere it is not acted on.
+    """
+    import logging
+
+    scraper = _gate_probe()
+
+    with caplog.at_level(logging.WARNING):
+        scraper._check_response(_Page(MAINTENANCE_HTML), "module page")
+
+    assert "maintenance marker appeared" in caplog.text
+    assert "module page" in caplog.text
+
+
+def test_the_report_does_not_turn_into_a_failure():
+    """It is an observation, not a verdict: the request must carry on."""
+    scraper = _gate_probe()
+
+    scraper._check_response(_Page(MAINTENANCE_HTML), "module page")
+
+
+def test_the_report_is_made_once_per_request_label(caplog):
+    """If the marker IS on every page, an unbounded report would bury the
+    log it is meant to inform."""
+    import logging
+
+    scraper = _gate_probe()
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(5):
+            scraper._check_response(_Page(MAINTENANCE_HTML), "module page")
+
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warnings) == 1, f"{len(warnings)} reports for one request site"
+
+
+def test_where_the_check_is_enabled_it_still_raises():
+    """The probe must not have replaced the actual detection."""
+    scraper = _gate_probe()
+
+    with pytest.raises(exceptions.PortalMaintenanceError):
+        scraper._check_response(
+            _Page(MAINTENANCE_HTML), "login page", check_maintenance=True
+        )
+
+
+def test_a_healthy_page_is_silent(caplog):
+    """No marker, no noise - otherwise the signal would be worthless."""
+    import logging
+
+    scraper = _gate_probe()
+
+    with caplog.at_level(logging.WARNING):
+        scraper._check_response(_Page("<html><body>fine</body></html>"), "main page")
+
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]

@@ -345,6 +345,45 @@ def uom_to_state_class(uom):
     }.get(uom) # return None if no state class is available
 
 
+# Request labels for which an unexpected maintenance marker has already been
+# reported. Bounded by the number of request sites, so this can never grow
+# without limit - and one report per site is all the evidence needed.
+_MARKER_REPORTED: set[str] = set()
+
+
+def report_unexpected_maintenance_marker(notice, what) -> None:
+    """Note a maintenance marker on a response that is not treated as downtime.
+
+    The marker check is currently enabled only where a real maintenance page
+    was observed. Whether it is safe everywhere depends on one question that
+    cannot be answered by reading the code: can the marker also appear on a
+    HEALTHY portal page? Enabling it everywhere on the assumption that it
+    cannot would trade a known gap for an unknown false positive - one that
+    would report the portal as down while it is serving fine.
+
+    So the question is measured instead. This fires only if the marker turns
+    up somewhere it is not acted on, which under the current assumption should
+    be never. Silence over a few days is the evidence that the check can be
+    applied to every request; a hit names the exact request that would have
+    produced a false alarm.
+
+    Warning level, because the user has to see it without enabling debug
+    logging - and once per request label, so a marker that IS on every page
+    cannot flood the log.
+    """
+    if what in _MARKER_REPORTED:
+        _LOGGER.debug("Maintenance marker seen again on the %s.", what)
+        return
+    _MARKER_REPORTED.add(what)
+    _LOGGER.warning(
+        "The WEM Portal maintenance marker appeared in the response to the "
+        "%s, which is NOT treated as downtime. If the portal was working "
+        "normally, please report this - it decides whether the maintenance "
+        "check can be applied to every request. Notice text: %s",
+        what, notice,
+    )
+
+
 def maintenance_notice(html_text):
     """Return the portal's maintenance notice, or None if there is none.
 

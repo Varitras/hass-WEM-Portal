@@ -26,6 +26,10 @@ from .exceptions import (
     PortalMaintenanceError,
     ServerError,
 )
+from .utils import (
+    maintenance_notice,
+    report_unexpected_maintenance_marker,
+)
 from .const import (
     _LOGGER,
     EXPERT_SESSION_MAX_AGE_SECONDS,
@@ -376,18 +380,34 @@ class WemPortalExpertClient:
         if self._abort_check is not None:
             self._abort_check()
 
-    def _raise_if_server_error(self, response, what):
-        """Reject an error page before it is parsed as a portal answer.
+    def _check_response(self, response, what, check_maintenance=False):
+        """The single gate every portal response passes through.
 
-        Only 403 was ever inspected, so every other failing status was fed to
-        the HTML parser: a 500 on the save postback simply produced no
-        confirmation, and the write was then reported as "not confirmed - the
-        portal may have rejected the value", which points the user at their
-        input for what is an outage.
+        This exists because the alternative kept failing. Each request site
+        used to decide for itself what to validate, and the result was ten
+        sites checking for a 403 while three checked the status code - so an
+        error page was parsed as a portal answer, and three separate audit
+        rounds each found the next unguarded request. A per-site decision is
+        a per-site chance to forget; one gate cannot be forgotten.
+
+        `check_maintenance` is opt-in rather than universal on purpose. The
+        marker is a container class in the page, and whether it can appear on
+        a HEALTHY portal page has not been established - enabling it
+        everywhere would trade a known gap for an unknown false positive. It
+        is therefore switched on only where a real maintenance page was
+        observed and is covered by tests.
         """
+        self._raise_if_forbidden(response)
         status = getattr(response, "status_code", 200)
         if status >= 400:
             raise ServerError(f"WEM Portal returned {status} for the {what}.")
+        notice = maintenance_notice(getattr(response, "text", "") or "")
+        if notice:
+            if check_maintenance:
+                raise PortalMaintenanceError(notice)
+            # Not acted on here - but worth knowing about, because it is the
+            # open question that keeps the check from being universal.
+            report_unexpected_maintenance_marker(notice, what)
 
     def _raise_if_forbidden(self, response):
         if response.status_code == 403:
@@ -487,11 +507,7 @@ class WemPortalExpertClient:
         self.session = requests.Session(impersonate="chrome146")
 
         r1 = self.session.get(WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
-        self._raise_if_forbidden(r1)
-        from .utils import maintenance_notice
-        notice = maintenance_notice(r1.text)
-        if notice:
-            raise PortalMaintenanceError(notice)
+        self._check_response(r1, "login page", check_maintenance=True)
         tree = html.fromstring(r1.text)
         viewstate = tree.xpath("//*[@id='__VIEWSTATE']/@value")
         eventval = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
@@ -509,7 +525,7 @@ class WemPortalExpertClient:
             WEB_LOGIN_URL, data=login_data, allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
-        self._raise_if_forbidden(r2)
+        self._check_response(r2, "login POST")
         # Redirect back to login page means the login did not succeed.
         if "AspxAutoDetectCookieSupport" in r2.url or WEB_LOGIN_URL.lower() in r2.url.lower():
             raise AuthError("Expert client: login failed.")
@@ -545,7 +561,7 @@ class WemPortalExpertClient:
             WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers={"Accept": WEB_ACCEPT_NAV, "Accept-Language": WEB_ACCEPT_LANGUAGE},
         )
-        self._raise_if_forbidden(r_main)
+        self._check_response(r_main, "main page", check_maintenance=True)
         if WEB_LOGIN_URL.lower() in r_main.url.lower():
             raise AuthError("Expert client: session not accepted by portal main page.")
         current_html = r_main.text
@@ -715,7 +731,7 @@ class WemPortalExpertClient:
                 "Accept-Language": WEB_ACCEPT_LANGUAGE,
             },
         )
-        self._raise_if_forbidden(r)
+        self._check_response(r, "security-code dialog")
         fields = self._hidden_fields(r.text)
         _LOGGER.debug(
             "Expert navigation: security-code dialog fetched, %d hidden fields, "
@@ -748,7 +764,7 @@ class WemPortalExpertClient:
             dialog_url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers=sec_headers,
         )
-        self._raise_if_forbidden(r2)
+        self._check_response(r2, "security-code POST")
         _LOGGER.debug(
             "Expert navigation: security-code POST -> %d bytes, delta=%s",
             len(r2.text), "|hiddenField|" in r2.text,
@@ -882,7 +898,7 @@ class WemPortalExpertClient:
                 url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
                 allow_redirects=True, headers=headers,
             )
-        self._raise_if_forbidden(resp)
+        self._check_response(resp, "navigation postback")
         if WEB_LOGIN_URL.lower() in resp.url.lower():
             raise AuthError("Expert client: session expired during navigation.")
         _LOGGER.debug(
@@ -1105,7 +1121,7 @@ class WemPortalExpertClient:
                 "Accept-Language": WEB_ACCEPT_LANGUAGE,
             },
         )
-        self._raise_if_forbidden(resp)
+        self._check_response(resp, "module page")
         # Log both sources' yield: if discovery still comes up empty, this
         # says immediately whether the postback or the follow-up GET is the
         # one that fails to deliver the module - no guesswork needed.
@@ -1183,8 +1199,7 @@ class WemPortalExpertClient:
                     "Accept-Language": WEB_ACCEPT_LANGUAGE,
                 },
             )
-            self._raise_if_forbidden(resp)
-            self._raise_if_server_error(resp, "parameter write")
+            self._check_response(resp, "parameter write")
 
             # Verify by re-reading the form: the device/portal must now
             # report the new value as selected. The value is applied
@@ -1254,8 +1269,7 @@ class WemPortalExpertClient:
                     "Accept-Language": WEB_ACCEPT_LANGUAGE,
                 },
             )
-            self._raise_if_forbidden(resp)
-            self._raise_if_server_error(resp, "parameter dialog")
+            self._check_response(resp, "parameter dialog")
             if WEB_LOGIN_URL.lower() in resp.url.lower():
                 raise AuthError("Expert client: redirected to login when fetching the form.")
             # Remember the exact URL this form was served at, so a

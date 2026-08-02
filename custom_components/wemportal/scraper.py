@@ -21,7 +21,12 @@ from .const import (
     PERCENTAGE_KEYWORDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
 )
-from .utils import maintenance_notice, sanitize_value, uom_to_icon
+from .utils import (
+    maintenance_notice,
+    report_unexpected_maintenance_marker,
+    sanitize_value,
+    uom_to_icon,
+)
 
 # Unit -> icon mapping for scraped sensors. Defined once at module level
 # instead of being re-created for every single table row during parsing
@@ -51,13 +56,31 @@ class WemPortalScraper:
             # Closing is best-effort; the session is being discarded anyway.
             _LOGGER.debug("Ignoring error while closing scraper session: %s", exc)
 
-    def _raise_if_forbidden(self, response):
-        """Raise ForbiddenError on a 403 so the caller can trigger the
-        same global cooldown that protects the API path - a rate-limit
-        signal from the web frontend is just as meaningful as one from
-        the app API."""
-        if response.status_code == 403:
+    def _check_response(self, response, what, check_maintenance=False):
+        """The single gate every portal response passes through.
+
+        Same reasoning as in expert_writer: deciding per request site what to
+        validate means a per-site chance to forget, and that is exactly how a
+        500 kept being parsed as a real page - once per audit round, at the
+        next unguarded request.
+
+        403 first, because it is a rate-limit signal and must reach the
+        caller's cooldown handling as its own type. `check_maintenance` is
+        opt-in: whether the marker can appear on a healthy page has not been
+        established, so it stays where a real maintenance page was observed.
+        """
+        status = getattr(response, "status_code", 200)
+        if status == 403:
             raise ForbiddenError("WEM Portal web frontend returned 403 (rate limit/forbidden).")
+        if status >= 400:
+            raise ServerError(f"WEM Portal returned {status} for the {what}.")
+        notice = maintenance_notice(getattr(response, "text", "") or "")
+        if notice:
+            if check_maintenance:
+                raise PortalMaintenanceError(notice)
+            # Not acted on here - but worth knowing about, because it is the
+            # open question that keeps the check from being universal.
+            report_unexpected_maintenance_marker(notice, what)
 
     def _load_expert_page(self):
         """GET the main portal page and POST to select the 'Expert' tab.
@@ -77,16 +100,10 @@ class WemPortalScraper:
             path's caller, not necessarily a hard error.
         """
         r_main = self.session.get(WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
-        self._raise_if_forbidden(r_main)
-        # Same reasoning as for the expert POST below, and the reason this
-        # line exists at all: without it a 500 simply has no __VIEWSTATE, so
-        # it fell through to `return None` - which the full login reports as
-        # an AuthError. A server outage was blamed on the credentials and
-        # counted towards re-authentication.
-        if r_main.status_code != 200:
-            raise ServerError(
-                f"WEM Portal returned {r_main.status_code} for the main page."
-            )
+        # A 500 has no __VIEWSTATE, so without this it fell through to
+        # `return None` - which the full login reports as an AuthError, i.e. a
+        # server outage blamed on the credentials.
+        self._check_response(r_main, "main page")
         if WEB_LOGIN_URL.lower() in r_main.url.lower():
             return None
 
@@ -113,7 +130,7 @@ class WemPortalScraper:
             WEB_MAIN_URL, data=form_data, allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
-        self._raise_if_forbidden(r_expert)
+        self._check_response(r_expert, "expert page", check_maintenance=True)
         if WEB_LOGIN_URL.lower() in r_expert.url.lower():
             return None
 
@@ -127,18 +144,6 @@ class WemPortalScraper:
         # password and fed the re-authentication counter, where three outages
         # in a row could ask the user to re-enter working credentials. It also
         # stops the reuse path from answering a 500 with two more requests.
-        if r_expert.status_code != 200:
-            raise ServerError(
-                f"WEM Portal returned {r_expert.status_code} for the expert page."
-            )
-
-        # Same check as in _full_login. Without it, planned downtime on this
-        # path only surfaced one full login later - two extra requests
-        # against a portal that has just announced it cannot serve them.
-        notice = maintenance_notice(r_expert.text)
-        if notice:
-            raise PortalMaintenanceError(notice)
-
         return r_expert.text
 
     def scrape(self):
@@ -203,20 +208,11 @@ class WemPortalScraper:
         # the broad network-error handler above and re-wrapped (which
         # would, among other things, hide the 403 from the caller's
         # cooldown handling).
-        self._raise_if_forbidden(r1)
-        if r1.status_code != 200:
-            # A 5xx or similar is the server's problem, not the user's.
-            raise ServerError(
-                f"WEM Portal returned {r1.status_code} for the login page."
-            )
-
-        # Planned downtime: the login form is fully present and submittable
-        # during maintenance, so posting would fail as "invalid credentials"
-        # and, after three cycles, ask the user to re-enter working ones.
-        # Checked BEFORE the POST, so the password is not sent either.
-        notice = maintenance_notice(r1.text)
-        if notice:
-            raise PortalMaintenanceError(notice)
+        # Maintenance is checked HERE, before the POST, so the password is
+        # never sent to a page that cannot process it: during planned
+        # downtime the login form is fully present and submittable, and
+        # posting would simply fail as "invalid credentials".
+        self._check_response(r1, "login page", check_maintenance=True)
 
         tree = html.fromstring(r1.text)
         viewstate_elem = tree.xpath("//*[@id='__VIEWSTATE']/@value")
@@ -241,11 +237,7 @@ class WemPortalScraper:
             WEB_LOGIN_URL, data=login_data, allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
-        self._raise_if_forbidden(r2)
-        if r2.status_code != 200:
-            raise ServerError(
-                f"WEM Portal returned {r2.status_code} for the login POST."
-            )
+        self._check_response(r2, "login POST")
 
         # Check if we were redirected back to login with an error (like AspxAutoDetectCookieSupport)
         if "AspxAutoDetectCookieSupport" in r2.url or WEB_LOGIN_URL.lower() in r2.url.lower():
