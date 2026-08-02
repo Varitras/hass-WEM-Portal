@@ -7,7 +7,12 @@ from lxml import html
 # Relative imports and the shared integration logger, consistent with every
 # other module in this package (absolute custom_components.* imports would
 # break if the install directory is ever named differently).
-from .exceptions import AuthError, ForbiddenError
+from .exceptions import (
+    AuthError,
+    ForbiddenError,
+    PortalMaintenanceError,
+    ServerError,
+)
 from .const import (
     _LOGGER,
     WEB_LOGIN_URL,
@@ -16,7 +21,7 @@ from .const import (
     PERCENTAGE_KEYWORDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
 )
-from .utils import sanitize_value, uom_to_icon
+from .utils import maintenance_notice, sanitize_value, uom_to_icon
 
 # Unit -> icon mapping for scraped sensors. Defined once at module level
 # instead of being re-created for every single table row during parsing
@@ -127,6 +132,11 @@ class WemPortalScraper:
             else:
                 try:
                     reused_html = self._load_expert_page()
+                except ForbiddenError:
+                    # The server just rate-limited us. Falling through to the
+                    # full login would fire two MORE requests immediately
+                    # after that signal - the opposite of backing off.
+                    raise
                 except Exception as exc:
                     _LOGGER.debug(
                         "Session-reuse attempt failed, falling back to full login: %s", exc
@@ -149,8 +159,11 @@ class WemPortalScraper:
         try:
             r1 = self.session.get(WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
         except Exception as e:
-            # Network-level failure (timeout, connection reset, DNS, ...)
-            raise AuthError(f"Authentication Error: {e}") from e
+            # A transport failure (timeout, connection reset, DNS) says
+            # nothing about the credentials. Reported as AuthError it fed the
+            # reauth counter, so three network hiccups in a row could ask the
+            # user to re-enter a working password.
+            raise ServerError(f"Could not reach the WEM Portal login page: {e}") from e
         # Deliberately outside the try block: our own ForbiddenError /
         # AuthError below must propagate as-is instead of being caught by
         # the broad network-error handler above and re-wrapped (which
@@ -158,7 +171,18 @@ class WemPortalScraper:
         # cooldown handling).
         self._raise_if_forbidden(r1)
         if r1.status_code != 200:
-            raise AuthError(f"Authentication Error: Received {r1.status_code} on login page.")
+            # A 5xx or similar is the server's problem, not the user's.
+            raise ServerError(
+                f"WEM Portal returned {r1.status_code} for the login page."
+            )
+
+        # Planned downtime: the login form is fully present and submittable
+        # during maintenance, so posting would fail as "invalid credentials"
+        # and, after three cycles, ask the user to re-enter working ones.
+        # Checked BEFORE the POST, so the password is not sent either.
+        notice = maintenance_notice(r1.text)
+        if notice:
+            raise PortalMaintenanceError(notice)
 
         tree = html.fromstring(r1.text)
         viewstate_elem = tree.xpath("//*[@id='__VIEWSTATE']/@value")
@@ -185,7 +209,9 @@ class WemPortalScraper:
         )
         self._raise_if_forbidden(r2)
         if r2.status_code != 200:
-            raise AuthError(f"Authentication Error: Encountered error after login. Received {r2.status_code}.")
+            raise ServerError(
+                f"WEM Portal returned {r2.status_code} for the login POST."
+            )
 
         # Check if we were redirected back to login with an error (like AspxAutoDetectCookieSupport)
         if "AspxAutoDetectCookieSupport" in r2.url or WEB_LOGIN_URL.lower() in r2.url.lower():

@@ -27,6 +27,8 @@ from .const import (
     CONF_EXPERT_WRITE,
     CONF_EXPERT_AUTO_POLL,
     CONF_EXPERT_POLL_INTERVAL,
+    CONF_EXPERT_SLOT_ID_TEMPLATE,
+    EXPERT_SLOT_COUNT,
     CONF_EXPERT_NOTIFY_ON_SUCCESS,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
@@ -40,6 +42,7 @@ from .coordinator import (
 from .wemportalapi import WemPortalApi
 from .utils import deserialize_modules, close_api_sessions
 from homeassistant.helpers import device_registry, entity_registry
+from homeassistant.helpers.service import async_register_admin_service
 
 def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):
     """Return unique ID for WEM Portal."""
@@ -324,6 +327,21 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             )
         target_entry, target_api = resolved
 
+        # Only ids the user configured in a slot may be written. Without this
+        # the service is a generic write primitive for ANY parameter of the
+        # installation, including ones never surfaced in Home Assistant.
+        allowed = {
+            (target_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip()
+            for i in range(1, EXPERT_SLOT_COUNT + 1)
+        }
+        allowed.discard("")
+        if entityvalue not in allowed:
+            raise HomeAssistantError(
+                f"WEM Portal expert write: {short_ev(entityvalue)} is not one of "
+                "the parameters configured in this integration's options. Add it "
+                "to a slot first."
+            )
+
         store = hass.data.get(DOMAIN, {}).get(target_entry.entry_id, {})
         lock = store.get("expert_lock")
         ev_short = short_ev(entityvalue)
@@ -381,7 +399,12 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
                 blocking=False,
             )
 
-    hass.services.async_register(
+    # Registered as an ADMIN service: it writes real settings on a heating
+    # system. A plain async_register lets any authenticated user call it, and
+    # nothing in the handler checked call.context.user_id - the opt-in option
+    # and the installation-specific id are obscurity, not access control.
+    async_register_admin_service(
+        hass,
         DOMAIN,
         SERVICE_SET_EXPERT_PARAMETER,
         _handle_set_expert_parameter,

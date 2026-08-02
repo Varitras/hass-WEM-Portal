@@ -244,6 +244,18 @@ async def test_migration_is_skipped_when_no_data_arrived(hass, monkeypatch):
 # --- expert service ---------------------------------------------------
 
 
+def _expert_options():
+    """Expert write enabled AND the parameter configured in a slot.
+
+    Both are required: the service only accepts ids the user actually put in
+    a slot, so a test that omits the slot no longer exercises what it claims.
+    """
+    return {
+        CONF_EXPERT_WRITE: True,
+        CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+    }
+
+
 async def test_expert_service_registered_only_while_enabled(hass):
     """The service exists exactly as long as an expert-enabled entry is
     loaded - and disappears again on unload."""
@@ -265,7 +277,7 @@ async def test_expert_service_raises_on_write_failure(hass, monkeypatch):
     """A failed write must surface as an exception to the caller, so an
     automation can tell whether the parameter was actually set. The old
     fire-and-forget handler always reported success."""
-    await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    await _setup(hass, _entry(hass, _expert_options()))
 
     def boom(self, *_a, **_k):
         raise ParameterWriteError("portal said no")
@@ -286,7 +298,7 @@ async def test_expert_service_raises_on_write_failure(hass, monkeypatch):
 async def test_expert_service_refuses_while_another_operation_runs(hass):
     """The shared per-account lock must reject a second concurrent expert
     operation instead of opening a parallel portal session."""
-    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    entry = await _setup(hass, _entry(hass, _expert_options()))
 
     lock: threading.Lock = hass.data[DOMAIN][entry.entry_id]["expert_lock"]
     assert lock.acquire(blocking=False)
@@ -819,3 +831,37 @@ async def test_a_busy_api_does_not_trigger_the_recovery_swap(hass, monkeypatch):
         await coordinator._async_update_data()
 
     assert coordinator.api is api_before, "a busy api was replaced as if broken"
+
+
+async def test_expert_service_refuses_an_unconfigured_parameter(hass):
+    """Without this the service is a generic write primitive for ANY
+    parameter of the installation, including ones never surfaced in Home
+    Assistant - the opt-in option and a hard-to-guess id are obscurity,
+    not access control."""
+    await _setup(hass, _entry(hass, _expert_options()))
+
+    with pytest.raises(HomeAssistantError, match="not one of"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_B, "value": 30},
+            blocking=True,
+        )
+
+
+async def test_expert_service_refuses_a_non_admin(hass, hass_read_only_user):
+    """It writes real settings on a heating system, so it is an admin
+    service. A plain registration lets any authenticated user call it."""
+    from homeassistant.core import Context
+    from homeassistant.exceptions import Unauthorized
+
+    await _setup(hass, _entry(hass, _expert_options()))
+
+    with pytest.raises(Unauthorized):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A, "value": 30},
+            blocking=True,
+            context=Context(user_id=hass_read_only_user.id),
+        )

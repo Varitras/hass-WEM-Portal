@@ -79,7 +79,11 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
 
         self._parameter_id = entity_data.get("ParameterID", _unique_id)
         self._data_key = _unique_id
-        self._attr_icon = entity_data.get("icon", "mdi:flash")
+        # Only when the data carries one: an explicit icon overrides the
+        # one Home Assistant derives from the device class.
+        icon = entity_data.get("icon")
+        if icon:
+            self._attr_icon = icon
         self._attr_unit = uom
         self._attr_is_on = val in WEM_SWITCH_ON_VALUES
         self._attr_should_poll = False

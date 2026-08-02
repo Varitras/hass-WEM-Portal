@@ -73,8 +73,8 @@ Optional settings (available via `CONFIGURE` after setup):
   30 min). Setting it below 15 min is not recommended; values below 60 s are
   clamped to 60 s.
 - `api_scan_interval`: Update frequency for API data fetching in seconds
-  (defaults to 5 min, should not be lower than 3 min); values below 10 s are
-  clamped to 10 s.
+  (defaults to 5 min, should not be lower than 3 min); values below 60 s are
+  clamped to 60 s.
 
 ## Expert write access (web)
 

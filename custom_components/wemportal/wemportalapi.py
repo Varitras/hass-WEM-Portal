@@ -506,6 +506,14 @@ class WemPortalApi:
             self.spider_wait_interval = self.spider_retry_count
             raise WemPortalError(DATA_GATHERING_ERROR) from exc
 
+        except PortalMaintenanceError:
+            # Announced downtime, not a credential or connection problem.
+            # Must be re-raised BEFORE the catch-all below, which would
+            # otherwise turn it into a generic data-gathering error and cost
+            # the coordinator its ability to tell the two apart.
+            self._reset_scraper()
+            raise
+
         except ForbiddenError:
             # The web frontend rate-limited us (403). Activate the same
             # global cooldown the API path uses, discard the scraper

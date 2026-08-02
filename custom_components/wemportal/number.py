@@ -143,7 +143,11 @@ class WemPortalNumber(CoordinatorEntity, NumberEntity):
         self._last_updated = None
         self._parameter_id = entity_data.get("ParameterID", _unique_id)
         self._data_key = _unique_id
-        self._attr_icon = entity_data.get("icon", "mdi:flash")
+        # Only when the data carries one: an explicit icon overrides the
+        # one Home Assistant derives from the device class.
+        icon = entity_data.get("icon")
+        if icon:
+            self._attr_icon = icon
         self._attr_native_unit_of_measurement = uom
         self._attr_native_value = self._validated_native_value(val)
         self._attr_native_min_value = entity_data.get("min_value", 0.0)
