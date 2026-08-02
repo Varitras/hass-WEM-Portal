@@ -36,6 +36,7 @@ from .const import (
 )
 from .coordinator import (
     WemPortalDataUpdateCoordinator,
+    forget_auth_failures,
     get_modules_store,
     get_scraper_device_store,
 )
@@ -629,6 +630,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )
     if unload_ok:
+        forget_auth_failures(config_entry.entry_id)
         store = hass.data.get(DOMAIN, {}).pop(config_entry.entry_id, None)
         # Close the API + scraper HTTP sessions so they don't linger with an
         # open connection after the entry is unloaded/reloaded.

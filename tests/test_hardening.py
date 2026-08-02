@@ -754,3 +754,37 @@ def test_device_type_is_recorded_but_kept_out_of_the_entity_data():
 
     assert api.device_types == {"1234": 2}
     assert "DeviceType" not in api.data["1234"]
+
+
+def test_web_mode_validation_does_not_accept_a_config_that_cannot_poll(monkeypatch):
+    """`api` and `both` call api_login() on every cycle, so validating them
+    with a web login accepted a configuration that could never poll: setup
+    succeeded, then every update failed with an API login the user was never
+    told about."""
+    import asyncio
+
+    from custom_components.wemportal import config_flow
+    from custom_components.wemportal.const import CONF_MODE
+
+    tried = []
+
+    def api_login(self):
+        tried.append("api")
+        raise exceptions.AuthError("no api access")
+
+    def web_login(self):
+        tried.append("web")
+
+    monkeypatch.setattr(WemPortalApi, "api_login", api_login)
+    monkeypatch.setattr(WemPortalApi, "web_login", web_login)
+
+    class _Hass:
+        @staticmethod
+        async def async_add_executor_job(func, *args):
+            return func(*args)
+
+    data = {"username": "user@example.org", "password": "secret", CONF_MODE: "both"}
+    with pytest.raises(config_flow.InvalidAuth):
+        asyncio.run(config_flow.validate_input(_Hass(), data))
+
+    assert tried == ["api"], "a failed API login must not fall back to web"

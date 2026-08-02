@@ -85,12 +85,14 @@ async def validate_input(hass: HomeAssistant, data):
     api = WemPortalApi(data[CONF_USERNAME], data[CONF_PASSWORD])
 
     try:
+        # Validate exactly what the mode will require at runtime. `api` and
+        # `both` both call api_login() on every cycle (see
+        # WemPortalApi._fetch_data), so falling back to a web login here
+        # accepted a configuration that could never poll: setup succeeded,
+        # then every update failed with the API login the user was never
+        # told about. Only `web` may be validated with a web login.
         if data[CONF_MODE] in ("api", "both"):
-            try:
-                await hass.async_add_executor_job(api.api_login)
-            except AuthError:
-                _LOGGER.warning("Mobile API login failed, trying web login...")
-                await hass.async_add_executor_job(api.web_login)
+            await hass.async_add_executor_job(api.api_login)
         elif data[CONF_MODE] == "web":
             await hass.async_add_executor_job(api.web_login)
     except AuthError as exc:

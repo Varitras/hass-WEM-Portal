@@ -11,6 +11,7 @@ everyday run deselects them (see pytest.ini), CI runs them with `-m ""`.
 """
 
 import threading
+from datetime import timedelta
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
@@ -865,3 +866,54 @@ async def test_expert_service_refuses_a_non_admin(hass, hass_read_only_user):
             blocking=True,
             context=Context(user_id=hass_read_only_user.id),
         )
+
+
+async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
+    """A failed first refresh makes Home Assistant retry the whole setup, and
+    every retry builds a fresh coordinator. With the counter living on the
+    coordinator it restarted at zero each time, so the reauth threshold was
+    unreachable during startup - a password changed while Home Assistant was
+    off left the entry retrying forever instead of asking for new credentials.
+    """
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+    from custom_components.wemportal import coordinator as coord_mod
+    from custom_components.wemportal.const import AUTH_ERROR_ESCALATION_THRESHOLD
+    from custom_components.wemportal.exceptions import AuthError
+
+    entry = _entry(hass)
+
+    def bad_credentials(self, *_a, **_k):
+        raise AuthError("Login failed: Invalid username or password.")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", bad_credentials)
+
+    raised = None
+    for _ in range(AUTH_ERROR_ESCALATION_THRESHOLD):
+        # A fresh coordinator per attempt, exactly like a setup retry.
+        c = coord_mod.WemPortalDataUpdateCoordinator(
+            hass, WemPortalApi(USER, "secret"), entry, timedelta(seconds=300)
+        )
+        try:
+            await c._async_update_data()
+        except ConfigEntryAuthFailed as exc:
+            raised = exc
+            break
+        except Exception:
+            continue
+
+    assert raised is not None, (
+        "the reauth threshold was never reached across setup retries"
+    )
+    coord_mod.forget_auth_failures(entry.entry_id)
+
+
+async def test_a_successful_cycle_clears_the_auth_failure_count(hass):
+    """A transient login hiccup must not accumulate towards reauth forever."""
+    from custom_components.wemportal import coordinator as coord_mod
+
+    entry = await _setup(hass, _entry(hass))
+    coord_mod._AUTH_FAILURES[entry.entry_id] = 2
+
+    await hass.data[DOMAIN][entry.entry_id]["coordinator"]._async_update_data()
+
+    assert entry.entry_id not in coord_mod._AUTH_FAILURES

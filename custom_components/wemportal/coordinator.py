@@ -43,6 +43,22 @@ SCRAPER_DEVICE_STORAGE_VERSION = 1
 # after repeated failures (see the backoff logic in _async_update_data).
 MAX_BACKOFF_SECONDS = 6 * 3600  # 6 hours
 
+# Consecutive auth failures per config entry, kept OUTSIDE the coordinator.
+#
+# A failed first refresh makes Home Assistant retry the whole setup, and
+# every retry builds a fresh coordinator - so a counter living on the
+# coordinator restarted at zero each time and AUTH_ERROR_ESCALATION_THRESHOLD
+# was unreachable during startup. A wrong password (changed while Home
+# Assistant was off) then left the entry retrying forever instead of asking
+# for new credentials. The config entry object itself outlives those retries,
+# so keying on its id does. Cleared on success and on unload.
+_AUTH_FAILURES: dict[str, int] = {}
+
+
+def forget_auth_failures(entry_id: str) -> None:
+    """Drop the auth-failure count for an entry (unload/removal)."""
+    _AUTH_FAILURES.pop(entry_id, None)
+
 
 def get_modules_store(hass: HomeAssistant, entry_id: str) -> Store:
     """Return the Store used to persist discovered module/parameter metadata.
@@ -93,7 +109,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # Consecutive AuthError counter, separate from num_failed: only
         # after AUTH_ERROR_ESCALATION_THRESHOLD auth failures IN A ROW do we
         # escalate to ConfigEntryAuthFailed (reauth). Reset on any success.
-        self.num_auth_failed = 0
+        # Seeded from the cross-setup counter: see _AUTH_FAILURES for why it
+        # cannot live on the coordinator alone.
+        self.num_auth_failed = _AUTH_FAILURES.get(config_entry.entry_id, 0)
         self._modules_store = get_modules_store(hass, config_entry.entry_id)
         self._scraper_device_store = get_scraper_device_store(hass, config_entry.entry_id)
         # Remember the last-persisted scraper device id so we only write the
@@ -209,6 +227,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 x = await self.hass.async_add_executor_job(self.api.fetch_data, device_filter)
                 self.num_failed = 0
                 self.num_auth_failed = 0
+                _AUTH_FAILURES.pop(self.config_entry.entry_id, None)
                 await self._async_save_modules_cache()
                 await self._async_save_scraper_device_id()
                 return x
@@ -225,6 +244,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             except AuthError as exc:
                 self.num_failed += 1
                 self.num_auth_failed += 1
+                _AUTH_FAILURES[self.config_entry.entry_id] = self.num_auth_failed
                 # Escalate to reauth only after several CONSECUTIVE auth
                 # failures. The portal occasionally serves a transient login
                 # page; treating a single such hiccup as "credentials are
