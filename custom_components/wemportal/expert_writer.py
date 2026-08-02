@@ -1353,6 +1353,7 @@ try:
             self._attr_native_value = None
             # Guards against starting a second write while one is still
             # running in the background (the write takes roughly 5-15s).
+            self._write_task = None
             self._write_in_progress = False
 
         async def async_added_to_hass(self):
@@ -1408,10 +1409,24 @@ try:
                     f"{self._attr_name}: a write is already in progress, please wait."
                 )
             self._write_in_progress = True
-            self.hass.async_create_background_task(
+            # Tracked so it can be cancelled when the entity goes away. An
+            # untracked background task kept running against the portal after
+            # the entry was unloaded, using the credentials and options of a
+            # configuration that no longer exists.
+            self._write_task = self.hass.async_create_background_task(
                 self._async_write_in_background(value),
                 name=f"wemportal_expert_write_{self._attr_unique_id}",
             )
+
+        async def async_will_remove_from_hass(self) -> None:
+            """Cancel a write still in flight when the entity is removed."""
+            task = getattr(self, "_write_task", None)
+            if task is not None and not task.done():
+                _LOGGER.debug(
+                    "Cancelling the in-flight expert write for %s.", self._attr_name
+                )
+                task.cancel()
+            await super().async_will_remove_from_hass()
 
         async def _async_write_in_background(self, value: float) -> None:
             """Perform the actual (slow) write off the service-call path."""

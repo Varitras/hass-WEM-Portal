@@ -921,3 +921,19 @@ def test_a_purely_added_row_is_not_a_rename(caplog):
         api._merge_webscraping_data("0000", _scraped("pump-flow", "pump-new"))
 
     assert "renamed" not in caplog.text
+
+
+def test_the_service_value_field_does_not_impose_a_percent_range():
+    """Expert parameters are not all percentages - temperatures, times and
+    curves are among them, and the data model knows half steps
+    (NUMBER_STEP_HALF), which a step of 1 silently blocked. The real check is
+    on write, against the option list the device itself offers."""
+    import yaml
+    from pathlib import Path
+
+    p = Path(__file__).resolve().parent.parent / "custom_components" / "wemportal"
+    spec = yaml.safe_load((p / "services.yaml").read_text(encoding="utf-8"))
+    number = spec["set_expert_parameter"]["fields"]["value"]["selector"]["number"]
+
+    assert "min" not in number and "max" not in number
+    assert number.get("step") == "any", "a step of 1 rules out half-step values"

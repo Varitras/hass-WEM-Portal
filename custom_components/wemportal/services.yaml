@@ -18,8 +18,15 @@ set_expert_parameter:
       description: New value. Must be one of the options the device offers.
       required: true
       example: 30
+      # No min/max/step: expert parameters are not all percentages - there
+      # are temperatures, times and curves among them, and the integration's
+      # own data model knows half steps (WemDataType.NUMBER_STEP_HALF), which
+      # a step of 1 silently blocked. Bounds here would only suggest a
+      # precision that does not exist; the real check happens on write, where
+      # the value is validated against the option list the device itself
+      # offers. `box` keeps a numeric field rather than a slider, which needs
+      # a range to make sense.
       selector:
         number:
-          min: 0
-          max: 100
-          step: 1
+          mode: box
+          step: any

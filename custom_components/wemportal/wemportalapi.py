@@ -638,7 +638,10 @@ class WemPortalApi:
                 raise AuthError(f"Login failed: Server returned {response_data}")
 
             self.api_version = response_data.get("Version")
-            _LOGGER.debug("API login successful for %s", self.username)
+            # No username: there is one account per config entry, so naming it adds
+            # nothing - and a debug log is exactly what people paste into an
+            # issue when asking for help.
+            _LOGGER.debug("API login successful.")
             self.valid_login = True
 
         except ValueError as exc: # Catches JSONDecodeError if response is HTML
@@ -756,7 +759,7 @@ class WemPortalApi:
 
             # Step 4: Check if login was successful
             if "ctl00_btnLogout" in response.text:
-                _LOGGER.debug("WEB login successful for %s", self.username)
+                _LOGGER.debug("WEB login successful.")
                 return
             else:
                 raise AuthError("Login failed: Invalid username or password.")

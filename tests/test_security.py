@@ -138,3 +138,23 @@ def test_forbidden_url_drops_a_cookieless_session_id():
 
     assert "livesessiontoken" not in redacted
     assert redacted.endswith("/Web/Default.aspx")
+
+
+def test_a_successful_login_does_not_log_the_username(monkeypatch, caplog):
+    """Debug logs are exactly what people paste into an issue when asking for
+    help, and there is one account per config entry - naming it adds nothing
+    to the diagnosis.
+
+    Drives the real login rather than emitting the message by hand: a test
+    that logs its own line proves nothing about what the code does.
+    """
+    response = FakeResponse(200, {"Status": 0, "Version": "3.1.3.0"})
+    api = WemPortalApi("user@example.org", "secret")
+    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: FakeSession(response))
+
+    with caplog.at_level(logging.DEBUG):
+        api.api_login()
+
+    assert api.valid_login is True
+    assert "login successful" in caplog.text.lower(), "the log line is gone entirely"
+    assert "user@example.org" not in caplog.text
