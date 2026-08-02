@@ -77,6 +77,14 @@ from .const import (
     EXPERT_FORM_MAX_ATTEMPTS,
     EXPERT_FORM_RETRY_DELAY_SECONDS,
     MIN_EXPERT_ENTITYVALUE_LENGTH,
+    CONF_EXPERT_MODULE_ARG,
+    CONF_EXPERT_ENABLE_MODULE_NAV,
+    CONF_EXPERT_ENABLE_SECURITY_CODE,
+    CONF_EXPERT_WRITE,
+    EXPERT_SLOT_COUNT,
+    CONF_EXPERT_SLOT_NAME_TEMPLATE,
+    CONF_EXPERT_SLOT_ID_TEMPLATE,
+    CONF_EXPERT_NOTIFY_ON_SUCCESS,
 )
 
 # Edit dialog endpoint; entityvalue identifies device/module/parameter.
@@ -1310,11 +1318,6 @@ def expert_client_options(options):
     Both toggles default to OFF (i.e. the steps stay skipped) unless the user
     enabled them in the options UI.
     """
-    from .const import (
-        CONF_EXPERT_MODULE_ARG,
-        CONF_EXPERT_ENABLE_MODULE_NAV,
-        CONF_EXPERT_ENABLE_SECURITY_CODE,
-    )
     module_arg = (options.get(CONF_EXPERT_MODULE_ARG) or "").strip() or None
     return {
         "module_arg": module_arg,
@@ -1325,18 +1328,16 @@ def expert_client_options(options):
 
 def create_expert_number_entities(config_entry):
     """Build the configured expert number entities (comfort layer on top
-    of the write service). Imported lazily by number.py's setup so this
-    module stays out of the load path while the option is disabled.
+    of the write service).
+
+    number.py imports this module only when CONF_EXPERT_WRITE is on, which is
+    what actually keeps it - and curl_cffi with it - out of the load path
+    while the option is disabled. The check below is kept as the authoritative
+    one for any other caller.
 
     Entities are built from the ten generic slots (name + entityvalue id).
     Empty slots are skipped; duplicate entityvalues are de-duplicated.
     """
-    from .const import (
-        CONF_EXPERT_WRITE,
-        EXPERT_SLOT_COUNT,
-        CONF_EXPERT_SLOT_NAME_TEMPLATE,
-        CONF_EXPERT_SLOT_ID_TEMPLATE,
-    )
 
     if not config_entry.options.get(CONF_EXPERT_WRITE, False):
         return []
@@ -1600,10 +1601,10 @@ try:
             enabled CONF_EXPERT_NOTIFY_ON_SUCCESS (off by default) - the
             success is logged regardless.
             """
-            if success:
-                from .const import CONF_EXPERT_NOTIFY_ON_SUCCESS
-                if not self._config_entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
-                    return
+            if success and not self._config_entry.options.get(
+                CONF_EXPERT_NOTIFY_ON_SUCCESS, False
+            ):
+                return
             self.hass.async_create_task(
                 self.hass.services.async_call(
                     "persistent_notification",

@@ -13,6 +13,7 @@ import voluptuous as vol
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.config_entries import ConfigEntry
 from .const import (
@@ -335,6 +336,9 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
     account on each call (see _resolve_expert_entry), so the single global
     service addresses the correct account and refuses when it can't tell.
     """
+    # Function-local, like every other expert_writer import in this file:
+    # the module pulls curl_cffi and lxml (~140 ms, measured) and this
+    # file is imported whenever Home Assistant loads the integration.
     from .expert_writer import WemPortalExpertClient, ev_digest, short_ev
 
     if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
@@ -491,7 +495,6 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
     after this. So we expose a `start_expert_auto_poll` callback in the entry
     store; whichever of the two runs last actually starts the timer.
     """
-    from homeassistant.helpers.event import async_call_later
     from .expert_writer import WemPortalExpertClient, ev_digest
 
     if not entry.options.get(CONF_EXPERT_AUTO_POLL, False):
@@ -681,6 +684,8 @@ def _backfill_account_unique_id(hass: HomeAssistant, entry: ConfigEntry) -> None
     """
     if entry.unique_id is not None:
         return
+    # Function-local: config_flow imports expert_writer at module level,
+    # so a top-level import here would pull curl_cffi into every setup.
     from .config_flow import account_unique_id
 
     wanted = account_unique_id(entry.data.get(CONF_USERNAME))

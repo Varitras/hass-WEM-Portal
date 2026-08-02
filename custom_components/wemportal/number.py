@@ -9,7 +9,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import get_wemportal_unique_id
 from homeassistant.helpers.device_registry import DeviceInfo
-from .const import _LOGGER, DOMAIN
+from homeassistant.helpers import entity_registry as er
+from .const import _LOGGER, CONF_EXPERT_WRITE, DOMAIN
 from .utils import (device_is_reachable, device_model, fix_value_and_uom, uom_to_device_class, build_device_info)
 
 
@@ -38,20 +39,26 @@ async def async_setup_entry(
     async_add_entities(entities)
 
     # Expert write access (web): add the configured expert numbers.
-    # Returns [] unless the option is enabled - lazy import keeps the
-    # expert module out of the load path while disabled.
-    from .expert_writer import create_expert_number_entities
-    expert_entities = create_expert_number_entities(config_entry)
-    if expert_entities:
-        _async_migrate_expert_unique_ids(hass, config_entry, expert_entities)
-        async_add_entities(expert_entities)
-        # Expose them to the optional hourly auto-poll (set up in __init__),
-        # which reads all configured ids in one shared session and pushes the
-        # values back into these entities.
-        data = config_entry.runtime_data
-        data.expert_entities = expert_entities
-        if data.start_expert_auto_poll is not None:
-            data.start_expert_auto_poll()
+    #
+    # The import sits INSIDE the option check, not merely inside the
+    # function. expert_writer pulls curl_cffi and lxml at module level -
+    # measured at ~114 ms and ~29 ms cold - and this ran on every entry
+    # setup regardless of the option, on the event loop, while three
+    # comments claimed the opposite. An installation with expert access off
+    # is the common case and should not pay for a module it never uses.
+    if config_entry.options.get(CONF_EXPERT_WRITE, False):
+        from .expert_writer import create_expert_number_entities
+        expert_entities = create_expert_number_entities(config_entry)
+        if expert_entities:
+            _async_migrate_expert_unique_ids(hass, config_entry, expert_entities)
+            async_add_entities(expert_entities)
+            # Expose them to the optional hourly auto-poll (set up in
+            # __init__), which reads all configured ids in one shared session
+            # and pushes the values back into these entities.
+            data = config_entry.runtime_data
+            data.expert_entities = expert_entities
+            if data.start_expert_auto_poll is not None:
+                data.start_expert_auto_poll()
 
 
 def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> None:
@@ -64,8 +71,6 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
     Best-effort: a failure only means the entity is re-created under the
     new unique_id instead of migrated.
     """
-    from homeassistant.helpers import entity_registry as er
-
     registry = er.async_get(hass)
     for entity in expert_entities:
         old_unique_id = f"{config_entry.entry_id}:expert:{entity.entityvalue}"

@@ -264,5 +264,12 @@
     "old": "                if merged == current:\n                    return self.async_abort(reason=\"no_changes\")",
     "new": "                if False:\n                    return self.async_abort(reason=\"no_changes\")",
     "tests": "saving_without_a_change_is_not_a_write"
+  },
+  {
+    "label": "load path: the expert module must stay unimported while disabled",
+    "path": "custom_components/wemportal/number.py",
+    "old": "    if config_entry.options.get(CONF_EXPERT_WRITE, False):\n        from .expert_writer import create_expert_number_entities",
+    "new": "    if True:\n        from .expert_writer import create_expert_number_entities",
+    "tests": "expert_module_is_only_loaded"
   }
 ]

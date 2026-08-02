@@ -275,6 +275,31 @@ async def test_expert_service_registered_only_while_enabled(hass):
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
 
 
+async def test_the_expert_module_is_only_loaded_when_it_is_enabled(hass, monkeypatch):
+    """The expert module pulls curl_cffi and lxml at import time (~140 ms,
+    measured), on the event loop, during platform setup.
+
+    number.py used to import it unconditionally while three comments claimed
+    it stayed out of the load path unless the option was on. Asserting on the
+    CALL rather than on sys.modules is deliberate: the test session has the
+    module imported long before this runs, so sys.modules proves nothing.
+    """
+    calls = []
+    monkeypatch.setattr(
+        expert_writer, "create_expert_number_entities",
+        lambda entry: calls.append(entry) or [],
+    )
+
+    plain = await _setup(hass, _entry(hass))
+    assert calls == [], "the expert module was loaded although the option is off"
+
+    await hass.config_entries.async_unload(plain.entry_id)
+    await hass.async_block_till_done()
+
+    await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    assert len(calls) == 1, "the expert module was not loaded although it is on"
+
+
 async def test_expert_service_raises_on_write_failure(hass, monkeypatch):
     """A failed write must surface as an exception to the caller, so an
     automation can tell whether the parameter was actually set. The old
@@ -739,11 +764,11 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
         scheduled.append(action)
         return lambda: None
 
-    # Patch at the SOURCE: __init__.py imports async_call_later inside the
-    # function, so patching the module attribute would have no effect.
-    import homeassistant.helpers.event as ha_event
+    # Patched where it is USED: __init__.py imports async_call_later at
+    # module level, so that is the name the auto-poll actually calls.
+    import custom_components.wemportal as wemportal
 
-    monkeypatch.setattr(ha_event, "async_call_later", fake_call_later)
+    monkeypatch.setattr(wemportal, "async_call_later", fake_call_later)
 
     # A configured slot is required: without an expert entity there is
     # nothing to poll, so the timer chain is never armed in the first place.
@@ -788,11 +813,14 @@ async def _auto_poll_entry(hass, monkeypatch, read_many):
         CONF_EXPERT_AUTO_POLL,
         CONF_EXPERT_WRITE,
     )
-    import homeassistant.helpers.event as ha_event
+    import custom_components.wemportal as wemportal
 
     scheduled = []
+    # Patched where it is USED, not where it is defined: the integration
+    # imports async_call_later at module level, so the name it calls is the
+    # one bound here.
     monkeypatch.setattr(
-        ha_event, "async_call_later",
+        wemportal, "async_call_later",
         lambda _hass, _delay, action: scheduled.append(action) or (lambda: None),
     )
     monkeypatch.setattr(

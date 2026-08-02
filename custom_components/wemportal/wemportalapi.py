@@ -57,6 +57,13 @@ from .const import (
     API_REQUEST_TIMEOUT_SECONDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     SCRAPER_FALLBACK_DEVICE_ID,
+    WEB_LOGIN_URL,
+)
+from .mapper import WemPortalDataMapper
+from .translations import friendly_name_mapper, translate
+from .utils import (
+    clamped_scan_interval,
+    maintenance_notice,
 )
 
 
@@ -95,7 +102,6 @@ class WemPortalApi:
         # Clamped, not read verbatim: the floors live in the options-flow
         # schema, which only sees values the user enters now - a value stored
         # by an older release is otherwise used exactly as it was saved.
-        from .utils import clamped_scan_interval
 
         scan_interval = clamped_scan_interval(
             config, CONF_SCAN_INTERVAL,
@@ -519,7 +525,6 @@ class WemPortalApi:
             [k for k, v in webscraping_data.items() if isinstance(v, dict)]
         )
 
-        from .translations import translate
         for key, new_val in webscraping_data.items():
             if isinstance(new_val, dict):
                 if "friendlyName" in new_val:
@@ -605,6 +610,8 @@ class WemPortalApi:
         This function manages the process of initiating a web scraping job,
         handling errors, and returning the scraped data.
         """
+        # Function-local on purpose: the scraper pulls curl_cffi and lxml
+        # (~140 ms, measured), and `api` mode never gets here.
         from .scraper import WemPortalScraper
 
         # Respect an active rate-limit cooldown for the scraping path too,
@@ -808,7 +815,6 @@ class WemPortalApi:
             UnknownAuthError: For other unknown login errors.
         """
         session = reqs.Session()
-        from .const import WEB_LOGIN_URL
         login_url = WEB_LOGIN_URL
 
         headers = {
@@ -832,7 +838,6 @@ class WemPortalApi:
         # as "invalid username or password" and, after three cycles, ask the
         # user to re-enter working credentials. It also avoids sending the
         # password to a page that cannot process it.
-        from .utils import maintenance_notice
         notice = maintenance_notice(initial_response.text)
         if notice:
             raise PortalMaintenanceError(notice)
@@ -1507,7 +1512,6 @@ class WemPortalApi:
                     "readings.", device_id,
                 )
                 return False
-            from .mapper import WemPortalDataMapper
             WemPortalDataMapper.process_api_values(
                 device_id=device_id,
                 values_json=values,
@@ -1584,8 +1588,7 @@ class WemPortalApi:
 
                                 sensor_name = f"{module['Name']}-{param_id}"
                                 if sensor_name not in self.data[device_id]:
-                                    from .translations import friendly_name_mapper, translate
-                                    self.data[device_id][sensor_name] = {
+                                                            self.data[device_id][sensor_name] = {
                                         "friendlyName": translate(self.language, friendly_name_mapper(param_id)),
                                         "ParameterID": param_id,
                                         "unit": None,

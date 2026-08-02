@@ -3,8 +3,9 @@
 Its whole value is the sentence "all mutations caught". Every way that
 sentence can be printed without being true is a way to be lied to about test
 quality - which is exactly the problem the harness exists to solve. So the
-two silent-pass routes are pinned here: a snippet that no longer matches, and
-a selector that matches no tests.
+silent-pass routes are pinned here: a snippet that no longer matches, a
+selector that matches no tests, and a selector clause that names a test which
+does not exist.
 
 The subprocess call is stubbed; running the real suite inside the suite would
 add minutes for no extra confidence about this logic.
@@ -12,6 +13,7 @@ add minutes for no extra confidence about this logic.
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -114,6 +116,40 @@ def test_the_file_is_restored_even_when_the_run_explodes(tmp_path, monkeypatch):
         mutate.main()
 
     assert target.read_text(encoding="utf-8") == original
+
+
+def test_every_selector_clause_names_a_real_test():
+    """The third silent-pass route, and the one the harness cannot see.
+
+    mutate.py refuses a selector that matches NOTHING. It cannot refuse a
+    selector where one clause of an `or` matches nothing - the other clause
+    carries the run and the dead name sits there looking meaningful. A plan
+    shipped with `... or entity_stays_unavailable` did exactly that: the
+    named test had never existed, so a rename of the real one would have
+    quietly downgraded the mutation to whatever the survivor selected.
+    """
+    plan = json.loads(
+        (SCRIPT.parent.parent / "mutations" / "response-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    names = set()
+    for module in (Path(__file__).parent).glob("test_*.py"):
+        names.update(
+            re.findall(
+                r"^\s*(?:async )?def (test_\w+)",
+                module.read_text(encoding="utf-8"),
+                re.M,
+            )
+        )
+    assert names, "no test functions found - the check would pass vacuously"
+
+    for case in plan:
+        for clause in re.split(r"\s+(?:or|and)\s+", case["tests"]):
+            clause = clause.strip()
+            assert any(clause in name for name in names), (
+                f"{case['label']}: selector clause {clause!r} matches no test"
+            )
 
 
 def test_the_shipped_plan_still_matches_the_code():
