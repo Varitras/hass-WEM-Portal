@@ -14,6 +14,21 @@ from custom_components.wemportal import wemportalapi, expert_writer
 pytest_plugins = ("pytest_homeassistant_custom_component",)
 
 
+def pytest_addoption(parser):
+    """--update-golden rewrites the recorded mapper output.
+
+    Deliberately an explicit flag rather than "write the file if it is
+    missing": a snapshot that regenerates itself compares against whatever
+    the code happens to do today and can never fail.
+    """
+    parser.addoption(
+        "--update-golden",
+        action="store_true",
+        default=False,
+        help="rewrite the recorded mapper snapshot instead of comparing to it",
+    )
+
+
 @pytest.fixture(autouse=True)
 def _mock_sleep(monkeypatch):
     """Neutralise real time.sleep() in the modules that pace server load.

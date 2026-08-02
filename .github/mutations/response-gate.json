@@ -68,5 +68,26 @@
     "old": "        data.unloading = True",
     "new": "        pass",
     "tests": "unloading_is_flagged or abandoned_while_the_entry_is_unloading"
+  },
+  {
+    "label": "golden: a swapped number step must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "\"step\": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,",
+    "new": "\"step\": 1 if data_type == WemDataType.NUMBER_STEP_HALF else 0.5,",
+    "tests": "mapper_output_is_unchanged"
+  },
+  {
+    "label": "golden: a swapped option field must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "\"options\": [x[\"Value\"] for x in parameter.get(\"EnumValues\", [])],",
+    "new": "\"options\": [x[\"Name\"] for x in parameter.get(\"EnumValues\", [])],",
+    "tests": "mapper_output_is_unchanged"
+  },
+  {
+    "label": "golden: changed bounds logic must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    if data_type == WemDataType.SWITCH:\n        return 0.0, 1.0",
+    "new": "    if False:\n        return 0.0, 1.0",
+    "tests": "mapper_output_is_unchanged"
   }
 ]
