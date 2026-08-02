@@ -30,6 +30,51 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_portal(monkeypatch):
+    """Nothing in the suite may reach wemportal.com. Global on purpose.
+
+    The expert client uses curl_cffi, which pytest's socket guard does not
+    cover, so an expert path reached by accident really did perform a failed
+    login against a live third-party service - on every run, and plausibly a
+    contributor to a 403 that took hours to diagnose.
+
+    This lived as a module-local fixture in test_e2e.py, which meant it
+    protected exactly one file: a new test module would have had no guard at
+    all, and `_mock_sleep` below would have removed the pacing between the
+    requests it then made. A protection whose absence is silent belongs where
+    every module gets it.
+
+    Blocks the TRANSPORT rather than the client's methods: several of those
+    methods are themselves under test, and stubbing them out would disable
+    the logic instead of the traffic. A test that installs its own fake
+    session on the instance is unaffected.
+    """
+    from custom_components.wemportal import expert_writer, scraper
+
+    class _NoNetworkSession:
+        """Looks like a session, refuses to be one."""
+
+        def __init__(self, *_args, **_kwargs):
+            self.cookies = {}
+            self.headers = {}
+
+        def _refuse(self, *_args, **_kwargs):
+            raise AssertionError(
+                "a test reached the real portal - install a fake session or "
+                "stub the client method instead"
+            )
+
+        get = post = _refuse
+
+        def close(self):
+            pass
+
+    for module in (expert_writer, scraper):
+        monkeypatch.setattr(module.requests, "Session", _NoNetworkSession)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _mock_sleep(monkeypatch):
     """Neutralise real time.sleep() in the modules that pace server load.
 

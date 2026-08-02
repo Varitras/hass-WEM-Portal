@@ -1,0 +1,525 @@
+{
+  "empty_filter_polls_nothing": {
+    "calls": [],
+    "data": {
+      "1234": {}
+    },
+    "retry_shortened": false
+  },
+  "empty_values": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {}
+    },
+    "retry_shortened": false
+  },
+  "latest_by_date_not_position": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {
+        "1234-Energy_1": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_1",
+          "device_class": "energy",
+          "friendlyName": "Heating Ung Energy",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 30.0
+        }
+      }
+    },
+    "retry_shortened": false
+  },
+  "missing_value_keeps_the_previous": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {
+        "1234-Energy_1": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_1",
+          "device_class": "energy",
+          "friendlyName": "Heating Ung Energy",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 77.0
+        }
+      }
+    },
+    "retry_shortened": false
+  },
+  "missing_value_without_history_is_skipped": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {}
+    },
+    "retry_shortened": false
+  },
+  "name_already_contains_energy": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {
+        "1234-Energy_1": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_1",
+          "device_class": "energy",
+          "friendlyName": "Heating Energy",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 4.0
+        }
+      }
+    },
+    "retry_shortened": false
+  },
+  "named_and_unnamed_groups": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 4,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {
+        "1234-Energy_1": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_1",
+          "device_class": "energy",
+          "friendlyName": "Heating Ung Energy",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 12.5
+        },
+        "1234-Energy_4": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_4",
+          "device_class": "energy",
+          "friendlyName": "Total Energy Yield",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 99.0
+        }
+      }
+    },
+    "retry_shortened": false
+  },
+  "other_group_error_does_not_stop_the_rest": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 2,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {
+        "1234-Energy_2": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_2",
+          "device_class": "energy",
+          "friendlyName": "Hot Water Energy",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 8.0
+        }
+      }
+    },
+    "retry_shortened": false
+  },
+  "partial_success_keeps_the_full_interval": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 5678
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 5678,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {},
+      "5678": {
+        "5678-Energy_1": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_1",
+          "device_class": "energy",
+          "friendlyName": "Heating Ung Energy",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 3.0
+        }
+      }
+    },
+    "retry_shortened": false
+  },
+  "refresh_failure_shortens_the_retry": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      }
+    ],
+    "data": {
+      "1234": {}
+    },
+    "retry_shortened": false
+  },
+  "routine_rejection_does_not_stop_the_rest": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 2,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {
+        "1234-Energy_2": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_2",
+          "device_class": "energy",
+          "friendlyName": "Hot Water Energy",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 8.0
+        }
+      }
+    },
+    "retry_shortened": false
+  },
+  "unit_defaults_to_kwh": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 1,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {
+        "1234-Energy_1": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_1",
+          "device_class": "energy",
+          "friendlyName": "Heating Ung Energy",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 5.0
+        }
+      }
+    },
+    "retry_shortened": false
+  },
+  "unknown_device_is_skipped": {
+    "calls": [],
+    "data": {
+      "1234": {}
+    },
+    "retry_shortened": false
+  },
+  "unknown_group_id": {
+    "calls": [
+      {
+        "data": {
+          "DeviceID": 1234
+        },
+        "headers": null,
+        "url": "https://www.wemportal.com/app/Statistics/Refresh"
+      },
+      {
+        "data": {
+          "DeviceID": 1234,
+          "GroupType": 42,
+          "ModuleIndex": 0,
+          "ModuleType": 7,
+          "Type": 1
+        },
+        "headers": {
+          "X-Api-Version": "2.0.0.0"
+        },
+        "url": "https://www.wemportal.com/app/Statistics/Read"
+      }
+    ],
+    "data": {
+      "1234": {
+        "1234-Energy_42": {
+          "DataType": -1,
+          "IsWriteable": false,
+          "ModuleIndex": -1,
+          "ModuleType": -1,
+          "ParameterID": "Energy_42",
+          "device_class": "energy",
+          "friendlyName": "Energy 42",
+          "platform": "sensor",
+          "state_class": "total_increasing",
+          "unit": "kWh",
+          "value": 1.0
+        }
+      }
+    },
+    "retry_shortened": false
+  }
+}

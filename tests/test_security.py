@@ -160,6 +160,27 @@ def test_a_successful_login_does_not_log_the_username(monkeypatch, caplog):
     assert "user@example.org" not in caplog.text
 
 
+def test_no_test_can_reach_the_real_portal():
+    """The suite's most expensive mistake, pinned so it cannot come back.
+
+    The expert client uses curl_cffi, which pytest's socket guard does not
+    cover, so an expert path reached by accident performed a real failed
+    login against wemportal.com on every run - and the guard that stopped it
+    lived in a single test module, protecting exactly that file.
+
+    It is global now, and it blocks the transport rather than the client's
+    methods, because several of those methods are themselves under test.
+    """
+    from custom_components.wemportal import expert_writer, scraper
+
+    for module in (expert_writer, scraper):
+        session = module.requests.Session()
+        with pytest.raises(AssertionError, match="reached the real portal"):
+            session.get("https://www.wemportal.com/Web/Login.aspx")
+        with pytest.raises(AssertionError, match="reached the real portal"):
+            session.post("https://www.wemportal.com/Web/Login.aspx")
+
+
 @pytest.mark.parametrize(
     "url",
     [

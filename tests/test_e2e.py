@@ -11,6 +11,7 @@ everyday run deselects them (see pytest.ini), CI runs them with `-m ""`.
 """
 
 import threading
+import types
 from datetime import timedelta
 
 import pytest
@@ -775,6 +776,187 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
     assert len(scheduled) == before, (
         "an unloaded entry re-armed the auto-poll timer"
     )
+
+
+async def _auto_poll_entry(hass, monkeypatch, read_many):
+    """An entry with the auto-poll armed, plus the list of scheduled polls.
+
+    Returns (entry, scheduled, notifications). `read_many` stands in for the
+    portal round trip and may raise.
+    """
+    from custom_components.wemportal.const import (
+        CONF_EXPERT_AUTO_POLL,
+        CONF_EXPERT_WRITE,
+    )
+    import homeassistant.helpers.event as ha_event
+
+    scheduled = []
+    monkeypatch.setattr(
+        ha_event, "async_call_later",
+        lambda _hass, _delay, action: scheduled.append(action) or (lambda: None),
+    )
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "read_many",
+        lambda self, ids: read_many(ids),
+    )
+
+    # Register our own handler rather than patching the registry (async_call
+    # is read-only): this is also the path a real notification takes.
+    notifications = []
+
+    async def record(call):
+        notifications.append(call.data)
+
+    hass.services.async_register("persistent_notification", "create", record)
+
+    entry = await _setup(
+        hass,
+        _entry(hass, {
+            CONF_EXPERT_WRITE: True,
+            CONF_EXPERT_AUTO_POLL: True,
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+        }),
+    )
+    await hass.async_block_till_done()
+    # Setup fires an initial poll of its own. Reset to a known point so the
+    # counts a test asserts are the ones it caused, not one more.
+    entry.runtime_data.expert_poll_fail_counts.clear()
+    entry.runtime_data.expert_poll_fail_notified.clear()
+    notifications.clear()
+    return entry, scheduled, notifications
+
+
+async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypatch):
+    """The distinction a decomposition is most likely to invert.
+
+    Per-id failure counting exists to spot a typo'd entityvalue: after three
+    consecutive failures the user is told to check the ID. But that only
+    applies when the batch SUCCEEDED and the portal returned nothing for that
+    one id. A failed read - portal down, 403, timeout - returns early and
+    counts nothing, because it says nothing about any individual id.
+
+    The obvious clean shape ("read returns {} on failure, then always apply
+    the results") inverts exactly this: after three outages every configured
+    parameter would raise "Check the configured entityvalue ID". Wrong, and
+    alarming on a heating system.
+    """
+    def always_fails(_ids):
+        raise RuntimeError("portal unavailable")
+
+    entry, scheduled, notifications = await _auto_poll_entry(
+        hass, monkeypatch, always_fails
+    )
+    poll = scheduled[-1]
+
+    for _ in range(4):
+        await poll(None)
+        await hass.async_block_till_done()
+
+    assert entry.runtime_data.expert_poll_fail_counts == {}, (
+        "an outage was counted against the individual parameters"
+    )
+    assert notifications == [], "an outage produced a 'check your ID' notice"
+
+
+async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(hass, monkeypatch):
+    """The case the counting DOES exist for: the batch works, one id never
+    comes back. After three of those the user hears about it - once."""
+    entry, scheduled, notifications = await _auto_poll_entry(
+        hass, monkeypatch, lambda ids: {},
+    )
+    poll = scheduled[-1]
+
+    for _ in range(5):
+        await poll(None)
+        await hass.async_block_till_done()
+
+    assert entry.runtime_data.expert_poll_fail_counts[EV_A] == 5
+    assert len(notifications) == 1, (
+        f"{len(notifications)} notifications for one persistent failure"
+    )
+    assert "entityvalue" in notifications[0]["message"]
+
+
+async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch):
+    """Otherwise a parameter that failed once could never notify again, and
+    a recurring problem would go quiet after its first streak."""
+    state = {"fail": True}
+
+    def sometimes(_ids):
+        return {} if state["fail"] else {EV_A: types.SimpleNamespace(
+            current=21.0, min_value=0.0, max_value=100.0)}
+
+    entry, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, sometimes)
+    poll = scheduled[-1]
+
+    for _ in range(2):
+        await poll(None)
+        await hass.async_block_till_done()
+    assert entry.runtime_data.expert_poll_fail_counts[EV_A] == 2
+
+    state["fail"] = False
+    await poll(None)
+    await hass.async_block_till_done()
+
+    assert EV_A not in entry.runtime_data.expert_poll_fail_counts
+    assert EV_A not in entry.runtime_data.expert_poll_fail_notified
+
+
+async def test_a_failed_poll_still_arms_the_next_one(hass, monkeypatch):
+    """A transient error must not end the chain - that would silently stop
+    the feature until the next restart."""
+    def always_fails(_ids):
+        raise RuntimeError("portal unavailable")
+
+    _entry_obj, scheduled, _ = await _auto_poll_entry(
+        hass, monkeypatch, always_fails
+    )
+    before = len(scheduled)
+
+    await scheduled[-1](None)
+    await hass.async_block_till_done()
+
+    assert len(scheduled) == before + 1, "the poll chain died on one failure"
+
+
+async def test_a_poll_does_not_touch_the_portal_while_a_write_runs(hass, monkeypatch):
+    """Reading in parallel with a write can push the pre-write value back
+    into the entity right after the write was verified."""
+    reads = []
+
+    entry, scheduled, _ = await _auto_poll_entry(
+        hass, monkeypatch, lambda ids: reads.append(ids) or {},
+    )
+    reads.clear()   # the initial poll already ran during setup
+    for entity in entry.runtime_data.expert_entities:
+        entity._write_in_progress = True
+
+    await scheduled[-1](None)
+    await hass.async_block_till_done()
+
+    assert reads == [], "the auto-poll read while a write was in flight"
+
+
+async def test_a_poll_skips_when_another_expert_operation_holds_the_lock(hass, monkeypatch):
+    """One portal session per account. Skipping also must not release a lock
+    this cycle never acquired."""
+    reads = []
+
+    entry, scheduled, _ = await _auto_poll_entry(
+        hass, monkeypatch, lambda ids: reads.append(ids) or {},
+    )
+    reads.clear()   # the initial poll already ran during setup
+    lock = entry.runtime_data.expert_lock
+    assert lock.acquire(blocking=False), "lock was already held"
+
+    await scheduled[-1](None)
+    await hass.async_block_till_done()
+
+    assert reads == [], "the auto-poll opened a second portal session"
+    assert not lock.acquire(blocking=False), (
+        "the skipped cycle released a lock it never took"
+    )
+    lock.release()
 
 
 async def test_update_timeout_is_counted_and_reported(hass, monkeypatch):

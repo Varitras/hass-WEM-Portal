@@ -131,5 +131,103 @@
     "old": "                                scraped_part = scraped_entity_id.split(\"-\")[1]",
     "new": "                                scraped_part = scraped_entity_id.split(\"-\")[-1]",
     "tests": "extra_mapper_output_is_unchanged"
+  },
+  {
+    "label": "stats: a routine rejection must not abort the remaining groups",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                    except Exception as exc:\n                        # Status 3001 = this statistics group isn't valid for",
+    "new": "                    except ZeroDivisionError as exc:\n                        # Status 3001 = this statistics group isn't valid for",
+    "tests": "statistics_output_is_unchanged or routine_rejection_still_counts"
+  },
+  {
+    "label": "stats: an extra read per group must be noticed as traffic",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                        stats_resp = self.make_api_call(\n                            API_STATISTICS_READ_URL,",
+    "new": "                        self.make_api_call(API_STATISTICS_READ_URL, headers=headers, data=read_payload, do_retry=True)\n                        stats_resp = self.make_api_call(\n                            API_STATISTICS_READ_URL,",
+    "tests": "statistics_output_is_unchanged or one_read_per_group"
+  },
+  {
+    "label": "stats: never inventing a zero must be frozen",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                                    \"skipping instead of reporting 0.\", group_id,\n                                )\n                                continue",
+    "new": "                                    \"skipping instead of reporting 0.\", group_id,\n                                )\n                                current_value = 0.0",
+    "tests": "statistics_output_is_unchanged"
+  },
+  {
+    "label": "stats: the fallback name map must be frozen",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                        group_name = fallback_names.get(group_id, f\"Energy {group_id}\")",
+    "new": "                        group_name = f\"Energy {group_id}\"",
+    "tests": "statistics_output_is_unchanged"
+  },
+  {
+    "label": "stats: the Energy suffix rule must be frozen",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                        if \"energy\" not in translated_group.lower():",
+    "new": "                        if False:",
+    "tests": "statistics_output_is_unchanged"
+  },
+  {
+    "label": "stats: the unit default must be frozen",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                        unit = stats_resp.get(\"Unit\", \"kWh\")",
+    "new": "                        unit = stats_resp.get(\"Unit\", \"MWh\")",
+    "tests": "statistics_output_is_unchanged"
+  },
+  {
+    "label": "stats: the sensor attributes must be frozen",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                            \"state_class\": \"total_increasing\"",
+    "new": "                            \"state_class\": \"total\"",
+    "tests": "statistics_output_is_unchanged"
+  },
+  {
+    "label": "stats: picking the newest entry by date must be frozen",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                        latest_stat = latest_statistics_entry(values)",
+    "new": "                        latest_stat = values[-1]",
+    "tests": "statistics_output_is_unchanged"
+  },
+  {
+    "label": "poll: an outage must not be counted against individual parameters",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                return",
+    "new": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                results = {}",
+    "tests": "failed_read_does_not_count"
+  },
+  {
+    "label": "poll: the notification must stay one per streak",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "                    if fail_counts[ev] >= 3 and ev not in notified:",
+    "new": "                    if fail_counts[ev] >= 3:",
+    "tests": "keeps_omitting_is_reported_once"
+  },
+  {
+    "label": "poll: a recovery must clear the streak",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "                    fail_counts.pop(ev, None)\n                    notified.discard(ev)",
+    "new": "                    pass",
+    "tests": "recovered_parameter_clears"
+  },
+  {
+    "label": "poll: a failed cycle must still arm the next one",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        finally:\n            # Always reschedule the next run (with fresh jitter), even if this\n            # cycle failed - a transient error must not stop future polls.\n            _schedule_next()",
+    "new": "        else:\n            _schedule_next()",
+    "tests": "failed_poll_still_arms"
+  },
+  {
+    "label": "poll: a write in flight must stop the read",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if any(getattr(e, \"_write_in_progress\", False) for e in entities):",
+    "new": "            if False:",
+    "tests": "portal_while_a_write_runs"
+  },
+  {
+    "label": "poll: a held lock must stop the read",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if lock is not None and not lock.acquire(blocking=False):",
+    "new": "            if False:",
+    "tests": "holds_the_lock"
   }
 ]
