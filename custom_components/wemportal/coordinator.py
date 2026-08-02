@@ -117,6 +117,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # Remember the last-persisted scraper device id so we only write the
         # store when it actually changes (it's decided once and then stable).
         self._saved_scraper_device_id = None
+        # Fingerprint of the last-written module cache, so an unchanged one
+        # is not rewritten on every successful cycle (~288 writes a day at a
+        # five-minute interval, for data that changes almost never).
+        self._saved_modules_snapshot = None
 
 
     async def _async_save_scraper_device_id(self) -> None:
@@ -150,7 +154,11 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         if not self.api.modules:
             return
         try:
-            await self._modules_store.async_save(serialize_modules(self.api.modules))
+            serialized = serialize_modules(self.api.modules)
+            if serialized == self._saved_modules_snapshot:
+                return
+            await self._modules_store.async_save(serialized)
+            self._saved_modules_snapshot = serialized
         except Exception as exc:  # pylint: disable=broad-except
             _LOGGER.debug("Could not persist WEM Portal module cache: %s", exc)
 

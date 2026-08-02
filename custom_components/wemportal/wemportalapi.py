@@ -1074,6 +1074,7 @@ class WemPortalApi:
         _LOGGER.debug("Computed target_devices=%s", target_devices)
         successes = 0
         failures = 0
+        offline = 0
         for device_id in target_devices:
             # Normalize once: self.data is keyed by str, but callers may
             # pass ints. Previously the membership check used str() while
@@ -1092,6 +1093,9 @@ class WemPortalApi:
                 _LOGGER.debug("Skipping device %s: no API modules (scraper-only).", device_id)
                 continue
             if not self._fetch_device_status(device_id):
+                # Read fine, device not online. Counted separately: it is
+                # neither a success (no fresh readings) nor a failure of ours.
+                offline += 1
                 continue
             if self._fetch_parameter_values(device_id):
                 successes += 1
@@ -1107,6 +1111,15 @@ class WemPortalApi:
         # cycle as failed (backoff / eventual reauth) instead of marking stale
         # values as a successful update. A partial success (at least one
         # device refreshed) is still treated as success.
+        if offline and not successes and not failures:
+            # Every device the portal knows is offline, so nothing was
+            # refreshed. Reported as a failed cycle, otherwise the update
+            # counts as successful and every entity keeps presenting its last
+            # reading as current - for as long as the device stays offline.
+            raise WemPortalError(
+                f"No data: all {offline} device(s) are offline according to "
+                "the portal."
+            )
         if failures and not successes:
             raise WemPortalError(
                 "All API parameter fetches failed this cycle; see the warnings above."
@@ -1447,7 +1460,15 @@ class WemPortalApi:
                             if isinstance(old_sensor, dict) and old_sensor.get("value") is not None:
                                 current_value = old_sensor.get("value")
                             else:
-                                current_value = 0.0
+                                # No previous value either: skip rather than
+                                # invent a 0.0, which the Energy Dashboard
+                                # reads as a meter reset on a
+                                # total_increasing sensor.
+                                _LOGGER.debug(
+                                    "Statistics group %s has no value yet; "
+                                    "skipping instead of reporting 0.", group_id,
+                                )
+                                continue
 
                         unit = stats_resp.get("Unit", "kWh")
 

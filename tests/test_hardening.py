@@ -267,7 +267,10 @@ def test_get_data_accepts_int_device_ids():
     api.make_api_call = lambda *a, **k: FakeResponse(
         {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
     )
-    api.get_data(enabled_devices=[1234])
+    # The device reports offline, so the cycle now legitimately fails - but
+    # the status was still recorded, which is what this test is about.
+    with pytest.raises(exceptions.WemPortalError):
+        api.get_data(enabled_devices=[1234])
     assert api.data["1234"]["1234-ConnectionStatus"]["value"] == "offline"
 
 
@@ -298,8 +301,10 @@ def test_none_enabled_devices_still_polls_everything():
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
+    # Online, so this stays a test about the filter and not about the
+    # all-devices-offline case.
     api.make_api_call = lambda url, **k: calls.append(url) or FakeResponse(
-        {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
+        {"ConnectionStatus": 0, "Errors": [], "Modules": [], "GroupTypeDescriptions": []}
     )
 
     api.get_data(enabled_devices=None)
@@ -788,3 +793,46 @@ def test_web_mode_validation_does_not_accept_a_config_that_cannot_poll(monkeypat
         asyncio.run(config_flow.validate_input(_Hass(), data))
 
     assert tried == ["api"], "a failed API login must not fall back to web"
+
+
+def test_all_devices_offline_is_not_a_successful_cycle():
+    """Offline counted as neither success nor failure, so a fully offline
+    installation reported a SUCCESSFUL update - and every entity kept
+    presenting its last reading as current, indefinitely."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api.make_api_call = lambda *a, **k: FakeResponse(
+        {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
+    )
+
+    with pytest.raises(exceptions.WemPortalError, match="offline"):
+        api.get_data(enabled_devices=["1234"])
+
+
+def _switch(value):
+    """A switch entity built from one reading, without Home Assistant."""
+    import types
+
+    from custom_components.wemportal.switch import WemPortalSwitch
+
+    coordinator = types.SimpleNamespace(
+        data={"1234": {}}, api=_api(), last_update_success=True,
+        async_add_listener=lambda *_a, **_k: None,
+    )
+    entry = types.SimpleNamespace(entry_id="e1")
+    return WemPortalSwitch(
+        coordinator, entry, "1234", "Pump",
+        {"value": value, "unit": None, "friendlyName": "Pump",
+         "ParameterID": "P1", "ModuleIndex": 0, "ModuleType": 1},
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(1.0, True), ("Ein", True), (0.0, False), ("Aus", False), (None, None)],
+)
+def test_missing_switch_reading_is_unknown_not_off(value, expected):
+    """`None in WEM_SWITCH_ON_VALUES` is False, so a missing reading looked
+    exactly like a real switch-off to any automation watching it."""
+    assert _switch(value).is_on is expected

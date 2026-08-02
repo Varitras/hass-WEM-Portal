@@ -85,7 +85,10 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         if icon:
             self._attr_icon = icon
         self._attr_unit = uom
-        self._attr_is_on = val in WEM_SWITCH_ON_VALUES
+        # None means "no reading this cycle", which is not the same as
+        # off: `None in WEM_SWITCH_ON_VALUES` is False, so a missing value
+        # used to look like a real state change to any automation.
+        self._attr_is_on = None if val is None else val in WEM_SWITCH_ON_VALUES
         self._attr_should_poll = False
         self._attr_device_class = SwitchDeviceClass.SWITCH
         self._module_index = entity_data.get("ModuleIndex")
