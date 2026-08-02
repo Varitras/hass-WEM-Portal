@@ -524,3 +524,29 @@ def test_a_healthy_expert_page_still_comes_back():
     scraper = _reuse_scraper(_ReuseResponse("<html><body>expert data</body></html>"))
 
     assert "expert data" in scraper._load_expert_page()
+
+
+def test_a_broken_main_page_is_not_a_credential_problem():
+    """The status check was added for the expert POST and missed the GET ten
+    lines above it.
+
+    A 500 simply has no __VIEWSTATE, so it fell through to `return None` -
+    which the full login reports as an AuthError. A server outage was blamed
+    on the credentials and counted towards re-authentication.
+    """
+    from custom_components.wemportal.exceptions import AuthError, ServerError
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+
+    class _BrokenSession:
+        cookies = {}
+
+        def get(self, *_a, **_k):
+            return _ReuseResponse("<html>Internal Server Error</html>", status_code=500)
+
+    scraper.session = _BrokenSession()
+
+    with pytest.raises(ServerError) as excinfo:
+        scraper._load_expert_page()
+
+    assert not isinstance(excinfo.value, AuthError)

@@ -78,6 +78,15 @@ class WemPortalScraper:
         """
         r_main = self.session.get(WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
         self._raise_if_forbidden(r_main)
+        # Same reasoning as for the expert POST below, and the reason this
+        # line exists at all: without it a 500 simply has no __VIEWSTATE, so
+        # it fell through to `return None` - which the full login reports as
+        # an AuthError. A server outage was blamed on the credentials and
+        # counted towards re-authentication.
+        if r_main.status_code != 200:
+            raise ServerError(
+                f"WEM Portal returned {r_main.status_code} for the main page."
+            )
         if WEB_LOGIN_URL.lower() in r_main.url.lower():
             return None
 

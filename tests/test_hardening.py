@@ -1376,3 +1376,85 @@ def test_a_write_without_an_abort_still_goes_through():
         client.write_parameter("A" * 36, 21.0)
 
     assert session.posts, "the write never got as far as the portal"
+
+
+def test_an_unreadable_refresh_answer_does_not_serve_the_previous_job():
+    """Unreadable is not the same as "no status given".
+
+    Falling through left the read without a JobID, and without one the server
+    returns the most recent job - the PREVIOUS measurement - whose values
+    were then booked as fresh.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
+    urls = []
+
+    def make_api_call(url, **_k):
+        urls.append(url)
+        return _BodyResponse(b"<html>gateway timeout</html>")
+
+    api.make_api_call = make_api_call
+
+    assert api._fetch_parameter_values("1234") is False
+    assert len(urls) == 1, "the read ran anyway"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        exceptions.PortalMaintenanceError("down until 18:00"),
+        exceptions.AuthError("wrong password"),
+    ],
+)
+def test_every_failed_scrape_earns_a_backoff(error, monkeypatch):
+    """In `both` mode these errors are swallowed so the API can still poll.
+
+    Without a backoff the scraper therefore walked into the same announced
+    outage - or the same rejected login - on every single API cycle, which
+    for a wrong password is the request the portal is least willing to see
+    repeated.
+    """
+    api = _api()
+    api.webscraping_cookie = {"x": "y"}
+
+    class _Scraper:
+        cookie = {}
+
+        def scrape(self):
+            raise error
+
+        def close(self):
+            pass
+
+    api._scraper = _Scraper()
+
+    with pytest.raises(type(error)):
+        api.fetch_webscraping_data()
+
+    assert api.spider_retry_count == 1
+    assert api.spider_wait_interval == 1
+
+
+def test_a_successful_scrape_clears_the_backoff():
+    """The counters must come back down, or one hiccup would slow the
+    scraper for the rest of the session."""
+    api = _api()
+    api.spider_retry_count = 3
+    api.spider_wait_interval = 3
+
+    class _Scraper:
+        cookie = {}
+
+        def scrape(self):
+            return [{"cookie": {}, "Heating-Outside": {"value": 11.0}}]
+
+        def close(self):
+            pass
+
+    api._scraper = _Scraper()
+
+    api.fetch_webscraping_data()
+
+    assert api.spider_retry_count == 0
+    assert api.spider_wait_interval == 0

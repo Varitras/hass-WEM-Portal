@@ -1196,15 +1196,22 @@ async def test_saving_options_reloads_the_entry(hass, monkeypatch):
     # every field the options step happens to offer.
     schema_keys = {str(marker) for marker in result["data_schema"].schema}
     payload = {k: v for k, v in entry.options.items() if k in schema_keys}
-    payload[CONF_SCAN_INTERVAL] = 2400
+    # The API interval, because this entry runs in `api` mode - so the value
+    # is observable in the coordinator afterwards.
+    payload[CONF_SCAN_INTERVAL_API] = 600
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], payload
     )
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options[CONF_SCAN_INTERVAL] == 2400
+    assert entry.options[CONF_SCAN_INTERVAL_API] == 600
     assert reloads == [entry.entry_id], f"reloaded {len(reloads)} times"
+    # The reload has to see the NEW options. Asserting only that a reload
+    # happened would pass just as well on one scheduled early enough to read
+    # the old ones - which is the actual risk with a scheduled task.
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    assert coordinator.update_interval == timedelta(seconds=600)
 
 
 async def test_the_scrape_backoff_survives_the_real_coordinator_swap(hass, monkeypatch):
@@ -1245,3 +1252,134 @@ async def test_the_scrape_backoff_survives_the_real_coordinator_swap(hass, monke
     assert coordinator.api.spider_wait_interval == 3
     assert coordinator.api.spider_retry_count == 3
     assert coordinator.api.last_scraping_update == stamp
+
+
+async def test_a_failed_platform_setup_does_not_leak_the_store(hass, monkeypatch):
+    """Home Assistant only calls async_unload_entry for an entry that
+    finished setting up.
+
+    Everything after the store is published therefore has to clean up after
+    itself; without that the store and its two HTTP sessions were left
+    behind - once more on every setup retry, which is exactly when platform
+    setup tends to fail.
+    """
+    entry = _entry(hass)
+
+    async def boom(*_a, **_k):
+        raise RuntimeError("platform setup exploded")
+
+    monkeypatch.setattr(
+        hass.config_entries, "async_forward_entry_setups", boom
+    )
+
+    # Home Assistant catches the failure and marks the entry as errored
+    # rather than propagating, which is exactly why the cleanup has to happen
+    # inside async_setup_entry.
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.entry_id not in hass.data.get(DOMAIN, {})
+
+
+async def test_a_write_is_abandoned_when_its_entry_is_reloaded(hass, monkeypatch):
+    """Checking that the entry id is still present is not enough.
+
+    A reload puts a NEW store under the SAME id while the running write still
+    holds the old entry and api, and the store is removed only after the
+    platforms are down - so for the whole teardown the id is still there too.
+    """
+    from custom_components.wemportal import expert_writer
+
+    entry = await _setup(
+        hass,
+        _entry(hass, options={
+            CONF_EXPERT_WRITE: True,
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+            CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot",
+        }),
+    )
+    def reload_midway(self, *_a, **_k):
+        # The reload happens WHILE the write runs, which is the whole point:
+        # the store the handler captured is replaced by an equivalent one
+        # under the same id. Swapping it before the call would simply hand
+        # the handler the new store and prove nothing.
+        hass.data[DOMAIN][entry.entry_id] = dict(hass.data[DOMAIN][entry.entry_id])
+        self._abort_check()
+        raise AssertionError("the write continued after the reload")
+
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "write_parameter", reload_midway
+    )
+
+    with pytest.raises(HomeAssistantError) as excinfo:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A, "value": 21.0},
+            blocking=True,
+        )
+
+    assert "reloaded" in str(excinfo.value)
+
+
+async def test_a_write_is_abandoned_while_the_entry_is_unloading(hass, monkeypatch):
+    """The store survives until the platforms are down, so its presence says
+    nothing during a teardown. The flag is set before that starts."""
+    from custom_components.wemportal import expert_writer
+
+    entry = await _setup(
+        hass,
+        _entry(hass, options={
+            CONF_EXPERT_WRITE: True,
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+            CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot",
+        }),
+    )
+    # Exactly what async_unload_entry sets before unloading the platforms.
+    hass.data[DOMAIN][entry.entry_id]["unloading"] = True
+
+    def never(self, *_a, **_k):
+        raise AssertionError("the write continued during the unload")
+
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "write_parameter", never
+    )
+
+    with pytest.raises(HomeAssistantError) as excinfo:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A, "value": 21.0},
+            blocking=True,
+        )
+
+    assert "unloaded" in str(excinfo.value)
+
+
+async def test_unloading_is_flagged_before_the_platforms_come_down(hass, monkeypatch):
+    """Ordering is the whole point, so the flag is checked at the moment the
+    platforms start unloading.
+
+    Unloading the platforms is the slow part, and the store is only removed
+    afterwards - so anything already talking to the portal in a worker thread
+    has to learn about the teardown at its next gate, not at the end of it.
+    A test that sets the flag itself would pass with the production code
+    removed; this one drives the real unload.
+    """
+    entry = await _setup(hass, _entry(hass))
+    # Held by reference: async_unload_entry removes it from hass.data, but
+    # the dict itself is what the running write is looking at.
+    store = hass.data[DOMAIN][entry.entry_id]
+    seen = {}
+    original = hass.config_entries.async_unload_platforms
+
+    async def check_when_platforms_unload(entry_arg, platforms):
+        seen["flagged"] = store.get("unloading")
+        return await original(entry_arg, platforms)
+
+    monkeypatch.setattr(
+        hass.config_entries, "async_unload_platforms", check_when_platforms_unload
+    )
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert seen["flagged"] is True, "the teardown was only announced afterwards"

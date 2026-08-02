@@ -191,6 +191,18 @@ class WemPortalApi:
         self.last_scraping_update = last_update
         self.api_version = None
 
+    def _register_scrape_failure(self):
+        """Count one failed scrape and make the next cycles wait for it.
+
+        Every failing exit from the scrape has to go through here. Four of
+        them did not - maintenance, wrong credentials and an expired session
+        re-raised without touching the counters - and in `both` mode those
+        errors are swallowed so the API can still poll, so the scraper walked
+        into the same wall on every single API cycle.
+        """
+        self.spider_retry_count += 1
+        self.spider_wait_interval = self.spider_retry_count
+
     @property
     def scraper_backoff(self):
         """The scrape backoff as the constructor takes it back.
@@ -575,10 +587,9 @@ class WemPortalApi:
 
         except IndexError as exc:
             # Handle the case where the job result is not found
-            self.spider_retry_count += 1
+            self._register_scrape_failure()
             if self.spider_retry_count == 2:
                 self.webscraping_cookie = None
-            self.spider_wait_interval = self.spider_retry_count
             raise WemPortalError(DATA_GATHERING_ERROR) from exc
 
         except PortalMaintenanceError:
@@ -586,6 +597,12 @@ class WemPortalApi:
             # Must be re-raised BEFORE the catch-all below, which would
             # otherwise turn it into a generic data-gathering error and cost
             # the coordinator its ability to tell the two apart.
+            #
+            # Backed off like any other failed scrape. In `both` mode the
+            # error is swallowed so the API can still poll, so without this
+            # the scraper walked into the same announced outage on every
+            # single API cycle.
+            self._register_scrape_failure()
             self._reset_scraper()
             raise
 
@@ -602,6 +619,12 @@ class WemPortalApi:
             # Handle authentication errors. Also discard the persistent
             # scraper: its connection/cookie state just failed to
             # authenticate, so the next attempt should start fresh.
+            #
+            # Backed off too: in `both` mode this error is swallowed so the
+            # API keeps polling, so a wrong web password meant a fresh login
+            # attempt on every API cycle - the request the portal is least
+            # willing to see repeated.
+            self._register_scrape_failure()
             self.webscraping_cookie = None
             self._reset_scraper()
             raise AuthError(
@@ -624,8 +647,7 @@ class WemPortalApi:
             # here at all, so a simple network hiccup skipped the same
             # retry-count/backoff bookkeeping that IndexError gets above,
             # even though it's just as recoverable.
-            self.spider_retry_count += 1
-            self.spider_wait_interval = self.spider_retry_count
+            self._register_scrape_failure()
             raise WemPortalError(f"{DATA_GATHERING_ERROR} ({exc})") from exc
 
         try:
@@ -1350,7 +1372,23 @@ class WemPortalApi:
             try:
                 refresh_payload = refresh_response.json()
             except (ValueError, AttributeError):
-                refresh_payload = {}
+                # Unreadable is not the same as "no status given". Falling
+                # through left the read without a JobID, which makes the
+                # server return the most recent job - the PREVIOUS
+                # measurement - whose values were then booked as fresh.
+                _LOGGER.warning(
+                    "Device %s answered the refresh with something that is not "
+                    "JSON; skipping the read rather than serving the previous "
+                    "measurement as current.", device_id,
+                )
+                return False
+            if not isinstance(refresh_payload, dict):
+                _LOGGER.warning(
+                    "Device %s answered the refresh with %s instead of an "
+                    "object; skipping the read.",
+                    device_id, type(refresh_payload).__name__,
+                )
+                return False
             # The portal answers a REJECTED refresh with HTTP 200 and a
             # non-zero Status, exactly like the login does. Only JobID was
             # read here, so a rejection went unnoticed: without a JobID the

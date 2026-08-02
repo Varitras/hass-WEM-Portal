@@ -270,16 +270,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "expert_lock": threading.Lock(),
     }
 
-    # Register the hub device so child devices can reference it via via_device
-    device_registry.async_get(hass).async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, entry.entry_id)},
-        manufacturer="Weishaupt",
-        name=entry.title or "WEM Portal",
-        model="WEM Portal",
-    )
+    # Everything past this point runs with the store already PUBLISHED, so a
+    # failure here cannot be left to async_unload_entry: Home Assistant only
+    # calls that for an entry that finished setting up. Without this the
+    # store and its two HTTP sessions were leaked - once more on every setup
+    # retry, which is exactly when platform setup tends to fail.
+    try:
+        # Register the hub device so child devices can reference it via
+        # via_device
+        device_registry.async_get(hass).async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, entry.entry_id)},
+            manufacturer="Weishaupt",
+            name=entry.title or "WEM Portal",
+            model="WEM Portal",
+        )
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # Deliberately NO update listener. Home Assistant deprecated combining one
     # with a reloading flow method in 2026.6 and rejects it from 2026.12, and
     # its check is literally `if entry.update_listeners`. Of the sanctioned
@@ -293,12 +300,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # that fixes a failed setup had no listener to fire at all. That is the
     # case reauth exists for.
 
-    # Expert write access (web): register the service only while the
-    # option is enabled. Everything lives in expert_writer.py - the
-    # polling paths (scraper/API/coordinator) are untouched.
-    if entry.options.get(CONF_EXPERT_WRITE, False):
-        _async_register_expert_service(hass, entry, api)
-        _async_setup_expert_auto_poll(hass, entry, api)
+        # Expert write access (web): register the service only while the
+        # option is enabled. Everything lives in expert_writer.py - the
+        # polling paths (scraper/API/coordinator) are untouched.
+        if entry.options.get(CONF_EXPERT_WRITE, False):
+            _async_register_expert_service(hass, entry, api)
+            _async_setup_expert_auto_poll(hass, entry, api)
+    except Exception:
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        await hass.async_add_executor_job(close_api_sessions, api)
+        raise
 
     return True
 
@@ -367,7 +378,11 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
                 "to a slot first."
             )
 
-        store = hass.data.get(DOMAIN, {}).get(target_entry.entry_id, {})
+        store = hass.data.get(DOMAIN, {}).get(target_entry.entry_id)
+        if store is None:
+            raise HomeAssistantError(
+                "WEM Portal expert write: the integration is not loaded."
+            )
         lock = store.get("expert_lock")
         ev_short = short_ev(entityvalue)
 
@@ -375,14 +390,24 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             """Abort gate for a write whose entry is going away.
 
             The write runs in an executor thread and cannot be cancelled, so
-            the only way to stop it is to look before each step. Unloading the
-            entry removes its store, which is the signal: continuing would
-            write a heating parameter with the credentials of a configuration
-            that no longer exists. Previously the service path had no such
-            check at all.
+            the only way to stop it is to look before each step.
+
+            Checking that the entry id is still present is NOT enough, in two
+            different ways. The store is removed only after the platforms have
+            been unloaded, so for the whole teardown the id is still there;
+            and a reload puts a NEW store under the SAME id while this write
+            still holds the old entry and api. Identity plus the unloading
+            flag covers both: a different object means the configuration this
+            write belongs to is gone, whatever its id says.
             """
             from .expert_writer import ExpertOperationAborted
-            if target_entry.entry_id not in hass.data.get(DOMAIN, {}):
+            current = hass.data.get(DOMAIN, {}).get(target_entry.entry_id)
+            if current is not store:
+                raise ExpertOperationAborted(
+                    "the integration was reloaded before the write reached "
+                    "the portal"
+                )
+            if store.get("unloading"):
                 raise ExpertOperationAborted(
                     "the integration was unloaded before the write reached "
                     "the portal"
@@ -689,6 +714,13 @@ def _backfill_account_unique_id(hass: HomeAssistant, entry: ConfigEntry) -> None
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Handle removal of an entry."""
+    # Flagged BEFORE the platforms come down, not when the store is finally
+    # removed below: unloading the platforms is the slow part, and anything
+    # already talking to the portal in a worker thread has to learn about the
+    # teardown at its next gate rather than at the end of it.
+    store = hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
+    if store is not None:
+        store["unloading"] = True
     unload_ok = bool(
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )

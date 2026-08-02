@@ -370,12 +370,27 @@ class WemportalOptionsFlow(OptionsFlow):
                 # list - so each save cost another portal login on the next
                 # discovery. It also makes the no-op comparison above and the
                 # value actually written agree on the same dict.
-                # Options only take effect on a reload (scan intervals, mode,
-                # expert access are all read during setup). With no update
-                # listener doing it implicitly, the flow has to say so.
-                # Scheduled rather than awaited: it runs as a task after the
-                # flow manager has written the options, so the reload sees
-                # the new values and not the old ones.
+                # Options only take effect on a reload: scan intervals, mode
+                # and expert access are all read during setup. With no update
+                # listener doing that implicitly, the flow has to.
+                #
+                # The options are written HERE, before the reload is
+                # scheduled, and only then handed to the flow manager. Order
+                # matters and is easy to get wrong: the manager writes them
+                # after this step returns, so scheduling a reload from here
+                # without writing first queued a reload that read the OLD
+                # values - the form saved and nothing changed until the next
+                # restart. The manager's own write below then finds them
+                # already in place and is a no-op.
+                #
+                # Home Assistant offers OptionsFlowWithReload for exactly
+                # this, but only from 2025.8 - later than the 2024.12 this
+                # integration supports, and it is selected by isinstance, not
+                # by an attribute, so it cannot be adopted conditionally
+                # without a second code path.
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, options=merged
+                )
                 self.hass.config_entries.async_schedule_reload(
                     self.config_entry.entry_id
                 )
@@ -593,11 +608,12 @@ class WemportalOptionsFlow(OptionsFlow):
                 modules = self._known_modules()
             else:
                 # Hold the list on the flow and let the final save persist it.
-                # Writing it here called async_update_entry, which fires the
-                # update listener -> async_reload: a full integration reload
-                # (fresh login + full scrape) in the middle of the flow. That
-                # reload also RESET the 403 backoff and discarded the cached
-                # session, so one click on "discover" cost two logins - the
+                # Writing it here called async_update_entry, which back then
+                # fired the update listener -> async_reload: a full
+                # integration reload (fresh login + full scrape) in the middle
+                # of the flow. That reload also RESET the 403 backoff and
+                # discarded the cached session, so one click on "discover"
+                # cost two logins - the
                 # exact load this feature exists to avoid.
                 self._module_list = modules
 

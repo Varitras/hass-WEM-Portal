@@ -24,6 +24,7 @@ from .exceptions import (
     ForbiddenError,
     ParameterWriteError,
     PortalMaintenanceError,
+    ServerError,
 )
 from .const import (
     _LOGGER,
@@ -374,6 +375,19 @@ class WemPortalExpertClient:
         """Stop if the configuration this operation belongs to is gone."""
         if self._abort_check is not None:
             self._abort_check()
+
+    def _raise_if_server_error(self, response, what):
+        """Reject an error page before it is parsed as a portal answer.
+
+        Only 403 was ever inspected, so every other failing status was fed to
+        the HTML parser: a 500 on the save postback simply produced no
+        confirmation, and the write was then reported as "not confirmed - the
+        portal may have rejected the value", which points the user at their
+        input for what is an outage.
+        """
+        status = getattr(response, "status_code", 200)
+        if status >= 400:
+            raise ServerError(f"WEM Portal returned {status} for the {what}.")
 
     def _raise_if_forbidden(self, response):
         if response.status_code == 403:
@@ -1170,6 +1184,7 @@ class WemPortalExpertClient:
                 },
             )
             self._raise_if_forbidden(resp)
+            self._raise_if_server_error(resp, "parameter write")
 
             # Verify by re-reading the form: the device/portal must now
             # report the new value as selected. The value is applied
@@ -1240,6 +1255,7 @@ class WemPortalExpertClient:
                 },
             )
             self._raise_if_forbidden(resp)
+            self._raise_if_server_error(resp, "parameter dialog")
             if WEB_LOGIN_URL.lower() in resp.url.lower():
                 raise AuthError("Expert client: redirected to login when fetching the form.")
             # Remember the exact URL this form was served at, so a
