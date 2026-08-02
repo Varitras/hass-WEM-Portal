@@ -32,6 +32,8 @@ from .const import (
     CONF_EXPERT_NOTIFY_ON_SUCCESS,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
+    MIN_SCAN_INTERVAL_SECONDS,
+    MIN_SCAN_INTERVAL_API_SECONDS,
     SERVICE_SET_EXPERT_PARAMETER,
 )
 from .coordinator import (
@@ -41,13 +43,21 @@ from .coordinator import (
     get_scraper_device_store,
 )
 from .wemportalapi import WemPortalApi
-from .utils import deserialize_modules, close_api_sessions
+from .utils import clamped_scan_interval, deserialize_modules, close_api_sessions
 from homeassistant.helpers import device_registry, entity_registry
 from homeassistant.helpers.service import async_register_admin_service
 
 def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):
     """Return unique ID for WEM Portal."""
     return f"{config_entry_id}:{device_id}:{name}"
+
+
+# This integration is configured exclusively through the UI; async_setup only
+# prepares hass.data. Declaring that explicitly is what hassfest asks for -
+# without it, every run warns that async_setup exists without a CONFIG_SCHEMA,
+# and a stray `wemportal:` block in configuration.yaml would be accepted
+# silently instead of being rejected with a clear message.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -145,23 +155,24 @@ async def migrate_unique_ids(
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the wemportal component."""
-    # Set proper update_interval, based on selected mode
+    # Set proper update_interval, based on selected mode. Clamped rather than
+    # taken verbatim: the floors are enforced by the options-flow schema,
+    # which only sees values entered now - an interval stored by an older
+    # release keeps its old, possibly far too small value forever.
+    scan_interval = clamped_scan_interval(
+        entry.options, CONF_SCAN_INTERVAL,
+        DEFAULT_CONF_SCAN_INTERVAL_VALUE, MIN_SCAN_INTERVAL_SECONDS,
+    )
+    scan_interval_api = clamped_scan_interval(
+        entry.options, CONF_SCAN_INTERVAL_API,
+        DEFAULT_CONF_SCAN_INTERVAL_API_VALUE, MIN_SCAN_INTERVAL_API_SECONDS,
+    )
     if entry.options.get(CONF_MODE) == "web":
-        update_interval = entry.options.get(
-            CONF_SCAN_INTERVAL, DEFAULT_CONF_SCAN_INTERVAL_VALUE
-        )
-
+        update_interval = scan_interval
     elif entry.options.get(CONF_MODE) == "api":
-        update_interval = entry.options.get(
-            CONF_SCAN_INTERVAL_API, DEFAULT_CONF_SCAN_INTERVAL_API_VALUE
-        )
+        update_interval = scan_interval_api
     else:
-        update_interval = min(
-            entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_CONF_SCAN_INTERVAL_VALUE),
-            entry.options.get(
-                CONF_SCAN_INTERVAL_API, DEFAULT_CONF_SCAN_INTERVAL_API_VALUE
-            ),
-        )
+        update_interval = min(scan_interval, scan_interval_api)
 
     _backfill_account_unique_id(hass, entry)
 

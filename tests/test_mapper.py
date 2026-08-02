@@ -60,12 +60,12 @@ def _value(param_id, numeric=None, string="", unit=None):
 
 
 def _process(modules, values, mode="api", language="en", existing=None,
-             scraping_mapper=None):
+             scraping_mapper=None, scraper_device_id=DEVICE):
     api_data = {DEVICE: dict(existing or {})}
     WemPortalDataMapper.process_api_values(
         DEVICE, values, modules, language,
         scraping_mapper if scraping_mapper is not None else {},
-        mode, api_data,
+        mode, api_data, scraper_device_id,
     )
     return api_data[DEVICE]
 
@@ -351,3 +351,51 @@ def test_both_mode_keeps_an_unmatched_api_value_under_its_own_key():
     )
 
     assert data["Heat pump-Outside"]["value"] == 12.5
+
+
+def test_both_mode_still_merges_when_a_second_device_exists():
+    """The merge belongs to the device the scraper writes into, not to
+    installations that happen to have exactly one device.
+
+    The condition used to be "fewer than two devices known", which is the
+    same thing on a single-device system but switched the merge off entirely
+    as soon as a second device appeared - leaving the API reading beside the
+    scraped one as a second entity for the same measurement, with values
+    drifting apart because the two paths refresh on different schedules.
+    """
+    api_data = {
+        DEVICE: dict(_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0)),
+        "5678": {},
+    }
+
+    WemPortalDataMapper.process_api_values(
+        DEVICE,
+        _values(_value("Outside", numeric=12.5, unit="°C")),
+        _modules(_parameter("Outside")),
+        "en",
+        {},
+        "both",
+        api_data,
+        DEVICE,
+    )
+
+    assert api_data[DEVICE]["heat_pump-outside"]["value"] == 12.5
+    assert "Heat pump-Outside" not in api_data[DEVICE], "a second entity for one reading"
+
+
+def test_a_device_the_scraper_does_not_write_into_keeps_its_own_key():
+    """The other side of the same coin: only the scraper's device may merge.
+
+    Matching another device's readings against rows the scraper never put
+    there would attribute one device's measurement to another.
+    """
+    data = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=12.5, unit="°C")),
+        mode="both",
+        existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
+        scraper_device_id="5678",
+    )
+
+    assert data["Heat pump-Outside"]["value"] == 12.5
+    assert data["heat_pump-outside"]["value"] == 11.0, "another device's row was rewritten"

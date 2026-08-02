@@ -1007,3 +1007,105 @@ def test_the_service_value_field_does_not_impose_a_percent_range():
 
     assert "min" not in number and "max" not in number
     assert number.get("step") == "any", "a step of 1 rules out half-step values"
+
+
+# --- stored options are held to their floors --------------------------
+
+
+def test_a_stored_interval_below_the_floor_is_raised(caplog):
+    """The floors live in the options-flow schema, which only validates what
+    the user types NOW.
+
+    An interval saved by an older release - back when the API floor was ten
+    seconds - was read back verbatim on every start, so an installation
+    configured once at one second kept polling at one second forever. The UI
+    does not reveal it either: the form shows the stored value as if it were
+    legal.
+    """
+    import logging
+
+    from custom_components.wemportal.const import (
+        CONF_SCAN_INTERVAL_API,
+        MIN_SCAN_INTERVAL_API_SECONDS,
+    )
+    from custom_components.wemportal.utils import clamped_scan_interval
+
+    with caplog.at_level(logging.WARNING):
+        value = clamped_scan_interval(
+            {CONF_SCAN_INTERVAL_API: 1}, CONF_SCAN_INTERVAL_API,
+            300, MIN_SCAN_INTERVAL_API_SECONDS,
+        )
+
+    assert value == MIN_SCAN_INTERVAL_API_SECONDS
+    assert "minimum" in caplog.text, "silently corrected values are hard to diagnose"
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [(900, 900), (60, 60), (None, 300), ("", 300), ("abc", 300), ({}, 300)],
+)
+def test_a_usable_stored_interval_survives(stored, expected):
+    """Only values below the floor - and unusable ones - are touched."""
+    from custom_components.wemportal.utils import clamped_scan_interval
+
+    options = {} if stored is None else {"k": stored}
+    assert clamped_scan_interval(options, "k", 300, 60) == expected
+
+
+def test_the_api_applies_the_floor_to_a_stored_interval():
+    """End of the same path: the value the api actually polls with."""
+    from datetime import timedelta
+
+    from homeassistant.const import CONF_SCAN_INTERVAL
+
+    from custom_components.wemportal.const import CONF_MODE, CONF_SCAN_INTERVAL_API
+
+    api = WemPortalApi(
+        "user@example.org", "secret",
+        config={CONF_MODE: "both", CONF_SCAN_INTERVAL: 1, CONF_SCAN_INTERVAL_API: 1},
+    )
+
+    assert api.scan_interval == timedelta(seconds=60)
+    assert api.scan_interval_api == timedelta(seconds=60)
+    assert api.update_interval == timedelta(seconds=60)
+
+
+def test_yaml_configuration_is_declared_unsupported(caplog):
+    """hassfest warns on every run when async_setup exists without a
+    CONFIG_SCHEMA, and a stray `wemportal:` block would otherwise be
+    accepted in silence instead of being called out.
+
+    Home Assistant's helper does not raise on such a block - it reports it
+    and carries on - so this pins the report, not an exception.
+    """
+    import logging
+
+    from custom_components.wemportal import CONFIG_SCHEMA
+    from custom_components.wemportal.const import DOMAIN
+
+    # An empty configuration.yaml is fine - the integration is UI-only.
+    CONFIG_SCHEMA({})
+
+    with caplog.at_level(logging.ERROR):
+        CONFIG_SCHEMA({DOMAIN: {"username": "user@example.org"}})
+
+    assert "does not support YAML setup" in caplog.text
+
+
+def test_a_returning_device_becomes_eligible_for_parameter_discovery():
+    """get_parameters() gates on the UNPREFIXED ConnectionStatus, which used
+    to be written only by get_devices() - once per session.
+
+    A device that was offline when Home Assistant started therefore never had
+    its parameters discovered, not even after it came back, because the gate
+    still saw the status from the moment of startup. Only a reload fixed it.
+    """
+    api = _api()
+    api.data = {"1234": {"ConnectionStatus": 50}}
+    api.modules = {"1234": {}}
+    api.make_api_call = lambda *a, **k: FakeResponse(
+        {"ConnectionStatus": 0, "Errors": [], "GroupTypeDescriptions": []}
+    )
+
+    assert api._fetch_device_status("1234") is True
+    assert api.data["1234"]["ConnectionStatus"] == 0, "the discovery gate stayed stale"

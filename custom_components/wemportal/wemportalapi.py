@@ -46,6 +46,8 @@ from .const import (
     DEFAULT_MODE,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+    MIN_SCAN_INTERVAL_SECONDS,
+    MIN_SCAN_INTERVAL_API_SECONDS,
     FORBIDDEN_COOLDOWN_SECONDS,
     EXPERT_FORBIDDEN_COOLDOWN_SECONDS,
     CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
@@ -88,22 +90,24 @@ class WemPortalApi:
         # coordinator update - only the initial discovery/refresh needs it.
         self._devices_fetched_this_session = False
         self.mode = config.get(CONF_MODE, DEFAULT_MODE)
+        # Clamped, not read verbatim: the floors live in the options-flow
+        # schema, which only sees values the user enters now - a value stored
+        # by an older release is otherwise used exactly as it was saved.
+        from .utils import clamped_scan_interval
+
+        scan_interval = clamped_scan_interval(
+            config, CONF_SCAN_INTERVAL,
+            DEFAULT_CONF_SCAN_INTERVAL_VALUE, MIN_SCAN_INTERVAL_SECONDS,
+        )
+        scan_interval_api = clamped_scan_interval(
+            config, CONF_SCAN_INTERVAL_API,
+            DEFAULT_CONF_SCAN_INTERVAL_API_VALUE, MIN_SCAN_INTERVAL_API_SECONDS,
+        )
         self.update_interval = timedelta(
-            seconds=min(
-                config.get(CONF_SCAN_INTERVAL, DEFAULT_CONF_SCAN_INTERVAL_VALUE),
-                config.get(
-                    CONF_SCAN_INTERVAL_API, DEFAULT_CONF_SCAN_INTERVAL_API_VALUE
-                ),
-            )
+            seconds=min(scan_interval, scan_interval_api)
         )
-        self.scan_interval = timedelta(
-            seconds=config.get(CONF_SCAN_INTERVAL, DEFAULT_CONF_SCAN_INTERVAL_VALUE)
-        )
-        self.scan_interval_api = timedelta(
-            seconds=config.get(
-                CONF_SCAN_INTERVAL_API, DEFAULT_CONF_SCAN_INTERVAL_API_VALUE
-            )
-        )
+        self.scan_interval = timedelta(seconds=scan_interval)
+        self.scan_interval_api = timedelta(seconds=scan_interval_api)
         self.valid_login = False
         self.language = config.get(CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE)
         self.session = None
@@ -1184,8 +1188,18 @@ class WemPortalApi:
                 do_retry=True
             ).json()
 
+            raw_status = status_response.get("ConnectionStatus", -1)
             status_map = {0: "online", 7: "wrong_secret", 8: "busy", 50: "offline"}
-            conn_status = status_map.get(status_response.get("ConnectionStatus", -1), "unknown")
+            conn_status = status_map.get(raw_status, "unknown")
+
+            # Keep the RAW status current as well. get_parameters() gates on
+            # this unprefixed field, which was otherwise written only by
+            # get_devices() - and that runs once per session. A device that
+            # was offline at startup therefore never got its parameters
+            # discovered, not even after coming back, because the gate still
+            # saw the status from the moment Home Assistant started. Only a
+            # reload fixed it.
+            self.data[device_id]["ConnectionStatus"] = raw_status
 
             self.data[device_id][f"{device_id}-ConnectionStatus"] = {
                 "friendlyName": "Connection Status",
@@ -1312,6 +1326,12 @@ class WemPortalApi:
                 scraping_mapper=self.scraping_mapper,
                 mode=self.mode,
                 api_data=self.data,
+                # Resolved only in `both` mode: the call locks the id in as a
+                # side effect, and in the other modes there is no scrape to
+                # merge with anyway.
+                scraper_device_id=(
+                    self.resolve_scraper_device_id() if self.mode == "both" else None
+                ),
             )
             return True
         except Exception as exc:

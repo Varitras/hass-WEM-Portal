@@ -23,6 +23,39 @@ from .const import (
 )
 
 
+def clamped_scan_interval(options, key, default, minimum):
+    """Read a stored scan interval and hold it to its floor.
+
+    The floors were only ever enforced by the options-flow schema, which
+    validates what the user types NOW. Options stored by an older release -
+    when the API floor was ten seconds - were read back verbatim on every
+    start, so an installation configured once at one second kept hammering
+    the portal at one second no matter what the current limits say. Nothing
+    in the UI reveals that either: the form shows the stored value as if it
+    were legal.
+
+    Also survives a non-numeric or missing value, which storage can contain
+    after a hand-edited .storage file or a failed migration.
+    """
+    value = options.get(key, default)
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        _LOGGER.warning(
+            "Ignoring the unusable stored value %r for %s; using %s seconds.",
+            value, key, default,
+        )
+        return default
+    if value < minimum:
+        _LOGGER.warning(
+            "The stored %s of %s s is below the %s s minimum and has been "
+            "raised to it. Re-save the options to make this permanent.",
+            key, value, minimum,
+        )
+        return minimum
+    return value
+
+
 def device_identifier(entry_id, device_id):
     """Return the device-registry identifier for a WEM Portal sub-device.
 

@@ -37,6 +37,7 @@ class WemPortalDataMapper:
         scraping_mapper: dict,
         mode: str,
         api_data: dict,
+        scraper_device_id: str | None,
     ):
         """Processes the read values JSON and maps it to api_data."""
 
@@ -183,7 +184,19 @@ class WemPortalDataMapper:
         # Process read-only sensors and fallback for unknown writeable datatypes
         for key, sensor in parsed_sensors.items():
             if not sensor["IsWriteable"] or key not in api_data.get(device_id, {}):
-                if mode == "both" and len(api_data.keys()) < 2:
+                # Merge an API sensor into its scraped counterpart only for
+                # the device the scraper actually writes into - there is
+                # exactly one (see resolve_scraper_device_id), and only its
+                # dict can contain scraped rows to match against.
+                #
+                # This used to ask "is there fewer than one other device?"
+                # instead, which happens to be the same thing on a
+                # single-device installation but disabled the merge entirely
+                # as soon as a second device existed. The API sensor was then
+                # written under its own key next to the scraped row for the
+                # same reading: two entities, two names, two values that
+                # drift apart because they refresh on different schedules.
+                if mode == "both" and device_id == scraper_device_id:
                     param_id = sensor["ParameterID"]
                     if param_id not in scraping_mapper:
                         for scraped_data in api_data[device_id].values():
