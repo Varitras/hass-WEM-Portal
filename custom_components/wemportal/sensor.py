@@ -180,10 +180,9 @@ class WemPortalSensor(CoordinatorEntity, RestoreSensor):
             return False
         # The diagnostic sensors stay available even for an unreachable
         # device: they are what explains WHY everything else went away.
-        if any(
-            x in self._attr_unique_id
-            for x in ("ConnectionStatus", "HasErrors", "ErrorMessages")
-        ):
+        # Matched on the parameter id rather than as a substring of the
+        # unique_id, which also carries the entry id and the device id.
+        if self._parameter_id in ("ConnectionStatus", "HasErrors", "ErrorMessages"):
             return True
         return device_is_reachable(self.coordinator.data, self._device_id)
 

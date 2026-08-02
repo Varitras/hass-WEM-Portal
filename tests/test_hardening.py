@@ -267,10 +267,7 @@ def test_get_data_accepts_int_device_ids():
     api.make_api_call = lambda *a, **k: FakeResponse(
         {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
     )
-    # The device reports offline, so the cycle now legitimately fails - but
-    # the status was still recorded, which is what this test is about.
-    with pytest.raises(exceptions.WemPortalError):
-        api.get_data(enabled_devices=[1234])
+    api.get_data(enabled_devices=[1234])
     assert api.data["1234"]["1234-ConnectionStatus"]["value"] == "offline"
 
 
@@ -795,19 +792,69 @@ def test_web_mode_validation_does_not_accept_a_config_that_cannot_poll(monkeypat
     assert tried == ["api"], "a failed API login must not fall back to web"
 
 
-def test_all_devices_offline_is_not_a_successful_cycle():
-    """Offline counted as neither success nor failure, so a fully offline
-    installation reported a SUCCESSFUL update - and every entity kept
-    presenting its last reading as current, indefinitely."""
+def _offline_api(status):
+    """An api whose single device reports `status` on every call."""
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
     api.make_api_call = lambda *a, **k: FakeResponse(
-        {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
+        {"ConnectionStatus": status, "Errors": [], "GroupTypeDescriptions": []}
     )
+    return api
 
-    with pytest.raises(exceptions.WemPortalError, match="offline"):
+
+@pytest.mark.parametrize(
+    ("status", "expected"), [(50, "offline"), (7, "wrong_secret"), (8, "busy"), (99, "unknown")]
+)
+def test_a_device_that_is_not_online_does_not_fail_the_whole_cycle(status, expected):
+    """An unreachable device is reported by its OWN entities, not by
+    failing the cycle.
+
+    Failing it took every other entity down as well - including the
+    connection-status sensor that would have explained the situation -
+    discarded a web scrape that had already succeeded this cycle in `both`
+    mode, and put the coordinator into a backoff of up to six hours, so the
+    device coming back was noticed late. utils.device_is_reachable and the
+    platforms' `available` carry this instead.
+    """
+    api = _offline_api(status)
+
+    api.get_data(enabled_devices=["1234"])
+
+    # Recorded, because that is what the entities read to go unavailable.
+    assert api.data["1234"]["1234-ConnectionStatus"]["value"] == expected
+
+
+def test_the_offline_warning_is_logged_once_per_change(caplog):
+    """With the cycle no longer failing, this line is the only running
+    commentary - so it must not repeat every few minutes for as long as the
+    device stays away, and it must say when the device comes back.
+    """
+    import logging
+
+    api = _offline_api(50)
+
+    with caplog.at_level(logging.DEBUG):
+        for _ in range(3):
+            api.get_data(enabled_devices=["1234"])
+        warnings = [
+            r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+        ]
+        assert len(warnings) == 1, f"repeated every cycle: {warnings}"
+        assert "offline" in warnings[0]
+
+        caplog.clear()
+        api.make_api_call = lambda *a, **k: FakeResponse(
+            {"ConnectionStatus": 0, "Errors": [], "Modules": [],
+             "GroupTypeDescriptions": []}
+        )
         api.get_data(enabled_devices=["1234"])
+
+    assert any(
+        "back online" in r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.INFO
+    ), "recovery went unmentioned"
 
 
 def _switch(value):
@@ -836,6 +883,29 @@ def test_missing_switch_reading_is_unknown_not_off(value, expected):
     """`None in WEM_SWITCH_ON_VALUES` is False, so a missing reading looked
     exactly like a real switch-off to any automation watching it."""
     assert _switch(value).is_on is expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(1.0, True), (0.0, False), (None, None)]
+)
+def test_a_missing_reading_is_unknown_on_update_too(value, expected, monkeypatch):
+    """The same distinction on the UPDATE path, which is where it matters.
+
+    The constructor runs once, with whatever the first cycle happened to
+    deliver; every later reading arrives through _handle_coordinator_update.
+    Guarding only the former left a dropped reading looking like a real
+    switch-off from the second cycle onwards - and `except KeyError` does
+    not help, because the key is there, it just carries no value.
+    """
+    switch = _switch(1.0)
+    monkeypatch.setattr(
+        type(switch), "async_write_ha_state", lambda self: None, raising=False
+    )
+    switch.coordinator.data = {"1234": {"Pump": {"value": value}}}
+
+    switch._handle_coordinator_update()
+
+    assert switch.is_on is expected
 
 
 def _status(value):

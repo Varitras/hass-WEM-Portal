@@ -154,8 +154,9 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(account)
                 self._abort_if_unique_id_configured()
                 # Belt and braces: an entry created before unique_ids were
-                # used only gets one when async_migrate_entry backfills it,
-                # which needs the entry to have been loaded at least once.
+                # used only gets one from _backfill_account_unique_id in
+                # async_setup_entry, which needs the entry to have been set
+                # up at least once - a disabled or failing entry never is.
                 # Until then the check above cannot see it, so compare the
                 # normalised usernames as well. Costs nothing - no network.
                 for existing in self._async_current_entries(include_ignore=False):

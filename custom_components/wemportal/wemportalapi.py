@@ -136,6 +136,9 @@ class WemPortalApi:
         # Scraped keys seen in the previous cycle, to notice when the
         # portal relabels a row (see _warn_about_renamed_scraper_keys).
         self._previous_scraper_keys = None
+        # Last connection status per device, so the offline log line is
+        # edge-triggered rather than repeated every cycle.
+        self._last_connection_status = {}
         self.scraping_mapper = {}
         self.last_statistics_fetch = 0.0
         # Timestamp (per device+parameter) of the last time a heating
@@ -645,9 +648,9 @@ class WemPortalApi:
             self.valid_login = True
 
         except ValueError as exc: # Catches JSONDecodeError if response is HTML
-            # Username (email) is PII and deliberately kept out of
-            # warning-level messages - people paste warnings into
-            # issues/forums. Debug-level login logs keep it.
+            # Username (email) is PII and deliberately kept out of the log
+            # entirely - people paste logs into issues/forums, and with one
+            # account per config entry naming it adds nothing.
             _LOGGER.warning("API login failed. Received HTML instead of JSON.")
             self.valid_login = False
             raise WemPortalError("API login failed: received HTML instead of JSON (Possible rate limit or WAF block)") from exc
@@ -1114,7 +1117,6 @@ class WemPortalApi:
         _LOGGER.debug("Computed target_devices=%s", target_devices)
         successes = 0
         failures = 0
-        offline = 0
         for device_id in target_devices:
             # Normalize once: self.data is keyed by str, but callers may
             # pass ints. Previously the membership check used str() while
@@ -1133,9 +1135,19 @@ class WemPortalApi:
                 _LOGGER.debug("Skipping device %s: no API modules (scraper-only).", device_id)
                 continue
             if not self._fetch_device_status(device_id):
-                # Read fine, device not online. Counted separately: it is
-                # neither a success (no fresh readings) nor a failure of ours.
-                offline += 1
+                # Read fine, the device just is not online, so there is
+                # nothing to poll from it this cycle. Deliberately NOT
+                # counted as a failure of the cycle: an unreachable device is
+                # reported by its own entities, which go unavailable via
+                # utils.device_is_reachable, and by the connection-status
+                # sensor, which stays available to say why.
+                #
+                # Failing the cycle instead would take down every OTHER
+                # entity with it - the connection-status sensor included -
+                # discard a web scrape that had already succeeded this cycle
+                # in `both` mode, and put the coordinator into a backoff of
+                # up to six hours, so the device coming back would be noticed
+                # late.
                 continue
             if self._fetch_parameter_values(device_id):
                 successes += 1
@@ -1151,15 +1163,6 @@ class WemPortalApi:
         # cycle as failed (backoff / eventual reauth) instead of marking stale
         # values as a successful update. A partial success (at least one
         # device refreshed) is still treated as success.
-        if offline and not successes and not failures:
-            # Every device the portal knows is offline, so nothing was
-            # refreshed. Reported as a failed cycle, otherwise the update
-            # counts as successful and every entity keeps presenting its last
-            # reading as current - for as long as the device stays offline.
-            raise WemPortalError(
-                f"No data: all {offline} device(s) are offline according to "
-                "the portal."
-            )
         if failures and not successes:
             raise WemPortalError(
                 "All API parameter fetches failed this cycle; see the warnings above."
@@ -1227,9 +1230,20 @@ class WemPortalApi:
                 "icon": "mdi:message-alert"
             }
 
+            previous = self._last_connection_status.get(device_id)
+            self._last_connection_status[device_id] = conn_status
+
             if conn_status != "online":
-                _LOGGER.warning("Device %s is %s. Skipping data polling.", device_id, conn_status)
+                # Edge-triggered on purpose. An unreachable device no longer
+                # fails the cycle, so this line is the only running
+                # commentary there is - but repeating it every few minutes
+                # for as long as the device stays away would bury everything
+                # else in the log. Say it once per change, then stay quiet.
+                log = _LOGGER.debug if previous == conn_status else _LOGGER.warning
+                log("Device %s is %s. Skipping data polling.", device_id, conn_status)
                 return False
+            if previous is not None and previous != "online":
+                _LOGGER.info("Device %s is back online.", device_id)
 
         except Exception as exc:
             _LOGGER.warning("Failed to fetch Device Status: %s", exc)

@@ -140,7 +140,14 @@ class WemPortalSwitch(CoordinatorEntity, SwitchEntity):
         """Handle updated data from the coordinator."""
         try:
             temp_val = self.coordinator.data[self._device_id][self._data_key]["value"]
-            self._attr_is_on = temp_val in WEM_SWITCH_ON_VALUES
+            # Same distinction as in __init__: a key that is present but
+            # carries no reading is "unknown", not "off". Guarding only the
+            # constructor covered the very first cycle - the one case where
+            # a missing reading is least likely - and left every later one
+            # reporting a real switch-off to any automation watching it.
+            self._attr_is_on = (
+                None if temp_val is None else temp_val in WEM_SWITCH_ON_VALUES
+            )
 
             _LOGGER.debug('Update switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
 
