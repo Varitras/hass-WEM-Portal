@@ -297,7 +297,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # polling paths (scraper/API/coordinator) are untouched.
         if entry.options.get(CONF_EXPERT_WRITE, False):
             _async_register_expert_service(hass, entry, api)
-            _async_setup_expert_auto_poll(hass, entry, api)
+            _async_setup_expert_auto_poll(hass, entry)
     except Exception:
         # Home Assistant clears runtime_data only when a LOADED entry unloads,
         # so a setup that fails after publishing it has to clear it itself.
@@ -482,7 +482,88 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
     )
 
 
-def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) -> None:
+def _expert_poll_interval_minutes(entry: ConfigEntry) -> int:
+    """The configured poll interval, never below the floor and never a value
+    the options flow let through in a shape int() chokes on."""
+    interval_min = entry.options.get(
+        CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+    )
+    try:
+        return max(int(interval_min), MIN_EXPERT_POLL_INTERVAL_MINUTES)
+    except (TypeError, ValueError):
+        return DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+
+
+def _read_expert_values(entry: ConfigEntry, api, entityvalues: list) -> dict:
+    """One shared portal session for every configured id, in an executor
+    thread - the expert client is blocking.
+
+    The import is function-local like every other reference to expert_writer
+    in this module: this file is imported whenever Home Assistant loads the
+    integration, and expert_writer pulls curl_cffi and lxml (~140 ms,
+    measured). Installations with expert access off must not pay for it.
+    """
+    from .expert_writer import WemPortalExpertClient, expert_client_options
+    client = WemPortalExpertClient(
+        entry.data.get(CONF_USERNAME),
+        entry.data.get(CONF_PASSWORD),
+        cooldown_check=api.check_expert_cooldown,
+        cooldown_activate=api.activate_expert_cooldown,
+        cookie_jar=api.expert_cookies,
+        **expert_client_options(entry.options),
+    )
+    return client.read_many(entityvalues)
+
+
+def _notify_expert_read_failure(hass: HomeAssistant, entity, failures: int) -> None:
+    """Tell the user about an id the portal keeps leaving out of its answer."""
+    from .expert_writer import ev_digest
+    ev = entity.entityvalue
+    hass.async_create_task(
+        hass.services.async_call(
+            "persistent_notification", "create",
+            {
+                "title": "WEM Portal expert auto-poll",
+                "message": (
+                    f"Reading '{entity.name}' has failed "
+                    f"{failures} times in a row. "
+                    "Check the configured entityvalue ID "
+                    "in the integration options."
+                ),
+                "notification_id": f"wemportal_poll_fail_{ev_digest(ev)}",
+            },
+            blocking=False,
+        )
+    )
+
+
+def _apply_expert_read(hass: HomeAssistant, data, entities: list, results: dict) -> None:
+    """Hand a SUCCESSFUL batch to the entities and keep the per-id failure
+    tally.
+
+    Per-id consecutive-failure tracking: a persistently failing id (usually a
+    typo'd entityvalue) would otherwise only produce an hourly debug/warning
+    nobody sees. After 3 consecutive failures raise ONE notification per id;
+    reset on the next success so a recurring problem re-notifies at most once
+    per streak.
+    """
+    fail_counts = data.expert_poll_fail_counts
+    notified = data.expert_poll_fail_notified
+    for entity in entities:
+        state = results.get(entity.entityvalue)
+        ev = entity.entityvalue
+        if state is None:
+            fail_counts[ev] = fail_counts.get(ev, 0) + 1
+            if fail_counts[ev] >= 3 and ev not in notified:
+                notified.add(ev)
+                _notify_expert_read_failure(hass, entity, fail_counts[ev])
+        else:
+            fail_counts.pop(ev, None)
+            notified.discard(ev)
+        entity.apply_read_state(state)
+
+
+def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Optionally read the configured expert parameters on a timer.
 
     OFF unless CONF_EXPERT_AUTO_POLL is enabled. Each read is a full
@@ -495,18 +576,10 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
     after this. So we expose a `start_expert_auto_poll` callback in the entry
     store; whichever of the two runs last actually starts the timer.
     """
-    from .expert_writer import WemPortalExpertClient, ev_digest
-
     if not entry.options.get(CONF_EXPERT_AUTO_POLL, False):
         return
 
-    interval_min = entry.options.get(
-        CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
-    )
-    try:
-        interval_min = max(int(interval_min), MIN_EXPERT_POLL_INTERVAL_MINUTES)
-    except (TypeError, ValueError):
-        interval_min = DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+    interval_min = _expert_poll_interval_minutes(entry)
 
     # Fraction of extra, random delay added on top of the configured interval
     # each cycle (0..20%). Jitter is added ONLY upwards, so the effective
@@ -537,9 +610,9 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
                     "Expert auto-poll: a write is in progress, skipping this cycle."
                 )
                 return
-            # Use the CURRENT api from the store (the coordinator swaps it on
-            # recovery); the closed-over `api` may be a discarded instance
-            # with a stale cooldown state.
+            # Read the api from the store rather than closing over it: the
+            # store is the one place that says which instance this entry is
+            # currently using, and the cooldown state travels with it.
             current_api = data.api
             # Shared per-account lock: skip this cycle if a write (entity or
             # service) is already using the portal for this account.
@@ -551,60 +624,22 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
                 )
                 return
 
-            def _do_read():
-                from .expert_writer import expert_client_options
-                client = WemPortalExpertClient(
-                    entry.data.get(CONF_USERNAME),
-                    entry.data.get(CONF_PASSWORD),
-                    cooldown_check=current_api.check_expert_cooldown,
-                    cooldown_activate=current_api.activate_expert_cooldown,
-                    cookie_jar=current_api.expert_cookies,
-                    **expert_client_options(entry.options),
-                )
-                return client.read_many(entityvalues)
-
             try:
-                results = await hass.async_add_executor_job(_do_read)
+                results = await hass.async_add_executor_job(
+                    _read_expert_values, entry, current_api, entityvalues
+                )
             except Exception as exc:  # pylint: disable=broad-except
+                # Returns instead of falling through with an empty result:
+                # the per-id counters below mean "the portal answered, but
+                # not for this id". Feeding an outage through them would
+                # blame every configured id for a problem that is not theirs.
                 _LOGGER.warning("Expert auto-poll read failed: %s", exc)
                 return
             finally:
                 if lock is not None:
                     lock.release()
-            # Per-id consecutive-failure tracking: a persistently failing id
-            # (usually a typo'd entityvalue) would otherwise only produce an
-            # hourly debug/warning nobody sees. After 3 consecutive failures
-            # raise ONE notification per id; reset on the next success so a
-            # recurring problem re-notifies at most once per streak.
-            fail_counts = data.expert_poll_fail_counts
-            notified = data.expert_poll_fail_notified
-            for entity in entities:
-                state = results.get(entity.entityvalue)
-                ev = entity.entityvalue
-                if state is None:
-                    fail_counts[ev] = fail_counts.get(ev, 0) + 1
-                    if fail_counts[ev] >= 3 and ev not in notified:
-                        notified.add(ev)
-                        hass.async_create_task(
-                            hass.services.async_call(
-                                "persistent_notification", "create",
-                                {
-                                    "title": "WEM Portal expert auto-poll",
-                                    "message": (
-                                        f"Reading '{entity.name}' has failed "
-                                        f"{fail_counts[ev]} times in a row. "
-                                        "Check the configured entityvalue ID "
-                                        "in the integration options."
-                                    ),
-                                    "notification_id": f"wemportal_poll_fail_{ev_digest(ev)}",
-                                },
-                                blocking=False,
-                            )
-                        )
-                else:
-                    fail_counts.pop(ev, None)
-                    notified.discard(ev)
-                entity.apply_read_state(state)
+
+            _apply_expert_read(hass, data, entities, results)
         finally:
             # Always reschedule the next run (with fresh jitter), even if this
             # cycle failed - a transient error must not stop future polls.

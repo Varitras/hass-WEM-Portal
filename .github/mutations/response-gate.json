@@ -93,99 +93,113 @@
   {
     "label": "net: the cached-mapping path must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                    if param_id not in scraping_mapper:\n                        for scraped_data in api_data[device_id].values():",
-    "new": "                    if True:\n                        for scraped_data in api_data[device_id].values():",
+    "old": "    if param_id not in scraping_mapper:\n        for scraped_data in api_data[device_id].values():",
+    "new": "    if True:\n        for scraped_data in api_data[device_id].values():",
     "tests": "extra_mapper_output_is_unchanged or extra_cases_reach"
   },
   {
     "label": "net: the scraping_mapper fallback assignment must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                            scraping_mapper[param_id] = [key]",
-    "new": "                            scraping_mapper[param_id] = []",
+    "old": "            scraping_mapper[param_id] = [key]",
+    "new": "            scraping_mapper[param_id] = []",
     "tests": "extra_mapper_output_is_unchanged or extra_cases_reach"
   },
   {
     "label": "net: falsy scraped fields must not fall back to the api value",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                            \"unit\": previous.get(\"unit\", sensor.get(\"unit\")),",
-    "new": "                            \"unit\": previous.get(\"unit\") or sensor.get(\"unit\"),",
+    "old": "            \"unit\": previous.get(\"unit\", sensor.get(\"unit\")),",
+    "new": "            \"unit\": previous.get(\"unit\") or sensor.get(\"unit\"),",
     "tests": "extra_mapper_output_is_unchanged"
   },
   {
     "label": "net: the partial write on a malformed parameter must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                except Exception as exc:  # pylint: disable=broad-except",
-    "new": "                except ZeroDivisionError as exc:  # pylint: disable=broad-except",
+    "old": "            except Exception as exc:  # pylint: disable=broad-except",
+    "new": "            except ZeroDivisionError as exc:  # pylint: disable=broad-except",
     "tests": "malformed_parameter"
   },
   {
     "label": "net: skipping a non-dict entry must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                            if not isinstance(scraped_data, dict):\n                                continue",
-    "new": "                            if False:\n                                continue",
+    "old": "            if not isinstance(scraped_data, dict):\n                continue",
+    "new": "            if False:\n                continue",
     "tests": "extra_mapper_output_is_unchanged"
   },
   {
     "label": "net: the IndexError guard must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                                scraped_part = scraped_entity_id.split(\"-\")[1]",
-    "new": "                                scraped_part = scraped_entity_id.split(\"-\")[-1]",
+    "old": "                scraped_part = scraped_entity_id.split(\"-\")[1]",
+    "new": "                scraped_part = scraped_entity_id.split(\"-\")[-1]",
     "tests": "extra_mapper_output_is_unchanged"
+  },
+  {
+    "label": "net: an entity already placed on its own platform must not be overwritten",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if sensor[\"IsWriteable\"] and key in api_data.get(device_id, {}):\n                continue",
+    "new": "            if False:\n                continue",
+    "tests": "mapper_output_is_unchanged"
+  },
+  {
+    "label": "net: a data type without a writeable platform must stay a plain sensor",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                    if entity is not None:",
+    "new": "                    if entity is None:",
+    "tests": "mapper_output_is_unchanged"
   },
   {
     "label": "stats: a routine rejection must not abort the remaining groups",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                    except Exception as exc:\n                        # Status 3001 = this statistics group isn't valid for",
-    "new": "                    except ZeroDivisionError as exc:\n                        # Status 3001 = this statistics group isn't valid for",
+    "old": "            except Exception as exc:\n                # Status 3001 = this statistics group isn't valid for",
+    "new": "            except ZeroDivisionError as exc:\n                # Status 3001 = this statistics group isn't valid for",
     "tests": "statistics_output_is_unchanged or routine_rejection_still_counts"
   },
   {
     "label": "stats: an extra read per group must be noticed as traffic",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                        stats_resp = self.make_api_call(\n                            API_STATISTICS_READ_URL,",
-    "new": "                        self.make_api_call(API_STATISTICS_READ_URL, headers=headers, data=read_payload, do_retry=True)\n                        stats_resp = self.make_api_call(\n                            API_STATISTICS_READ_URL,",
+    "old": "                stats_resp = self.make_api_call(\n                    API_STATISTICS_READ_URL,",
+    "new": "                self.make_api_call(API_STATISTICS_READ_URL, headers=headers, data=read_payload, do_retry=True)\n                stats_resp = self.make_api_call(\n                    API_STATISTICS_READ_URL,",
     "tests": "statistics_output_is_unchanged or one_read_per_group"
   },
   {
     "label": "stats: never inventing a zero must be frozen",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                                    \"skipping instead of reporting 0.\", group_id,\n                                )\n                                continue",
-    "new": "                                    \"skipping instead of reporting 0.\", group_id,\n                                )\n                                current_value = 0.0",
+    "old": "                    \"skipping instead of reporting 0.\", group_id,\n                )\n                return",
+    "new": "                    \"skipping instead of reporting 0.\", group_id,\n                )\n                current_value = 0.0",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the fallback name map must be frozen",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                        group_name = fallback_names.get(group_id, f\"Energy {group_id}\")",
-    "new": "                        group_name = f\"Energy {group_id}\"",
+    "old": "            group_name = fallback_names.get(group_id, f\"Energy {group_id}\")",
+    "new": "            group_name = f\"Energy {group_id}\"",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the Energy suffix rule must be frozen",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                        if \"energy\" not in translated_group.lower():",
-    "new": "                        if False:",
+    "old": "            if \"energy\" not in translated_group.lower():",
+    "new": "            if False:",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the unit default must be frozen",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                        unit = stats_resp.get(\"Unit\", \"kWh\")",
-    "new": "                        unit = stats_resp.get(\"Unit\", \"MWh\")",
+    "old": "        unit = stats_resp.get(\"Unit\", \"kWh\")",
+    "new": "        unit = stats_resp.get(\"Unit\", \"MWh\")",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the sensor attributes must be frozen",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                            \"state_class\": \"total_increasing\"",
-    "new": "                            \"state_class\": \"total\"",
+    "old": "            \"state_class\": \"total_increasing\"",
+    "new": "            \"state_class\": \"total\"",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: picking the newest entry by date must be frozen",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                        latest_stat = latest_statistics_entry(values)",
-    "new": "                        latest_stat = values[-1]",
+    "old": "        latest_stat = latest_statistics_entry(values)",
+    "new": "        latest_stat = values[-1]",
     "tests": "statistics_output_is_unchanged"
   },
   {
@@ -198,15 +212,15 @@
   {
     "label": "poll: the notification must stay one per streak",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "                    if fail_counts[ev] >= 3 and ev not in notified:",
-    "new": "                    if fail_counts[ev] >= 3:",
+    "old": "            if fail_counts[ev] >= 3 and ev not in notified:",
+    "new": "            if fail_counts[ev] >= 3:",
     "tests": "keeps_omitting_is_reported_once"
   },
   {
     "label": "poll: a recovery must clear the streak",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "                    fail_counts.pop(ev, None)\n                    notified.discard(ev)",
-    "new": "                    pass",
+    "old": "            fail_counts.pop(ev, None)\n            notified.discard(ev)",
+    "new": "            pass",
     "tests": "recovered_parameter_clears"
   },
   {
@@ -233,15 +247,15 @@
   {
     "label": "options: materialising the slot ids is load-bearing, not cosmetic",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "                user_input[id_key] = raw  # persist the stripped value",
-    "new": "                pass  # persist the stripped value",
+    "old": "            user_input[id_key] = raw  # persist the stripped value",
+    "new": "            pass  # persist the stripped value",
     "tests": "clearing_a_slot_id or slot_id_is_stored_stripped"
   },
   {
     "label": "options: an invalid entityvalue must be rejected",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "                    errors[id_key] = \"invalid_entityvalue\"",
-    "new": "                    pass",
+    "old": "                errors[id_key] = \"invalid_entityvalue\"",
+    "new": "                pass",
     "tests": "invalid_slot_id_is_rejected"
   },
   {
@@ -254,15 +268,15 @@
   {
     "label": "options: options outside the form must survive the save",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "                merged = {**current, **user_input}",
-    "new": "                merged = dict(user_input)",
+    "old": "        merged = {**current, **user_input}",
+    "new": "        merged = dict(user_input)",
     "tests": "keeps_options_that_are_not_form_fields"
   },
   {
     "label": "options: an unchanged form must not trigger a reload",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "                if merged == current:\n                    return self.async_abort(reason=\"no_changes\")",
-    "new": "                if False:\n                    return self.async_abort(reason=\"no_changes\")",
+    "old": "        if merged == current:\n            return self.async_abort(reason=\"no_changes\")",
+    "new": "        if False:\n            return self.async_abort(reason=\"no_changes\")",
     "tests": "saving_without_a_change_is_not_a_write"
   },
   {

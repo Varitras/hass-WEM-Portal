@@ -25,6 +25,252 @@ def get_min_max(param_id: str, data_type: int, min_val, max_val) -> tuple[float,
     return 0.0, 100.0
 
 
+def _tokenize(text):
+    """The words of a name, punctuation removed, for comparing two names."""
+    return set(re.sub(r'[^a-zA-Z0-9äöüß]', ' ', text.lower()).split())
+
+
+def _friendly_name(language: str, param_id: str, module_name: str) -> str:
+    """The display name, without repeating the module name when the parameter
+    name already carries it."""
+    translated_name = translate(
+        language,
+        friendly_name_mapper(param_id),
+    )
+    translated_module_name = translate(language, module_name.strip())
+
+    module_words = set(translated_module_name.lower().split())
+    entity_words = set(translated_name.lower().split())
+
+    if module_words.issubset(entity_words):
+        return translated_name
+    return f"{translated_module_name} {translated_name}"
+
+
+def _describe_value(param_id, module, device_module, parameter, value, language) -> tuple[str, dict]:
+    """Flatten one portal value into the description the rest of the mapper
+    works with. Raises on malformed portal data just like the inline code it
+    replaces - the caller's guard turns that into a skipped value."""
+    name = f"{device_module['Name']}-{parameter['ParameterID']}"
+
+    numeric_val = value.get("NumericValue")
+    string_val = value.get("StringValue", "")
+
+    final_value = numeric_val if numeric_val is not None else string_val
+
+    data_type = parameter.get("DataType")
+
+    if parameter.get("EnumValues"):
+        if data_type == WemDataType.SWITCH:
+            # Only normalize true booleans (on/off) here. Other
+            # enum-valued parameters - e.g. a SELECT dropdown
+            # like a 0-240 minute push duration, where one
+            # option happens to be "Aus"/"Off" - must keep
+            # their exact original string, so they still match
+            # the literal option names built from this same
+            # parameter's EnumValues in _writeable_entity
+            # (select.py matches the raw value against those
+            # names verbatim). Rewriting "Aus" to "Off"/0.0
+            # here would silently break that match.
+            final_value = sanitize_value(string_val, value.get("Unit"), name)
+        else:
+            final_value = string_val
+    else:
+        if isinstance(final_value, str):
+            final_value = sanitize_value(final_value, value.get("Unit"), name)
+
+    return name, {
+        "friendlyName": _friendly_name(language, param_id, device_module["Name"]),
+        "ParameterID": param_id,
+        "unit": value.get("Unit"),
+        "value": final_value,
+        "IsWriteable": parameter.get("IsWriteable", False),
+        "DataType": data_type,
+        "ModuleIndex": module["ModuleIndex"],
+        "ModuleType": module["ModuleType"],
+    }
+
+
+def _writeable_entity(sensor: dict, parameter: dict) -> dict | None:
+    """The platform entity a writeable parameter becomes, or None when its
+    data type has no writeable platform - then it stays a plain sensor."""
+    data_type = sensor["DataType"]
+    final_value = sensor["value"]
+
+    common_attrs = {
+        "friendlyName": sensor["friendlyName"],
+        "ParameterID": sensor["ParameterID"],
+        "unit": sensor["unit"],
+        "icon": uom_to_icon(sensor["unit"]),
+        "value": final_value,
+        "DataType": data_type,
+        "ModuleIndex": sensor["ModuleIndex"],
+        "ModuleType": sensor["ModuleType"],
+    }
+
+    min_val, max_val = get_min_max(
+        sensor["ParameterID"],
+        data_type,
+        parameter.get("MinValue"),
+        parameter.get("MaxValue")
+    )
+
+    if data_type in (WemDataType.NUMBER_STEP_HALF, WemDataType.NUMBER_STEP_ONE):
+        return {
+            **common_attrs,
+            "platform": "number",
+            "min_value": min_val,
+            "max_value": max_val,
+            "step": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
+        }
+    if data_type == WemDataType.SELECT:
+        return {
+            **common_attrs,
+            "platform": "select",
+            "options": [x["Value"] for x in parameter.get("EnumValues", [])],
+            "optionsNames": [x["Name"] for x in parameter.get("EnumValues", [])],
+        }
+    if data_type == WemDataType.SWITCH:
+        if isinstance(final_value, str) and final_value.startswith("{"):
+            return None  # It's a JSON schedule, fallback to sensor
+        if int(min_val) == 0 and int(max_val) == 1:
+            return {
+                **common_attrs,
+                "platform": "switch",
+            }
+        return {
+            **common_attrs,
+            "platform": "number",
+            "min_value": min_val,
+            "max_value": max_val,
+            "step": 1,
+        }
+    return None
+
+
+def _read_modules(device_id, values_json, modules_dict, language, api_data) -> dict:
+    """Every value the portal returned, flattened - and every writeable one
+    already placed on the platform its data type calls for."""
+    parsed_sensors = {}
+
+    for module in values_json.get("Modules", []):
+        try:
+            module_tuple = (module["ModuleIndex"], module["ModuleType"])
+        except (KeyError, TypeError) as exc:
+            _LOGGER.warning("Skipping malformed module entry in API response: %s", exc)
+            continue
+        if module_tuple not in modules_dict[device_id]:
+            continue
+
+        device_module = modules_dict[device_id][module_tuple]
+
+        for value in module.get("Values", []):
+            try:
+                param_id = value["ParameterID"]
+            except (KeyError, TypeError) as exc:
+                _LOGGER.warning("Skipping malformed value entry in API response: %s", exc)
+                continue
+            if param_id not in device_module["parameters"]:
+                continue
+
+            try:
+                parameter = device_module["parameters"][param_id]
+                name, sensor = _describe_value(
+                    param_id, module, device_module, parameter, value, language
+                )
+                # Recorded before the platform decision below, which can
+                # raise: a value that has no writeable platform - because
+                # its type is unknown or because building it failed - must
+                # still reach the second pass as a plain sensor.
+                parsed_sensors[name] = sensor
+
+                if sensor["IsWriteable"]:
+                    entity = _writeable_entity(sensor, parameter)
+                    if entity is not None:
+                        api_data[device_id][name] = entity
+            except Exception as exc:  # pylint: disable=broad-except
+                # A single malformed/unexpected data point should never
+                # cost us the rest of this device's update - log and
+                # move on to the next value instead of letting the
+                # exception abort processing for everything after it.
+                _LOGGER.warning(
+                    "Skipping value for parameter %s due to unexpected error: %s",
+                    value.get("ParameterID", "?") if isinstance(value, dict) else "?",
+                    exc,
+                )
+                continue
+
+    return parsed_sensors
+
+
+def _merge_into_scraped(device_id, key, sensor, language, scraping_mapper, api_data) -> None:
+    """Feed an API reading into the scraped entity that shows the same value,
+    so both sources keep one entity instead of two that drift apart."""
+    param_id = sensor["ParameterID"]
+    if param_id not in scraping_mapper:
+        for scraped_data in api_data[device_id].values():
+            if not isinstance(scraped_data, dict):
+                continue
+            scraped_entity_id = scraped_data.get("ParameterID", "")
+            try:
+                scraped_part = scraped_entity_id.split("-")[1]
+                translated_scraped = translate(language, friendly_name_mapper(scraped_part))
+
+                sensor_words = _tokenize(sensor["friendlyName"])
+                scraped_words = _tokenize(translated_scraped)
+
+                if scraped_words and scraped_words.issubset(sensor_words):
+                    scraping_mapper.setdefault(param_id, []).append(scraped_entity_id)
+            except IndexError:
+                pass
+
+        if param_id not in scraping_mapper:
+            scraping_mapper[param_id] = [key]
+
+    for scraped_entity in scraping_mapper[param_id]:
+        # An API read that came back empty must not erase a
+        # web value that was scraped successfully in the same
+        # cycle. Both paths feed this one entity, and writing
+        # None over a good reading turned a partial API
+        # failure into an unknown sensor.
+        api_value = sensor.get("value")
+        previous = api_data[device_id].get(scraped_entity, {})
+        sensor_dict = {
+            "value": (
+                previous.get("value") if api_value is None else api_value
+            ),
+            "name": previous.get("name"),
+            "unit": previous.get("unit", sensor.get("unit")),
+            "icon": previous.get("icon", uom_to_icon(sensor.get("unit"))),
+            "friendlyName": previous.get(
+                "friendlyName", sensor.get("friendlyName")
+            ),
+            "ParameterID": scraped_entity,
+            "platform": "sensor",
+        }
+        if scraped_entity in api_data[device_id]:
+            api_data[device_id][scraped_entity].update(sensor_dict)
+        else:
+            api_data[device_id][scraped_entity] = sensor_dict
+
+
+def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
+    """Write the reading as a read-only sensor, keeping the unit it already
+    carried when this update brought none."""
+    new_unit = sensor.get("unit")
+    old_unit = api_data[device_id].get(key, {}).get("unit")
+    final_unit = new_unit if new_unit not in (None, "") else old_unit
+
+    api_data[device_id][key] = {
+        "value": sensor["value"],
+        "ParameterID": sensor["ParameterID"],
+        "unit": final_unit,
+        "icon": uom_to_icon(final_unit),
+        "friendlyName": sensor["friendlyName"],
+        "platform": "sensor",
+    }
+
+
 class WemPortalDataMapper:
     """Handles mapping of raw API and Scraped data into Home Assistant platforms."""
 
@@ -41,221 +287,30 @@ class WemPortalDataMapper:
     ):
         """Processes the read values JSON and maps it to api_data."""
 
-        parsed_sensors = {}
-
-        for module in values_json.get("Modules", []):
-            try:
-                module_tuple = (module["ModuleIndex"], module["ModuleType"])
-            except (KeyError, TypeError) as exc:
-                _LOGGER.warning("Skipping malformed module entry in API response: %s", exc)
-                continue
-            if module_tuple not in modules_dict[device_id]:
-                continue
-
-            device_module = modules_dict[device_id][module_tuple]
-
-            for value in module.get("Values", []):
-                try:
-                    param_id = value["ParameterID"]
-                except (KeyError, TypeError) as exc:
-                    _LOGGER.warning("Skipping malformed value entry in API response: %s", exc)
-                    continue
-                if param_id not in device_module["parameters"]:
-                    continue
-
-                try:
-                    parameter = device_module["parameters"][param_id]
-                    name = f"{device_module['Name']}-{parameter['ParameterID']}"
-
-                    numeric_val = value.get("NumericValue")
-                    string_val = value.get("StringValue", "")
-
-                    final_value = numeric_val if numeric_val is not None else string_val
-
-                    is_writeable = parameter.get("IsWriteable", False)
-                    data_type = parameter.get("DataType")
-
-                    if parameter.get("EnumValues"):
-                        if data_type == WemDataType.SWITCH:
-                            # Only normalize true booleans (on/off) here. Other
-                            # enum-valued parameters - e.g. a SELECT dropdown
-                            # like a 0-240 minute push duration, where one
-                            # option happens to be "Aus"/"Off" - must keep
-                            # their exact original string, so they still match
-                            # the literal option names built from this same
-                            # parameter's EnumValues a few lines below
-                            # (select.py matches the raw value against those
-                            # names verbatim). Rewriting "Aus" to "Off"/0.0
-                            # here would silently break that match.
-                            final_value = sanitize_value(string_val, value.get("Unit"), name)
-                        else:
-                            final_value = string_val
-                    else:
-                        if isinstance(final_value, str):
-                            final_value = sanitize_value(final_value, value.get("Unit"), name)
-
-                    translated_name = translate(
-                        language,
-                        friendly_name_mapper(param_id),
-                    )
-                    translated_module_name = translate(language, device_module['Name'].strip())
-
-                    module_words = set(translated_module_name.lower().split())
-                    entity_words = set(translated_name.lower().split())
-
-                    if module_words.issubset(entity_words):
-                        friendly_name = translated_name
-                    else:
-                        friendly_name = f"{translated_module_name} {translated_name}"
-
-                    parsed_sensors[name] = {
-                        "friendlyName": friendly_name,
-                        "ParameterID": param_id,
-                        "unit": value.get("Unit"),
-                        "value": final_value,
-                        "IsWriteable": is_writeable,
-                        "DataType": data_type,
-                        "ModuleIndex": module["ModuleIndex"],
-                        "ModuleType": module["ModuleType"],
-                    }
-
-                    if is_writeable:
-                        common_attrs = {
-                            "friendlyName": parsed_sensors[name]["friendlyName"],
-                            "ParameterID": param_id,
-                            "unit": value.get("Unit"),
-                            "icon": uom_to_icon(value.get("Unit")),
-                            "value": final_value,
-                            "DataType": data_type,
-                            "ModuleIndex": module["ModuleIndex"],
-                            "ModuleType": module["ModuleType"],
-                        }
-
-                        min_val, max_val = get_min_max(
-                            param_id,
-                            data_type,
-                            parameter.get("MinValue"),
-                            parameter.get("MaxValue")
-                        )
-
-                        if data_type in (WemDataType.NUMBER_STEP_HALF, WemDataType.NUMBER_STEP_ONE):
-                            api_data[device_id][name] = {
-                                **common_attrs,
-                                "platform": "number",
-                                "min_value": min_val,
-                                "max_value": max_val,
-                                "step": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
-                            }
-                        elif data_type == WemDataType.SELECT:
-                            api_data[device_id][name] = {
-                                **common_attrs,
-                                "platform": "select",
-                                "options": [x["Value"] for x in parameter.get("EnumValues", [])],
-                                "optionsNames": [x["Name"] for x in parameter.get("EnumValues", [])],
-                            }
-                        elif data_type == WemDataType.SWITCH:
-                            if isinstance(final_value, str) and final_value.startswith("{"):
-                                pass  # It's a JSON schedule, fallback to sensor
-                            elif int(min_val) == 0 and int(max_val) == 1:
-                                api_data[device_id][name] = {
-                                    **common_attrs,
-                                    "platform": "switch",
-                                }
-                            else:
-                                api_data[device_id][name] = {
-                                    **common_attrs,
-                                    "platform": "number",
-                                    "min_value": min_val,
-                                    "max_value": max_val,
-                                    "step": 1,
-                                }
-                except Exception as exc:  # pylint: disable=broad-except
-                    # A single malformed/unexpected data point should never
-                    # cost us the rest of this device's update - log and
-                    # move on to the next value instead of letting the
-                    # exception abort processing for everything after it.
-                    _LOGGER.warning(
-                        "Skipping value for parameter %s due to unexpected error: %s",
-                        value.get("ParameterID", "?") if isinstance(value, dict) else "?",
-                        exc,
-                    )
-                    continue
+        parsed_sensors = _read_modules(
+            device_id, values_json, modules_dict, language, api_data
+        )
 
         # Process read-only sensors and fallback for unknown writeable datatypes
         for key, sensor in parsed_sensors.items():
-            if not sensor["IsWriteable"] or key not in api_data.get(device_id, {}):
-                # Merge an API sensor into its scraped counterpart only for
-                # the device the scraper actually writes into - there is
-                # exactly one (see resolve_scraper_device_id), and only its
-                # dict can contain scraped rows to match against.
-                #
-                # This used to ask "is there fewer than one other device?"
-                # instead, which happens to be the same thing on a
-                # single-device installation but disabled the merge entirely
-                # as soon as a second device existed. The API sensor was then
-                # written under its own key next to the scraped row for the
-                # same reading: two entities, two names, two values that
-                # drift apart because they refresh on different schedules.
-                if mode == "both" and device_id == scraper_device_id:
-                    param_id = sensor["ParameterID"]
-                    if param_id not in scraping_mapper:
-                        for scraped_data in api_data[device_id].values():
-                            if not isinstance(scraped_data, dict):
-                                continue
-                            scraped_entity_id = scraped_data.get("ParameterID", "")
-                            try:
-                                scraped_part = scraped_entity_id.split("-")[1]
-                                translated_scraped = translate(language, friendly_name_mapper(scraped_part))
+            if sensor["IsWriteable"] and key in api_data.get(device_id, {}):
+                continue
 
-                                def tokenize(text):
-                                    return set(re.sub(r'[^a-zA-Z0-9äöüß]', ' ', text.lower()).split())
-
-                                sensor_words = tokenize(sensor["friendlyName"])
-                                scraped_words = tokenize(translated_scraped)
-
-                                if scraped_words and scraped_words.issubset(sensor_words):
-                                    scraping_mapper.setdefault(param_id, []).append(scraped_entity_id)
-                            except IndexError:
-                                pass
-
-                        if param_id not in scraping_mapper:
-                            scraping_mapper[param_id] = [key]
-
-                    for scraped_entity in scraping_mapper[param_id]:
-                        # An API read that came back empty must not erase a
-                        # web value that was scraped successfully in the same
-                        # cycle. Both paths feed this one entity, and writing
-                        # None over a good reading turned a partial API
-                        # failure into an unknown sensor.
-                        api_value = sensor.get("value")
-                        previous = api_data[device_id].get(scraped_entity, {})
-                        sensor_dict = {
-                            "value": (
-                                previous.get("value") if api_value is None else api_value
-                            ),
-                            "name": previous.get("name"),
-                            "unit": previous.get("unit", sensor.get("unit")),
-                            "icon": previous.get("icon", uom_to_icon(sensor.get("unit"))),
-                            "friendlyName": previous.get(
-                                "friendlyName", sensor.get("friendlyName")
-                            ),
-                            "ParameterID": scraped_entity,
-                            "platform": "sensor",
-                        }
-                        if scraped_entity in api_data[device_id]:
-                            api_data[device_id][scraped_entity].update(sensor_dict)
-                        else:
-                            api_data[device_id][scraped_entity] = sensor_dict
-                else:
-                    new_unit = sensor.get("unit")
-                    old_unit = api_data[device_id].get(key, {}).get("unit")
-                    final_unit = new_unit if new_unit not in (None, "") else old_unit
-
-                    api_data[device_id][key] = {
-                        "value": sensor["value"],
-                        "ParameterID": sensor["ParameterID"],
-                        "unit": final_unit,
-                        "icon": uom_to_icon(final_unit),
-                        "friendlyName": sensor["friendlyName"],
-                        "platform": "sensor",
-                    }
+            # Merge an API sensor into its scraped counterpart only for
+            # the device the scraper actually writes into - there is
+            # exactly one (see resolve_scraper_device_id), and only its
+            # dict can contain scraped rows to match against.
+            #
+            # This used to ask "is there fewer than one other device?"
+            # instead, which happens to be the same thing on a
+            # single-device installation but disabled the merge entirely
+            # as soon as a second device existed. The API sensor was then
+            # written under its own key next to the scraped row for the
+            # same reading: two entities, two names, two values that
+            # drift apart because they refresh on different schedules.
+            if mode == "both" and device_id == scraper_device_id:
+                _merge_into_scraped(
+                    device_id, key, sensor, language, scraping_mapper, api_data
+                )
+            else:
+                _emit_plain_sensor(device_id, key, sensor, api_data)

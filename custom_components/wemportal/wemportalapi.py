@@ -63,6 +63,7 @@ from .mapper import WemPortalDataMapper
 from .translations import friendly_name_mapper, translate
 from .utils import (
     clamped_scan_interval,
+    latest_statistics_entry,
     maintenance_notice,
 )
 
@@ -1611,6 +1612,163 @@ class WemPortalApi:
         except Exception as exc:
             _LOGGER.warning("Error processing CircuitTimes: %s", exc)
 
+    def _statistics_devices(self, enabled_devices=None) -> list:
+        """The devices this cycle should ask the portal about."""
+        # `is not None`, NOT truthiness: an EMPTY list means "every device is
+        # disabled", and treating that as "no filter given" polled all of them -
+        # the exact opposite of what the caller asked for.
+        target_devices = (
+            enabled_devices if enabled_devices is not None else list(self.data.keys())
+        )
+        # Same str-normalization as in get_data(): self.data is keyed
+        # by str, callers may pass ints. Scraper-only devices (e.g. the "0000"
+        # placeholder) have no API statistics; they are skipped so
+        # int("0000")=0 isn't sent to the portal.
+        return [
+            str(device_id)
+            for device_id in target_devices
+            if str(device_id) in self.data and str(device_id) in self.modules
+        ]
+
+    def _statistics_group_name(self, group: dict) -> str:
+        """The display name for one statistics group: the portal's own
+        description where it has one, a fixed fallback where it is blank."""
+        group_id = group.get("GroupType")
+        group_name = group.get("Description")
+        if not group_name or group_name.strip() == "":
+            fallback_names = {
+                1: "Heating Energy Yield",
+                2: "Hot Water Energy Yield",
+                3: "Cooling Energy Yield",
+                4: "Total Energy Yield",
+                5: "Power Consumption Heating",
+                6: "Power Consumption Hot Water",
+                7: "Power Consumption Cooling",
+                8: "Total Power Consumption"
+            }
+            group_name = fallback_names.get(group_id, f"Energy {group_id}")
+        else:
+            translated_group = translate(self.language, group_name)
+            if "energy" not in translated_group.lower():
+                group_name = f"{translated_group} Energy"
+            else:
+                group_name = translated_group
+        return group_name
+
+    def _store_statistics_group(self, device_id, group_id, group_name, stats_resp) -> None:
+        """Turn one group's read response into its energy sensor.
+
+        Returns without writing wherever the group loop used to `continue`:
+        either way there is nothing left to do for this group.
+        """
+        values = stats_resp.get("Values", [])
+        if not values:
+            return
+
+        # Pick by the Date the entry carries, not by list
+        # position - see utils.latest_statistics_entry.
+        latest_stat = latest_statistics_entry(values)
+        current_value = latest_stat.get("Value")
+        _LOGGER.debug(
+            "Statistics group %s: using entry dated %s of %d",
+            group_id, latest_stat.get("Date", "?"), len(values),
+        )
+
+        sensor_name = f"Energy_{group_id}"
+
+        if current_value is None:
+            # Missing reading this cycle - keep the last known
+            # value instead of falling back to 0.0, which would
+            # otherwise show up as a false drop/spike on the
+            # Energy Dashboard.
+            old_sensor = self.data.get(device_id, {}).get(f"{device_id}-{sensor_name}")
+            if isinstance(old_sensor, dict) and old_sensor.get("value") is not None:
+                current_value = old_sensor.get("value")
+            else:
+                # No previous value either: skip rather than
+                # invent a 0.0, which the Energy Dashboard
+                # reads as a meter reset on a
+                # total_increasing sensor.
+                _LOGGER.debug(
+                    "Statistics group %s has no value yet; "
+                    "skipping instead of reporting 0.", group_id,
+                )
+                return
+
+        unit = stats_resp.get("Unit", "kWh")
+
+        self.data[device_id][f"{device_id}-{sensor_name}"] = {
+            "friendlyName": group_name,
+            "ParameterID": sensor_name,
+            "unit": unit,
+            "value": current_value,
+            "IsWriteable": False,
+            "DataType": -1,
+            "ModuleIndex": -1,
+            "ModuleType": -1,
+            "platform": "sensor",
+            "device_class": "energy",
+            "state_class": "total_increasing"
+        }
+
+    def _fetch_device_statistics(self, device_id: str) -> None:
+        """Read every statistics group the portal lists for one device.
+
+        Lets the refresh call's exception through: a device whose refresh
+        failed is a failed device for the retry bookkeeping in get_statistics.
+        A single rejected GROUP is a different matter and handled here - the
+        portal routinely lists groups it then refuses to read.
+        """
+        refresh_resp = self.make_api_call(
+            API_STATISTICS_REFRESH_URL,
+            data={"DeviceID": int(device_id)},
+            do_retry=True
+        ).json()
+
+        group_types = refresh_resp.get("GroupTypeDescriptions", [])
+        headers = {"X-Api-Version": "2.0.0.0"}
+
+        for group in group_types:
+            group_id = group.get("GroupType")
+            group_name = self._statistics_group_name(group)
+
+            read_payload = {
+                "DeviceID": int(device_id),
+                "ModuleType": 7,
+                "ModuleIndex": 0,
+                "GroupType": group_id,
+                "Type": 1
+            }
+
+            try:
+                time.sleep(2)  # Avoid hammering the API
+                stats_resp = self.make_api_call(
+                    API_STATISTICS_READ_URL,
+                    headers=headers,
+                    data=read_payload,
+                    do_retry=True
+                ).json()
+
+                self._store_statistics_group(
+                    device_id, group_id, group_name, stats_resp
+                )
+
+            except Exception as exc:
+                # Status 3001 = this statistics group isn't valid for
+                # the queried module. The refresh call lists such
+                # groups but reading them is rejected; that's expected
+                # and harmless, so skip it quietly instead of warning
+                # on every startup. Any other error is still surfaced.
+                # Compared as str so an int or str server_status both match.
+                server_status = getattr(exc, "server_status", None)
+                if str(server_status) == str(WEM_INVALID_PARAMETER_STATUS):
+                    _LOGGER.debug(
+                        "Skipping statistics group %s: not valid for this module (status %s).",
+                        group_id, WEM_INVALID_PARAMETER_STATUS,
+                    )
+                else:
+                    _LOGGER.warning("Failed to fetch Statistics for group %s: %s", group_id, exc)
+
     def get_statistics(self, enabled_devices=None):
         """Fetch historical statistics from the API, rate limited to once per hour.
 
@@ -1635,142 +1793,11 @@ class WemPortalApi:
         attempted = 0
         succeeded = 0
 
-        # `is not None`, NOT truthiness: an EMPTY list means "every device is
-        # disabled", and treating that as "no filter given" polled all of them -
-        # the exact opposite of what the caller asked for.
-        target_devices = (
-            enabled_devices if enabled_devices is not None else list(self.data.keys())
-        )
-        for device_id in target_devices:
-            # Same str-normalization as in get_data(): self.data is keyed
-            # by str, callers may pass ints.
-            device_id = str(device_id)
-            if device_id not in self.data:
-                continue
-            # Scraper-only devices (e.g. the "0000" placeholder) have no API
-            # statistics; skip them so int("0000")=0 isn't sent to the portal.
-            if device_id not in self.modules:
-                continue
+        for device_id in self._statistics_devices(enabled_devices):
             attempted += 1
             try:
-                refresh_resp = self.make_api_call(
-                    API_STATISTICS_REFRESH_URL,
-                    data={"DeviceID": int(device_id)},
-                    do_retry=True
-                ).json()
-
-                group_types = refresh_resp.get("GroupTypeDescriptions", [])
-                headers = {"X-Api-Version": "2.0.0.0"}
-
-                for group in group_types:
-                    group_id = group.get("GroupType")
-                    group_name = group.get("Description")
-                    if not group_name or group_name.strip() == "":
-                        fallback_names = {
-                            1: "Heating Energy Yield",
-                            2: "Hot Water Energy Yield",
-                            3: "Cooling Energy Yield",
-                            4: "Total Energy Yield",
-                            5: "Power Consumption Heating",
-                            6: "Power Consumption Hot Water",
-                            7: "Power Consumption Cooling",
-                            8: "Total Power Consumption"
-                        }
-                        group_name = fallback_names.get(group_id, f"Energy {group_id}")
-                    else:
-                        from .translations import translate
-                        translated_group = translate(self.language, group_name)
-                        if "energy" not in translated_group.lower():
-                            group_name = f"{translated_group} Energy"
-                        else:
-                            group_name = translated_group
-
-                    read_payload = {
-                        "DeviceID": int(device_id),
-                        "ModuleType": 7,
-                        "ModuleIndex": 0,
-                        "GroupType": group_id,
-                        "Type": 1
-                    }
-
-                    try:
-                        time.sleep(2)  # Avoid hammering the API
-                        stats_resp = self.make_api_call(
-                            API_STATISTICS_READ_URL,
-                            headers=headers,
-                            data=read_payload,
-                            do_retry=True
-                        ).json()
-
-                        values = stats_resp.get("Values", [])
-                        if not values:
-                            continue
-
-                        # Pick by the Date the entry carries, not by list
-                        # position - see utils.latest_statistics_entry.
-                        from .utils import latest_statistics_entry
-                        latest_stat = latest_statistics_entry(values)
-                        current_value = latest_stat.get("Value")
-                        _LOGGER.debug(
-                            "Statistics group %s: using entry dated %s of %d",
-                            group_id, latest_stat.get("Date", "?"), len(values),
-                        )
-
-                        sensor_name = f"Energy_{group_id}"
-
-                        if current_value is None:
-                            # Missing reading this cycle - keep the last known
-                            # value instead of falling back to 0.0, which would
-                            # otherwise show up as a false drop/spike on the
-                            # Energy Dashboard.
-                            old_sensor = self.data.get(device_id, {}).get(f"{device_id}-{sensor_name}")
-                            if isinstance(old_sensor, dict) and old_sensor.get("value") is not None:
-                                current_value = old_sensor.get("value")
-                            else:
-                                # No previous value either: skip rather than
-                                # invent a 0.0, which the Energy Dashboard
-                                # reads as a meter reset on a
-                                # total_increasing sensor.
-                                _LOGGER.debug(
-                                    "Statistics group %s has no value yet; "
-                                    "skipping instead of reporting 0.", group_id,
-                                )
-                                continue
-
-                        unit = stats_resp.get("Unit", "kWh")
-
-                        self.data[device_id][f"{device_id}-{sensor_name}"] = {
-                            "friendlyName": group_name,
-                            "ParameterID": sensor_name,
-                            "unit": unit,
-                            "value": current_value,
-                            "IsWriteable": False,
-                            "DataType": -1,
-                            "ModuleIndex": -1,
-                            "ModuleType": -1,
-                            "platform": "sensor",
-                            "device_class": "energy",
-                            "state_class": "total_increasing"
-                        }
-
-                    except Exception as exc:
-                        # Status 3001 = this statistics group isn't valid for
-                        # the queried module. The refresh call lists such
-                        # groups but reading them is rejected; that's expected
-                        # and harmless, so skip it quietly instead of warning
-                        # on every startup. Any other error is still surfaced.
-                        # Compared as str so an int or str server_status both match.
-                        server_status = getattr(exc, "server_status", None)
-                        if str(server_status) == str(WEM_INVALID_PARAMETER_STATUS):
-                            _LOGGER.debug(
-                                "Skipping statistics group %s: not valid for this module (status %s).",
-                                group_id, WEM_INVALID_PARAMETER_STATUS,
-                            )
-                        else:
-                            _LOGGER.warning("Failed to fetch Statistics for group %s: %s", group_id, exc)
-
+                self._fetch_device_statistics(device_id)
                 succeeded += 1
-
             except Exception as exc:
                 _LOGGER.warning("Error processing Statistics: %s", exc)
 

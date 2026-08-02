@@ -1,11 +1,10 @@
 """A frozen record of what the mapper produces, for every input shape.
 
-process_api_values decides which Home Assistant entity every portal value
-becomes and what it carries. It is 229 lines over 56 branch arcs, and a
-mistake in it is SILENT: the integration still starts, it just exposes the
-wrong entity type, the wrong unit, or a value that quietly stops updating.
-One of this project's audit findings lived in exactly that function for that
-reason.
+process_api_values and its helpers decide which Home Assistant entity every
+portal value becomes and what it carries. A mistake in them is SILENT: the
+integration still starts, it just exposes the wrong entity type, the wrong
+unit, or a value that quietly stops updating. One of this project's audit
+findings lived in exactly that code for that reason.
 
 The branch tests next door say "these cases still behave"; they cannot say
 "nothing else changed", which is the question a refactor asks. So this walks a
@@ -217,8 +216,8 @@ def test_the_mapper_output_is_unchanged(request):
 # empty scraping_mapper. Measured, it covers 78% of mapper.py on its own -
 # and the gap is not incidental. scraping_mapper is a long-lived dict on the
 # api object, so from the SECOND poll cycle onwards production always takes
-# the cached path at mapper.py:224. The hottest path in the field was the one
-# with no recording at all.
+# the cached path in _merge_into_scraped. The hottest path in the field was
+# the one with no recording at all.
 #
 # Deliberately a SEPARATE fixture rather than new axes on the matrix above:
 # adding an axis to the case key renames all 1944 existing keys, which turns
@@ -292,19 +291,20 @@ def _extra_case(parameters, existing, scraping_mapper, mode="both",
 def build_extra_snapshot():
     snapshot = {}
 
-    # The cached path (mapper.py:201->224), which production takes on every
-    # cycle after the first and the matrix never does.
+    # The cached path: _merge_into_scraped skips rebuilding the mapping and
+    # goes straight to the write loop, which production does on every cycle
+    # after the first and the matrix never does.
     snapshot["cached_mapping"] = _extra_case(
         [_param("Outside")],
         {"heat_pump-outside": _scraped_row("heat_pump-outside")},
         {"Outside": ["heat_pump-outside"]},
     )
     # Cached, but pointing at a row that no longer exists: the mapper has to
-    # create it rather than fail (mapper.py:248).
+    # create it rather than fail (the else branch of the write loop).
     snapshot["cached_mapping_missing_row"] = _extra_case(
         [_param("Outside")], {}, {"Outside": ["heat_pump-gone"]},
     )
-    # A cached mapping onto SEVERAL rows, so the loop at :224 runs twice.
+    # A cached mapping onto SEVERAL rows, so the write loop runs twice.
     snapshot["cached_mapping_two_targets"] = _extra_case(
         [_param("Outside")],
         {
@@ -315,17 +315,17 @@ def build_extra_snapshot():
     )
 
     # A row whose ParameterID carries no "-": split("-")[1] raises, and the
-    # guard at :218-219 is load-bearing rather than defensive noise - the
+    # IndexError guard is load-bearing rather than defensive noise - the
     # writes phase 1 makes itself look exactly like this.
     snapshot["row_without_a_dash"] = _extra_case(
         [_param("Outside")], {"Outside": _scraped_row("Outside")}, {},
     )
-    # A non-dict entry in the device dict, reaching the skip at :204.
+    # A non-dict entry in the device dict, reaching the isinstance skip.
     snapshot["non_dict_entry"] = _extra_case(
         [_param("Outside")], {"ConnectionStatus": 0}, {},
     )
     # Rows that match nothing, so the scan runs to the end and the fallback
-    # at :222 assigns the key itself (arc 216->202).
+    # assigns the key itself.
     snapshot["no_row_matches"] = _extra_case(
         [_param("Outside")],
         {"heat_pump-unrelated": _scraped_row(
@@ -346,7 +346,7 @@ def build_extra_snapshot():
     )
 
     # No EnumValues at all - the only way a writeable value reaches the plain
-    # sanitize path at mapper.py:93-95.
+    # sanitize path in _describe_value.
     for label, data_type in (("switch", WemDataType.SWITCH),
                              ("select", WemDataType.SELECT),
                              ("number", WemDataType.NUMBER_STEP_ONE)):
@@ -356,7 +356,7 @@ def build_extra_snapshot():
         )
 
     # A scraped row carrying explicit None fields: the difference between
-    # `.get(key, default)` and `or default` at :236-241 is invisible unless
+    # `.get(key, default)` and `or default` in the write loop is invisible unless
     # the stored value is falsy but present.
     snapshot["falsy_scraped_fields"] = _extra_case(
         [_param("Outside")],
@@ -375,7 +375,7 @@ def test_the_extra_cases_reach_what_the_matrix_cannot():
     snapshot = build_extra_snapshot()
 
     # The cached case must NOT have rebuilt the mapping - if it did, it is
-    # exercising the scan again and proves nothing about :224.
+    # exercising the scan again and proves nothing about the cached path.
     assert snapshot["cached_mapping"]["scraping_mapper"] == {
         "Outside": ["heat_pump-outside"]
     }

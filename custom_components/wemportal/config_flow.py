@@ -312,89 +312,9 @@ class WemportalOptionsFlow(OptionsFlow):
             detail = self._discovery_detail
             self._discovery_detail = ""
         if user_input is not None:
-            # Validate the ten expert slot IDs on save: an entityvalue must
-            # be a plain hex string of a plausible length. Real entityvalues
-            # are long (the known ones are 36 hex chars); a short entry like
-            # "0" or "abc" is a stray value/typo, not a real ID, and would
-            # only cause a pointless failing portal request later. We require
-            # hex AND a minimum length, kept well below the observed 36 so a
-            # slightly different length on another installation still passes.
-            # Whitespace is stripped; empty stays allowed (slot unused).
-            min_len = MIN_EXPERT_ENTITYVALUE_LENGTH
-            for i in range(1, EXPERT_SLOT_COUNT + 1):
-                id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
-                raw = (user_input.get(id_key) or "").strip()
-                user_input[id_key] = raw  # persist the stripped value
-                if raw and (
-                    not re.fullmatch(r"[0-9A-Fa-f]+", raw) or len(raw) < min_len
-                ):
-                    errors[id_key] = "invalid_entityvalue"
-            # The module menu index feeds an ASP.NET postback argument and a
-            # ClientState JSON template verbatim - restrict it to digits so
-            # a typo (or stray JSON) is caught in the form instead of being
-            # sent to the portal. Empty stays allowed (= use the default).
-            module_arg = (user_input.get(CONF_EXPERT_MODULE_ARG) or "").strip()
-            user_input[CONF_EXPERT_MODULE_ARG] = module_arg
-            if module_arg and not module_arg.isdigit():
-                errors[CONF_EXPERT_MODULE_ARG] = "invalid_module_arg"
-            # De-dup: the same entityvalue must not be selected in two slots.
-            slot_ids = [
-                (user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip()
-                for i in range(1, EXPERT_SLOT_COUNT + 1)
-            ]
-            dupes = duplicate_entityvalues(slot_ids)
-            if dupes:
-                for i in range(1, EXPERT_SLOT_COUNT + 1):
-                    if (user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip() in dupes:
-                        errors[CONF_EXPERT_SLOT_ID_TEMPLATE % i] = "duplicate_entityvalue"
+            errors.update(self._validate_configure_input(user_input))
             if not errors:
-                # No-op guard: writing a new options entry always triggers a
-                # full integration reload (and a fresh portal login). If the
-                # normalized input is identical to the stored options -
-                # e.g. the user opened the dialog and saved without changes,
-                # or only typed whitespace into an already-empty ID field -
-                # skip the write so we don't reload for nothing. Reloading
-                # needlessly also risks the portal's 403 rate limit.
-                current = dict(self.config_entry.options)
-                merged = {**current, **user_input}
-                # A module list fetched during this flow is persisted here -
-                # the only place options are written, so no mid-flow reload.
-                if self._module_list is not None:
-                    merged[CONF_EXPERT_MODULE_LIST] = self._module_list
-                if merged == current:
-                    return self.async_abort(reason="no_changes")
-                # Write the MERGED options, not just the form fields: Home
-                # Assistant REPLACES the options dict with what is passed
-                # here. Passing only `user_input` silently dropped every
-                # option that is not a form field - notably the cached module
-                # list - so each save cost another portal login on the next
-                # discovery. It also makes the no-op comparison above and the
-                # value actually written agree on the same dict.
-                # Options only take effect on a reload: scan intervals, mode
-                # and expert access are all read during setup. With no update
-                # listener doing that implicitly, the flow has to.
-                #
-                # The options are written HERE, before the reload is
-                # scheduled, and only then handed to the flow manager. Order
-                # matters and is easy to get wrong: the manager writes them
-                # after this step returns, so scheduling a reload from here
-                # without writing first queued a reload that read the OLD
-                # values - the form saved and nothing changed until the next
-                # restart. The manager's own write below then finds them
-                # already in place and is a no-op.
-                #
-                # Home Assistant offers OptionsFlowWithReload for exactly
-                # this, but only from 2025.8 - later than the 2024.12 this
-                # integration supports, and it is selected by isinstance, not
-                # by an attribute, so it cannot be adopted conditionally
-                # without a second code path.
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, options=merged
-                )
-                self.hass.config_entries.async_schedule_reload(
-                    self.config_entry.entry_id
-                )
-                return self.async_create_entry(title="", data=merged)
+                return self._save_configure(user_input)
 
         # On an error redisplay, prefill the form with what the user just
         # typed (so nothing has to be re-entered); otherwise with the
@@ -420,99 +340,202 @@ class WemportalOptionsFlow(OptionsFlow):
             step_id="configure",
             errors=errors,
             description_placeholders={"status": detail},
-            data_schema=vol.Schema(
-                {
-                    # Both scan intervals are clamped to a lower bound (like
-                    # the expert poll interval below): a stray tiny value
-                    # such as "1" second would poll the portal continuously
-                    # and reliably trigger the IP-wide 403 rate limit.
-                    vol.Optional(
-                        CONF_SCAN_INTERVAL,
-                        default=opt(CONF_SCAN_INTERVAL, 1800),
-                    ): vol.All(
-                        cv.positive_int,
-                        vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
-                    ),
-                    vol.Optional(
-                        CONF_SCAN_INTERVAL_API,
-                        default=opt(CONF_SCAN_INTERVAL_API, 300
-                        ),
-                    ): vol.All(
-                        cv.positive_int,
-                        vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
-                    ),
-                    # Same closed choice as the initial setup form -
-                    # previously a free string here allowed saving an
-                    # unsupported language code.
-                    vol.Optional(
-                        CONF_LANGUAGE,
-                        default=opt(CONF_LANGUAGE, "en"),
-                    ): vol.In(["en", "de"]),
+            data_schema=self._configure_schema(opt, id_options),
+        )
 
-                    vol.Optional(
-                        CONF_MODE, default=opt(CONF_MODE, DEFAULT_MODE)
-                        ): vol.In(AVAILABLE_MODES),
-                    # Expert write access (web) - off by default. Entities/
-                    # service only exist while this is enabled.
-                    vol.Optional(
-                        CONF_EXPERT_WRITE,
-                        default=opt(CONF_EXPERT_WRITE, False),
-                    ): cv.boolean,
-                    # Post a persistent notification after a SUCCESSFUL expert
-                    # write. OFF by default (noisy when setting several
-                    # values); failures always notify regardless.
-                    vol.Optional(
-                        CONF_EXPERT_NOTIFY_ON_SUCCESS,
-                        default=opt(CONF_EXPERT_NOTIFY_ON_SUCCESS, False
-                        ),
-                    ): cv.boolean,
-                    # Optional periodic read-back of the configured expert
-                    # parameters - OFF by default (each read is a full
-                    # Fachmann navigation; frequent polling risks a 403 IP
-                    # block). The interval is in minutes and floored at
-                    # MIN_EXPERT_POLL_INTERVAL_MINUTES.
-                    vol.Optional(
-                        CONF_EXPERT_AUTO_POLL,
-                        default=opt(CONF_EXPERT_AUTO_POLL, False),
-                    ): cv.boolean,
-                    vol.Optional(
-                        CONF_EXPERT_POLL_INTERVAL,
-                        default=opt(CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
-                        ),
-                    ): vol.All(
-                        cv.positive_int,
-                        vol.Clamp(min=MIN_EXPERT_POLL_INTERVAL_MINUTES),
-                    ),
-                    # --- Advanced expert options (only if you know what you
-                    # are doing) --------------------------------------------
-                    # Both navigation steps below are skipped by default
-                    # because they were proven unnecessary on the reference
-                    # installation. Re-enable only for an unusual portal or
-                    # module layout where reads/writes otherwise fail.
-                    vol.Optional(
-                        CONF_EXPERT_ENABLE_MODULE_NAV,
-                        default=opt(CONF_EXPERT_ENABLE_MODULE_NAV, False
-                        ),
-                    ): cv.boolean,
-                    # Module menu index used ONLY when module select is
-                    # enabled above. Empty default; "6" = heat pump on the
-                    # reference install.
-                    vol.Optional(
-                        CONF_EXPERT_MODULE_ARG,
-                        default=opt(CONF_EXPERT_MODULE_ARG, ""
-                        ),
-                    ): cv.string,
-                    vol.Optional(
-                        CONF_EXPERT_ENABLE_SECURITY_CODE,
-                        default=opt(CONF_EXPERT_ENABLE_SECURITY_CODE, False
-                        ),
-                    ): cv.boolean,
-                    # Ten generic expert-parameter slots (name + entityvalue
-                    # hex ID). Added programmatically below so the block stays
-                    # compact. Empty slots are ignored.
-                    **self._expert_slot_schema(opt, id_options),
-                }
+    def _validate_configure_input(self, user_input) -> dict:
+        """Check the submitted options and return the per-field errors.
+
+        NORMALISES `user_input` IN PLACE, and that is load-bearing rather
+        than cosmetic: the stripped slot ids written back here are the only
+        source of the ten `expert_slot_id_N` keys. Without them a cleared
+        field is simply absent from the form data, the merge in
+        _save_configure keeps the STORED id, and "empty a slot" quietly stops
+        working - the bug 1.8.3 shipped.
+        """
+        errors = {}
+        # Validate the ten expert slot IDs on save: an entityvalue must
+        # be a plain hex string of a plausible length. Real entityvalues
+        # are long (the known ones are 36 hex chars); a short entry like
+        # "0" or "abc" is a stray value/typo, not a real ID, and would
+        # only cause a pointless failing portal request later. We require
+        # hex AND a minimum length, kept well below the observed 36 so a
+        # slightly different length on another installation still passes.
+        # Whitespace is stripped; empty stays allowed (slot unused).
+        min_len = MIN_EXPERT_ENTITYVALUE_LENGTH
+        for i in range(1, EXPERT_SLOT_COUNT + 1):
+            id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
+            raw = (user_input.get(id_key) or "").strip()
+            user_input[id_key] = raw  # persist the stripped value
+            if raw and (
+                not re.fullmatch(r"[0-9A-Fa-f]+", raw) or len(raw) < min_len
+            ):
+                errors[id_key] = "invalid_entityvalue"
+        # The module menu index feeds an ASP.NET postback argument and a
+        # ClientState JSON template verbatim - restrict it to digits so
+        # a typo (or stray JSON) is caught in the form instead of being
+        # sent to the portal. Empty stays allowed (= use the default).
+        module_arg = (user_input.get(CONF_EXPERT_MODULE_ARG) or "").strip()
+        user_input[CONF_EXPERT_MODULE_ARG] = module_arg
+        if module_arg and not module_arg.isdigit():
+            errors[CONF_EXPERT_MODULE_ARG] = "invalid_module_arg"
+        # De-dup: the same entityvalue must not be selected in two slots.
+        slot_ids = [
+            (user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip()
+            for i in range(1, EXPERT_SLOT_COUNT + 1)
+        ]
+        dupes = duplicate_entityvalues(slot_ids)
+        if dupes:
+            for i in range(1, EXPERT_SLOT_COUNT + 1):
+                if (user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip() in dupes:
+                    errors[CONF_EXPERT_SLOT_ID_TEMPLATE % i] = "duplicate_entityvalue"
+        return errors
+
+    def _save_configure(self, user_input):
+        """Persist the validated options and reload the entry."""
+        # No-op guard: writing a new options entry always triggers a
+        # full integration reload (and a fresh portal login). If the
+        # normalized input is identical to the stored options -
+        # e.g. the user opened the dialog and saved without changes,
+        # or only typed whitespace into an already-empty ID field -
+        # skip the write so we don't reload for nothing. Reloading
+        # needlessly also risks the portal's 403 rate limit.
+        current = dict(self.config_entry.options)
+        merged = {**current, **user_input}
+        # A module list fetched during this flow is persisted here -
+        # the only place options are written, so no mid-flow reload.
+        if self._module_list is not None:
+            merged[CONF_EXPERT_MODULE_LIST] = self._module_list
+        if merged == current:
+            return self.async_abort(reason="no_changes")
+        # Write the MERGED options, not just the form fields: Home
+        # Assistant REPLACES the options dict with what is passed
+        # here. Passing only `user_input` silently dropped every
+        # option that is not a form field - notably the cached module
+        # list - so each save cost another portal login on the next
+        # discovery. It also makes the no-op comparison above and the
+        # value actually written agree on the same dict.
+        # Options only take effect on a reload: scan intervals, mode
+        # and expert access are all read during setup. With no update
+        # listener doing that implicitly, the flow has to.
+        #
+        # The options are written HERE, before the reload is
+        # scheduled, and only then handed to the flow manager. Order
+        # matters and is easy to get wrong: the manager writes them
+        # after this step returns, so scheduling a reload from here
+        # without writing first queued a reload that read the OLD
+        # values - the form saved and nothing changed until the next
+        # restart. The manager's own write below then finds them
+        # already in place and is a no-op.
+        #
+        # Home Assistant offers OptionsFlowWithReload for exactly
+        # this, but only from 2025.8 - later than the 2024.12 this
+        # integration supports, and it is selected by isinstance, not
+        # by an attribute, so it cannot be adopted conditionally
+        # without a second code path.
+        self.hass.config_entries.async_update_entry(
+            self.config_entry, options=merged
+        )
+        self.hass.config_entries.async_schedule_reload(
+            self.config_entry.entry_id
+        )
+        return self.async_create_entry(title="", data=merged)
+
+    def _configure_schema(self, opt, id_options):
+        """The options form itself. `opt` reads a prefill value, `id_options`
+        is the slot-id dropdown content."""
+        return vol.Schema(
+        {
+            # Both scan intervals are clamped to a lower bound (like
+            # the expert poll interval below): a stray tiny value
+            # such as "1" second would poll the portal continuously
+            # and reliably trigger the IP-wide 403 rate limit.
+            vol.Optional(
+                CONF_SCAN_INTERVAL,
+                default=opt(CONF_SCAN_INTERVAL, 1800),
+            ): vol.All(
+                cv.positive_int,
+                vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
             ),
+            vol.Optional(
+                CONF_SCAN_INTERVAL_API,
+                default=opt(CONF_SCAN_INTERVAL_API, 300
+                ),
+            ): vol.All(
+                cv.positive_int,
+                vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
+            ),
+            # Same closed choice as the initial setup form -
+            # previously a free string here allowed saving an
+            # unsupported language code.
+            vol.Optional(
+                CONF_LANGUAGE,
+                default=opt(CONF_LANGUAGE, "en"),
+            ): vol.In(["en", "de"]),
+
+            vol.Optional(
+                CONF_MODE, default=opt(CONF_MODE, DEFAULT_MODE)
+                ): vol.In(AVAILABLE_MODES),
+            # Expert write access (web) - off by default. Entities/
+            # service only exist while this is enabled.
+            vol.Optional(
+                CONF_EXPERT_WRITE,
+                default=opt(CONF_EXPERT_WRITE, False),
+            ): cv.boolean,
+            # Post a persistent notification after a SUCCESSFUL expert
+            # write. OFF by default (noisy when setting several
+            # values); failures always notify regardless.
+            vol.Optional(
+                CONF_EXPERT_NOTIFY_ON_SUCCESS,
+                default=opt(CONF_EXPERT_NOTIFY_ON_SUCCESS, False
+                ),
+            ): cv.boolean,
+            # Optional periodic read-back of the configured expert
+            # parameters - OFF by default (each read is a full
+            # Fachmann navigation; frequent polling risks a 403 IP
+            # block). The interval is in minutes and floored at
+            # MIN_EXPERT_POLL_INTERVAL_MINUTES.
+            vol.Optional(
+                CONF_EXPERT_AUTO_POLL,
+                default=opt(CONF_EXPERT_AUTO_POLL, False),
+            ): cv.boolean,
+            vol.Optional(
+                CONF_EXPERT_POLL_INTERVAL,
+                default=opt(CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+                ),
+            ): vol.All(
+                cv.positive_int,
+                vol.Clamp(min=MIN_EXPERT_POLL_INTERVAL_MINUTES),
+            ),
+            # --- Advanced expert options (only if you know what you
+            # are doing) --------------------------------------------
+            # Both navigation steps below are skipped by default
+            # because they were proven unnecessary on the reference
+            # installation. Re-enable only for an unusual portal or
+            # module layout where reads/writes otherwise fail.
+            vol.Optional(
+                CONF_EXPERT_ENABLE_MODULE_NAV,
+                default=opt(CONF_EXPERT_ENABLE_MODULE_NAV, False
+                ),
+            ): cv.boolean,
+            # Module menu index used ONLY when module select is
+            # enabled above. Empty default; "6" = heat pump on the
+            # reference install.
+            vol.Optional(
+                CONF_EXPERT_MODULE_ARG,
+                default=opt(CONF_EXPERT_MODULE_ARG, ""
+                ),
+            ): cv.string,
+            vol.Optional(
+                CONF_EXPERT_ENABLE_SECURITY_CODE,
+                default=opt(CONF_EXPERT_ENABLE_SECURITY_CODE, False
+                ),
+            ): cv.boolean,
+            # Ten generic expert-parameter slots (name + entityvalue
+            # hex ID). Added programmatically below so the block stays
+            # compact. Empty slots are ignored.
+            **self._expert_slot_schema(opt, id_options),
+        }
         )
 
     def _expert_slot_schema(self, opt, id_options):
