@@ -54,5 +54,19 @@
     "old": "        # failures being recovered from may have left the module view partial.\n        self._devices_fetched_this_session = False\n",
     "new": "        # failures being recovered from may have left the module view partial.\n        self._devices_fetched_this_session = False\n        self.last_statistics_fetch = 0.0\n",
     "tests": "recovery_resets_the_connection"
+  },
+  {
+    "label": "write guard: entry identity must still be compared",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if getattr(target_entry, \"runtime_data\", None) is not data:",
+    "new": "            if False:",
+    "tests": "abandoned_when_its_entry_is_reloaded"
+  },
+  {
+    "label": "teardown must be announced before the platforms unload",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        data.unloading = True",
+    "new": "        pass",
+    "tests": "unloading_is_flagged or abandoned_while_the_entry_is_unloading"
   }
 ]

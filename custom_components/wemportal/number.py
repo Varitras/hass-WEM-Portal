@@ -20,7 +20,7 @@ async def async_setup_entry(
 ) -> None:
     """Number entry setup."""
 
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = config_entry.runtime_data.coordinator
     entities: list[WemPortalNumber] = []
     for device_id, entity_data in coordinator.data.items():
         for unique_id, values in entity_data.items():
@@ -48,11 +48,10 @@ async def async_setup_entry(
         # Expose them to the optional hourly auto-poll (set up in __init__),
         # which reads all configured ids in one shared session and pushes the
         # values back into these entities.
-        store = hass.data[DOMAIN][config_entry.entry_id]
-        store["expert_entities"] = expert_entities
-        start_poll = store.get("start_expert_auto_poll")
-        if start_poll is not None:
-            start_poll()
+        data = config_entry.runtime_data
+        data.expert_entities = expert_entities
+        if data.start_expert_auto_poll is not None:
+            data.start_expert_auto_poll()
 
 
 def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> None:

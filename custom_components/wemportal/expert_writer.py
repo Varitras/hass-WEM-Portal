@@ -1618,6 +1618,15 @@ try:
                 )
             )
 
+        def _entry_api(self):
+            """The api of this entity's entry, or None once it is unloaded.
+
+            One accessor instead of the same three lines in four places -
+            each of which used to spell out the store key by hand.
+            """
+            data = getattr(self._config_entry, "runtime_data", None)
+            return data.api if data is not None else None
+
         def _cooldown_check(self):
             """Cooldown gate for this entity's writes.
 
@@ -1626,8 +1635,7 @@ try:
             backoff. Previously this used the global check, so an entity
             write ignored an active expert backoff.
             """
-            entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
-            api = entry_data.get("api") if entry_data else None
+            api = self._entry_api()
             return api.check_expert_cooldown if api is not None else None
 
         def _cooldown_activate(self):
@@ -1639,22 +1647,20 @@ try:
             service and the auto-poll always used the expert one; this call
             site was missed.
             """
-            entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
-            api = entry_data.get("api") if entry_data else None
+            api = self._entry_api()
             return api.activate_expert_cooldown if api is not None else None
 
         def _cookie_jar(self):
             """Shared in-memory session cache, so entity writes reuse the
             web session instead of logging in every time (the login is the
             request the portal rejects most readily)."""
-            entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
-            api = entry_data.get("api") if entry_data else None
+            api = self._entry_api()
             return api.expert_cookies if api is not None else None
 
         def _expert_lock(self):
             """Shared per-entry lock (only one expert portal op at a time)."""
-            entry_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
-            return entry_data.get("expert_lock") if entry_data else None
+            data = getattr(self._config_entry, "runtime_data", None)
+            return data.expert_lock if data is not None else None
 
         @property
         def device_info(self) -> DeviceInfo:

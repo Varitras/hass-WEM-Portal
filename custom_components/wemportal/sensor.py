@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.const import EntityCategory
 
-from .const import _LOGGER, DOMAIN
+from .const import _LOGGER
 from . import get_wemportal_unique_id
 from .utils import (device_is_reachable, device_model, fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
 
@@ -23,7 +23,7 @@ async def async_setup_entry(
 ) -> None:
     """Sensor entry setup."""
 
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = config_entry.runtime_data.coordinator
     entities: list[WemPortalSensor] = []
     for device_id, entity_data in coordinator.data.items():
         for unique_id, values in entity_data.items():

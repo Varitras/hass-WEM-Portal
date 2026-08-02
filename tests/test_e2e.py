@@ -162,7 +162,7 @@ async def test_unload_cleans_up(hass):
     await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.NOT_LOADED
-    assert entry.entry_id not in hass.data.get(DOMAIN, {})
+    assert not hasattr(entry, "runtime_data")
 
 
 async def test_migrate_entry_bumps_version(hass):
@@ -301,7 +301,7 @@ async def test_expert_service_refuses_while_another_operation_runs(hass):
     operation instead of opening a parallel portal session."""
     entry = await _setup(hass, _entry(hass, _expert_options()))
 
-    lock: threading.Lock = hass.data[DOMAIN][entry.entry_id]["expert_lock"]
+    lock: threading.Lock = entry.runtime_data.expert_lock
     assert lock.acquire(blocking=False)
     try:
         with pytest.raises(HomeAssistantError, match="in progress"):
@@ -757,8 +757,8 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
             },
         ),
     )
-    store = hass.data[DOMAIN][entry.entry_id]
-    assert store.get("expert_poll_started"), "auto-poll never started"
+    data = entry.runtime_data
+    assert data.expert_poll_started, "auto-poll never started"
     assert scheduled, "no poll was ever scheduled"
     poll = scheduled[-1]
 
@@ -789,7 +789,7 @@ async def test_update_timeout_is_counted_and_reported(hass, monkeypatch):
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     entry = await _setup(hass, _entry(hass))
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = entry.runtime_data.coordinator
     before = coordinator.num_failed
 
     monkeypatch.setattr(coord_mod, "DEFAULT_TIMEOUT", 0.05)
@@ -819,7 +819,7 @@ async def test_a_busy_api_does_not_trigger_the_recovery_swap(hass, monkeypatch):
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     entry = await _setup(hass, _entry(hass))
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = entry.runtime_data.coordinator
     api_before = coordinator.api
     coordinator.num_failed = 1  # one more failure would trip the swap
 
@@ -914,7 +914,7 @@ async def test_a_successful_cycle_clears_the_auth_failure_count(hass):
     entry = await _setup(hass, _entry(hass))
     coord_mod._AUTH_FAILURES[entry.entry_id] = 2
 
-    await hass.data[DOMAIN][entry.entry_id]["coordinator"]._async_update_data()
+    await entry.runtime_data.coordinator._async_update_data()
 
     assert entry.entry_id not in coord_mod._AUTH_FAILURES
 
@@ -1016,7 +1016,7 @@ async def test_an_in_flight_expert_write_is_cancelled_on_unload(hass, monkeypatc
     import asyncio
 
     entry = await _setup(hass, _entry(hass, _expert_options()))
-    entities = hass.data[DOMAIN][entry.entry_id]["expert_entities"]
+    entities = entry.runtime_data.expert_entities
     assert entities, "no expert entity was created"
     entity = entities[0]
 
@@ -1054,7 +1054,7 @@ async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):
     from custom_components.wemportal.exceptions import AuthError, WemPortalError
 
     entry = await _setup(hass, _entry(hass))
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = entry.runtime_data.coordinator
 
     failures = []
 
@@ -1210,7 +1210,7 @@ async def test_saving_options_reloads_the_entry(hass, monkeypatch):
     # The reload has to see the NEW options. Asserting only that a reload
     # happened would pass just as well on one scheduled early enough to read
     # the old ones - which is the actual risk with a scheduled task.
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = entry.runtime_data.coordinator
     assert coordinator.update_interval == timedelta(seconds=600)
 
 
@@ -1232,7 +1232,7 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(hass, mo
     from custom_components.wemportal.exceptions import WemPortalError
 
     entry = await _setup(hass, _entry(hass))
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = entry.runtime_data.coordinator
     api = coordinator.api
 
     stamp = datetime(2026, 8, 2, 12, 0, 0)
@@ -1277,7 +1277,7 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(hass, mo
 
     # And the object everyone else refers to is still the one in use.
     assert coordinator.api is api
-    assert hass.data[DOMAIN][entry.entry_id]["api"] is api
+    assert entry.runtime_data.api is api
 
 
 async def test_a_failed_platform_setup_does_not_leak_the_store(hass, monkeypatch):
@@ -1304,7 +1304,7 @@ async def test_a_failed_platform_setup_does_not_leak_the_store(hass, monkeypatch
     assert not await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entry.entry_id not in hass.data.get(DOMAIN, {})
+    assert not hasattr(entry, "runtime_data")
 
 
 async def test_a_write_is_abandoned_when_its_entry_is_reloaded(hass, monkeypatch):
@@ -1329,7 +1329,8 @@ async def test_a_write_is_abandoned_when_its_entry_is_reloaded(hass, monkeypatch
         # the store the handler captured is replaced by an equivalent one
         # under the same id. Swapping it before the call would simply hand
         # the handler the new store and prove nothing.
-        hass.data[DOMAIN][entry.entry_id] = dict(hass.data[DOMAIN][entry.entry_id])
+        import dataclasses
+        entry.runtime_data = dataclasses.replace(entry.runtime_data)
         self._abort_check()
         raise AssertionError("the write continued after the reload")
 
@@ -1361,7 +1362,7 @@ async def test_a_write_is_abandoned_while_the_entry_is_unloading(hass, monkeypat
         }),
     )
     # Exactly what async_unload_entry sets before unloading the platforms.
-    hass.data[DOMAIN][entry.entry_id]["unloading"] = True
+    entry.runtime_data.unloading = True
 
     def never(self, *_a, **_k):
         raise AssertionError("the write continued during the unload")
@@ -1391,14 +1392,14 @@ async def test_unloading_is_flagged_before_the_platforms_come_down(hass, monkeyp
     removed; this one drives the real unload.
     """
     entry = await _setup(hass, _entry(hass))
-    # Held by reference: async_unload_entry removes it from hass.data, but
-    # the dict itself is what the running write is looking at.
-    store = hass.data[DOMAIN][entry.entry_id]
+    # Held by reference: Home Assistant drops runtime_data once the unload
+    # finishes, but this object is what a running write is looking at.
+    data = entry.runtime_data
     seen = {}
     original = hass.config_entries.async_unload_platforms
 
     async def check_when_platforms_unload(entry_arg, platforms):
-        seen["flagged"] = store.get("unloading")
+        seen["flagged"] = data.unloading
         return await original(entry_arg, platforms)
 
     monkeypatch.setattr(

@@ -569,7 +569,8 @@ class WemportalOptionsFlow(OptionsFlow):
         """Build a WemPortalExpertClient from the entry's credentials."""
         entry = self.config_entry
         client_opts = expert_client_options(entry.options)
-        api = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("api")
+        data = getattr(entry, "runtime_data", None)
+        api = data.api if data is not None else None
         return WemPortalExpertClient(
             entry.data.get(CONF_USERNAME),
             entry.data.get(CONF_PASSWORD),

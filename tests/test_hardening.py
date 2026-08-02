@@ -317,15 +317,16 @@ def test_none_enabled_devices_still_polls_everything():
 
 
 def _expert_entity(api, entry_id="e1"):
-    """An expert number entity wired to `api` through a fake hass store."""
+    """An expert number entity wired to `api` through its entry's runtime data."""
     import types
 
     from custom_components.wemportal import expert_writer
-    from custom_components.wemportal.const import DOMAIN
+    from custom_components.wemportal.models import WemPortalData
 
     entry = types.SimpleNamespace(entry_id=entry_id, data={}, options={})
+    entry.runtime_data = WemPortalData(api=api, coordinator=None)
     entity = expert_writer.WemPortalExpertNumber(entry, "expert_parameter_3", "A" * 36)
-    entity.hass = types.SimpleNamespace(data={DOMAIN: {entry_id: {"api": api}}})
+    entity.hass = types.SimpleNamespace(data={})
     return entity
 
 
@@ -362,11 +363,11 @@ def test_expert_accessors_degrade_safely_without_a_store():
     import types
 
     from custom_components.wemportal import expert_writer
-    from custom_components.wemportal.const import DOMAIN
 
+    # No runtime_data at all: exactly what an unloaded entry looks like.
     entry = types.SimpleNamespace(entry_id="gone", data={}, options={})
     entity = expert_writer.WemPortalExpertNumber(entry, "slot", "B" * 36)
-    entity.hass = types.SimpleNamespace(data={DOMAIN: {}})
+    entity.hass = types.SimpleNamespace(data={})
 
     assert entity._cookie_jar() is None
     assert entity._cooldown_check() is None

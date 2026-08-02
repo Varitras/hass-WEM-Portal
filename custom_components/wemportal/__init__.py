@@ -7,7 +7,6 @@ https://github.com/erikkastelec/hass-WEM-Portal
 """
 from datetime import timedelta
 import random
-import threading
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -43,6 +42,7 @@ from .coordinator import (
     get_scraper_device_store,
 )
 from .wemportalapi import WemPortalApi
+from .models import WemPortalConfigEntry, WemPortalData
 from .utils import clamped_scan_interval, deserialize_modules, close_api_sessions
 from homeassistant.helpers import device_registry, entity_registry
 from homeassistant.helpers.service import async_register_admin_service
@@ -153,7 +153,7 @@ async def migrate_unique_ids(
         await coordinator.async_request_refresh()
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) -> bool:
     """Set up the wemportal component."""
     # Set proper update_interval, based on selected mode. Clamped rather than
     # taken verbatim: the floors are enforced by the options-flow schema,
@@ -259,16 +259,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # old unique_id until the next successful migration attempt.
         _LOGGER.warning("Unique_id migration failed, continuing without it: %s", exc)
 
-    hass.data[DOMAIN][entry.entry_id] = {
-        "api": api,
-        # "config": entry.data,
-        "coordinator": coordinator,
-        # Shared per-account lock: only one expert portal operation (a number
-        # entity write, the service, or the auto-poll read) may run at a time,
-        # so they don't collide on the same parameter or open parallel portal
-        # sessions. Acquired non-blocking by each expert path.
-        "expert_lock": threading.Lock(),
-    }
+    entry.runtime_data = WemPortalData(api=api, coordinator=coordinator)
 
     # Everything past this point runs with the store already PUBLISHED, so a
     # failure here cannot be left to async_unload_entry: Home Assistant only
@@ -307,7 +298,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _async_register_expert_service(hass, entry, api)
             _async_setup_expert_auto_poll(hass, entry, api)
     except Exception:
-        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        # Home Assistant clears runtime_data only when a LOADED entry unloads,
+        # so a setup that fails after publishing it has to clear it itself.
+        if hasattr(entry, "runtime_data"):
+            del entry.runtime_data
         await hass.async_add_executor_job(close_api_sessions, api)
         raise
 
@@ -328,10 +322,9 @@ def _resolve_expert_entry(hass: HomeAssistant):
     for entry in hass.config_entries.async_entries(DOMAIN):
         if not entry.options.get(CONF_EXPERT_WRITE, False):
             continue
-        store = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-        api = store.get("api") if store else None
-        if api is not None:
-            candidates.append((entry, api))
+        data = getattr(entry, "runtime_data", None)
+        if data is not None:
+            candidates.append((entry, data.api))
     return candidates[0] if len(candidates) == 1 else None
 
 
@@ -378,12 +371,12 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
                 "to a slot first."
             )
 
-        store = hass.data.get(DOMAIN, {}).get(target_entry.entry_id)
-        if store is None:
+        data = getattr(target_entry, "runtime_data", None)
+        if data is None:
             raise HomeAssistantError(
                 "WEM Portal expert write: the integration is not loaded."
             )
-        lock = store.get("expert_lock")
+        lock = data.expert_lock
         ev_short = short_ev(entityvalue)
 
         def _raise_if_unloaded():
@@ -401,13 +394,12 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             write belongs to is gone, whatever its id says.
             """
             from .expert_writer import ExpertOperationAborted
-            current = hass.data.get(DOMAIN, {}).get(target_entry.entry_id)
-            if current is not store:
+            if getattr(target_entry, "runtime_data", None) is not data:
                 raise ExpertOperationAborted(
                     "the integration was reloaded before the write reached "
                     "the portal"
                 )
-            if store.get("unloading"):
+            if data.unloading:
                 raise ExpertOperationAborted(
                     "the integration was unloaded before the write reached "
                     "the portal"
@@ -520,7 +512,7 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
     # the portal more often than configured.
     EXPERT_POLL_JITTER_FRACTION = 0.20
 
-    store = hass.data[DOMAIN][entry.entry_id]
+    data = entry.runtime_data
 
     def _next_delay_seconds():
         base = interval_min * 60
@@ -528,7 +520,7 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
 
     async def _poll(_now=None):
         try:
-            entities = store.get("expert_entities") or []
+            entities = data.expert_entities
             entityvalues = [e.entityvalue for e in entities]
             if not entityvalues:
                 return
@@ -545,10 +537,10 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
             # Use the CURRENT api from the store (the coordinator swaps it on
             # recovery); the closed-over `api` may be a discarded instance
             # with a stale cooldown state.
-            current_api = store.get("api", api)
+            current_api = data.api
             # Shared per-account lock: skip this cycle if a write (entity or
             # service) is already using the portal for this account.
-            lock = store.get("expert_lock")
+            lock = data.expert_lock
             if lock is not None and not lock.acquire(blocking=False):
                 _LOGGER.debug(
                     "Expert auto-poll: another expert operation in progress, "
@@ -581,8 +573,8 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
             # hourly debug/warning nobody sees. After 3 consecutive failures
             # raise ONE notification per id; reset on the next success so a
             # recurring problem re-notifies at most once per streak.
-            fail_counts = store.setdefault("expert_poll_fail_counts", {})
-            notified = store.setdefault("expert_poll_fail_notified", set())
+            fail_counts = data.expert_poll_fail_counts
+            notified = data.expert_poll_fail_notified
             for entity in entities:
                 state = results.get(entity.entityvalue)
                 ev = entity.entityvalue
@@ -620,34 +612,34 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
         # even when the entry went away mid-read, so without this an in-flight
         # poll would schedule a fresh timer into the orphaned store - a chain
         # nothing can cancel any more, one more per reload.
-        if store.get("expert_poll_stopped"):
+        if data.expert_poll_stopped:
             _LOGGER.debug("Expert auto-poll: entry unloaded, not rescheduling.")
             return
         delay = _next_delay_seconds()
         unsub = async_call_later(hass, delay, _poll)
-        store["expert_poll_unsub"] = unsub
+        data.expert_poll_unsub = unsub
         _LOGGER.debug(
             "Expert auto-poll: next read in %.1f min (base %d min + jitter).",
             delay / 60, interval_min,
         )
 
     def _cancel():
-        store["expert_poll_stopped"] = True
-        unsub = store.pop("expert_poll_unsub", None)
+        data.expert_poll_stopped = True
+        unsub, data.expert_poll_unsub = data.expert_poll_unsub, None
         if unsub is not None:
             unsub()
         # Also cancel the initial poll if it is still running: it is a
         # background task that would otherwise keep going after the entry is
         # unloaded (only the scheduled timer was cancelled before).
-        task = store.pop("expert_poll_initial_task", None)
+        task, data.expert_poll_initial_task = data.expert_poll_initial_task, None
         if task is not None and not task.done():
             task.cancel()
 
     def _start():
         # Idempotent: only one timer chain per entry.
-        if store.get("expert_poll_started"):
+        if data.expert_poll_started:
             return
-        store["expert_poll_started"] = True
+        data.expert_poll_started = True
         entry.async_on_unload(_cancel)
         _LOGGER.info(
             "Expert auto-poll enabled: reading configured parameters about "
@@ -656,14 +648,14 @@ def _async_setup_expert_auto_poll(hass: HomeAssistant, entry: ConfigEntry, api) 
         )
         # Initial read shortly after startup; it reschedules itself afterwards.
         # Tracked so _cancel() can stop it if the entry is unloaded mid-run.
-        store["expert_poll_initial_task"] = hass.async_create_background_task(
+        data.expert_poll_initial_task = hass.async_create_background_task(
             _poll(), name="wemportal_expert_initial_poll"
         )
 
     # If the entities already exist, start now; otherwise number.py will call
     # this once it has created them.
-    store["start_expert_auto_poll"] = _start
-    if store.get("expert_entities"):
+    data.start_expert_auto_poll = _start
+    if data.expert_entities:
         _start()
 
 
@@ -712,26 +704,27 @@ def _backfill_account_unique_id(hass: HomeAssistant, entry: ConfigEntry) -> None
     hass.config_entries.async_update_entry(entry, unique_id=wanted)
 
 
-async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+async def async_unload_entry(
+    hass: HomeAssistant, config_entry: WemPortalConfigEntry
+) -> bool:
     """Handle removal of an entry."""
     # Flagged BEFORE the platforms come down, not when the store is finally
     # removed below: unloading the platforms is the slow part, and anything
     # already talking to the portal in a worker thread has to learn about the
     # teardown at its next gate rather than at the end of it.
-    store = hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
-    if store is not None:
-        store["unloading"] = True
+    data = getattr(config_entry, "runtime_data", None)
+    if data is not None:
+        data.unloading = True
     unload_ok = bool(
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )
     if unload_ok:
         forget_auth_failures(config_entry.entry_id)
-        store = hass.data.get(DOMAIN, {}).pop(config_entry.entry_id, None)
-        # Close the API + scraper HTTP sessions so they don't linger with an
-        # open connection after the entry is unloaded/reloaded.
-        api = store.get("api") if store else None
-        if api is not None:
-            await hass.async_add_executor_job(close_api_sessions, api)
+        # runtime_data is still readable here - Home Assistant drops it only
+        # after this returns True. Close the API + scraper HTTP sessions so
+        # they don't linger open after the entry is unloaded/reloaded.
+        if data is not None:
+            await hass.async_add_executor_job(close_api_sessions, data.api)
         # The expert service is a single domain-wide registration shared by
         # all entries. Only remove it once NO remaining loaded entry still
         # has expert write enabled - previously unloading ANY entry removed
@@ -740,7 +733,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
             still_enabled = any(
                 other.entry_id != config_entry.entry_id
                 and other.options.get(CONF_EXPERT_WRITE, False)
-                and hass.data.get(DOMAIN, {}).get(other.entry_id) is not None
+                and getattr(other, "runtime_data", None) is not None
                 for other in hass.config_entries.async_entries(DOMAIN)
             )
             if not still_enabled:
