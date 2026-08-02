@@ -39,11 +39,15 @@ async def async_setup_entry(
     # Expert write access (web): add the configured expert numbers.
     #
     # The import sits INSIDE the option check, not merely inside the
-    # function. expert_writer pulls curl_cffi and lxml at module level -
-    # measured at ~114 ms and ~29 ms cold - and this ran on every entry
-    # setup regardless of the option, on the event loop, while three
-    # comments claimed the opposite. An installation with expert access off
-    # is the common case and should not pay for a module it never uses.
+    # function. expert_writer pulls curl_cffi at module level - 114 ms cold,
+    # measured - and this ran on every entry setup regardless of the option,
+    # on the event loop, while three comments claimed the opposite.
+    #
+    # This gate alone was not enough: config_flow imported expert_writer at
+    # module level, and Home Assistant loads config_flow during a normal
+    # entry setup, so curl_cffi arrived anyway. That is why the pure option
+    # helpers now live in expert_options.py - see the structural guard in
+    # tests/test_security.py.
     if config_entry.options.get(CONF_EXPERT_WRITE, False):
         from .expert_writer import create_expert_number_entities
         expert_entities = create_expert_number_entities(config_entry)

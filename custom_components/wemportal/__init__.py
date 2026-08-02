@@ -412,7 +412,7 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
         def _do_write():
             # Own short-lived session per write; honors the shared 403
             # cooldown (check) and ENGAGES it on a 403 (activate).
-            from .expert_writer import expert_client_options
+            from .expert_options import expert_client_options
             _raise_if_unloaded()
             client = WemPortalExpertClient(
                 target_entry.data.get(CONF_USERNAME),
@@ -503,7 +503,8 @@ def _read_expert_values(entry: ConfigEntry, api, entityvalues: list) -> dict:
     integration, and expert_writer pulls curl_cffi and lxml (~140 ms,
     measured). Installations with expert access off must not pay for it.
     """
-    from .expert_writer import WemPortalExpertClient, expert_client_options
+    from .expert_writer import WemPortalExpertClient
+    from .expert_options import expert_client_options
     client = WemPortalExpertClient(
         entry.data.get(CONF_USERNAME),
         entry.data.get(CONF_PASSWORD),

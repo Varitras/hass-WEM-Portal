@@ -514,6 +514,26 @@ async def test_options_flow_without_changes_does_not_reload(hass):
     assert result["reason"] == "no_changes"
 
 
+async def test_the_expert_client_is_actually_buildable(hass, monkeypatch):
+    """The one test that runs _expert_client itself.
+
+    Every discovery test replaces the method with a stub, so its body was
+    never executed - including the function-local import that keeps
+    curl_cffi out of a normal entry setup. Deleting that import left the
+    whole suite green and would have raised NameError on a real user's first
+    discovery run.
+    """
+    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    flow = WemportalOptionsFlow()
+    monkeypatch.setattr(type(flow), "config_entry", property(lambda self: entry))
+
+    client = flow._expert_client()
+
+    assert type(client).__name__ == "WemPortalExpertClient"
+
+
 async def test_options_flow_discovery_fills_slot_dropdown(hass, monkeypatch):
     """The discovery path: pick modules, run discovery, and land back on the
     configure form with the found parameters offered in the slot dropdowns."""

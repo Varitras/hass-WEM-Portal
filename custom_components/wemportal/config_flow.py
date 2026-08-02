@@ -54,8 +54,7 @@ from .const import (
 )
 from .exceptions import AuthError, ForbiddenError
 from .utils import close_api_sessions
-from .expert_writer import (
-    WemPortalExpertClient,
+from .expert_options import (
     expert_client_options,
     discovery_option_list,
     duplicate_entityvalues,
@@ -592,7 +591,14 @@ class WemportalOptionsFlow(OptionsFlow):
 
     # --- Expert parameter discovery -----------------------------------
     def _expert_client(self):
-        """Build a WemPortalExpertClient from the entry's credentials."""
+        """Build a WemPortalExpertClient from the entry's credentials.
+
+        Imported here, not at module level: Home Assistant loads this file
+        during a normal entry setup, and expert_writer pulls curl_cffi and
+        lxml (~140 ms, measured). Only discovery ever needs the client.
+        """
+        from .expert_writer import WemPortalExpertClient
+
         entry = self.config_entry
         client_opts = expert_client_options(entry.options)
         data = getattr(entry, "runtime_data", None)

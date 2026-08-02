@@ -313,5 +313,19 @@
     "old": "    if config_entry.options.get(CONF_EXPERT_WRITE, False):\n        from .expert_writer import create_expert_number_entities",
     "new": "    if True:\n        from .expert_writer import create_expert_number_entities",
     "tests": "expert_module_is_only_loaded"
+  },
+  {
+    "label": "load path: pulling the expert client back to module level must be noticed",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "from .expert_options import (",
+    "new": "from .expert_writer import WemPortalExpertClient\nfrom .expert_options import (",
+    "tests": "no_module_imports_the_expert_client"
+  },
+  {
+    "label": "load path: dropping the lazy import must break discovery, not pass",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "        from .expert_writer import WemPortalExpertClient\n\n        entry = self.config_entry",
+    "new": "        entry = self.config_entry",
+    "tests": "expert_client_is_actually_buildable"
   }
 ]

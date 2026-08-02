@@ -204,3 +204,42 @@ def test_every_cookieless_session_form_is_redacted(url):
 
     assert "livesessiontoken" not in redacted
     assert redacted.endswith("/Web/Default.aspx")
+
+
+def test_no_module_imports_the_expert_client_at_module_level():
+    """The lazy import has to be structural, or it quietly stops being lazy.
+
+    expert_writer pulls curl_cffi and lxml at import time (~140 ms, measured).
+    It was believed to stay out of the load path while expert access was off -
+    and it did not: config_flow imported it at module level, and Home
+    Assistant loads config_flow during a NORMAL entry setup. Measured before
+    the split:
+
+        config_flow imported - before setup: False, after setup: True
+
+    A per-call check cannot catch that, and neither can sys.modules inside
+    this suite: tests/conftest.py imports expert_writer itself, so it is
+    always present. The property that IS checkable is structural - nobody
+    reaches it without asking.
+    """
+    import ast
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parents[1] / "custom_components" / "wemportal"
+    offenders = []
+    for module in sorted(package.glob("*.py")):
+        for node in ast.parse(module.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.ImportFrom) and node.module == "expert_writer":
+                offenders.append(f"{module.name}:{node.lineno}")
+            elif isinstance(node, ast.Import):
+                offenders += [
+                    f"{module.name}:{node.lineno}"
+                    for alias in node.names if "expert_writer" in alias.name
+                ]
+
+    assert not offenders, (
+        "expert_writer is imported at module level in "
+        f"{offenders} - that loads curl_cffi for every installation. Import "
+        "it inside the function that needs it; the pure option helpers live "
+        "in expert_options.py precisely so this stays possible."
+    )
