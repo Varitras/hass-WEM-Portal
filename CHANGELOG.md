@@ -116,6 +116,11 @@ to ask the user for new credentials.
   answers a rejection with HTTP 200 and a non-zero status; unnoticed, the
   following read fell back to the previous measurement and its values were
   booked as new.
+- **Recovering from repeated errors no longer lifts the portal's rate
+  limits.** The recovery rebuilt its connection object from scratch, which
+  also reset the hourly limits on statistics and heating schedules - so the
+  next cycle refetched both immediately, against a portal that had just been
+  failing. It now resets the connection and nothing else.
 - **The scrape backoff survives the internal recovery.** Rebuilding the API
   connection after repeated errors discarded the backoff those very errors
   had just earned.

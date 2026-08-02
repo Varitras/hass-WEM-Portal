@@ -26,7 +26,6 @@ from .const import (
     DEFAULT_TIMEOUT,
     DOMAIN,
 )
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from .wemportalapi import WemPortalApi
 from .utils import serialize_modules, device_identifier
 
@@ -296,71 +295,13 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 self.num_failed += 1
                 self._reset_auth_failures()
                 if self.num_failed >= 2:
-                    _LOGGER.info("API errors persistent. Re-instantiating WemPortalApi to recover from potentially corrupted session/state.")
-                    old_session = getattr(self.api, "session", None)
-                    old_api = self.api
-                    self.api = WemPortalApi(
-                        self.config_entry.data.get(CONF_USERNAME),
-                        self.config_entry.data.get(CONF_PASSWORD),
-                        config=self.config_entry.options,
-                        existing_data=self.api.data,
-                        # Keep any already-discovered module/parameter metadata
-                        # so re-instantiating the API (to recover from a
-                        # corrupted session) doesn't also throw away
-                        # everything get_parameters() already learned and
-                        # force a full, slow rediscovery.
-                        cached_modules=self.api.modules,
-                        # Preserve an active 403 cooldown across the swap -
-                        # a fresh instance would otherwise reset it and
-                        # resume hitting a server that just rate-limited us.
-                        blocked_until=getattr(self.api, "_blocked_until", 0.0),
-                        # Same reasoning for the expert-only backoff: a fresh
-                        # instance would otherwise clear it and let the expert
-                        # path resume against a portal that just rejected it.
-                        expert_blocked_until=getattr(self.api, "_expert_blocked_until", 0.0),
-                        # Preserve the already-decided stable scraper device
-                        # id, so the swap doesn't re-decide it (and possibly
-                        # move scraped sensors to a different device).
-                        scraper_device_id=getattr(self.api, "scraper_device_id", None),
-                        # The scrape backoff belongs to the same category as
-                        # the 403 cooldowns above and was the one piece left
-                        # behind: a fresh instance started at zero, so the
-                        # backoff the scraper had just earned was thrown away
-                        # by the very recovery those failures triggered, and
-                        # the next cycle went straight back at the portal.
-                        scraper_backoff=getattr(self.api, "scraper_backoff", None),
-                    )
-                    # Point hass.data at the new instance so other consumers
-                    # (e.g. the expert writer's shared cooldown check) use
-                    # the current api, not the discarded one.
-                    # Carry the cached expert web session over too. A fresh
-                    # instance starts with an empty jar, so the expert path
-                    # would fall back to a full login - the request the portal
-                    # rejects most readily - right after a recovery.
-                    self.api.expert_cookies = getattr(old_api, "expert_cookies", {})
-                    # Re-fetched by get_devices() anyway, but carrying it
-                    # over avoids a generic model name for one cycle.
-                    self.api.device_types = getattr(old_api, "device_types", {})
-                    entry_store = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
-                    if entry_store is not None:
-                        entry_store["api"] = self.api
-                    # Best-effort cleanup of the old HTTP session so it
-                    # doesn't linger with an open connection after being
-                    # discarded.
-                    if old_session is not None:
-                        try:
-                            old_session.close()
-                        except Exception as exc:  # pylint: disable=broad-except
-                            # Best-effort cleanup of the discarded session.
-                            _LOGGER.debug("Ignoring error while closing old session: %s", exc)
-                    # Also close the old instance's persistent scraper (its
-                    # own curl_cffi session) - previously only the API
-                    # session was closed, leaking one open web connection
-                    # towards Weishaupt on every recovery.
-                    try:
-                        old_api._reset_scraper()
-                    except Exception as exc:  # pylint: disable=broad-except
-                        _LOGGER.debug("Ignoring error while closing old scraper: %s", exc)
+                    # Reset the connection, do NOT rebuild the api object.
+                    # Rebuilding meant carrying nine pieces of state across by
+                    # hand, so every new field was a new chance to forget one -
+                    # and it silently reset two portal rate limits and the lock
+                    # that serialises a write against a running poll. See
+                    # WemPortalApi.reset_transport.
+                    self.api.reset_transport()
                 raise UpdateFailed(f"Error fetching data from wemportal: {exc}") from exc
             except Exception as exc:  # pylint: disable=broad-except
                 # Catch-all safety net: covers cases that don't come from

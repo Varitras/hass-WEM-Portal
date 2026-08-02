@@ -544,6 +544,52 @@ class WemPortalApi:
 
             self.data[str(device_id)][key] = new_val
 
+    def reset_transport(self):
+        """Throw away the HTTP state and force a fresh login next cycle.
+
+        This is the recovery the coordinator reaches for after repeated
+        errors, and it replaces rebuilding the whole object. Rebuilding was
+        never the remedy - the remedy is a clean connection - and it kept
+        causing the problem it was meant to solve: a fresh instance starts
+        every one of its 31 fields from scratch, so each piece of state that
+        had to survive was carried across by hand, and each new field was a
+        new chance to forget one. Two were forgotten in practice.
+
+        Three things it silently reset are worth naming, because they were
+        never intended and no test would have caught them:
+
+          * the statistics and circuit-times timestamps, which are portal
+            RATE LIMITS (an hour each). Every recovery let the next cycle
+            refetch both immediately - on a portal that had just been failing.
+          * the shared API lock. A poll running in a worker thread held the
+            OLD lock while the new object handed out a fresh, unheld one, so
+            a write could interleave with the very poll the lock exists to
+            serialise against.
+
+        What actually needs to go is the transport: the HTTP sessions, the
+        login state and the cookies. Everything else - discovered modules,
+        cooldowns, backoffs, timestamps, the lock - is deliberately kept,
+        because none of it is what "corrupted session" refers to.
+        """
+        _LOGGER.info(
+            "Persistent API errors: dropping the HTTP sessions and logging in "
+            "again on the next cycle."
+        )
+        if self.session is not None:
+            try:
+                self.session.close()
+            except Exception as exc:  # pylint: disable=broad-except
+                _LOGGER.debug("Ignoring error while closing the API session: %s", exc)
+            self.session = None
+        self._reset_scraper()
+        self.valid_login = False
+        self.api_version = None
+        # The web cookie belongs to the discarded scraper session.
+        self.webscraping_cookie = {}
+        # Re-run device discovery once on the next cycle: it is cheap, and the
+        # failures being recovered from may have left the module view partial.
+        self._devices_fetched_this_session = False
+
     def _reset_scraper(self):
         """Discard the persistent scraper instance (closing its HTTP
         session) so the next scraping cycle starts with a completely

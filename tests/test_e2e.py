@@ -1214,15 +1214,17 @@ async def test_saving_options_reloads_the_entry(hass, monkeypatch):
     assert coordinator.update_interval == timedelta(seconds=600)
 
 
-async def test_the_scrape_backoff_survives_the_real_coordinator_swap(hass, monkeypatch):
-    """Driven through the actual swap, not by constructing the replacement.
+async def test_recovery_resets_the_connection_and_keeps_everything_else(hass, monkeypatch):
+    """After repeated errors the integration recovers by dropping its HTTP
+    state - not by rebuilding the api object.
 
-    The coordinator rebuilds the api after repeated errors, and everything
-    that must not reset is carried across - the scrape backoff was the piece
-    left behind, so the recovery discarded the backoff the failures had just
-    earned. A test that builds the new instance itself proves only that the
-    constructor accepts the value, which is exactly how this was missed the
-    first time.
+    Rebuilding meant copying nine pieces of state across by hand, so every new
+    field was a new chance to forget one, and two were forgotten in practice.
+    It also reset things nobody intended: the statistics and circuit-times
+    timestamps are portal RATE LIMITS, and a fresh object handed out a fresh
+    lock while a poll thread still held the old one.
+
+    So this pins both halves: the transport is gone, everything else is not.
     """
     from datetime import datetime
 
@@ -1231,27 +1233,51 @@ async def test_the_scrape_backoff_survives_the_real_coordinator_swap(hass, monke
 
     entry = await _setup(hass, _entry(hass))
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    api = coordinator.api
 
     stamp = datetime(2026, 8, 2, 12, 0, 0)
-    coordinator.api.spider_wait_interval = 3
-    coordinator.api.spider_retry_count = 3
-    coordinator.api.last_scraping_update = stamp
-    before = coordinator.api
+    api.spider_wait_interval, api.spider_retry_count = 3, 3
+    api.last_scraping_update = stamp
+    api.last_statistics_fetch = 111.0
+    api._last_circuit_times_fetch = {"1234-x": 222.0}
+    api._blocked_until, api._expert_blocked_until = 333.0, 444.0
+    api.expert_cookies = {"cookies": {"ASP.NET_SessionId": "abc"}}
+    api.device_types = {"1234": 2}
+    api.scraper_device_id = "1234"
+    api.modules = {"1234": {}}
+    api.valid_login = True
+    lock_before = api._api_lock
 
     monkeypatch.setattr(
         WemPortalApi, "fetch_data",
         lambda self, *a, **k: (_ for _ in ()).throw(WemPortalError("portal broken")),
     )
 
-    # The swap happens from the second consecutive failure onwards.
+    # The recovery runs from the second consecutive failure onwards.
     for _ in range(2):
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
 
-    assert coordinator.api is not before, "the api was never swapped - test says nothing"
-    assert coordinator.api.spider_wait_interval == 3
-    assert coordinator.api.spider_retry_count == 3
-    assert coordinator.api.last_scraping_update == stamp
+    # The transport is what recovery is for.
+    assert api.valid_login is False, "the login was not invalidated"
+    assert api.session is None
+    assert api._scraper is None
+
+    # Everything else has to survive, or the recovery becomes the problem.
+    assert (api.spider_wait_interval, api.spider_retry_count) == (3, 3)
+    assert api.last_scraping_update == stamp
+    assert api.last_statistics_fetch == 111.0, "an hourly rate limit was reset"
+    assert api._last_circuit_times_fetch == {"1234-x": 222.0}, "rate limit reset"
+    assert (api._blocked_until, api._expert_blocked_until) == (333.0, 444.0)
+    assert api.expert_cookies["cookies"]["ASP.NET_SessionId"] == "abc"
+    assert api.device_types == {"1234": 2}
+    assert api.scraper_device_id == "1234"
+    assert api.modules == {"1234": {}}
+    assert api._api_lock is lock_before, "a running poll would hold the old lock"
+
+    # And the object everyone else refers to is still the one in use.
+    assert coordinator.api is api
+    assert hass.data[DOMAIN][entry.entry_id]["api"] is api
 
 
 async def test_a_failed_platform_setup_does_not_leak_the_store(hass, monkeypatch):

@@ -33,5 +33,26 @@
     "old": "        if status != 0:",
     "new": "        if status is not None and status != 0:",
     "tests": "explicit_success_is_a_rejection"
+  },
+  {
+    "label": "recovery must actually drop the login",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.valid_login = False\n        self.api_version = None",
+    "new": "        self.api_version = None",
+    "tests": "recovery_resets_the_connection"
+  },
+  {
+    "label": "recovery must not be skipped entirely",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                    self.api.reset_transport()",
+    "new": "                    pass",
+    "tests": "recovery_resets_the_connection"
+  },
+  {
+    "label": "recovery must not clobber the rate limits",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        # failures being recovered from may have left the module view partial.\n        self._devices_fetched_this_session = False\n",
+    "new": "        # failures being recovered from may have left the module view partial.\n        self._devices_fetched_this_session = False\n        self.last_statistics_fetch = 0.0\n",
+    "tests": "recovery_resets_the_connection"
   }
 ]
