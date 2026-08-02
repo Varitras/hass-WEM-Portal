@@ -1141,28 +1141,64 @@ class WemPortalApi:
             raise ParameterChangeError(
                 f"Error changing parameter {parameter_id} value"
             ) from exc
-        # The portal can answer with HTTP 200 but an application-level error
-        # (Status != 0) - the same pattern the login uses. Treat a non-zero
-        # Status as a rejected write instead of optimistically reporting
-        # success. If the response has no Status field, behaviour is unchanged.
+
+        # What a SUCCESSFUL write actually answers, captured from the real
+        # portal rather than derived:
+        #
+        #   HTTP 200  {"JobID":762338890,"Status":0,"Message":null,
+        #              "DetailMessages":null}
+        #
+        # Two things follow, and the second one is why this was measured
+        # instead of reasoned out. Success DOES carry Status: 0, so demanding
+        # it is safe. But `Message` is present on success too - it is simply
+        # null - so the rule suggested by the only available reference
+        # ("Message means failure") would have failed every legitimate write.
+        #
+        # Anything that is not an explicit Status 0 is therefore treated as a
+        # rejection. Reporting a write as done when it was not is the worse
+        # error by far: it is a heating parameter, and the entity would show
+        # the requested value until the next poll quietly replaced it.
+        # Kept on purpose, not left over from debugging: the check below
+        # accepts ONLY an explicit Status 0, so the day the portal changes its
+        # answer - new firmware, new API version - every write starts failing
+        # at once. Without the raw body in the log that is unfalsifiable
+        # guesswork; with it, one report settles it. Debug level, so it costs
+        # nothing until someone goes looking.
+        body = getattr(response, "content", b"")[:500]
+        _LOGGER.debug(
+            "Write response for %s: HTTP %s, body %r",
+            parameter_id, getattr(response, "status_code", "?"), body,
+        )
+
         try:
-            status = response.json().get("Status")
-        except Exception:  # pylint: disable=broad-except
-            # An empty body stays acceptable - that is how a bare
-            # acknowledgement looks, and it was accepted before. A body that
-            # is present but is not JSON is something else entirely: an HTML
-            # error or maintenance page served with HTTP 200. Reporting that
-            # as a completed write told the user their heating parameter had
-            # been changed when it had not.
-            if getattr(response, "content", b""):
-                raise ParameterChangeError(
-                    f"Portal answered the write for parameter {parameter_id} "
-                    "with a page instead of a result; the value was not changed."
-                ) from None
-            status = None
-        if status is not None and status != 0:
+            payload = response.json()
+        except Exception as exc:  # pylint: disable=broad-except
+            # On the failure path the body goes out at WARNING, because this
+            # is exactly when someone asks what the portal said - and debug
+            # logging is exactly what is not enabled at that moment.
+            _LOGGER.warning(
+                "Write for %s was not answered with a result. Portal said: %r",
+                parameter_id, body,
+            )
             raise ParameterChangeError(
-                f"Portal rejected the write for parameter {parameter_id} (Status {status})."
+                f"Portal answered the write for parameter {parameter_id} with "
+                "something other than a result; the value was not changed."
+            ) from exc
+
+        status = payload.get("Status") if isinstance(payload, dict) else None
+        if status != 0:
+            # Message carries the portal's own wording; DetailMessages is a
+            # list on failure. Both go to the log, only Message to the user.
+            detail = payload.get("Message") if isinstance(payload, dict) else None
+            _LOGGER.warning(
+                "Portal rejected the write for %s. Full answer: %r",
+                parameter_id, body,
+            )
+            raise ParameterChangeError(
+                f"Portal rejected the write for parameter {parameter_id} "
+                f"(Status {status}"
+                + (f": {detail}" if detail else "")
+                + ")."
             )
 
     # Refresh data and retrieve new data

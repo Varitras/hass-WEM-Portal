@@ -107,6 +107,11 @@ to ask the user for new credentials.
   error or placeholder page served with HTTP 200 simply parses to nothing,
   which reset the retry counter and left the previous values on display
   looking current.
+- **A write is only reported as done when the portal confirms it.** Anything
+  other than an explicit success - an error object, an empty answer, a page
+  instead of a result - was taken for a completed write, so the entity showed
+  the requested value until the next poll quietly replaced it. The portal's
+  own reason now appears in the error.
 - **A refused measurement refresh is not read as a fresh one.** The portal
   answers a rejection with HTTP 200 and a non-zero status; unnoticed, the
   following read fell back to the previous measurement and its values were

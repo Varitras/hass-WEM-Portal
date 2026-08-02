@@ -2,6 +2,7 @@
 survival on a failed device refresh, and str-normalisation of device ids.
 """
 
+import json
 import time
 
 import pytest
@@ -13,11 +14,17 @@ from custom_components.wemportal import exceptions
 
 
 class FakeResponse:
-    def __init__(self, json_data=None, status_code=200, url="https://www.wemportal.com/app/x"):
+    def __init__(self, json_data=None, status_code=200, url="https://www.wemportal.com/app/x",
+                 content=None):
         self._json = json_data if json_data is not None else {}
         self.status_code = status_code
         self.url = url
-        self.content = b""
+        # Derived from the payload rather than left empty: production code
+        # logs and inspects `content`, so a double whose body never matches
+        # its own json() hides exactly the behaviour under test.
+        if content is None:
+            content = json.dumps(self._json).encode()
+        self.content = content
 
     def json(self):
         return self._json
@@ -1162,13 +1169,19 @@ def test_a_write_answered_with_a_page_is_not_a_completed_write():
         api.change_value("1234", "P1", 0, 1, 21.0, login=False)
 
 
-def test_an_empty_write_response_stays_acceptable():
-    """A bare acknowledgement with no body is how the portal confirms some
-    writes; only a body that is present but unparsable is the error case."""
+def test_an_empty_write_response_is_no_longer_taken_for_success():
+    """This used to pass, on the assumption that a bare acknowledgement is
+    how the portal confirms a write.
+
+    The assumption was never verified, and the real response settles it: a
+    successful write answers with a body carrying Status 0. An empty one is
+    therefore not a confirmation of anything.
+    """
     api = _api()
     api.make_api_call = lambda *a, **k: _BodyResponse(b"")
 
-    api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+    with pytest.raises(exceptions.ParameterChangeError):
+        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
 
 
 # --- the scrape backoff is not skipped after a recovery ---------------
@@ -1458,3 +1471,101 @@ def test_a_successful_scrape_clears_the_backoff():
 
     assert api.spider_retry_count == 0
     assert api.spider_wait_interval == 0
+
+
+# The real answer from the portal, captured once instead of derived:
+# HTTP 200 {"JobID":762338890,"Status":0,"Message":null,"DetailMessages":null}
+REAL_WRITE_SUCCESS = {
+    "JobID": 762338890, "Status": 0, "Message": None, "DetailMessages": None,
+}
+
+
+def test_the_real_success_response_is_accepted():
+    """Guarding against the rule that ALMOST got written.
+
+    The only available reference documents `Message` as the failure field, so
+    "a Message means it failed" looked reasonable - but the real success
+    response carries Message: null. That rule would have failed every single
+    legitimate write.
+    """
+    api = _api()
+    api.make_api_call = lambda *a, **k: FakeResponse(REAL_WRITE_SUCCESS)
+
+    api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"Message": "write failed"},          # error shape, no Status
+        {"Status": None},                     # present but says nothing
+        {"Status": 3, "Message": "rejected"},  # explicit rejection
+        {"JobID": 1},                          # a result, but not a verdict
+    ],
+)
+def test_anything_but_an_explicit_success_is_a_rejection(payload):
+    """Success carries Status: 0, so nothing else may pass for one.
+
+    Reporting a write as done when it was not is the worse error: it is a
+    heating parameter, and the entity shows the requested value until the
+    next poll quietly replaces it.
+    """
+    api = _api()
+    api.make_api_call = lambda *a, **k: FakeResponse(payload)
+
+    with pytest.raises(exceptions.ParameterChangeError):
+        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+
+
+def test_the_rejection_message_carries_the_portal_reason():
+    """DetailMessages/Message is what the portal says went wrong - dropping
+    it leaves the user with a bare number."""
+    api = _api()
+    api.make_api_call = lambda *a, **k: FakeResponse(
+        {"Status": 3, "Message": "value out of range"}
+    )
+
+    with pytest.raises(exceptions.ParameterChangeError) as excinfo:
+        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+
+    assert "value out of range" in str(excinfo.value)
+
+
+def test_a_rejected_write_puts_the_portal_answer_in_the_log(caplog):
+    """The raw answer is what someone asks for when a write stops working -
+    and debug logging is exactly what is not enabled at that moment.
+
+    It also guards the check itself: accepting only Status 0 means the day
+    the portal changes its answer, every write fails at once. The body in the
+    log turns that from guesswork into one report.
+    """
+    import logging
+
+    api = _api()
+    api.make_api_call = lambda *a, **k: FakeResponse(
+        {"Status": 3, "Message": "value out of range"}
+    )
+
+    with caplog.at_level(logging.WARNING), pytest.raises(exceptions.ParameterChangeError):
+        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+
+    warnings = " ".join(
+        r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+    )
+    assert "value out of range" in warnings
+
+
+def test_a_successful_write_records_the_answer_at_debug(caplog):
+    """The success shape matters too: it is the reference the check is built
+    on, so a change to it has to be visible."""
+    import logging
+
+    api = _api()
+    api.make_api_call = lambda *a, **k: FakeResponse(REAL_WRITE_SUCCESS)
+
+    with caplog.at_level(logging.DEBUG):
+        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+
+    assert "Write response for P1" in caplog.text
+    # And nothing about the write ends up at warning level.
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
