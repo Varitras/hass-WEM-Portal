@@ -133,6 +133,9 @@ class WemPortalApi:
         # DeviceType per device id, as reported by Device/Read. Only feeds
         # the model name shown in Home Assistant.
         self.device_types = {}
+        # Scraped keys seen in the previous cycle, to notice when the
+        # portal relabels a row (see _warn_about_renamed_scraper_keys).
+        self._previous_scraper_keys = None
         self.scraping_mapper = {}
         self.last_statistics_fetch = 0.0
         # Timestamp (per device+parameter) of the last time a heating
@@ -428,9 +431,43 @@ class WemPortalApi:
             # Wrap any unexpected python crashes to prevent HA from halting
             raise WemPortalError("Unexpected error occurred while fetching data") from exc
 
+    def _warn_about_renamed_scraper_keys(self, scraped_keys):
+        """Point out a relabelled row before the user has to guess.
+
+        Scraped sensors have no stable id from the portal - the entityvalue
+        in the row embeds the current VALUE, so it changes whenever the
+        reading does and cannot serve as one. Their key is therefore built
+        from the panel heading and the row label, which means a wording
+        change at the portal produces a NEW entity: the old one is left
+        behind with all the history, the new one starts empty.
+
+        Nothing can prevent that here, but silently splitting a sensor's
+        history is the kind of thing people notice weeks later. If keys
+        disappear and others appear in the same cycle, say so.
+        """
+        previous = self._previous_scraper_keys
+        self._previous_scraper_keys = set(scraped_keys)
+        if not previous:
+            # First cycle of this session: nothing to compare against.
+            return
+        gone = previous - set(scraped_keys)
+        added = set(scraped_keys) - previous
+        if gone and added:
+            _LOGGER.warning(
+                "The web portal appears to have renamed scraped rows: %s no "
+                "longer appear, while %s are new. Scraped sensors are keyed by "
+                "their portal labels, so the renamed ones become NEW entities "
+                "and their history stays with the old ones.",
+                ", ".join(sorted(gone)), ", ".join(sorted(added)),
+            )
+
     def _merge_webscraping_data(self, device_id, webscraping_data):
         if str(device_id) not in self.data:
             self.data[str(device_id)] = {}
+
+        self._warn_about_renamed_scraper_keys(
+            [k for k, v in webscraping_data.items() if isinstance(v, dict)]
+        )
 
         from .translations import translate
         for key, new_val in webscraping_data.items():

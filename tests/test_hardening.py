@@ -871,3 +871,53 @@ def test_a_device_without_a_status_stays_reachable():
     assert device_is_reachable({"0000": {"some-sensor": {"value": 1}}}, "0000") is True
     assert device_is_reachable({}, "0000") is True
     assert device_is_reachable(None, "0000") is True
+
+
+def _scraped(*keys):
+    return {k: {"value": 1, "unit": "°C", "platform": "sensor"} for k in keys}
+
+
+def test_a_renamed_scraper_row_is_reported(caplog):
+    """Scraped sensors are keyed by their portal labels - there is no stable
+    id to use instead, since the row's entityvalue embeds the current VALUE
+    and changes with every reading. A relabelled row therefore becomes a NEW
+    entity and the history stays with the old one. Nothing can prevent that,
+    but it must not happen silently."""
+    import logging
+
+    api = _api()
+    api._merge_webscraping_data("0000", _scraped("pump-flow", "pump-return"))
+
+    with caplog.at_level(logging.WARNING):
+        api._merge_webscraping_data("0000", _scraped("pump-flow", "pump-return-temp"))
+
+    assert "renamed" in caplog.text
+    assert "pump-return" in caplog.text
+    assert "pump-return-temp" in caplog.text
+
+
+def test_a_stable_scrape_says_nothing(caplog):
+    """No warning on an unchanged cycle, nor on the very first one - there is
+    nothing to compare a first scrape against."""
+    import logging
+
+    api = _api()
+    with caplog.at_level(logging.WARNING):
+        api._merge_webscraping_data("0000", _scraped("pump-flow"))
+        api._merge_webscraping_data("0000", _scraped("pump-flow"))
+
+    assert "renamed" not in caplog.text
+
+
+def test_a_purely_added_row_is_not_a_rename(caplog):
+    """A genuinely new parameter is not a rename, and saying so would train
+    the user to ignore the message."""
+    import logging
+
+    api = _api()
+    api._merge_webscraping_data("0000", _scraped("pump-flow"))
+
+    with caplog.at_level(logging.WARNING):
+        api._merge_webscraping_data("0000", _scraped("pump-flow", "pump-new"))
+
+    assert "renamed" not in caplog.text
