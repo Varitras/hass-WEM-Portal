@@ -61,11 +61,15 @@ from .const import (
 )
 from .mapper import WemPortalDataMapper
 from .translations import friendly_name_mapper, translate
+from .mobile_protocol import (
+    read_refresh_ticket,
+    read_write_ack,
+    status_is_success,
+)
 from .utils import (
     clamped_scan_interval,
     latest_statistics_entry,
     maintenance_notice,
-    portal_status_is_success,
 )
 
 
@@ -843,7 +847,7 @@ class WemPortalApi:
 
             # Verify the response is actually valid JSON and successful
             response_data = response.json()
-            if not portal_status_is_success(response_data.get("Status")):
+            if not status_is_success(response_data.get("Status")):
                 raise AuthError(f"Login failed: Server returned {response_data}")
 
             self.api_version = response_data.get("Version")
@@ -1335,11 +1339,11 @@ class WemPortalApi:
                 "something other than a result; the value was not changed."
             ) from exc
 
-        status = payload.get("Status") if isinstance(payload, dict) else None
-        if not portal_status_is_success(status):
+        ack = read_write_ack(payload)
+        if not ack.acknowledged:
             # Message carries the portal's own wording; DetailMessages is a
             # list on failure. Both go to the log, only Message to the user.
-            detail = payload.get("Message") if isinstance(payload, dict) else None
+            status, detail = ack.status, ack.message
             _LOGGER.warning(
                 "Portal rejected the write for %s. Full answer: %r",
                 parameter_id, body,
@@ -1570,29 +1574,14 @@ class WemPortalApi:
                     "measurement as current.", device_id,
                 )
                 return False
-            if not isinstance(refresh_payload, dict):
+            ticket = read_refresh_ticket(refresh_payload)
+            if not ticket.accepted:
                 _LOGGER.warning(
-                    "Device %s answered the refresh with %s instead of an "
-                    "object; skipping the read.",
-                    device_id, type(refresh_payload).__name__,
+                    "Device %s %s; not reading the previous job's values as "
+                    "current.", device_id, ticket.reason,
                 )
                 return False
-            # The portal answers a REJECTED refresh with HTTP 200 and a
-            # non-zero Status, exactly like the login does. Only JobID was
-            # read here, so a rejection went unnoticed: without a JobID the
-            # read below falls back to the most recent job, which is the
-            # PREVIOUS measurement, and its values were then booked as a
-            # fresh reading.
-            refresh_status = refresh_payload.get("Status")
-            if refresh_status is not None and not portal_status_is_success(refresh_status):
-                _LOGGER.warning(
-                    "Device %s refused the measurement refresh (Status %s); "
-                    "not reading the previous job's values as current.",
-                    device_id, refresh_status,
-                )
-                return False
-            job_id = refresh_payload.get("JobID")
-            if job_id is None:
+            if ticket.job_id is None:
                 # Reported, not enforced - on purpose, and this is the whole
                 # reasoning:
                 #
@@ -1611,7 +1600,7 @@ class WemPortalApi:
                 # made on evidence. Same approach as the maintenance marker.
                 _report_missing_job_id(device_id)
             else:
-                read_data = {**data, "JobID": job_id}
+                read_data = {**data, "JobID": ticket.job_id}
             time.sleep(5)
             values = self.make_api_call(
                 API_DATA_ACCESS_READ_URL,

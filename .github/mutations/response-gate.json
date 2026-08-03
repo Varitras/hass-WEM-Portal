@@ -29,10 +29,10 @@
   },
   {
     "label": "write: accepting anything but an explicit success must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if not portal_status_is_success(status):",
-    "new": "        if status is not None and status != 0:",
-    "tests": "explicit_success_is_a_rejection"
+    "path": "custom_components/wemportal/mobile_protocol.py",
+    "old": "    return WriteAck(status_is_success(status), status, payload.get(\"Message\"))",
+    "new": "    return WriteAck(status is None or status == 0, status, payload.get(\"Message\"))",
+    "tests": "explicit_success_is_a_rejection or write_counts_as_done"
   },
   {
     "label": "recovery must actually drop the login",
@@ -351,15 +351,15 @@
   },
   {
     "label": "status: a boolean false must never count as success",
-    "path": "custom_components/wemportal/utils.py",
+    "path": "custom_components/wemportal/mobile_protocol.py",
     "old": "    return type(status) is int and status == 0",
     "new": "    return status == 0",
-    "tests": "explicit_success_is_a_rejection or only_the_integer_zero_is_a_portal_success"
+    "tests": "only_the_integer_zero_is_a_portal_success or write_counts_as_done"
   },
   {
     "label": "status: the login must use the same verdict as the write",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if not portal_status_is_success(response_data.get(\"Status\")):",
+    "old": "            if not status_is_success(response_data.get(\"Status\")):",
     "new": "            if response_data.get(\"Status\") != 0:",
     "tests": "login_rejects_a_false_status"
   },
@@ -432,5 +432,12 @@
     "old": "        _async_release_expert_service(hass, entry)\n        raise",
     "new": "        raise",
     "tests": "setup_that_fails_late_leaves_no_service"
+  },
+  {
+    "label": "refresh: a refused refresh must stop the read",
+    "path": "custom_components/wemportal/mobile_protocol.py",
+    "old": "    if status is not None and not status_is_success(status):",
+    "new": "    if False:",
+    "tests": "refresh_is_read_as_accepted or rejected_refresh_is_not_read"
   }
 ]

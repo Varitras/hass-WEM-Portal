@@ -1801,30 +1801,6 @@ def test_a_recovery_leaves_the_transport_in_the_state_the_next_cycle_expects():
     assert api._devices_fetched_this_session is False
 
 
-# --- one verdict on the portal's Status field -------------------------
-#
-# Three places asked "is Status 0?" and all three got `Status: false` wrong,
-# because Python compares False equal to 0. On the write path that reported a
-# rejected change to a heating parameter as done.
-
-@pytest.mark.parametrize(
-    ("status", "ok"),
-    [
-        (0, True),
-        (False, False),   # the bug: equal to 0, and not a success
-        (True, False),
-        (3, False),
-        (None, False),
-        ("0", False),
-        (0.0, False),
-    ],
-)
-def test_only_the_integer_zero_is_a_portal_success(status, ok):
-    from custom_components.wemportal.utils import portal_status_is_success
-
-    assert portal_status_is_success(status) is ok
-
-
 def test_the_login_rejects_a_false_status(monkeypatch):
     """The login shares the verdict with the write path, or the two disagree
     about what the same field means."""
