@@ -16,6 +16,11 @@ this way rather than by reading it:
 The pattern behind all four: if the test establishes the condition the
 production code is supposed to establish, it tests nothing.
 
+The harness itself is held to the same standard. "The tests noticed" is
+pytest exit code 1 and nothing else - a usage error, an internal error or an
+interrupted run are not evidence, and reading any non-zero exit as success
+was this script telling itself what it wanted to hear.
+
 Usage
 -----
 Describe each mutation in a JSON file - a list of objects with:
@@ -48,19 +53,61 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 
 
+# pytest's exit codes. Only ONE of them means "the tests noticed": 1. The
+# script used to read `returncode != 0` as caught, which let a usage error, an
+# internal error or an interrupted run all report success - a broken harness
+# congratulating itself, which is the failure this whole file exists against.
+PYTEST_ALL_PASSED = 0
+PYTEST_TESTS_FAILED = 1
+PYTEST_INTERRUPTED = 2
+PYTEST_INTERNAL_ERROR = 3
+PYTEST_USAGE_ERROR = 4
+PYTEST_NO_TESTS = 5
+
+# A hung test run would otherwise hold a MUTATED source file indefinitely.
+TEST_TIMEOUT_SECONDS = 900
+
+
 def run_tests(selector: str) -> bool:
     """True if the selected tests FAIL, i.e. the mutation was caught."""
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "-q", "-m", "", "-k", selector],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "tests/", "-q", "-m", "", "-k", selector],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            timeout=TEST_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(
+            f"selector {selector!r}: the test run did not finish within "
+            f"{TEST_TIMEOUT_SECONDS}s. The mutated file is restored, but the "
+            "result says nothing - investigate before trusting this plan."
+        ) from exc
+
     # A selector that matches nothing exits 5 and would otherwise read as
     # "caught" - the same silent pass this script exists to prevent.
-    if "no tests ran" in result.stdout or result.returncode == 5:
+    if "no tests ran" in result.stdout or result.returncode == PYTEST_NO_TESTS:
         raise SystemExit(f"selector {selector!r} matched no tests")
-    return result.returncode != 0
+
+    if result.returncode == PYTEST_TESTS_FAILED:
+        return True
+    if result.returncode == PYTEST_ALL_PASSED:
+        return False
+
+    raise SystemExit(
+        f"selector {selector!r}: pytest exited {result.returncode} "
+        f"({_EXIT_REASON.get(result.returncode, 'unknown')}), which says "
+        "nothing about the mutation. Last stderr:\n"
+        + (result.stderr or "(empty)").strip()[-2000:]
+    )
+
+
+_EXIT_REASON = {
+    PYTEST_INTERRUPTED: "interrupted",
+    PYTEST_INTERNAL_ERROR: "internal error",
+    PYTEST_USAGE_ERROR: "usage error",
+}
 
 
 def apply_mutation(case: dict) -> tuple[Path, Path]:

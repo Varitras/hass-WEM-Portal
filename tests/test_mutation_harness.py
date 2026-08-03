@@ -168,3 +168,79 @@ def test_the_shipped_plan_still_matches_the_code():
             f"{case['label']}: the snippet no longer matches {case['path']} "
             "exactly once - update the plan"
         )
+
+
+@pytest.mark.parametrize(
+    ("code", "reason"),
+    [(2, "interrupted"), (3, "internal error"), (4, "usage error")],
+)
+def test_a_broken_test_run_is_not_evidence(monkeypatch, code, reason):
+    """The fourth silent-pass route, and the one that flatters the harness.
+
+    `returncode != 0` counted a usage error, an internal error and an
+    interrupted run all as "the tests noticed". Those say nothing about the
+    mutation - and they are exactly what a half-broken environment produces,
+    which is when a green report is most convincing and least true.
+    """
+    mutate = _load()
+
+    class _BrokenRun:
+        returncode = code
+        stdout = ""
+        stderr = "boom"
+
+    monkeypatch.setattr(mutate.subprocess, "run", lambda *a, **k: _BrokenRun())
+
+    with pytest.raises(SystemExit) as excinfo:
+        mutate.run_tests("anything")
+
+    assert reason in str(excinfo.value)
+
+
+def test_a_hung_test_run_is_not_evidence_either(monkeypatch):
+    """A run that never finishes would otherwise hold a mutated source file
+    for as long as it hangs, and report nothing at all."""
+    mutate = _load()
+
+    def _hang(*_a, **_k):
+        raise mutate.subprocess.TimeoutExpired(cmd="pytest", timeout=1)
+
+    monkeypatch.setattr(mutate.subprocess, "run", _hang)
+
+    with pytest.raises(SystemExit) as excinfo:
+        mutate.run_tests("anything")
+
+    assert "did not finish" in str(excinfo.value)
+
+
+def test_every_mutation_produces_code_that_still_parses():
+    """A mutation that breaks the SYNTAX proves nothing.
+
+    `finally:` -> `else:` after a try with no except is a SyntaxError, so
+    pytest exits with a usage error and the old harness scored it as
+    "caught" - one of the 56 mutations had been passing that way, testing
+    nothing at all. Hardening the exit codes surfaced it; this keeps it
+    surfaced at the point where the plan is written rather than run.
+    """
+    import ast
+
+    plan = json.loads(
+        (SCRIPT.parent.parent / "mutations" / "response-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    repo = SCRIPT.resolve().parents[2]
+
+    for case in plan:
+        if not case["path"].endswith(".py"):
+            continue
+        source = (repo / case["path"]).read_text(encoding="utf-8")
+        mutated = source.replace(case["old"], case["new"], 1)
+        try:
+            ast.parse(mutated)
+        except SyntaxError as exc:
+            raise AssertionError(
+                f"{case['label']}: the mutation does not parse "
+                f"({exc.msg} at line {exc.lineno}). A broken parser is not a "
+                "broken behaviour - write a mutation that runs."
+            ) from exc

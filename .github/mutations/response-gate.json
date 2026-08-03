@@ -226,8 +226,8 @@
   {
     "label": "poll: a failed cycle must still arm the next one",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "        finally:\n            # Always reschedule the next run (with fresh jitter), even if this\n            # cycle failed - a transient error must not stop future polls.\n            _schedule_next()",
-    "new": "        else:\n            _schedule_next()",
+    "old": "            _apply_expert_read(hass, data, entities, results)\n        finally:\n            # Always reschedule the next run (with fresh jitter), even if this\n            # cycle failed - a transient error must not stop future polls.\n            _schedule_next()",
+    "new": "            _apply_expert_read(hass, data, entities, results)\n            _schedule_next()\n        finally:\n            pass",
     "tests": "failed_poll_still_arms"
   },
   {
