@@ -1511,6 +1511,7 @@ def test_the_real_success_response_is_accepted():
         {"Status": None},                     # present but says nothing
         {"Status": 3, "Message": "rejected"},  # explicit rejection
         {"JobID": 1},                          # a result, but not a verdict
+        {"Status": False},                     # Python says False == 0. The portal does not.
     ],
 )
 def test_anything_but_an_explicit_success_is_a_rejection(payload):
@@ -1786,3 +1787,78 @@ def test_a_recovery_leaves_the_transport_in_the_state_the_next_cycle_expects():
     assert api.api_version is None
     assert api.webscraping_cookie == {}
     assert api._devices_fetched_this_session is False
+
+
+# --- one verdict on the portal's Status field -------------------------
+#
+# Three places asked "is Status 0?" and all three got `Status: false` wrong,
+# because Python compares False equal to 0. On the write path that reported a
+# rejected change to a heating parameter as done.
+
+@pytest.mark.parametrize(
+    ("status", "ok"),
+    [
+        (0, True),
+        (False, False),   # the bug: equal to 0, and not a success
+        (True, False),
+        (3, False),
+        (None, False),
+        ("0", False),
+        (0.0, False),
+    ],
+)
+def test_only_the_integer_zero_is_a_portal_success(status, ok):
+    from custom_components.wemportal.utils import portal_status_is_success
+
+    assert portal_status_is_success(status) is ok
+
+
+def test_the_login_rejects_a_false_status(monkeypatch):
+    """The login shares the verdict with the write path, or the two disagree
+    about what the same field means."""
+    api = _api()
+    session = RecordingSession(post_json={"Status": False, "Version": "3.1"})
+    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: session)
+
+    with pytest.raises(exceptions.AuthError):
+        api.api_login()
+    assert api.valid_login is False
+
+
+def test_a_refresh_answering_false_is_a_refusal():
+    """Same field, same verdict, on the third of the three sites."""
+    api = _api()
+    api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
+    api.make_api_call = lambda url, **_k: FakeResponse(
+        {"Status": False} if "Refresh" in url else {"Modules": []}
+    )
+
+    assert api._fetch_parameter_values("1234") is False
+
+
+def test_a_missing_job_id_is_reported_once_per_device(caplog):
+    """Measured rather than enforced.
+
+    Refusing the read would be the strict reading, but a failed device with
+    only one device configured fails the whole cycle - so an installation
+    whose portal legitimately omits the JobID would go off the air instead of
+    degrading. Whether that happens is unknown, so it is reported.
+    """
+    import logging
+
+    from custom_components.wemportal import wemportalapi as api_module
+
+    api_module._MISSING_JOB_ID_REPORTED.clear()
+    api = _api()
+    api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
+    api.make_api_call = lambda url, **_k: FakeResponse(
+        {"Modules": [{"ModuleIndex": 1, "ModuleType": 2, "Values": []}]}
+        if "Read" in url else {"Status": 0}
+    )
+
+    with caplog.at_level(logging.WARNING):
+        assert api._fetch_parameter_values("1234") is True
+        assert api._fetch_parameter_values("1234") is True
+
+    hits = [r for r in caplog.records if "without a JobID" in r.getMessage()]
+    assert len(hits) == 1, f"expected exactly one report, got {len(hits)}"

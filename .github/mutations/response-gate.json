@@ -30,7 +30,7 @@
   {
     "label": "write: accepting anything but an explicit success must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if status != 0:",
+    "old": "        if not portal_status_is_success(status):",
     "new": "        if status is not None and status != 0:",
     "tests": "explicit_success_is_a_rejection"
   },
@@ -348,5 +348,26 @@
     "old": "        from .expert_writer import WemPortalExpertClient\n\n        entry = self.config_entry",
     "new": "        entry = self.config_entry",
     "tests": "expert_client_is_actually_buildable"
+  },
+  {
+    "label": "status: a boolean false must never count as success",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return type(status) is int and status == 0",
+    "new": "    return status == 0",
+    "tests": "explicit_success_is_a_rejection or only_the_integer_zero_is_a_portal_success"
+  },
+  {
+    "label": "status: the login must use the same verdict as the write",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if not portal_status_is_success(response_data.get(\"Status\")):",
+    "new": "            if response_data.get(\"Status\") != 0:",
+    "tests": "login_rejects_a_false_status"
+  },
+  {
+    "label": "job id: a missing JobID must be reported, not passed over",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                _report_missing_job_id(device_id)",
+    "new": "                pass",
+    "tests": "missing_job_id"
   }
 ]

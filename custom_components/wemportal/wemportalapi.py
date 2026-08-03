@@ -65,7 +65,32 @@ from .utils import (
     clamped_scan_interval,
     latest_statistics_entry,
     maintenance_notice,
+    portal_status_is_success,
 )
+
+
+# Devices whose refresh answered without a JobID, so the warning below is
+# raised once per device instead of on every cycle.
+_MISSING_JOB_ID_REPORTED = set()
+
+
+def _report_missing_job_id(device_id):
+    """Say once that a device started no identifiable measurement job.
+
+    A read without a JobID is answered from the most recent job, which may be
+    the PREVIOUS measurement served as current. Whether a healthy portal ever
+    answers this way is not established - this is what would establish it.
+    """
+    if device_id in _MISSING_JOB_ID_REPORTED:
+        return
+    _MISSING_JOB_ID_REPORTED.add(device_id)
+    _LOGGER.warning(
+        "Device %s answered the measurement refresh without a JobID. The "
+        "read then returns whichever job the portal considers newest, which "
+        "may be the previous measurement. Please report this together with "
+        "your portal model - see %s",
+        device_id, GITHUB_PROJECT_URL,
+    )
 
 
 class WemPortalApi:
@@ -794,7 +819,7 @@ class WemPortalApi:
 
             # Verify the response is actually valid JSON and successful
             response_data = response.json()
-            if response_data.get("Status") != 0:
+            if not portal_status_is_success(response_data.get("Status")):
                 raise AuthError(f"Login failed: Server returned {response_data}")
 
             self.api_version = response_data.get("Version")
@@ -1287,7 +1312,7 @@ class WemPortalApi:
             ) from exc
 
         status = payload.get("Status") if isinstance(payload, dict) else None
-        if status != 0:
+        if not portal_status_is_success(status):
             # Message carries the portal's own wording; DetailMessages is a
             # list on failure. Both go to the log, only Message to the user.
             detail = payload.get("Message") if isinstance(payload, dict) else None
@@ -1503,11 +1528,10 @@ class WemPortalApi:
                 data=data,
             )
             # /Refresh answers with the JobID of the measurement it started,
-            # and /Read accepts it to identify which one to return. Reading
-            # without it works - the server falls back to the most recent job
-            # - but then two overlapping refreshes can hand back the other
-            # one's values. Passed through when present, omitted otherwise, so
-            # a response without a JobID behaves exactly as before.
+            # and /Read needs it to say which one to return. Reading without
+            # it "works" only in the sense that the server answers: it falls
+            # back to the most recent job, so two overlapping refreshes can
+            # hand back each other's values.
             read_data = data
             try:
                 refresh_payload = refresh_response.json()
@@ -1536,7 +1560,7 @@ class WemPortalApi:
             # PREVIOUS measurement, and its values were then booked as a
             # fresh reading.
             refresh_status = refresh_payload.get("Status")
-            if refresh_status is not None and refresh_status != 0:
+            if refresh_status is not None and not portal_status_is_success(refresh_status):
                 _LOGGER.warning(
                     "Device %s refused the measurement refresh (Status %s); "
                     "not reading the previous job's values as current.",
@@ -1544,7 +1568,25 @@ class WemPortalApi:
                 )
                 return False
             job_id = refresh_payload.get("JobID")
-            if job_id is not None:
+            if job_id is None:
+                # Reported, not enforced - on purpose, and this is the whole
+                # reasoning:
+                #
+                # Refusing the read here would be the strict reading of "the
+                # server falls back to the most recent job". But a device that
+                # fails is a failed device, and with a single device (the
+                # normal case) `failures and not successes` below turns that
+                # into a failed CYCLE: backoff, recovery, eventually reauth.
+                # So if any installation's portal legitimately answers without
+                # a JobID, the strict version does not degrade that
+                # installation, it takes it off the air.
+                #
+                # Whether that happens is not established - the JobID has only
+                # ever been observed present. So this measures instead of
+                # guessing: one warning per device, and the decision can be
+                # made on evidence. Same approach as the maintenance marker.
+                _report_missing_job_id(device_id)
+            else:
                 read_data = {**data, "JobID": job_id}
             time.sleep(5)
             values = self.make_api_call(

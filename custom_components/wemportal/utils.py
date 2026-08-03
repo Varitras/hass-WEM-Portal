@@ -467,3 +467,17 @@ def device_is_reachable(coordinator_data, device_id) -> bool:
     if not isinstance(status, dict):
         return True
     return status.get("value") not in UNREACHABLE_CONNECTION_STATES
+
+
+def portal_status_is_success(status) -> bool:
+    """Whether the portal's `Status` field means "this worked".
+
+    Only the integer 0 does. `Status: false` is NOT success, and Python
+    treats it as equal to 0 - so the obvious `status != 0` waved it through
+    at all three places that check it, including the one that decides whether
+    a write to a heating parameter actually happened.
+
+    `type(status) is int` rather than isinstance: bool IS a subclass of int,
+    which is the whole problem.
+    """
+    return type(status) is int and status == 0
