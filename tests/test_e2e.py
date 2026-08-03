@@ -1652,6 +1652,42 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(hass, mo
     assert entry.runtime_data.api is api
 
 
+async def test_the_recovery_runs_off_the_event_loop(hass, monkeypatch):
+    """The reset takes the shared api lock, so it must not run on the loop.
+
+    Waiting for a threading lock on the event loop stalls everything Home
+    Assistant does for as long as the write it waits for takes - which is
+    precisely the situation the lock exists for. Asserting on the THREAD
+    rather than on the call: patching async_add_executor_job away would make
+    a direct call look identical.
+    """
+    import threading
+
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+
+    loop_thread = threading.get_ident()
+    seen = []
+    monkeypatch.setattr(
+        WemPortalApi, "reset_transport",
+        lambda self: seen.append(threading.get_ident()),
+    )
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data",
+        lambda self, *a, **k: (_ for _ in ()).throw(WemPortalError("portal broken")),
+    )
+
+    for _ in range(2):
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+
+    assert seen, "the recovery never ran"
+    assert loop_thread not in seen, "the recovery ran on the event loop"
+
+
 async def test_a_failed_platform_setup_does_not_leak_the_store(hass, monkeypatch):
     """Home Assistant only calls async_unload_entry for an entry that
     finished setting up.

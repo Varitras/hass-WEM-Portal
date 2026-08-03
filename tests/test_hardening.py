@@ -1721,12 +1721,24 @@ PRESERVED_FIELDS = frozenset({
 
 
 class _Marker:
-    """A value that is its own field, and closable where the reset closes."""
+    """A value that is its own field.
+
+    It also has to satisfy whatever reset_transport calls on the real thing:
+    close() on the two transports, and the lock protocol on _api_lock (an
+    always-free lock, so the reset proceeds and the identity check below
+    still sees the marker it put there).
+    """
 
     def __init__(self, field):
         self.field = field
 
     def close(self):
+        pass
+
+    def acquire(self, *_args, **_kwargs):
+        return True
+
+    def release(self):
         pass
 
 
@@ -1862,3 +1874,64 @@ def test_a_missing_job_id_is_reported_once_per_device(caplog):
 
     hits = [r for r in caplog.records if "without a JobID" in r.getMessage()]
     assert len(hits) == 1, f"expected exactly one report, got {len(hits)}"
+
+
+# --- a recovery must not tear down a write in flight -------------------
+#
+# fetch_data releases the api lock in its `finally`. A change_value() worker
+# waiting on that lock takes it in the same instant - and the recovery, which
+# ran on the event loop and took no lock at all, then closed the session out
+# from under that write.
+
+class _ClosingSession:
+    """A session that records being closed."""
+
+    def __init__(self, closed):
+        self._closed = closed
+
+    def close(self):
+        self._closed.append("session")
+
+
+def test_a_recovery_leaves_a_busy_connection_alone(monkeypatch, caplog):
+    """The lock is held by a write, so the reset must not happen at all.
+
+    Not "must wait": waiting is what the event loop cannot afford, and the
+    recovery is best-effort - the next failed cycle tries again.
+    """
+    import logging
+
+    monkeypatch.setattr(wemportalapi, "API_LOCK_TIMEOUT_SECONDS", 0.05)
+    closed = []
+    api = _api()
+    api.session = _ClosingSession(closed)
+    api.valid_login = True
+
+    assert api._api_lock.acquire(blocking=False), "the lock must start free"
+    try:
+        with caplog.at_level(logging.WARNING):
+            api.reset_transport()
+    finally:
+        api._api_lock.release()
+
+    assert closed == [], "the recovery closed a session another operation was using"
+    assert api.session is not None, "the transport was torn down under a write"
+    assert api.valid_login is True
+    assert any("still in use" in r.getMessage() for r in caplog.records)
+
+
+def test_a_recovery_on_a_free_connection_still_resets_and_frees_the_lock():
+    """The other half: with nothing running, the reset does its job - and
+    gives the lock back, or the next poll blocks forever."""
+    closed = []
+    api = _api()
+    api.session = _ClosingSession(closed)
+    api.valid_login = True
+
+    api.reset_transport()
+
+    assert closed == ["session"]
+    assert api.session is None
+    assert api.valid_login is False
+    assert api._api_lock.acquire(blocking=False), "the reset kept the lock"
+    api._api_lock.release()

@@ -301,7 +301,14 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     # and it silently reset two portal rate limits and the lock
                     # that serialises a write against a running poll. See
                     # WemPortalApi.reset_transport.
-                    self.api.reset_transport()
+                    #
+                    # In an executor, not here: the reset now takes the
+                    # shared api lock, and waiting for a threading lock on
+                    # the event loop would stall everything Home Assistant
+                    # does for as long as the write it waits for runs.
+                    await self.hass.async_add_executor_job(
+                        self.api.reset_transport
+                    )
                 raise UpdateFailed(f"Error fetching data from wemportal: {exc}") from exc
             except Exception as exc:  # pylint: disable=broad-except
                 # Catch-all safety net: covers cases that don't come from

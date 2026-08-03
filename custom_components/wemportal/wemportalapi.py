@@ -647,7 +647,31 @@ class WemPortalApi:
         Which field is which is not left to this docstring: the split is
         declared and enforced in tests/test_hardening.py, so a new field
         fails the suite until someone classifies it.
+
+        Runs UNDER the shared api lock, and that is not decoration. A failed
+        poll releases the lock in its `finally`; a change_value() worker that
+        was waiting takes it in that same instant, and this then closed the
+        session out from under the write. Taking the lock is also why the
+        coordinator hands this to an executor instead of calling it on the
+        event loop - see WemPortalDataUpdateCoordinator.
         """
+        if not self._api_lock.acquire(timeout=API_LOCK_TIMEOUT_SECONDS):
+            # Best-effort by design. The recovery must not raise into the
+            # coordinator's error handling, and a connection still in use is
+            # exactly when tearing it down does the damage. The next failed
+            # cycle tries again.
+            _LOGGER.warning(
+                "Not resetting the connection: it is still in use by another "
+                "operation. Trying again on the next failed cycle."
+            )
+            return
+        try:
+            self._reset_transport_locked()
+        finally:
+            self._api_lock.release()
+
+    def _reset_transport_locked(self):
+        """The teardown itself. Only called with the api lock held."""
         _LOGGER.info(
             "Persistent API errors: dropping the HTTP sessions and logging in "
             "again on the next cycle."
