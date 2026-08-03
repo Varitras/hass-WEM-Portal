@@ -1652,6 +1652,110 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(hass, mo
     assert entry.runtime_data.api is api
 
 
+DEPRECATED_DEVICE_REGISTRY_APIS = (
+    "config_entries",
+    "async_get_device",
+    "via_device",
+)
+
+
+async def test_the_device_registry_apis_are_not_deprecated_yet(hass, recwarn):
+    """A tripwire, not a fix.
+
+    Three device-registry APIs this integration uses are announced as
+    deprecated in Home Assistant 2026.8 and removed in 2027.8:
+    DeviceEntry.config_entries, async_get_device() and DeviceInfo.via_device.
+    Measured against the installed 2026.7.2, none of them warns yet - and
+    their replacements cannot be written against an API that is not there to
+    read. Guessing the replacement is how the last two wrong claims in this
+    repository were made.
+
+    So this fails on the day CI's floating "current HA" reaches the release
+    that deprecates them, and points at the call. That is the moment the
+    adapters can be written against something real, with feature detection
+    rather than a version comparison - the minimum supported version is
+    2024.12, so both shapes have to work.
+    """
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        entry = await _setup(hass, _entry(hass))
+        await hass.async_block_till_done()
+
+    hits = [
+        str(w.message)
+        for w in caught
+        if issubclass(w.category, DeprecationWarning)
+        and any(name in str(w.message) for name in DEPRECATED_DEVICE_REGISTRY_APIS)
+    ]
+
+    assert not hits, (
+        "Home Assistant now deprecates a device-registry API this integration "
+        f"uses: {hits}. Write the feature-detected adapters now - the "
+        "replacement is finally readable, and there is one release cycle "
+        "before removal."
+    )
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatch):
+    """The service is registered one line before the auto-poll is set up.
+
+    A failure between the two never reaches async_unload_entry - Home
+    Assistant only unloads entries that finished setting up - so the domain
+    service stayed registered with nothing loaded to serve it. The next call
+    to it then failed somewhere deeper instead of simply not existing.
+    """
+    import custom_components.wemportal as wemportal
+    from custom_components.wemportal.coordinator import (
+        WemPortalDataUpdateCoordinator,
+    )
+
+    monkeypatch.setattr(
+        wemportal, "_async_setup_expert_auto_poll",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("poll setup broke")),
+    )
+
+    coordinators = []
+    original = WemPortalDataUpdateCoordinator.__init__
+
+    def _remember(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        coordinators.append(self)
+
+    monkeypatch.setattr(WemPortalDataUpdateCoordinator, "__init__", _remember)
+
+    entry = _entry(hass, {CONF_EXPERT_WRITE: True})
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert coordinators, "no coordinator was built, so this proves nothing"
+    coordinator = coordinators[-1]
+
+    assert not hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER), (
+        "a failed setup left its expert service registered"
+    )
+
+    # And nothing may keep polling for it. Home Assistant does not unload an
+    # entry whose setup failed, so by this point the platforms are forwarded,
+    # their entities have subscribed, and the coordinator's refresh timer is
+    # armed - it would go on asking the portal on its interval for an entry
+    # the user sees as failed, against an account blocked for 12 hours past
+    # 10,000 requests.
+    #
+    # This assertion is load-bearing on the MINIMUM supported version only:
+    # HA 2024.12 leaves the timer running (its harness reported it as a
+    # lingering timer, which is how this was found), while 2026.7.2 already
+    # tears it down itself. That is also why there is no mutation for it -
+    # the mutation harness runs one version, and this one would survive
+    # there while failing the version that needs it. The CI matrix is what
+    # covers it.
+    assert coordinator._unsub_refresh is None, (
+        "the coordinator of a failed entry is still scheduled to poll"
+    )
+
+
 async def test_the_recovery_runs_off_the_event_loop(hass, monkeypatch):
     """The reset takes the shared api lock, so it must not run on the loop.
 

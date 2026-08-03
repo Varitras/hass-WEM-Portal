@@ -425,5 +425,12 @@
     "old": "        if status != 200:",
     "new": "        if status >= 400:",
     "tests": "gate_is_where_the_status_is_actually_handled"
+  },
+  {
+    "label": "setup failure: the expert service must not be left behind",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        _async_release_expert_service(hass, entry)\n        raise",
+    "new": "        raise",
+    "tests": "setup_that_fails_late_leaves_no_service"
   }
 ]

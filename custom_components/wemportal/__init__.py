@@ -304,9 +304,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         if hasattr(entry, "runtime_data"):
             del entry.runtime_data
         await hass.async_add_executor_job(close_api_sessions, api)
+        # Home Assistant does not unload an entry whose setup failed, so
+        # nothing else stops the coordinator - and by this point the
+        # platforms have been forwarded, their entities have subscribed, and
+        # its refresh timer is armed. It would keep polling the portal on its
+        # interval for an entry the user sees as failed, against an account
+        # that is blocked for 12 hours past 10,000 requests. Available since
+        # well before the 2024.12 floor (checked in both).
+        await coordinator.async_shutdown()
+        # The service is registered one line before the auto-poll setup, so a
+        # failure between the two left a domain service behind with no loaded
+        # entry to serve it. Runs after runtime_data is gone, so this entry
+        # already counts as not loaded.
+        _async_release_expert_service(hass, entry)
         raise
 
     return True
+
+
+def _async_release_expert_service(hass: HomeAssistant, config_entry) -> None:
+    """Drop the domain-wide expert service unless another entry still needs it.
+
+    Called from two places, and the second one is why it is a function: an
+    entry whose SETUP failed after the service was registered never reaches
+    async_unload_entry, so the service used to stay behind with nothing loaded
+    to serve it.
+    """
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
+        return
+    still_enabled = any(
+        other.entry_id != config_entry.entry_id
+        and other.options.get(CONF_EXPERT_WRITE, False)
+        and getattr(other, "runtime_data", None) is not None
+        for other in hass.config_entries.async_entries(DOMAIN)
+    )
+    if not still_enabled:
+        hass.services.async_remove(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
 
 
 def _resolve_expert_entry(hass: HomeAssistant):
@@ -770,14 +803,6 @@ async def async_unload_entry(
         # all entries. Only remove it once NO remaining loaded entry still
         # has expert write enabled - previously unloading ANY entry removed
         # it globally, killing the service for other accounts.
-        if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
-            still_enabled = any(
-                other.entry_id != config_entry.entry_id
-                and other.options.get(CONF_EXPERT_WRITE, False)
-                and getattr(other, "runtime_data", None) is not None
-                for other in hass.config_entries.async_entries(DOMAIN)
-            )
-            if not still_enabled:
-                hass.services.async_remove(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
+        _async_release_expert_service(hass, config_entry)
 
     return unload_ok
