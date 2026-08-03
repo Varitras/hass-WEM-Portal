@@ -62,6 +62,35 @@ class WemPortalData:
     # alone cannot answer this.
     unloading: bool = False
 
+    def begin_unload(self) -> None:
+        """Announce the teardown, before the platforms come down.
+
+        A named operation rather than a bare flag assignment: it is set at
+        one moment and read at four gates, and the reason it has to be set
+        THIS early is what gets lost when it is one line in the middle of
+        async_unload_entry.
+        """
+        self.unloading = True
+
+    def why_not_current(self, config_entry) -> str | None:
+        """Why an operation holding THIS state may no longer act, or None.
+
+        The entry id answers neither of the two ways it can happen. Home
+        Assistant removes runtime_data only once the platforms are down, so
+        for the whole teardown the id is still there; and a reload puts a NEW
+        state under the SAME id while the operation still holds the old one.
+        Identity plus the flag covers both.
+        """
+        if getattr(config_entry, "runtime_data", None) is not self:
+            return "the integration was reloaded"
+        if self.unloading:
+            return "the integration is being unloaded"
+        return None
+
+    def is_current_for(self, config_entry) -> bool:
+        """Whether an operation holding this state may still act."""
+        return self.why_not_current(config_entry) is None
+
 
 # The entry type carrying the above, so `entry.runtime_data` is typed at every
 # use instead of being an untyped dict lookup.
@@ -87,9 +116,9 @@ def raise_if_not_writable(config_entry, what: str) -> "WemPortalData":
         raise HomeAssistantError(
             f"{what}: this WEM Portal account is not loaded."
         )
-    if data.unloading:
+    reason = data.why_not_current(config_entry)
+    if reason is not None:
         raise HomeAssistantError(
-            f"{what}: this WEM Portal account is being unloaded; "
-            "the value was not changed."
+            f"{what}: {reason}; the value was not changed."
         )
     return data

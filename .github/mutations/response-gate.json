@@ -57,15 +57,15 @@
   },
   {
     "label": "write guard: entry identity must still be compared",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "            if getattr(target_entry, \"runtime_data\", None) is not data:",
-    "new": "            if False:",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        if getattr(config_entry, \"runtime_data\", None) is not self:",
+    "new": "        if False:",
     "tests": "abandoned_when_its_entry_is_reloaded"
   },
   {
     "label": "teardown must be announced before the platforms unload",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "        data.unloading = True",
+    "old": "        data.begin_unload()",
     "new": "        pass",
     "tests": "unloading_is_flagged or abandoned_while_the_entry_is_unloading"
   },
@@ -408,8 +408,8 @@
   {
     "label": "unload gate: an unloading entry must be refused",
     "path": "custom_components/wemportal/models.py",
-    "old": "    if data.unloading:",
-    "new": "    if False:",
+    "old": "        if self.unloading:",
+    "new": "        if False:",
     "tests": "writes_while_the_entry_is_unloading or expert_entity_does_not_start_a_write"
   },
   {

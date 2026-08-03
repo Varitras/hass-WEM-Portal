@@ -197,3 +197,41 @@ async def test_the_write_reaches_the_api_with_the_parameter_address(name):
     await entity.async_write_parameter(21.0)
 
     assert calls == [("1234", "P1", 0, 1, 21.0)]
+
+
+def test_a_reloaded_entry_invalidates_an_operation_holding_the_old_state():
+    """The half the unloading flag cannot answer.
+
+    A reload puts a NEW runtime state under the SAME entry id. An operation
+    that captured the old one - an expert write in an executor thread, say -
+    would otherwise keep going with the credentials and options of a
+    configuration that no longer exists, and the id would tell it nothing.
+    """
+    from custom_components.wemportal.models import WemPortalData
+
+    entity = _writeable(WemPortalNumber)
+    old_state = entity._config_entry.runtime_data
+
+    assert old_state.is_current_for(entity._config_entry) is True
+
+    entity._config_entry.runtime_data = WemPortalData(api=None, coordinator=None)
+
+    assert old_state.is_current_for(entity._config_entry) is False
+    assert "reloaded" in old_state.why_not_current(entity._config_entry)
+
+
+def test_the_teardown_is_announced_as_an_operation():
+    """begin_unload is what the four gates read, so it has to be the thing
+    that sets the flag - not a second way of writing the same assignment."""
+    from custom_components.wemportal.models import WemPortalData
+
+    data = WemPortalData(api=None, coordinator=None)
+    entry = types.SimpleNamespace(entry_id="e1")
+    entry.runtime_data = data
+
+    assert data.is_current_for(entry) is True
+
+    data.begin_unload()
+
+    assert data.is_current_for(entry) is False
+    assert "unload" in data.why_not_current(entry)

@@ -431,15 +431,10 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             write belongs to is gone, whatever its id says.
             """
             from .expert_writer import ExpertOperationAborted
-            if getattr(target_entry, "runtime_data", None) is not data:
+            reason = data.why_not_current(target_entry)
+            if reason is not None:
                 raise ExpertOperationAborted(
-                    "the integration was reloaded before the write reached "
-                    "the portal"
-                )
-            if data.unloading:
-                raise ExpertOperationAborted(
-                    "the integration was unloaded before the write reached "
-                    "the portal"
+                    f"{reason} before the write reached the portal"
                 )
 
         def _do_write():
@@ -788,7 +783,7 @@ async def async_unload_entry(
     # teardown at its next gate rather than at the end of it.
     data = getattr(config_entry, "runtime_data", None)
     if data is not None:
-        data.unloading = True
+        data.begin_unload()
     unload_ok = bool(
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )
