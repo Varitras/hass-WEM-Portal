@@ -9,15 +9,15 @@
   {
     "label": "gate: dropping the status check must be noticed",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "        if status >= 400:\n            raise ServerError(f\"WEM Portal returned {status} for the {what}.\")\n",
-    "new": "",
+    "old": "        if status != 200:\n            # Not `>= 400`: every request in this module asks for an HTML",
+    "new": "        if False:\n            # Not `>= 400`: every request in this module asks for an HTML",
     "tests": "gate_is_where_the_status_is_actually_handled or error_page_is_not_accepted"
   },
   {
     "label": "scraper: dropping the status check must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        if status >= 400:\n            raise ServerError(f\"WEM Portal returned {status} for the {what}.\")\n",
-    "new": "",
+    "old": "        if status != 200:\n            # Not `>= 400`: every request in this module asks for an HTML",
+    "new": "        if False:\n            # Not `>= 400`: every request in this module asks for an HTML",
     "tests": "broken_main_page or error_page_is_not_accepted"
   },
   {
@@ -411,5 +411,19 @@
     "old": "    if data.unloading:",
     "new": "    if False:",
     "tests": "writes_while_the_entry_is_unloading or expert_entity_does_not_start_a_write"
+  },
+  {
+    "label": "gate: only a 200 carries a page (expert client)",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if status != 200:",
+    "new": "        if status >= 400:",
+    "tests": "gate_is_where_the_status_is_actually_handled"
+  },
+  {
+    "label": "gate: only a 200 carries a page (scraper)",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        if status != 200:",
+    "new": "        if status >= 400:",
+    "tests": "gate_is_where_the_status_is_actually_handled"
   }
 ]

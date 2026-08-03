@@ -72,7 +72,13 @@ class WemPortalScraper:
         status = getattr(response, "status_code", 200)
         if status == 403:
             raise ForbiddenError("WEM Portal web frontend returned 403 (rate limit/forbidden).")
-        if status >= 400:
+        if status != 200:
+            # Not `>= 400`: every request in this module asks for an HTML
+            # page or posts a form to one, so 200 is the only answer that
+            # carries something to parse. A 204, or a redirect that was not
+            # followed, used to reach the parser and surface as a missing
+            # viewstate - and one step later as an authentication error,
+            # which is a wrong and very misleading diagnosis.
             raise ServerError(f"WEM Portal returned {status} for the {what}.")
         notice = maintenance_notice(getattr(response, "text", "") or "")
         if notice:
