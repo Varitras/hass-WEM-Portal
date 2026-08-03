@@ -315,6 +315,27 @@
     "tests": "expert_module_is_only_loaded"
   },
   {
+    "label": "recovery: a transport field that stops being reset must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        # The web cookie belongs to the discarded scraper session.\n        self.webscraping_cookie = {}",
+    "new": "        # The web cookie belongs to the discarded scraper session.",
+    "tests": "recovery_touches_exactly_the_transport or transport_in_the_state"
+  },
+  {
+    "label": "recovery: resetting a preserved field must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self._reset_scraper()\n        self.valid_login = False",
+    "new": "        self._reset_scraper()\n        self.last_statistics_fetch = 0.0\n        self.valid_login = False",
+    "tests": "recovery_touches_exactly_the_transport"
+  },
+  {
+    "label": "recovery: clearing a preserved container in place must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self._reset_scraper()\n        self.valid_login = False\n        self.api_version = None",
+    "new": "        self._reset_scraper()\n        self.expert_cookies.clear()\n        self.valid_login = False\n        self.api_version = None",
+    "tests": "recovery_touches_exactly_the_transport or recovery_resets_the_connection"
+  },
+  {
     "label": "load path: pulling the expert client back to module level must be noticed",
     "path": "custom_components/wemportal/config_flow.py",
     "old": "from .expert_options import (",

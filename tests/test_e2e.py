@@ -1603,6 +1603,20 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(hass, mo
     api.valid_login = True
     lock_before = api._api_lock
 
+    # Rebinding a field is not the same as releasing the socket behind it.
+    closed_transports = []
+
+    class _ClosingSession:
+        def close(self):
+            closed_transports.append("session")
+
+    class _ClosingScraper:
+        def close(self):
+            closed_transports.append("scraper")
+
+    api.session = _ClosingSession()
+    api._scraper = _ClosingScraper()
+
     monkeypatch.setattr(
         WemPortalApi, "fetch_data",
         lambda self, *a, **k: (_ for _ in ()).throw(WemPortalError("portal broken")),
@@ -1617,6 +1631,9 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(hass, mo
     assert api.valid_login is False, "the login was not invalidated"
     assert api.session is None
     assert api._scraper is None
+    # An attribute check alone passes for a recovery that only drops the
+    # reference and leaves both connections open to the collector.
+    assert closed_transports == ["session", "scraper"], closed_transports
 
     # Everything else has to survive, or the recovery becomes the problem.
     assert (api.spider_wait_interval, api.spider_retry_count) == (3, 3)

@@ -374,11 +374,20 @@ def test_expert_accessors_degrade_safely_without_a_store():
     assert entity._cooldown_activate() is None
 
 
-def test_api_swap_preserves_the_state_that_must_not_reset():
-    """The coordinator re-instantiates the api after repeated errors. Every
-    piece of state carried across that swap protects something: an active
-    backoff, the cached session, the discovered modules and the stable
-    scraper device id. None of it was covered by a test.
+def test_the_constructor_restores_the_state_that_was_persisted():
+    """What the constructor arguments are still for, now that nothing swaps.
+
+    Recovery stopped rebuilding the api object - it resets the transport in
+    place (see the classification tests at the end of this file). These
+    arguments survive a different boundary: Home Assistant restarts, where
+    setup rebuilds the api from what the coordinator persisted. An active
+    backoff, the cached modules and the stable scraper device id all have to
+    come back, or the first cycle after a restart hits the portal as if
+    nothing had happened.
+
+    Note what this does NOT show: it builds the second object itself, so it
+    proves the arguments are applied, not that any caller passes them. That
+    caller is covered by the e2e setup tests.
     """
     old = _api(cached_modules=CACHED_MODULES, scraper_device_id="0000")
     old._activate_cooldown()
@@ -1658,3 +1667,122 @@ def test_a_healthy_page_is_silent(caplog):
         scraper._check_response(_Page("<html><body>fine</body></html>"), "main page")
 
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+# --- what a recovery may and may not touch ----------------------------
+#
+# reset_transport() decides, field by field, what survives the recovery the
+# coordinator runs after repeated portal errors. That decision used to live
+# only in its docstring, i.e. hand-maintained: a new transport field simply
+# would not be reset, silently, and a new field of any other kind would be
+# preserved by accident rather than by choice.
+#
+# So the classification is declared here and enforced against the real
+# object. Adding a field to WemPortalApi now fails this test until someone
+# says which side it belongs to.
+
+# Dropped by a recovery: the HTTP state and everything that describes the
+# session it belonged to.
+TRANSPORT_FIELDS = frozenset({
+    "session",
+    "_scraper",
+    "valid_login",
+    "api_version",
+    "webscraping_cookie",
+    "_devices_fetched_this_session",
+})
+
+# Kept across a recovery. Two groups here are not merely "not transport",
+# they are actively dangerous to reset, and both were reset in practice
+# before reset_transport replaced the object rebuild:
+#
+#   * last_statistics_fetch and _last_circuit_times_fetch are portal RATE
+#     LIMITS (an hour each). Resetting them lets the next cycle refetch
+#     immediately - on a portal that was just failing.
+#   * _api_lock serialises a poll against a write. A fresh lock is an
+#     unheld lock, so a write could interleave with the poll it exists to
+#     serialise against.
+#
+# expert_cookies is the deliberate one: it caches a live web session for the
+# expert path. Dropping it would force a full Fachmann login on the next
+# expert operation, and the portal blocks the IP for 12 hours past 10,000
+# requests. The API path failing says nothing about that session, so it
+# stays.
+PRESERVED_FIELDS = frozenset({
+    "data", "username", "password", "scraper_device_id", "modules", "mode",
+    "update_interval", "scan_interval", "scan_interval_api", "language",
+    "_api_lock", "headers", "device_types", "_previous_scraper_keys",
+    "_last_connection_status", "scraping_mapper", "last_statistics_fetch",
+    "_last_circuit_times_fetch", "_blocked_until", "_expert_blocked_until",
+    "expert_cookies", "spider_wait_interval", "spider_retry_count",
+    "last_scraping_update",
+})
+
+
+class _Marker:
+    """A value that is its own field, and closable where the reset closes."""
+
+    def __init__(self, field):
+        self.field = field
+
+    def close(self):
+        pass
+
+
+def test_every_api_field_is_classified_as_transport_or_preserved():
+    """Guards the guard: an unclassified field would make the test below
+    silently cover less than it claims."""
+    fields = set(vars(_api()))
+
+    assert fields == TRANSPORT_FIELDS | PRESERVED_FIELDS, (
+        "WemPortalApi gained or lost a field: "
+        f"{fields ^ (TRANSPORT_FIELDS | PRESERVED_FIELDS)}. Decide whether a "
+        "recovery must drop it (TRANSPORT_FIELDS) or keep it "
+        "(PRESERVED_FIELDS) - and say why in the comment above."
+    )
+    assert not TRANSPORT_FIELDS & PRESERVED_FIELDS
+
+
+def test_a_recovery_touches_exactly_the_transport_fields():
+    """The classification, enforced against the real object.
+
+    Every field is replaced by a marker that is unique to it, so the check
+    is on IDENTITY: a marker is never the same object as {}, False or None,
+    which means a reset is detected whatever value it resets to. Comparing
+    values instead would let a field that resets to something equal to its
+    old value pass unnoticed.
+    """
+    api = _api()
+    for field in vars(api):
+        setattr(api, field, _Marker(field))
+    before = dict(vars(api))
+
+    api.reset_transport()
+
+    changed = {f for f, value in before.items() if getattr(api, f) is not value}
+    assert changed == TRANSPORT_FIELDS, (
+        f"unexpectedly reset: {sorted(changed - TRANSPORT_FIELDS)}; "
+        f"not reset: {sorted(TRANSPORT_FIELDS - changed)}"
+    )
+    assert set(vars(api)) == set(before), "a recovery added or removed a field"
+
+
+def test_a_recovery_leaves_the_transport_in_the_state_the_next_cycle_expects():
+    """Not just "changed" - the values the next cycle actually reads.
+
+    "Something else now" would be satisfied by a reset to a wrong value,
+    and the next cycle reads these six directly: a stale api_version or a
+    truthy valid_login sends it on without logging in again.
+    """
+    api = _api()
+    for field in vars(api):
+        setattr(api, field, _Marker(field))
+
+    api.reset_transport()
+
+    assert api.session is None
+    assert api._scraper is None
+    assert api.valid_login is False
+    assert api.api_version is None
+    assert api.webscraping_cookie == {}
+    assert api._devices_fetched_this_session is False

@@ -74,31 +74,25 @@ class WemPortalApi:
     def __init__(self, username, password, config=None, existing_data=None,
                  cached_modules=None, blocked_until=0.0, scraper_device_id=None,
                  expert_blocked_until=0.0, scraper_backoff=None) -> None:
-        if config is None:
-            config = {}
-        self.data = copy.deepcopy(existing_data) if existing_data else {}
+        """Assemble the api object from three sources, kept apart because
+        they have different lifetimes: the user's options, the state the
+        coordinator persisted across a restart, and the state that always
+        starts empty. Which of these a RECOVERY may reset is a separate
+        question - see reset_transport.
+        """
         self.username = username
         self.password = password
-        # Stable device id under which scraped (web) sensors are stored, so
-        # their entity unique_ids ("<entry>:<device_id>:<name>") - and thus
-        # their history - stay constant across mode switches. Decided once
-        # (see resolve_scraper_device_id) and persisted by the coordinator,
-        # so it never silently changes even when a real API device id
-        # becomes known later (e.g. a pure-web install switching to `both`).
-        # None here means "not yet decided / not yet loaded from storage".
-        self.scraper_device_id = scraper_device_id
-        # Previously-discovered device/module/parameter metadata, if any
-        # (e.g. persisted across Home Assistant restarts, see __init__.py).
-        # When present, this lets fetch_data() skip the slow, rate-limited
-        # per-module parameter discovery in get_parameters() and go
-        # straight to normal polling. `None` means "no cache available" and
-        # preserves the original behavior of doing a full discovery.
-        self.modules = copy.deepcopy(cached_modules) if cached_modules else None
-        # Tracks whether get_devices() has already run once during the
-        # lifetime of this WemPortalApi instance (i.e. once per Home
-        # Assistant session/restart), so it isn't repeated on every single
-        # coordinator update - only the initial discovery/refresh needs it.
-        self._devices_fetched_this_session = False
+        self._init_from_config(config)
+        self._init_from_storage(
+            existing_data, cached_modules, scraper_device_id,
+            blocked_until, expert_blocked_until, scraper_backoff,
+        )
+        self._init_runtime_state()
+
+    def _init_from_config(self, config):
+        """Everything the user chose in the options flow."""
+        if config is None:
+            config = {}
         self.mode = config.get(CONF_MODE, DEFAULT_MODE)
         # Clamped, not read verbatim: the floors live in the options-flow
         # schema, which only sees values the user enters now - a value stored
@@ -117,8 +111,76 @@ class WemPortalApi:
         )
         self.scan_interval = timedelta(seconds=scan_interval)
         self.scan_interval_api = timedelta(seconds=scan_interval_api)
-        self.valid_login = False
         self.language = config.get(CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE)
+
+    def _init_from_storage(self, existing_data, cached_modules,
+                           scraper_device_id, blocked_until,
+                           expert_blocked_until, scraper_backoff):
+        """State the coordinator persisted, handed back after a restart.
+
+        Every argument here exists because starting from zero was wrong:
+        a fresh object would poll a portal that had just asked us to back
+        off, rediscover modules it already knew, and give the scraped
+        sensors a new device id - and with it a new history."""
+        self.data = copy.deepcopy(existing_data) if existing_data else {}
+        # Stable device id under which scraped (web) sensors are stored, so
+        # their entity unique_ids ("<entry>:<device_id>:<name>") - and thus
+        # their history - stay constant across mode switches. Decided once
+        # (see resolve_scraper_device_id) and persisted by the coordinator,
+        # so it never silently changes even when a real API device id
+        # becomes known later (e.g. a pure-web install switching to `both`).
+        # None here means "not yet decided / not yet loaded from storage".
+        self.scraper_device_id = scraper_device_id
+        # Previously-discovered device/module/parameter metadata, if any
+        # (e.g. persisted across Home Assistant restarts, see __init__.py).
+        # When present, this lets fetch_data() skip the slow, rate-limited
+        # per-module parameter discovery in get_parameters() and go
+        # straight to normal polling. `None` means "no cache available" and
+        # preserves the original behavior of doing a full discovery.
+        self.modules = copy.deepcopy(cached_modules) if cached_modules else None
+        # Monotonic timestamp until which ALL outbound requests are
+        # paused, activated after receiving a 403 (rate limit/forbidden)
+        # from the server anywhere in a cycle. This is a strictly
+        # additive safety measure: it only ever makes the integration
+        # quieter after the server has already signaled distress, never
+        # more aggressive. See check_cooldown()/_activate_cooldown().
+        # Accepted as a constructor argument so an active cooldown survives
+        # the coordinator re-instantiating this object on repeated errors -
+        # otherwise a fresh instance would reset it to 0.0 and resume
+        # hitting a server that just told us to back off.
+        self._blocked_until = blocked_until
+        # Separate, EXPERT-ONLY backoff. A 403 on the Fachmann path only
+        # pauses that path (see EXPERT_FORBIDDEN_COOLDOWN_SECONDS for why);
+        # the polling paths keep running. The reverse still holds: a genuine
+        # rate limit seen by the API/scraper pauses the expert path too, via
+        # check_expert_cooldown() consulting check_cooldown() first.
+        self._expert_blocked_until = expert_blocked_until
+
+        # Scrape backoff, carried across a coordinator swap when given.
+        #
+        # The coordinator builds a fresh WemPortalApi to recover from repeated
+        # errors, and a fresh instance started at zero - so the backoff the
+        # scraper had just earned was discarded by the very recovery those
+        # failures triggered, and the next cycle scraped immediately.
+        # `last_scraping_update` belongs to the same state: without it the
+        # interval check has no reference point and scrapes at once.
+        wait_interval, retry_count, last_update = scraper_backoff or (0, 0, None)
+        # Used to keep track of how many update intervals to wait before retrying spider
+        self.spider_wait_interval = wait_interval
+        # Used to keep track of the number of times the spider consecutively fails
+        self.spider_retry_count = retry_count
+        self.last_scraping_update = last_update
+
+    def _init_runtime_state(self):
+        """State that always starts empty: the HTTP transport, the
+        per-session caches and the timestamps a cycle fills in.
+        """
+        # Tracks whether get_devices() has already run once during the
+        # lifetime of this WemPortalApi instance (i.e. once per Home
+        # Assistant session/restart), so it isn't repeated on every single
+        # coordinator update - only the initial discovery/refresh needs it.
+        self._devices_fetched_this_session = False
+        self.valid_login = False
         self.session = None
         # Serialises a full poll cycle (fetch_data) against on-demand writes
         # (change_value): both run in executor threads and share self.session
@@ -159,43 +221,11 @@ class WemPortalApi:
         # instead of on every single coordinator cycle - these rarely
         # change and this integration doesn't allow editing them anyway.
         self._last_circuit_times_fetch = {}
-        # Monotonic timestamp until which ALL outbound requests are
-        # paused, activated after receiving a 403 (rate limit/forbidden)
-        # from the server anywhere in a cycle. This is a strictly
-        # additive safety measure: it only ever makes the integration
-        # quieter after the server has already signaled distress, never
-        # more aggressive. See check_cooldown()/_activate_cooldown().
-        # Accepted as a constructor argument so an active cooldown survives
-        # the coordinator re-instantiating this object on repeated errors -
-        # otherwise a fresh instance would reset it to 0.0 and resume
-        # hitting a server that just told us to back off.
-        self._blocked_until = blocked_until
-        # Separate, EXPERT-ONLY backoff. A 403 on the Fachmann path only
-        # pauses that path (see EXPERT_FORBIDDEN_COOLDOWN_SECONDS for why);
-        # the polling paths keep running. The reverse still holds: a genuine
-        # rate limit seen by the API/scraper pauses the expert path too, via
-        # check_expert_cooldown() consulting check_cooldown() first.
-        self._expert_blocked_until = expert_blocked_until
         # In-memory cookie cache shared by the short-lived expert clients,
         # so they can continue an existing web session instead of logging in
         # for every single operation (see expert_writer._try_cached_session).
         # Never persisted: a live session cookie is credential-equivalent.
         self.expert_cookies = {}
-
-        # Scrape backoff, carried across a coordinator swap when given.
-        #
-        # The coordinator builds a fresh WemPortalApi to recover from repeated
-        # errors, and a fresh instance started at zero - so the backoff the
-        # scraper had just earned was discarded by the very recovery those
-        # failures triggered, and the next cycle scraped immediately.
-        # `last_scraping_update` belongs to the same state: without it the
-        # interval check has no reference point and scrapes at once.
-        wait_interval, retry_count, last_update = scraper_backoff or (0, 0, None)
-        # Used to keep track of how many update intervals to wait before retrying spider
-        self.spider_wait_interval = wait_interval
-        # Used to keep track of the number of times the spider consecutively fails
-        self.spider_retry_count = retry_count
-        self.last_scraping_update = last_update
         self.api_version = None
 
     def _register_scrape_failure(self):
@@ -582,6 +612,16 @@ class WemPortalApi:
         login state and the cookies. Everything else - discovered modules,
         cooldowns, backoffs, timestamps, the lock - is deliberately kept,
         because none of it is what "corrupted session" refers to.
+
+        `expert_cookies` is the one that looks like transport and is not. It
+        caches a live web session for the expert path, and dropping it would
+        force a full Fachmann login on the next expert operation - requests
+        against a portal that blocks the IP for 12 hours past 10,000 of them.
+        An API failure says nothing about that session, so it stays.
+
+        Which field is which is not left to this docstring: the split is
+        declared and enforced in tests/test_hardening.py, so a new field
+        fails the suite until someone classifies it.
         """
         _LOGGER.info(
             "Persistent API errors: dropping the HTTP sessions and logging in "
