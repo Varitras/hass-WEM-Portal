@@ -144,8 +144,6 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         self._attr_native_min_value = entity_data.get("min_value", 0.0)
         self._attr_native_max_value = entity_data.get("max_value", 100.0)
         self._attr_native_step = entity_data.get("step", 1)
-        self._module_index = entity_data.get("ModuleIndex")
-        self._module_type = entity_data.get("ModuleType")
 
         _LOGGER.debug(
             'Init number: %s: "%s" [%s]',
@@ -156,14 +154,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the current value."""
-        await self.hass.async_add_executor_job(
-            self.coordinator.api.change_value,
-            self._device_id,
-            self._parameter_id,
-            self._module_index,
-            self._module_type,
-            value,
-        )
+        await self.async_write_parameter(value)
         self._attr_native_value = value  # type: ignore
         self.async_write_ha_state()
 

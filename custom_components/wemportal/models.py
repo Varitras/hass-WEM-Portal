@@ -66,3 +66,30 @@ class WemPortalData:
 # The entry type carrying the above, so `entry.runtime_data` is typed at every
 # use instead of being an untyped dict lookup.
 WemPortalConfigEntry = ConfigEntry[WemPortalData]
+
+
+def raise_if_not_writable(config_entry, what: str) -> "WemPortalData":
+    """The gate every write from an entity passes through.
+
+    `unloading` is set at the very top of async_unload_entry, before the
+    platforms come down - and that gap is real time: tearing down four
+    platforms and their entities takes long enough for a frontend click to
+    land in the middle of it. Only the domain service used to check, so
+    Number, Select, Switch and the expert entity could each still start a
+    write into a session that was about to be closed.
+
+    Returns the runtime data so the caller does not look it up twice.
+    """
+    from homeassistant.exceptions import HomeAssistantError
+
+    data = getattr(config_entry, "runtime_data", None)
+    if data is None:
+        raise HomeAssistantError(
+            f"{what}: this WEM Portal account is not loaded."
+        )
+    if data.unloading:
+        raise HomeAssistantError(
+            f"{what}: this WEM Portal account is being unloaded; "
+            "the value was not changed."
+        )
+    return data

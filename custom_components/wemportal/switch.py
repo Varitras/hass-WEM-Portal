@@ -72,32 +72,16 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
         # used to look like a real state change to any automation.
         self._attr_is_on = None if val is None else val in WEM_SWITCH_ON_VALUES
         self._attr_device_class = SwitchDeviceClass.SWITCH
-        self._module_index = entity_data.get("ModuleIndex")
-        self._module_type = entity_data.get("ModuleType")
 
         _LOGGER.debug('Init switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self.hass.async_add_executor_job(
-            self.coordinator.api.change_value,
-            self._device_id,
-            self._parameter_id,
-            self._module_index,
-            self._module_type,
-            1.0,
-        )
+        await self.async_write_parameter(1.0)
         self._attr_is_on = True
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self.hass.async_add_executor_job(
-            self.coordinator.api.change_value,
-            self._device_id,
-            self._parameter_id,
-            self._module_index,
-            self._module_type,
-            0.0,
-        )
+        await self.async_write_parameter(0.0)
         self._attr_is_on = False
         self.async_write_ha_state()
 

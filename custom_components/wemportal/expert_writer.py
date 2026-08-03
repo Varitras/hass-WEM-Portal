@@ -1413,6 +1413,9 @@ try:
             reported via a persistent notification and the log. The entity
             value updates once the write is verified.
             """
+            from .models import raise_if_not_writable
+
+            raise_if_not_writable(self._config_entry, self._attr_name)
             if self._write_in_progress:
                 raise HomeAssistantError(
                     f"{self._attr_name}: a write is already in progress, please wait."

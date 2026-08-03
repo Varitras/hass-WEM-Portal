@@ -127,3 +127,73 @@ def test_an_unreachable_device_takes_its_entities_with_it():
     doing its job for a platform that no longer carries its own copy."""
     assert _entity(WemPortalNumber, reachable=True).available is True
     assert _entity(WemPortalNumber, reachable=False).available is False
+
+
+# --- the one write path, and its gate ----------------------------------
+#
+# `unloading` is set at the top of async_unload_entry, before the platforms
+# come down. Tearing four platforms and their entities down is real time, so a
+# click can land inside it - and only the domain service used to check. Number,
+# Select and Switch each had their own copy of the write call and none of them
+# asked, so a write could start into a session about to be closed.
+
+WRITEABLE = {name: cls for name, cls in PLATFORMS.items() if name != "sensor"}
+
+
+def _writeable(cls, unloading=False, calls=None):
+    """A writeable entity whose entry carries runtime data."""
+    from custom_components.wemportal.models import WemPortalData
+
+    entity = _entity(cls)
+    api = types.SimpleNamespace(
+        change_value=lambda *args: (calls if calls is not None else []).append(args)
+    )
+    data = WemPortalData(api=api, coordinator=None)
+    data.unloading = unloading
+    entity._config_entry.runtime_data = data
+    entity.coordinator.api = api
+
+    async def _executor(func, *args):
+        return func(*args)
+
+    entity.hass = types.SimpleNamespace(async_add_executor_job=_executor)
+    return entity
+
+
+@pytest.mark.parametrize("name", sorted(WRITEABLE))
+async def test_no_platform_writes_while_the_entry_is_unloading(name):
+    from homeassistant.exceptions import HomeAssistantError
+
+    calls = []
+    entity = _writeable(WRITEABLE[name], unloading=True, calls=calls)
+
+    with pytest.raises(HomeAssistantError):
+        await entity.async_write_parameter(21.0)
+
+    assert calls == [], f"{name} started a write while the entry was unloading"
+
+
+@pytest.mark.parametrize("name", sorted(WRITEABLE))
+async def test_no_platform_writes_after_the_entry_is_gone(name):
+    from homeassistant.exceptions import HomeAssistantError
+
+    calls = []
+    entity = _writeable(WRITEABLE[name], calls=calls)
+    del entity._config_entry.runtime_data
+
+    with pytest.raises(HomeAssistantError):
+        await entity.async_write_parameter(21.0)
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("name", sorted(WRITEABLE))
+async def test_the_write_reaches_the_api_with_the_parameter_address(name):
+    """The other half: three copies became one, so the call it makes has to
+    be pinned or the deduplication could quietly change it."""
+    calls = []
+    entity = _writeable(WRITEABLE[name], calls=calls)
+
+    await entity.async_write_parameter(21.0)
+
+    assert calls == [("1234", "P1", 0, 1, 21.0)]

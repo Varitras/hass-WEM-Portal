@@ -5,6 +5,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import get_wemportal_unique_id
+from .models import raise_if_not_writable
 from .utils import build_device_info, device_is_reachable, device_model
 
 
@@ -47,6 +48,28 @@ class WemPortalEntity(CoordinatorEntity):
         icon = entity_data.get("icon")
         if icon:
             self._attr_icon = icon
+        # Only the writeable platforms use these, but the write path below is
+        # shared, so the address of the parameter is too.
+        self._module_index = entity_data.get("ModuleIndex")
+        self._module_type = entity_data.get("ModuleType")
+
+    async def async_write_parameter(self, value) -> None:
+        """The one way an entity changes a value on the portal.
+
+        Number, Select and Switch each had their own copy of this call, and
+        none of them asked whether the entry was still there - so a click
+        that landed while the entry was unloading started a write into a
+        session that was about to be closed.
+        """
+        raise_if_not_writable(self._config_entry, self._attr_name)
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.change_value,
+            self._device_id,
+            self._parameter_id,
+            self._module_index,
+            self._module_type,
+            value,
+        )
 
     @property
     def device_info(self) -> DeviceInfo:

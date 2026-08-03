@@ -1935,3 +1935,25 @@ def test_a_recovery_on_a_free_connection_still_resets_and_frees_the_lock():
     assert api.valid_login is False
     assert api._api_lock.acquire(blocking=False), "the reset kept the lock"
     api._api_lock.release()
+
+
+def test_the_expert_entity_does_not_start_a_write_while_unloading():
+    """The fourth write path.
+
+    It is not a WemPortalEntity, so it does not get the shared gate by
+    inheritance - it has to pass through the same check explicitly, or the
+    one platform whose writes take 5-15 seconds is the one that can still
+    start one into a session about to be closed.
+    """
+    import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    entity = _expert_entity(_api())
+    entity._config_entry.runtime_data.unloading = True
+
+    with pytest.raises(HomeAssistantError) as excinfo:
+        asyncio.run(entity.async_set_native_value(21.0))
+
+    assert "unload" in str(excinfo.value).lower()
+    assert entity._write_in_progress is False, "the entity was left marked as busy"

@@ -114,8 +114,6 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
         self._options = entity_data.get("options", [])
         self._options_names = entity_data.get("optionsNames", [])
-        self._module_index = entity_data.get("ModuleIndex")
-        self._module_type = entity_data.get("ModuleType")
 
         try:
             self._attr_current_option = self._resolve_option(entity_data.get("value"))
@@ -126,13 +124,8 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Call the API to change the parameter value"""
-        await self.hass.async_add_executor_job(
-            self.coordinator.api.change_value,
-            self._device_id,
-            self._parameter_id,
-            self._module_index,
-            self._module_type,
-            self._options[self._options_names.index(option)],
+        await self.async_write_parameter(
+            self._options[self._options_names.index(option)]
         )
 
         self._attr_current_option = option
