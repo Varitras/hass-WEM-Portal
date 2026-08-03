@@ -204,42 +204,42 @@
   },
   {
     "label": "poll: an outage must not be counted against individual parameters",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/expert_controller.py",
     "old": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                return",
     "new": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                results = {}",
     "tests": "failed_read_does_not_count"
   },
   {
     "label": "poll: the notification must stay one per streak",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "            if fail_counts[ev] >= 3 and ev not in notified:",
-    "new": "            if fail_counts[ev] >= 3:",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "                if (\n                    self.fail_counts[ev] >= FAILURES_BEFORE_NOTIFYING\n                    and ev not in self.fail_notified\n                ):",
+    "new": "                if self.fail_counts[ev] >= FAILURES_BEFORE_NOTIFYING:",
     "tests": "keeps_omitting_is_reported_once"
   },
   {
     "label": "poll: a recovery must clear the streak",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "            fail_counts.pop(ev, None)\n            notified.discard(ev)",
-    "new": "            pass",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "                self.fail_counts.pop(ev, None)\n                self.fail_notified.discard(ev)",
+    "new": "                pass",
     "tests": "recovered_parameter_clears"
   },
   {
     "label": "poll: a failed cycle must still arm the next one",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "            _apply_expert_read(hass, data, entities, results)\n        finally:\n            # Always reschedule the next run (with fresh jitter), even if this\n            # cycle failed - a transient error must not stop future polls.\n            _schedule_next()",
-    "new": "            _apply_expert_read(hass, data, entities, results)\n            _schedule_next()\n        finally:\n            pass",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            self.apply_read(results)\n        finally:\n            # Always reschedule the next run (with fresh jitter), even if this\n            # cycle failed - a transient error must not stop future polls.\n            self._schedule_next()",
+    "new": "            self.apply_read(results)\n            self._schedule_next()\n        finally:\n            pass",
     "tests": "failed_poll_still_arms"
   },
   {
     "label": "poll: a write in flight must stop the read",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/expert_controller.py",
     "old": "            if any(getattr(e, \"_write_in_progress\", False) for e in entities):",
     "new": "            if False:",
     "tests": "portal_while_a_write_runs"
   },
   {
     "label": "poll: a held lock must stop the read",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/expert_controller.py",
     "old": "            if lock is not None and not lock.acquire(blocking=False):",
     "new": "            if False:",
     "tests": "holds_the_lock"

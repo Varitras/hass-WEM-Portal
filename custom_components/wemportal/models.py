@@ -14,11 +14,12 @@ framework answers rather than one this integration tracks by hand.
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
+
+from .expert_controller import ExpertController
 
 if TYPE_CHECKING:
     from .coordinator import WemPortalDataUpdateCoordinator
@@ -32,28 +33,11 @@ class WemPortalData:
     api: WemPortalApi
     coordinator: WemPortalDataUpdateCoordinator
 
-    # Only one expert portal operation per account at a time - an entity
-    # write, the service, or the auto-poll read - so they cannot collide on
-    # the same parameter or open parallel portal sessions. Acquired
-    # non-blocking by each expert path.
-    expert_lock: threading.Lock = field(default_factory=threading.Lock)
-
-    # Expert number entities, registered by the platform so the auto-poll can
-    # push read values into them.
-    expert_entities: list[Any] = field(default_factory=list)
-
-    # Set by the entry setup, called by the entity platform once it has
-    # registered its entities: the poll has nothing to poll before that.
-    start_expert_auto_poll: Callable[[], None] | None = None
-    expert_poll_started: bool = False
-    expert_poll_stopped: bool = False
-    expert_poll_initial_task: Any = None
-    expert_poll_unsub: Callable[[], None] | None = None
-    # Consecutive auto-poll failures per parameter, and which of them the user
-    # has already been told about - so a portal that keeps refusing one
-    # parameter does not produce a notification every interval.
-    expert_poll_fail_counts: dict[str, int] = field(default_factory=dict)
-    expert_poll_fail_notified: set[str] = field(default_factory=set)
+    # Everything the expert path owns: the shared lock, the entities, the
+    # optional poll timer and the per-id failure tally. Nine fields sat here
+    # before, each reachable from anywhere that could reach this store, and
+    # "is the poll running" was a question you answered by reading three.
+    expert: ExpertController = field(default_factory=ExpertController)
 
     # Set before the platforms are unloaded, which is the slow part - anything
     # already talking to the portal in a worker thread has to learn about the
@@ -61,6 +45,14 @@ class WemPortalData:
     # only drops runtime_data once the unload has finished, so its presence
     # alone cannot answer this.
     unloading: bool = False
+
+    def __post_init__(self) -> None:
+        # The controller holds the store, not the entry: an in-flight poll
+        # must still find the api it was using AFTER the entry was unloaded,
+        # because Home Assistant drops runtime_data at the end of the
+        # teardown while the read is still running. Reading it back through
+        # the entry raised AttributeError there instead of skipping.
+        self.expert.bind(self)
 
     def begin_unload(self) -> None:
         """Announce the teardown, before the platforms come down.

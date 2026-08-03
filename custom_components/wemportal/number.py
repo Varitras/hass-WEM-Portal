@@ -57,10 +57,7 @@ async def async_setup_entry(
             # Expose them to the optional hourly auto-poll (set up in
             # __init__), which reads all configured ids in one shared session
             # and pushes the values back into these entities.
-            data = config_entry.runtime_data
-            data.expert_entities = expert_entities
-            if data.start_expert_auto_poll is not None:
-                data.start_expert_auto_poll()
+            config_entry.runtime_data.expert.attach_entities(expert_entities)
 
 
 def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> None:

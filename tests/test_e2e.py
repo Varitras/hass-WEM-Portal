@@ -327,7 +327,7 @@ async def test_expert_service_refuses_while_another_operation_runs(hass):
     operation instead of opening a parallel portal session."""
     entry = await _setup(hass, _entry(hass, _expert_options()))
 
-    lock: threading.Lock = entry.runtime_data.expert_lock
+    lock: threading.Lock = entry.runtime_data.expert.lock
     assert lock.acquire(blocking=False)
     try:
         with pytest.raises(HomeAssistantError, match="in progress"):
@@ -784,11 +784,11 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
         scheduled.append(action)
         return lambda: None
 
-    # Patched where it is USED: __init__.py imports async_call_later at
+    # Patched where it is USED: the controller imports async_call_later at
     # module level, so that is the name the auto-poll actually calls.
-    import custom_components.wemportal as wemportal
+    from custom_components.wemportal import expert_controller
 
-    monkeypatch.setattr(wemportal, "async_call_later", fake_call_later)
+    monkeypatch.setattr(expert_controller, "async_call_later", fake_call_later)
 
     # A configured slot is required: without an expert entity there is
     # nothing to poll, so the timer chain is never armed in the first place.
@@ -804,7 +804,7 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
         ),
     )
     data = entry.runtime_data
-    assert data.expert_poll_started, "auto-poll never started"
+    assert data.expert._started, "auto-poll never started"
     assert scheduled, "no poll was ever scheduled"
     poll = scheduled[-1]
 
@@ -833,14 +833,14 @@ async def _auto_poll_entry(hass, monkeypatch, read_many):
         CONF_EXPERT_AUTO_POLL,
         CONF_EXPERT_WRITE,
     )
-    import custom_components.wemportal as wemportal
+    from custom_components.wemportal import expert_controller
 
     scheduled = []
-    # Patched where it is USED, not where it is defined: the integration
-    # imports async_call_later at module level, so the name it calls is the
-    # one bound here.
+    # Patched where it is USED, not where it is defined: the controller
+    # imports async_call_later at module level, so the name it calls is
+    # the one bound here.
     monkeypatch.setattr(
-        wemportal, "async_call_later",
+        expert_controller, "async_call_later",
         lambda _hass, _delay, action: scheduled.append(action) or (lambda: None),
     )
     monkeypatch.setattr(
@@ -868,8 +868,8 @@ async def _auto_poll_entry(hass, monkeypatch, read_many):
     await hass.async_block_till_done()
     # Setup fires an initial poll of its own. Reset to a known point so the
     # counts a test asserts are the ones it caused, not one more.
-    entry.runtime_data.expert_poll_fail_counts.clear()
-    entry.runtime_data.expert_poll_fail_notified.clear()
+    entry.runtime_data.expert.fail_counts.clear()
+    entry.runtime_data.expert.fail_notified.clear()
     notifications.clear()
     return entry, scheduled, notifications
 
@@ -900,7 +900,7 @@ async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypa
         await poll(None)
         await hass.async_block_till_done()
 
-    assert entry.runtime_data.expert_poll_fail_counts == {}, (
+    assert entry.runtime_data.expert.fail_counts == {}, (
         "an outage was counted against the individual parameters"
     )
     assert notifications == [], "an outage produced a 'check your ID' notice"
@@ -918,7 +918,7 @@ async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(hass, monk
         await poll(None)
         await hass.async_block_till_done()
 
-    assert entry.runtime_data.expert_poll_fail_counts[EV_A] == 5
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 5
     assert len(notifications) == 1, (
         f"{len(notifications)} notifications for one persistent failure"
     )
@@ -940,14 +940,14 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
     for _ in range(2):
         await poll(None)
         await hass.async_block_till_done()
-    assert entry.runtime_data.expert_poll_fail_counts[EV_A] == 2
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 2
 
     state["fail"] = False
     await poll(None)
     await hass.async_block_till_done()
 
-    assert EV_A not in entry.runtime_data.expert_poll_fail_counts
-    assert EV_A not in entry.runtime_data.expert_poll_fail_notified
+    assert EV_A not in entry.runtime_data.expert.fail_counts
+    assert EV_A not in entry.runtime_data.expert.fail_notified
 
 
 async def test_a_failed_poll_still_arms_the_next_one(hass, monkeypatch):
@@ -976,7 +976,7 @@ async def test_a_poll_does_not_touch_the_portal_while_a_write_runs(hass, monkeyp
         hass, monkeypatch, lambda ids: reads.append(ids) or {},
     )
     reads.clear()   # the initial poll already ran during setup
-    for entity in entry.runtime_data.expert_entities:
+    for entity in entry.runtime_data.expert.entities:
         entity._write_in_progress = True
 
     await scheduled[-1](None)
@@ -994,7 +994,7 @@ async def test_a_poll_skips_when_another_expert_operation_holds_the_lock(hass, m
         hass, monkeypatch, lambda ids: reads.append(ids) or {},
     )
     reads.clear()   # the initial poll already ran during setup
-    lock = entry.runtime_data.expert_lock
+    lock = entry.runtime_data.expert.lock
     assert lock.acquire(blocking=False), "lock was already held"
 
     await scheduled[-1](None)
@@ -1371,7 +1371,7 @@ async def test_an_in_flight_expert_write_is_cancelled_on_unload(hass, monkeypatc
     import asyncio
 
     entry = await _setup(hass, _entry(hass, _expert_options()))
-    entities = entry.runtime_data.expert_entities
+    entities = entry.runtime_data.expert.entities
     assert entities, "no expert entity was created"
     entity = entities[0]
 
@@ -1707,13 +1707,13 @@ async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatc
     service stayed registered with nothing loaded to serve it. The next call
     to it then failed somewhere deeper instead of simply not existing.
     """
-    import custom_components.wemportal as wemportal
     from custom_components.wemportal.coordinator import (
         WemPortalDataUpdateCoordinator,
     )
+    from custom_components.wemportal.expert_controller import ExpertController
 
     monkeypatch.setattr(
-        wemportal, "_async_setup_expert_auto_poll",
+        ExpertController, "setup_auto_poll",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("poll setup broke")),
     )
 

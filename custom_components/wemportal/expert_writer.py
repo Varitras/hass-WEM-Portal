@@ -1615,7 +1615,7 @@ try:
         def _expert_lock(self):
             """Shared per-entry lock (only one expert portal op at a time)."""
             data = getattr(self._config_entry, "runtime_data", None)
-            return data.expert_lock if data is not None else None
+            return data.expert.lock if data is not None else None
 
         @property
         def device_info(self) -> DeviceInfo:
