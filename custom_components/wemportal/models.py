@@ -64,6 +64,17 @@ class WemPortalData:
         """
         self.unloading = True
 
+    def abort_unload(self) -> None:
+        """Take the announcement back when the teardown did not happen.
+
+        A platform may refuse to unload, and Home Assistant then leaves the
+        entry loaded and running. Without this the flag stayed set for the
+        life of that entry: polling carried on, but every write - entity and
+        service alike - answered "the integration is being unloaded" forever,
+        and only a restart cleared it.
+        """
+        self.unloading = False
+
     def why_not_current(self, config_entry) -> str | None:
         """Why an operation holding THIS state may no longer act, or None.
 

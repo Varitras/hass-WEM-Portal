@@ -69,25 +69,26 @@ def device_identifier(entry_id, device_id):
 
 
 def close_api_sessions(api) -> None:
-    """Best-effort close of a WemPortalApi's HTTP sessions.
+    """Close a WemPortalApi's HTTP sessions, under its own lock.
 
-    Closes the API `requests` session and the persistent scraper (its own
-    curl_cffi session) so they don't linger with an open connection after an
-    entry is unloaded/reloaded or after config-flow validation. Never raises -
-    the objects are being discarded anyway.
+    Called after an entry is unloaded or reloaded, after a failed setup, and
+    after config-flow validation, so neither the API `requests` session nor
+    the persistent scraper's curl_cffi session lingers with an open
+    connection.
+
+    A plain call, deliberately. This used to reach in with
+    `getattr(api, "session", None)` and `getattr(api, "_reset_scraper", None)`,
+    which reads as defensive and is the opposite: the defaults meant that
+    renaming or moving either one turned the whole function into a silent
+    no-op, closing nothing, raising nothing, and failing no test - while the
+    docstring went on promising the sessions were closed. Naming the method
+    makes that failure an AttributeError instead of a leak.
+
+    The api owns the teardown because the api owns the lock: an operation can
+    be inside make_api_call right now, and closing its session underneath it
+    is the thing this must not do.
     """
-    session = getattr(api, "session", None)
-    if session is not None:
-        try:
-            session.close()
-        except Exception as exc:  # pylint: disable=broad-except
-            _LOGGER.debug("Ignoring error closing API session: %s", exc)
-    reset_scraper = getattr(api, "_reset_scraper", None)
-    if callable(reset_scraper):
-        try:
-            reset_scraper()
-        except Exception as exc:  # pylint: disable=broad-except
-            _LOGGER.debug("Ignoring error closing scraper session: %s", exc)
+    api.close_transport()
 
 
 def build_device_info(entry_id, device_id, sw_version=None, model=None):

@@ -25,6 +25,7 @@ from custom_components.wemportal import expert_writer
 from custom_components.wemportal.exceptions import ForbiddenError, ParameterWriteError
 from custom_components.wemportal.const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
+    PLATFORMS,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
     CONF_EXPERT_WRITE,
     CONF_LANGUAGE,
@@ -1922,3 +1923,73 @@ async def test_unloading_is_flagged_before_the_platforms_come_down(hass, monkeyp
     await hass.async_block_till_done()
 
     assert seen["flagged"] is True, "the teardown was only announced afterwards"
+
+
+async def test_a_refused_unload_leaves_the_entry_writeable(hass, monkeypatch):
+    """A platform may refuse to unload, and Home Assistant then leaves the
+    entry loaded and polling. It has to stay writeable too.
+
+    The teardown is announced before the platforms come down, which is right -
+    but the announcement was never taken back. A refused unload therefore left
+    an entry that kept working in every respect except that every write, from
+    an entity or from the service, answered "the integration is being
+    unloaded" until Home Assistant restarted.
+    """
+    entry = await _setup(hass, _entry(hass))
+    data = entry.runtime_data
+
+    async def refuse(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(hass.config_entries, "async_unload_platforms", refuse)
+
+    assert await hass.config_entries.async_unload(entry.entry_id) is False
+    await hass.async_block_till_done()
+
+    assert data.unloading is False, (
+        "the entry stayed flagged as unloading and can no longer be written to"
+    )
+    assert data.why_not_current(entry) is None
+
+    # The refusal left the entry running with its refresh timer armed - which
+    # is exactly why the flag has to be taken back. Home Assistant now holds
+    # the entry in FAILED_UNLOAD and refuses to unload it again, so the only
+    # way to leave a clean event loop behind is to stop the coordinator
+    # directly.
+    await data.coordinator.async_shutdown()
+    await hass.async_block_till_done()
+
+
+async def test_a_setup_that_fails_after_forwarding_takes_the_platforms_back_down(
+    hass, monkeypatch
+):
+    """Home Assistant does not unload an entry whose setup failed.
+
+    Everything forwarded before the failure therefore stayed registered:
+    entities belonging to an entry the user sees as failed, unavailable and
+    un-reloadable, and one more set of them on every setup retry. The failure
+    is injected at the same place as the service test above - the only window
+    in which the platforms are up and the setup can still fail.
+    """
+    from custom_components.wemportal.expert_controller import ExpertController
+
+    monkeypatch.setattr(
+        ExpertController, "setup_auto_poll",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("poll setup broke")),
+    )
+
+    unloaded = []
+    original = hass.config_entries.async_unload_platforms
+
+    async def record(entry_arg, platforms):
+        unloaded.append(list(platforms))
+        return await original(entry_arg, platforms)
+
+    monkeypatch.setattr(hass.config_entries, "async_unload_platforms", record)
+
+    entry = _entry(hass, {CONF_EXPERT_WRITE: True})
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert unloaded, "the platforms were left registered on a failed setup"
+    assert set(unloaded[0]) == set(PLATFORMS)

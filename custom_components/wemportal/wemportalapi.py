@@ -79,6 +79,42 @@ from .utils import (
 _MISSING_JOB_ID_REPORTED = set()
 
 
+# The 403 backoffs live here rather than on the instance, and that placement
+# is the fix for a defect, not a style choice.
+#
+# They used to be instance state carried forward by whoever built the next
+# WemPortalApi. That works only where there IS a previous instance to copy
+# from. There isn't, in the case that matters most: when the first refresh
+# fails, Home Assistant discards everything and calls async_setup_entry again,
+# so the retry built a fresh object with the backoff reset to zero - and the
+# most likely reason for that first refresh to fail is the very 403 that set
+# it. The same hole let a config-flow validation walk straight into an active
+# cooldown, because that path has no previous instance either.
+#
+# Nothing can forget to pass on what it never has to pass on.
+#
+# The global one is global because the limit is: the portal counts requests
+# per IP, so a 403 earned by one account is a statement about every account
+# behind the same address. The expert one is per account on purpose - a 403
+# there is frequently one rejected request rather than an IP-wide limit (see
+# activate_expert_cooldown), so it must not spread.
+_BLOCKED_UNTIL = 0.0
+_EXPERT_BLOCKED_UNTIL: dict[str, float] = {}
+
+
+def _extend_cooldown(current: float, until: float) -> float:
+    """Only ever later, never sooner - the rule both backoffs already had."""
+    return until if until > current else current
+
+
+def reset_cooldowns_for_tests() -> None:
+    """Drop both backoffs. Only the test suite has any business calling this;
+    production has no situation in which forgetting a 403 is correct."""
+    global _BLOCKED_UNTIL
+    _BLOCKED_UNTIL = 0.0
+    _EXPERT_BLOCKED_UNTIL.clear()
+
+
 def _report_missing_job_id(device_id):
     """Say once that a device started no identifiable measurement job.
 
@@ -118,6 +154,40 @@ class WemPortalApi:
             blocked_until, expert_blocked_until, scraper_backoff,
         )
         self._init_runtime_state()
+
+    @property
+    def _blocked_until(self) -> float:
+        """Monotonic time until which ALL outbound requests are paused.
+
+        Set after a 403 anywhere in a cycle - a strictly additive safety
+        measure: it only ever makes the integration quieter after the server
+        has already signalled distress. Backed by module state, so it survives
+        every way this object gets rebuilt. See _BLOCKED_UNTIL.
+        """
+        return _BLOCKED_UNTIL
+
+    @_blocked_until.setter
+    def _blocked_until(self, value: float) -> None:
+        global _BLOCKED_UNTIL
+        _BLOCKED_UNTIL = _extend_cooldown(_BLOCKED_UNTIL, value or 0.0)
+
+    @property
+    def _expert_blocked_until(self) -> float:
+        """The EXPERT-ONLY backoff, per account.
+
+        A 403 on the Fachmann path pauses that path alone (see
+        EXPERT_FORBIDDEN_COOLDOWN_SECONDS for why); the polling paths keep
+        running. The reverse still holds: a genuine rate limit seen by the
+        API or scraper pauses the expert path too, because
+        check_expert_cooldown() consults check_cooldown() first.
+        """
+        return _EXPERT_BLOCKED_UNTIL.get(self.username, 0.0)
+
+    @_expert_blocked_until.setter
+    def _expert_blocked_until(self, value: float) -> None:
+        _EXPERT_BLOCKED_UNTIL[self.username] = _extend_cooldown(
+            _EXPERT_BLOCKED_UNTIL.get(self.username, 0.0), value or 0.0
+        )
 
     def _init_from_config(self, config):
         """Everything the user chose in the options flow."""
@@ -178,12 +248,12 @@ class WemPortalApi:
         # the coordinator re-instantiating this object on repeated errors -
         # otherwise a fresh instance would reset it to 0.0 and resume
         # hitting a server that just told us to back off.
+        # Seeded, not stored: both backoffs live at module level so that no
+        # construction site can drop them (see _BLOCKED_UNTIL). The arguments
+        # remain because callers that DO hold a previous value still pass it,
+        # and extending is harmless - a caller can only ever push the backoff
+        # further out, never pull it in.
         self._blocked_until = blocked_until
-        # Separate, EXPERT-ONLY backoff. A 403 on the Fachmann path only
-        # pauses that path (see EXPERT_FORBIDDEN_COOLDOWN_SECONDS for why);
-        # the polling paths keep running. The reverse still holds: a genuine
-        # rate limit seen by the API/scraper pauses the expert path too, via
-        # check_expert_cooldown() consulting check_cooldown() first.
         self._expert_blocked_until = expert_blocked_until
 
         # Scrape backoff, carried across a coordinator swap when given.
@@ -675,12 +745,35 @@ class WemPortalApi:
         finally:
             self._api_lock.release()
 
-    def _reset_transport_locked(self):
-        """The teardown itself. Only called with the api lock held."""
-        _LOGGER.info(
-            "Persistent API errors: dropping the HTTP sessions and logging in "
-            "again on the next cycle."
-        )
+    def close_transport(self, timeout=API_LOCK_TIMEOUT_SECONDS):
+        """Close the HTTP sessions because this object is being discarded.
+
+        Unlike reset_transport this WAITS for the lock rather than skipping:
+        an unload that leaves a session open leaks it for the life of the
+        process, so the close has to happen even if it has to wait for the
+        operation holding the lock. It still closes on timeout - a leaked
+        connection is worse than a request that fails as everything around it
+        is being torn down anyway.
+
+        Taking the lock at all is the point. A write or a poll can be inside
+        make_api_call at this moment, and closing its session underneath it
+        turns an orderly teardown into a connection error.
+        """
+        acquired = self._api_lock.acquire(timeout=timeout)
+        if not acquired:
+            _LOGGER.debug(
+                "Closing the HTTP sessions while another operation still holds "
+                "the api lock; it waited %ss.", timeout,
+            )
+        try:
+            self._close_sessions()
+        finally:
+            if acquired:
+                self._api_lock.release()
+
+    def _close_sessions(self):
+        """Close both HTTP sessions. Never raises: every caller is either
+        discarding this object or replacing its transport."""
         if self.session is not None:
             try:
                 self.session.close()
@@ -688,6 +781,14 @@ class WemPortalApi:
                 _LOGGER.debug("Ignoring error while closing the API session: %s", exc)
             self.session = None
         self._reset_scraper()
+
+    def _reset_transport_locked(self):
+        """The teardown itself. Only called with the api lock held."""
+        _LOGGER.info(
+            "Persistent API errors: dropping the HTTP sessions and logging in "
+            "again on the next cycle."
+        )
+        self._close_sessions()
         self.valid_login = False
         self.api_version = None
         # The web cookie belongs to the discarded scraper session.

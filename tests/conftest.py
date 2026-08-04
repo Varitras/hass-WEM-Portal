@@ -85,3 +85,16 @@ def _mock_sleep(monkeypatch):
     monkeypatch.setattr(wemportalapi.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(expert_writer.time, "sleep", lambda *a, **k: None)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_leftover_cooldown():
+    """Both 403 backoffs are module state, so they outlive the test that set
+    one. Production wants exactly that - a fresh api object must not forget a
+    rate limit. A test run must not inherit one: without this, the first test
+    to earn a 403 makes every later test's request raise ForbiddenError before
+    it is even sent, and the failures point everywhere except at the cause.
+    """
+    wemportalapi.reset_cooldowns_for_tests()
+    yield
+    wemportalapi.reset_cooldowns_for_tests()

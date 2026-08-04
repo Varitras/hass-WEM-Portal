@@ -331,6 +331,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
             _async_register_expert_service(hass, entry, api)
             entry.runtime_data.expert.setup_auto_poll(hass, entry)
     except Exception:
+        # Take the platforms back down FIRST, while runtime_data is still
+        # readable - their entities were built from it, and unloading them is
+        # the only thing that can raise here, so it must not be starved of
+        # what it needs.
+        #
+        # Home Assistant does not unload an entry whose setup failed, so
+        # nothing else does this. Without it, everything forwarded before the
+        # failure stayed registered: entities of an entry the user sees as
+        # failed, unavailable and un-reloadable, one more set per setup retry.
+        try:
+            await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+        except Exception as unload_exc:  # pylint: disable=broad-except
+            # Best effort. The original failure is the one worth raising, and
+            # losing it to a secondary error while cleaning up would hide why
+            # the setup failed at all.
+            _LOGGER.debug(
+                "Could not unload the platforms after a failed setup: %s", unload_exc
+            )
         # Home Assistant clears runtime_data only when a LOADED entry unloads,
         # so a setup that fails after publishing it has to clear it itself.
         if hasattr(entry, "runtime_data"):
@@ -603,17 +621,25 @@ async def async_unload_entry(
     unload_ok = bool(
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )
-    if unload_ok:
-        forget_auth_failures(config_entry.entry_id)
-        # runtime_data is still readable here - Home Assistant drops it only
-        # after this returns True. Close the API + scraper HTTP sessions so
-        # they don't linger open after the entry is unloaded/reloaded.
+    if not unload_ok:
+        # The entry stays loaded and keeps polling, so it must also stay
+        # writeable. Leaving the flag set turned a refused unload into an
+        # entry whose every write said "the integration is being unloaded"
+        # until Home Assistant restarted.
         if data is not None:
-            await hass.async_add_executor_job(close_api_sessions, data.api)
-        # The expert service is a single domain-wide registration shared by
-        # all entries. Only remove it once NO remaining loaded entry still
-        # has expert write enabled - previously unloading ANY entry removed
-        # it globally, killing the service for other accounts.
-        _async_release_expert_service(hass, config_entry)
+            data.abort_unload()
+        return False
 
-    return unload_ok
+    forget_auth_failures(config_entry.entry_id)
+    # runtime_data is still readable here - Home Assistant drops it only
+    # after this returns True. Close the API + scraper HTTP sessions so
+    # they don't linger open after the entry is unloaded/reloaded.
+    if data is not None:
+        await hass.async_add_executor_job(close_api_sessions, data.api)
+    # The expert service is a single domain-wide registration shared by
+    # all entries. Only remove it once NO remaining loaded entry still
+    # has expert write enabled - previously unloading ANY entry removed
+    # it globally, killing the service for other accounts.
+    _async_release_expert_service(hass, config_entry)
+
+    return True

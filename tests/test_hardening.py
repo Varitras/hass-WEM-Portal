@@ -1709,12 +1709,23 @@ TRANSPORT_FIELDS = frozenset({
 # expert operation, and the portal blocks the IP for 12 hours past 10,000
 # requests. The API path failing says nothing about that session, so it
 # stays.
+#
+# _blocked_until and _expert_blocked_until are NOT listed below, and their
+# absence is the point. They used to be preserved fields - a recovery had to
+# remember to keep them - and that guarantee only ever held where a previous
+# instance existed to copy from. A failed first refresh has none: Home
+# Assistant throws the object away and calls setup again, so the retry started
+# with no backoff at all, after a 403 that had very likely caused the failure.
+# They are module state now (see _BLOCKED_UNTIL in wemportalapi), which is
+# what makes them survive every path rather than the ones we remembered. A
+# guarantee that cannot be broken needs no entry in a list of things not to
+# break.
 PRESERVED_FIELDS = frozenset({
     "data", "username", "password", "scraper_device_id", "modules", "mode",
     "update_interval", "scan_interval", "scan_interval_api", "language",
     "_api_lock", "headers", "device_types", "_previous_scraper_keys",
     "_last_connection_status", "scraping_mapper", "last_statistics_fetch",
-    "_last_circuit_times_fetch", "_blocked_until", "_expert_blocked_until",
+    "_last_circuit_times_fetch",
     "expert_cookies", "spider_wait_interval", "spider_retry_count",
     "last_scraping_update",
 })
@@ -1933,3 +1944,127 @@ def test_the_expert_entity_does_not_start_a_write_while_unloading():
 
     assert "unload" in str(excinfo.value).lower()
     assert entity._write_in_progress is False, "the entity was left marked as busy"
+
+
+# --- the 403 backoff must outlive the object that earned it ------------
+
+
+def test_a_brand_new_api_still_sees_an_active_cooldown():
+    """The case a "carry it into the replacement" design cannot cover.
+
+    A failed first refresh makes Home Assistant discard everything and call
+    setup again - and the most likely reason for that failure is the 403 that
+    just set the backoff. The retry has no previous instance to copy from, so
+    it used to start at zero and go straight back at a portal that had just
+    said stop.
+    """
+    api = _api()
+    api._activate_cooldown()
+
+    retry = WemPortalApi("user@example.org", "secret")
+
+    with pytest.raises(exceptions.ForbiddenError):
+        retry.check_cooldown()
+
+
+def test_config_flow_validation_sees_it_too():
+    """Same hole, different door: validating credentials builds its own api
+    and would otherwise send requests during an active rate limit."""
+    _api()._activate_cooldown()
+
+    with pytest.raises(exceptions.ForbiddenError):
+        WemPortalApi("someone@example.org", "other").check_cooldown()
+
+
+def test_an_expert_backoff_does_not_spread_to_another_account():
+    """Deliberately unlike the global one: an expert 403 is frequently a
+    single rejected request rather than an IP-wide limit, so pausing a second
+    account's expert path on the strength of it would cost readings for
+    nothing."""
+    _api().activate_expert_cooldown()
+
+    other = WemPortalApi("someone-else@example.org", "secret")
+    other.check_expert_cooldown()
+
+
+def test_a_replacement_cannot_shorten_a_running_cooldown():
+    """Callers still pass the old value; passing a smaller one - or none -
+    must never pull the backoff in."""
+    api = _api()
+    api._activate_cooldown()
+    active = api._blocked_until
+
+    replacement = WemPortalApi("user@example.org", "secret", blocked_until=0.0)
+
+    assert replacement._blocked_until == active
+    with pytest.raises(exceptions.ForbiddenError):
+        replacement.check_cooldown()
+
+
+# --- closing the sessions is the api's own job, and it takes the lock ---
+
+
+def test_closing_the_sessions_waits_for_the_operation_holding_the_lock():
+    """An unload can land while a write or a poll is inside make_api_call.
+
+    Closing its session at that moment turns an orderly teardown into a
+    connection error, so the close waits for the lock the same way the
+    recovery does - it just does not give up when the wait runs out, because
+    a session left open is leaked for the life of the process.
+    """
+    api = _api()
+    api.session = _Marker("session")
+    order = []
+
+    class RecordingLock:
+        def acquire(self, *_args, **kwargs):
+            order.append(("acquire", kwargs.get("timeout")))
+            return True
+
+        def release(self):
+            order.append(("release", None))
+
+    api._api_lock = RecordingLock()
+    api._close_sessions = lambda: order.append(("close", None))
+
+    api.close_transport()
+
+    assert [step for step, _ in order] == ["acquire", "close", "release"]
+
+
+def test_the_sessions_are_closed_even_if_the_lock_never_comes_free():
+    api = _api()
+    closed = []
+    api._close_sessions = lambda: closed.append(True)
+
+    class NeverFree:
+        def acquire(self, *_args, **_kwargs):
+            return False
+
+        def release(self):  # pragma: no cover - must never be reached
+            raise AssertionError("released a lock that was never acquired")
+
+    api._api_lock = NeverFree()
+
+    api.close_transport(timeout=0.01)
+
+    assert closed == [True], "a session was left open because the lock was busy"
+
+
+def test_close_api_sessions_calls_the_api_rather_than_reaching_inside():
+    """The old version read `session` and `_reset_scraper` off the object with
+    getattr defaults, so renaming or moving either turned it into a silent
+    no-op that closed nothing and failed no test."""
+    from custom_components.wemportal import utils
+
+    calls = []
+
+    class Api:
+        def close_transport(self):
+            calls.append(True)
+
+    utils.close_api_sessions(Api())
+    assert calls == [True]
+
+    with pytest.raises(AttributeError):
+        utils.close_api_sessions(object())

@@ -324,15 +324,15 @@
   {
     "label": "recovery: resetting a preserved field must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        self._reset_scraper()\n        self.valid_login = False",
-    "new": "        self._reset_scraper()\n        self.last_statistics_fetch = 0.0\n        self.valid_login = False",
+    "old": "        self._close_sessions()\n        self.valid_login = False",
+    "new": "        self._close_sessions()\n        self.last_statistics_fetch = 0.0\n        self.valid_login = False",
     "tests": "recovery_touches_exactly_the_transport"
   },
   {
     "label": "recovery: clearing a preserved container in place must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        self._reset_scraper()\n        self.valid_login = False\n        self.api_version = None",
-    "new": "        self._reset_scraper()\n        self.expert_cookies.clear()\n        self.valid_login = False\n        self.api_version = None",
+    "old": "        self._close_sessions()\n        self.valid_login = False\n        self.api_version = None",
+    "new": "        self._close_sessions()\n        self.expert_cookies.clear()\n        self.valid_login = False\n        self.api_version = None",
     "tests": "recovery_touches_exactly_the_transport or recovery_resets_the_connection"
   },
   {
@@ -537,5 +537,68 @@
     "old": "            stale = er.async_get_entity_id(platform, DOMAIN, entity_unique_id)",
     "new": "            stale = er.async_get_entity_id(platform, DOMAIN, unique_id)",
     "tests": "only_our_own_unique_ids_are_touched"
+  },
+  {
+    "label": "cooldown: storing the global backoff per instance again must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        return _BLOCKED_UNTIL\n",
+    "new": "        return getattr(self, '_per_instance_blocked_until', 0.0)\n",
+    "tests": "brand_new_api_still_sees_an_active_cooldown or config_flow_validation_sees_it_too"
+  },
+  {
+    "label": "cooldown: letting a caller shorten a running backoff must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "    return until if until > current else current",
+    "new": "    return until",
+    "tests": "cannot_shorten_a_running_cooldown"
+  },
+  {
+    "label": "cooldown: spreading an expert 403 across accounts must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        return _EXPERT_BLOCKED_UNTIL.get(self.username, 0.0)",
+    "new": "        return max(_EXPERT_BLOCKED_UNTIL.values(), default=0.0)",
+    "tests": "expert_backoff_does_not_spread_to_another_account"
+  },
+  {
+    "label": "unload: a refused unload must give the write gate back",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        if data is not None:\n            data.abort_unload()\n        return False",
+    "new": "        return False",
+    "tests": "refused_unload_leaves_the_entry_writeable"
+  },
+  {
+    "label": "unload: abort_unload must actually clear the flag",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        self.unloading = False",
+    "new": "        pass",
+    "tests": "refused_unload_leaves_the_entry_writeable"
+  },
+  {
+    "label": "setup: platforms left up after a failed setup must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            await hass.config_entries.async_unload_platforms(entry, PLATFORMS)",
+    "new": "            pass",
+    "tests": "takes_the_platforms_back_down"
+  },
+  {
+    "label": "teardown: closing a session without the lock must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        acquired = self._api_lock.acquire(timeout=timeout)",
+    "new": "        acquired = False",
+    "tests": "closing_the_sessions_waits_for_the_operation_holding_the_lock"
+  },
+  {
+    "label": "teardown: leaving a session open when the lock is busy must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not acquired:\n            _LOGGER.debug(\n                \"Closing the HTTP sessions while another operation still holds \"\n                \"the api lock; it waited %ss.\", timeout,\n            )",
+    "new": "        if not acquired:\n            return",
+    "tests": "sessions_are_closed_even_if_the_lock_never_comes_free"
+  },
+  {
+    "label": "teardown: reaching inside the api again must be noticed",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    api.close_transport()",
+    "new": "    close = getattr(api, 'close_transport', None)\n    if callable(close):\n        close()",
+    "tests": "close_api_sessions_calls_the_api_rather_than_reaching_inside"
   }
 ]

@@ -12,10 +12,17 @@ parameter, what counts as a successful update, and which failures are allowed
 to ask the user for new credentials.
 
 ### Security
-- **Writing an expert parameter now requires an administrator.** The service
-  was registered with no permission check at all, so any authenticated Home
-  Assistant user could change a heating setting. The opt-in option and the
+- **The expert SERVICE now requires an administrator.** It was registered with
+  no permission check at all, so any authenticated Home Assistant user could
+  call it and change a heating setting. The opt-in option and the
   installation-specific parameter id were obscurity, not access control.
+
+  This covers the service and nothing else. The same parameter is also a
+  number entity, and Home Assistant has no way for an integration to restrict
+  one - entity access is decided per user in Home Assistant itself. Anyone
+  allowed to control that entity can still write the parameter, so treat the
+  entity's permissions as part of the setting, not the service call as the
+  only door.
 - **The service only accepts parameters configured in the integration's
   options.** Without that it was a generic write primitive for any parameter
   of the installation, including ones never exposed to Home Assistant.
