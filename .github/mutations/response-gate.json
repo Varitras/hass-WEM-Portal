@@ -705,5 +705,19 @@
     "old": "        except (ForbiddenError, PortalMaintenanceError, ServerError):",
     "new": "        except ForbiddenError:",
     "tests": "portal_answer_does_not_trigger_a_full_login"
+  },
+  {
+    "label": "gate scan: ignoring where the gate call sits must be noticed",
+    "path": "tests/test_response_gate.py",
+    "old": "                if gate_name != name or gate_line <= assign.lineno:",
+    "new": "                if gate_name != name:",
+    "tests": "scan_notices_a_second_request_under_the_same_name"
+  },
+  {
+    "label": "gate scan: treating a sibling branch as an overwrite must be noticed",
+    "path": "tests/test_response_gate.py",
+    "old": "                    and not _alternatives(paths, assign, other)",
+    "new": "                    and True",
+    "tests": "scan_accepts_one_gate_after_two_branches or every_request_passes_through_the_gate"
   }
 ]

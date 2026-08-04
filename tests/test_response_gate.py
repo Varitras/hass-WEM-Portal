@@ -38,9 +38,9 @@ def _is_request(node):
     )
 
 
-def _checked_names(function):
-    """Every name handed to self._check_response inside `function`."""
-    names = set()
+def _gate_calls(function):
+    """(name, line) for every self._check_response(name, ...) in `function`."""
+    calls = []
     for node in ast.walk(function):
         if (
             isinstance(node, ast.Call)
@@ -49,8 +49,45 @@ def _checked_names(function):
             and node.args
             and isinstance(node.args[0], ast.Name)
         ):
-            names.add(node.args[0].id)
-    return names
+            calls.append((node.args[0].id, node.lineno))
+    return calls
+
+
+def _branch_paths(function):
+    """For every node, the chain of (if-node, which branch) it sits inside.
+
+    Two statements are ALTERNATIVES when their chains diverge into different
+    branches of the same `if`: only one of them runs. That distinction is
+    what separates a legitimate "assign in either branch, check once
+    afterwards" from a genuine sequential reuse of the same name.
+    """
+    paths = {}
+
+    def walk(node, path):
+        paths[node] = path
+        for field, value in ast.iter_fields(node):
+            children = value if isinstance(value, list) else [value]
+            for child in children:
+                if isinstance(child, ast.AST):
+                    branch = (
+                        (node, field)
+                        if isinstance(node, (ast.If, ast.Try))
+                        and field in ("body", "orelse", "handlers", "finalbody")
+                        else None
+                    )
+                    walk(child, path + [branch] if branch else path)
+
+    walk(function, [])
+    return paths
+
+
+def _alternatives(paths, a, b) -> bool:
+    """Whether a and b sit in branches of the same `if` that exclude each other."""
+    pa, pb = paths.get(a, []), paths.get(b, [])
+    for step_a, step_b in zip(pa, pb):
+        if step_a != step_b:
+            return step_a[0] is step_b[0]
+    return False
 
 
 def request_sites(module):
@@ -71,22 +108,47 @@ def sites_in(source):
     for function in ast.walk(tree):
         if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        checked = _checked_names(function)
+        gates = _gate_calls(function)
+        paths = _branch_paths(function)
 
-        # Every request whose response is bound to a name the gate is given.
+        # Every request assigned to a name, in source order.
+        assignments = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Assign)
+            and _is_request(node.value)
+            and isinstance(node.targets[0], ast.Name)
+        ]
+        assignments.sort(key=lambda n: n.lineno)
+
         # Collected first so the scan below can be over ALL request calls,
         # wherever they sit: an earlier version only looked at assignments
         # and at bare expression statements, so `return self.session.get(...)`
         # was invisible to it - which a mutation promptly demonstrated.
         guarded = set()
-        for node in ast.walk(function):
-            if (
-                isinstance(node, ast.Assign)
-                and _is_request(node.value)
-                and isinstance(node.targets[0], ast.Name)
-                and node.targets[0].id in checked
-            ):
-                guarded.add(node.value)
+        for assign in assignments:
+            name = assign.targets[0].id
+            # A gate call AFTER this request, with no OTHER request
+            # overwriting the name in between. Asking only "is this name
+            # handed to the gate anywhere in the function" was the blind
+            # spot: reuse the name and one check covered both requests.
+            #
+            # A reassignment in a sibling branch does not count - only one
+            # of the two runs, and a check after the `if` guards whichever
+            # it was. That shape is in expert_writer._postback today.
+            for gate_name, gate_line in gates:
+                if gate_name != name or gate_line <= assign.lineno:
+                    continue
+                overwritten = any(
+                    other is not assign
+                    and other.targets[0].id == name
+                    and assign.lineno < other.lineno < gate_line
+                    and not _alternatives(paths, assign, other)
+                    for other in assignments
+                )
+                if not overwritten:
+                    guarded.add(assign.value)
+                    break
 
         for node in ast.walk(function):
             if _is_request(node):
@@ -242,6 +304,29 @@ class C:
         return self.session.get("u").text
 '''
 
+# The two shapes that look identical to a scan which only asks "is this name
+# ever handed to the gate": one is a real gap, the other is correct code that
+# exists in expert_writer._postback today.
+REUSED_NAME = '''
+class C:
+    def f(self):
+        resp = self.session.get("u")
+        self._check_response(resp, "page")
+        resp = self.session.post("u")
+        return resp.text
+'''
+
+EITHER_BRANCH = '''
+class C:
+    def f(self, flag):
+        if flag:
+            resp = self.session.post("u", headers={})
+        else:
+            resp = self.session.post("u", allow_redirects=True)
+        self._check_response(resp, "navigation postback")
+        return resp.text
+'''
+
 
 def test_the_scan_accepts_a_request_whose_own_response_is_checked():
     assert [guarded for _line, guarded in sites_in(GUARDED)] == [True]
@@ -271,3 +356,19 @@ def test_the_scan_notices_a_request_that_is_returned_directly():
     assignment and not a bare expression, so a scan that enumerates statement
     types misses it entirely."""
     assert [guarded for _line, guarded in sites_in(RETURNED)] == [False]
+
+
+def test_the_scan_notices_a_second_request_under_the_same_name():
+    """The blind spot this scan had: reuse the name and one gate call counted
+    for both requests. Nothing in the source moves - only the second request
+    is unchecked - so a scan that asks "is this name ever checked" reports
+    perfect coverage."""
+    assert [guarded for _line, guarded in sites_in(REUSED_NAME)] == [True, False]
+
+
+def test_the_scan_accepts_one_gate_after_two_branches():
+    """The other half: assigning in both branches of an `if` and checking once
+    afterwards is correct - only one of them ran. Treating a reassignment as
+    an overwrite regardless of branch would flag expert_writer._postback,
+    which is the shape this describes."""
+    assert [guarded for _line, guarded in sites_in(EITHER_BRANCH)] == [True, True]
