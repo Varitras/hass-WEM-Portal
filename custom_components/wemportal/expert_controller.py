@@ -234,45 +234,99 @@ class ExpertController:
             self._schedule_next()
 
     def apply_read(self, results: dict) -> None:
-        """Hand a SUCCESSFUL batch to the entities and keep the failure tally.
+        """Hand a batch to the entities and keep the per-id failure tally.
 
-        A persistently failing id (usually a typo'd entityvalue) would
-        otherwise only produce an hourly debug line nobody sees. After three
-        consecutive misses raise ONE notification per id; reset on the next
-        success, so a recurring problem re-notifies at most once per streak.
+        A persistently failing id would otherwise only produce an hourly
+        debug line nobody sees. After three consecutive failures raise ONE
+        notification per id; reset on the next success, so a recurring
+        problem re-notifies at most once per streak.
+
+        The tally has to say WHY, because it ends up in front of the user,
+        and the result carries two different answers:
+
+          * an id that is not in the result at all was rejected as
+            unreadable before any request was sent (see read_many). Nothing
+            but the configured value can cause that.
+          * an id that IS in the result with no state was requested and the
+            read failed - after the client's own retries. A wrong id does
+            that, and so does the portal.
+
+        And when every requested id failed, none of them is evidence about
+        itself: that is one bad batch, and blaming each configured id for it
+        would tell the user to go fix settings that are fine.
+
+        That last rule needs at least TWO requested ids to mean anything.
+        With one configured parameter "all of them failed" is true every time
+        it fails, so applying it there would silence the notification for
+        exactly the installation that has the least other information - the
+        same trap as refusing a read with no JobID, which took single-device
+        installations off the air. One id keeps being counted, and the
+        message below says plainly that the portal is the other candidate.
         """
+        requested = {ev: state for ev, state in results.items()}
+        failed = [ev for ev, state in requested.items() if state is None]
+        whole_batch_failed = len(requested) >= 2 and len(failed) == len(requested)
+        if whole_batch_failed:
+            _LOGGER.warning(
+                "Expert auto-poll: all %d configured parameter(s) failed to "
+                "read this cycle. Treating that as one failed batch rather "
+                "than %d bad ids; not counting it against them.",
+                len(failed), len(failed),
+            )
+
         for entity in self.entities:
             ev = entity.entityvalue
             state = results.get(ev)
-            if state is None:
+            unreadable_id = ev not in results
+            counts_against_the_id = unreadable_id or (
+                state is None and not whole_batch_failed
+            )
+
+            if counts_against_the_id:
                 self.fail_counts[ev] = self.fail_counts.get(ev, 0) + 1
                 if (
                     self.fail_counts[ev] >= FAILURES_BEFORE_NOTIFYING
                     and ev not in self.fail_notified
                 ):
                     self.fail_notified.add(ev)
-                    self._notify_read_failure(entity, self.fail_counts[ev])
-            else:
+                    self._notify_read_failure(
+                        entity, self.fail_counts[ev], unreadable_id
+                    )
+            elif state is not None:
                 self.fail_counts.pop(ev, None)
                 self.fail_notified.discard(ev)
             entity.apply_read_state(state)
 
-    def _notify_read_failure(self, entity, failures: int) -> None:
-        """Tell the user about an id the portal keeps leaving out."""
+    def _notify_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
+        """Tell the user about a parameter that keeps not being read.
+
+        The wording says only what is known. An id that never left the house
+        can only be the configured value; an id that was requested and failed
+        can be that OR the portal, and asserting the first sent people to
+        check a setting that was correct.
+        """
         from .expert_writer import ev_digest
 
         ev = entity.entityvalue
+        if unreadable_id:
+            reason = (
+                f"The configured ID for '{entity.name}' is not a readable "
+                "parameter ID, so it was never requested. Fix or clear it in "
+                "the integration options."
+            )
+        else:
+            reason = (
+                f"Reading '{entity.name}' has failed {failures} times in a "
+                "row while other parameters were read successfully. That is "
+                "usually a wrong ID in the integration options, but the "
+                "portal can refuse a single parameter too."
+            )
         self._hass.async_create_task(
             self._hass.services.async_call(
                 "persistent_notification", "create",
                 {
                     "title": "WEM Portal expert auto-poll",
-                    "message": (
-                        f"Reading '{entity.name}' has failed "
-                        f"{failures} times in a row. "
-                        "Check the configured entityvalue ID "
-                        "in the integration options."
-                    ),
+                    "message": reason,
                     "notification_id": f"wemportal_poll_fail_{ev_digest(ev)}",
                 },
                 blocking=False,

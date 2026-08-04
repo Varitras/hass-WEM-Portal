@@ -62,6 +62,14 @@ to ask the user for new credentials.
   error, so three portal outages in a row could ask for a password that was
   correct. The re-authentication counter is now genuinely consecutive: any
   other kind of failure in between resets it.
+- **A bad expert poll is no longer blamed on the configured parameter
+  IDs.** When every configured parameter failed to read in the same cycle,
+  each of them was counted as a broken ID, and after three cycles the user
+  got a notification per parameter telling them to fix settings that were
+  correct. That now counts as one failed batch. A single configured
+  parameter keeps being reported, because with only one there is nothing to
+  compare it against - and the message no longer claims to know whether the
+  ID or the portal is at fault.
 - **A heating schedule that fails to load is no longer re-fetched every
   cycle.** The hourly interval was recorded only after a SUCCESS, so a
   schedule that kept failing never engaged it: every update spent two more

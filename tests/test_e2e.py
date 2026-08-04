@@ -824,11 +824,13 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
     )
 
 
-async def _auto_poll_entry(hass, monkeypatch, read_many):
+async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
     """An entry with the auto-poll armed, plus the list of scheduled polls.
 
     Returns (entry, scheduled, notifications). `read_many` stands in for the
-    portal round trip and may raise.
+    portal round trip and may raise. `entityvalues` configures more than one
+    parameter, which is what the "one bad batch" rule needs to be visible at
+    all - with a single id there is nothing to compare it against.
     """
     from custom_components.wemportal.const import (
         CONF_EXPERT_AUTO_POLL,
@@ -863,7 +865,10 @@ async def _auto_poll_entry(hass, monkeypatch, read_many):
         _entry(hass, {
             CONF_EXPERT_WRITE: True,
             CONF_EXPERT_AUTO_POLL: True,
-            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+            **{
+                CONF_EXPERT_SLOT_ID_TEMPLATE % (slot + 1): ev
+                for slot, ev in enumerate(entityvalues or [EV_A])
+            },
         }),
     )
     await hass.async_block_till_done()
@@ -923,7 +928,10 @@ async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(hass, monk
     assert len(notifications) == 1, (
         f"{len(notifications)} notifications for one persistent failure"
     )
-    assert "entityvalue" in notifications[0]["message"]
+    # An id that is not in the result at all was never requested - read_many
+    # rejects one it cannot read before sending anything - so the message may
+    # point at the configuration, and has to say where to change it.
+    assert "options" in notifications[0]["message"]
 
 
 async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch):
@@ -1993,3 +2001,49 @@ async def test_a_setup_that_fails_after_forwarding_takes_the_platforms_back_down
 
     assert unloaded, "the platforms were left registered on a failed setup"
     assert set(unloaded[0]) == set(PLATFORMS)
+
+
+async def test_one_bad_batch_is_not_blamed_on_every_configured_id(hass, monkeypatch):
+    """Two ids requested, both failed: that is one bad batch, not two bad ids.
+
+    Counting it per id told the user to go and fix settings that were fine -
+    a persistent notification per parameter, on a portal hiccup.
+    """
+    entry, scheduled, notifications = await _auto_poll_entry(
+        hass, monkeypatch, lambda ids: {ev: None for ev in ids},
+        entityvalues=[EV_A, EV_B],
+    )
+    poll = scheduled[-1]
+
+    for _ in range(5):
+        await poll(None)
+        await hass.async_block_till_done()
+
+    assert not entry.runtime_data.expert.fail_counts, (
+        "a failed batch was counted against the ids it consists of"
+    )
+    assert notifications == []
+
+
+async def test_a_single_configured_id_is_still_reported(hass, monkeypatch):
+    """The rule above needs a second id to mean anything.
+
+    With one configured parameter "all of them failed" is true every time it
+    fails, so applying the batch rule there would silence the notification for
+    exactly the installation that has the least other evidence - the same trap
+    as refusing a read that named no JobID.
+    """
+    entry, scheduled, notifications = await _auto_poll_entry(
+        hass, monkeypatch, lambda ids: {ev: None for ev in ids},
+    )
+    poll = scheduled[-1]
+
+    for _ in range(4):
+        await poll(None)
+        await hass.async_block_till_done()
+
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 4
+    assert len(notifications) == 1
+    # It was requested and failed, so the portal is a candidate too - the
+    # message must not assert the configuration is wrong.
+    assert "portal" in notifications[0]["message"]

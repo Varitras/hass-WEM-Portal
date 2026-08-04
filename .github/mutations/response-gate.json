@@ -621,5 +621,26 @@
     "old": "                                fetched = True",
     "new": "                                fetched = False",
     "tests": "successful_schedule_keeps_the_full_interval"
+  },
+  {
+    "label": "expert tally: blaming a failed batch on each id must be noticed",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        whole_batch_failed = len(requested) >= 2 and len(failed) == len(requested)",
+    "new": "        whole_batch_failed = False",
+    "tests": "one_bad_batch_is_not_blamed_on_every_configured_id"
+  },
+  {
+    "label": "expert tally: silencing a single configured id must be noticed",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        whole_batch_failed = len(requested) >= 2 and len(failed) == len(requested)",
+    "new": "        whole_batch_failed = len(failed) == len(requested)",
+    "tests": "a_single_configured_id_is_still_reported"
+  },
+  {
+    "label": "expert tally: asserting the cause of a failed read must be noticed",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        if unreadable_id:",
+    "new": "        if True:",
+    "tests": "a_single_configured_id_is_still_reported"
   }
 ]
