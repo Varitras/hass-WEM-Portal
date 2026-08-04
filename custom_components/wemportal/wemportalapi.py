@@ -453,6 +453,28 @@ class WemPortalApi:
             return self.scraper_device_id
         if self.modules:
             self.scraper_device_id = next(iter(self.modules))
+            if len(self.modules) > 1:
+                # Said once, because it cannot be resolved from here. The
+                # scraper reads ONE expert page and has no device concept -
+                # the page the portal serves is whichever it considers
+                # current - while this picks the first device the API
+                # reported. On an account with several devices those two are
+                # not necessarily the same one, so the scraped sensors may
+                # sit under a device they did not come from.
+                #
+                # Not guessed at: correlating the two would mean driving the
+                # portal's device selector, which needs an account with more
+                # than one device to develop against. Upstream issue #43 has
+                # been open since 2022 for the same reason. Saying so beats
+                # a quiet mis-attribution.
+                _LOGGER.warning(
+                    "This account has %d devices, and the web scraper reads a "
+                    "single expert page with no way to say which device that "
+                    "is. Its sensors are filed under device %s. If they look "
+                    "like they belong to another device, use `api` mode for "
+                    "this account.",
+                    len(self.modules), self.scraper_device_id,
+                )
         else:
             self.scraper_device_id = SCRAPER_FALLBACK_DEVICE_ID
         return self.scraper_device_id

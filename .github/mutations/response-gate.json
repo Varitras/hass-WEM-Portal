@@ -740,5 +740,19 @@
     "old": "EXPERT_SLOT_COUNT: Final = 10",
     "new": "EXPERT_SLOT_COUNT: Final = 8",
     "tests": "documented_slot_count_is_the_enforced_one"
+  },
+  {
+    "label": "multi-device: staying quiet about an arbitrary attribution must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if len(self.modules) > 1:",
+    "new": "            if False:",
+    "tests": "several_devices_are_reported_once_when_the_scraper_picks_one"
+  },
+  {
+    "label": "multi-device: warning on an ordinary single-device account must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if len(self.modules) > 1:",
+    "new": "            if len(self.modules) >= 1:",
+    "tests": "a_single_device_says_nothing"
   }
 ]

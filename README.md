@@ -69,6 +69,15 @@ Configuration variables during initial setup:
 
 Optional settings (available via `CONFIGURE` after setup):
 
+> **One device per account on the web path.** The scraper reads a single
+> expert page and the portal decides which device that page shows, so with
+> more than one device on the account its sensors are filed under the first
+> device the mobile API reported - which need not be the one the page showed.
+> The integration says so in the log once, and `api` mode covers every device
+> correctly. Resolving it means driving the portal's device selector, which
+> needs a multi-device account to develop against; upstream issue #43 has
+> been open for that reason since 2022.
+
 - `scan_interval`: Update frequency of web scraping in seconds (defaults to
   30 min). Setting it below 15 min is not recommended; values below 60 s are
   clamped to 60 s.

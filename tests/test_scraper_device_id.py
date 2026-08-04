@@ -58,3 +58,59 @@ def test_merge_stores_scraped_data_under_resolved_id():
     assert "1234" in api.data
     assert api.data["1234"]["hp-temp"]["value"] == 21.0
     assert api.resolve_scraper_device_id() == "1234"
+
+
+def test_several_devices_are_reported_once_when_the_scraper_picks_one(caplog):
+    """The scraper reads one expert page and has no device concept.
+
+    Which device that page shows is the portal's choice; this picks the first
+    device the API reported. On an account with several they need not be the
+    same, so the scraped sensors can sit under a device they did not come
+    from - silently, because nothing else in the integration can tell.
+
+    Upstream issue #43 (multiple devices, open since 2022) is the same gap.
+    Resolving it means driving the portal's device selector, which needs an
+    account with more than one device to develop against. Saying so is what
+    can be done honestly from here.
+    """
+    import logging
+
+    api = _api(cached_modules={"1234": {}, "5678": {}})
+
+    with caplog.at_level(logging.WARNING):
+        resolved = api.resolve_scraper_device_id()
+
+    assert resolved == "1234"
+    assert "2 devices" in caplog.text
+    assert "1234" in caplog.text
+
+
+def test_a_single_device_says_nothing(caplog):
+    """The warning must not fire for the ordinary installation."""
+    import logging
+
+    api = _api(cached_modules={"1234": {}})
+
+    with caplog.at_level(logging.WARNING):
+        api.resolve_scraper_device_id()
+
+    assert "devices" not in caplog.text
+
+
+def test_the_warning_is_not_repeated_every_cycle(caplog):
+    """The id is locked in on the first call, so later cycles return early."""
+    import logging
+
+    api = _api(cached_modules={"1234": {}, "5678": {}})
+    api.resolve_scraper_device_id()
+
+    # caplog records from the start of the test, not from the context
+    # manager - without this the first call's warning is still in there and
+    # the assertion below passes for the wrong reason.
+    caplog.clear()
+
+    with caplog.at_level(logging.WARNING):
+        api.resolve_scraper_device_id()
+        api.resolve_scraper_device_id()
+
+    assert "devices" not in caplog.text

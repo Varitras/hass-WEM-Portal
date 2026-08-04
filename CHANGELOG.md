@@ -62,6 +62,14 @@ to ask the user for new credentials.
   error, so three portal outages in a row could ask for a password that was
   correct. The re-authentication counter is now genuinely consecutive: any
   other kind of failure in between resets it.
+- **An account with several devices is told what the web path does with
+  them.** The scraper reads a single expert page and the portal decides
+  which device that page shows, while its sensors are filed under the first
+  device the mobile API reported. Those need not be the same one, and
+  nothing said so. They still are - resolving it means driving the portal's
+  device selector, which needs a multi-device account to develop against -
+  but the log now names the device the sensors were filed under, and the
+  README says `api` mode covers every device correctly.
 - **A portal that says "stop" is no longer answered with a login.** The
   expert path reuses a cached web session and falls back to a full login
   when it turns out to be stale. Only a rate-limit answer was recognised as
