@@ -2,6 +2,8 @@
 Sensor platform for wemportal component
 """
 
+import json
+
 from homeassistant.components.sensor import RestoreSensor
 from homeassistant.config_entries import ConfigEntry
 
@@ -40,6 +42,38 @@ async def async_setup_entry(
                     )
                 )
     async_add_entities(entities)
+
+
+def _readable_schedule(raw):
+    """A weekly programme as day -> list of periods, or None.
+
+    The portal sends these as a JSON object with three fixed slots per day -
+    {"MO-1": "15:00-18:00", "MO-2": "00:00-00:00", ...} - and the state of
+    the sensor is only the word "Programmed", so the times were reachable
+    solely as that raw string. Grouped per day and with the unused slots
+    dropped, a template can say what is actually programmed.
+
+    Returns None when the value is not a schedule after all. Attributes are
+    decoration: getting one wrong must never cost the reading itself.
+    """
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+
+    schedule = {}
+    for slot, period in parsed.items():
+        if not isinstance(slot, str) or not isinstance(period, str):
+            continue
+        day = slot.split("-")[0]
+        # "00:00-00:00" is how the portal spells an unused slot. Keeping them
+        # would bury the two or three periods that are actually set.
+        if period.strip() in ("", "00:00-00:00"):
+            continue
+        schedule.setdefault(day, []).append(period)
+    return schedule or None
 
 
 class WemPortalSensor(WemPortalEntity, RestoreSensor):
@@ -235,6 +269,9 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 attr["PossibleValues"] = entity_data["PossibleValues"]
             if isinstance(entity_data.get("value"), str) and entity_data["value"].startswith("{"):
                 attr["Raw_JSON"] = entity_data["value"]
+                schedule = _readable_schedule(entity_data["value"])
+                if schedule:
+                    attr["Schedule"] = schedule
         except KeyError:
             pass
 

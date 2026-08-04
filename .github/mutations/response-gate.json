@@ -915,5 +915,26 @@
     "old": "                if missing or (stale and self._first_cycle_done):",
     "new": "                if missing:",
     "tests": "stale_definitions_are_read_on_a_later_cycle"
+  },
+  {
+    "label": "schedule: leaving the programme unreadable must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        schedule.setdefault(day, []).append(period)",
+    "new": "        pass",
+    "tests": "weekly_programme_is_grouped_by_day"
+  },
+  {
+    "label": "schedule: keeping the unused slots must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if period.strip() in (\"\", \"00:00-00:00\"):",
+    "new": "        if False:",
+    "tests": "weekly_programme_is_grouped_by_day or unused_slot_is_left_out"
+  },
+  {
+    "label": "schedule: letting a non-programme through must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    if not isinstance(parsed, dict):\n        return None",
+    "new": "    if False:\n        return None",
+    "tests": "something_that_is_not_a_programme_adds_no_attribute"
   }
 ]

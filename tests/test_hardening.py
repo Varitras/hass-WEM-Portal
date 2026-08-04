@@ -2528,3 +2528,38 @@ def test_missing_definitions_are_read_at_once():
 
     assert read == ["read"]
 
+
+# --- a weekly programme has to be readable, not just present -----------
+
+
+def test_a_weekly_programme_is_grouped_by_day():
+    """The sensor's state is only the word "Programmed", so the times were
+    reachable solely as the raw JSON string."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    raw = (
+        '{"MO-1":"15:00-18:00","MO-2":"00:00-00:00","MO-3":"00:00-00:00",'
+        '"DI-1":"06:00-07:00","DI-2":"17:00-19:00","DI-3":"00:00-00:00"}'
+    )
+
+    assert _readable_schedule(raw) == {
+        "MO": ["15:00-18:00"],
+        "DI": ["06:00-07:00", "17:00-19:00"],
+    }
+
+
+def test_an_unused_slot_is_left_out():
+    """Three fixed slots a day, mostly empty - keeping them would bury the
+    two or three periods that are actually set."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    assert _readable_schedule('{"MO-1":"00:00-00:00","MO-2":"00:00-00:00"}') is None
+
+
+@pytest.mark.parametrize("raw", ["not json", "[1,2]", '"text"', "{}", ""])
+def test_something_that_is_not_a_programme_adds_no_attribute(raw):
+    """Attributes are decoration: getting one wrong must never cost the
+    reading itself."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    assert _readable_schedule(raw) is None
