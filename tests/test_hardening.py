@@ -1720,7 +1720,13 @@ TRANSPORT_FIELDS = frozenset({
 # what makes them survive every path rather than the ones we remembered. A
 # guarantee that cannot be broken needs no entry in a list of things not to
 # break.
+# _first_cycle_done is session bookkeeping, not transport: it says whether a
+# cycle has ever completed, which the daily parameter re-read reads to stay
+# out of Home Assistant's setup. A recovery does not un-complete the cycles
+# that already ran, and clearing it would only postpone that re-read by one
+# cycle for no reason.
 PRESERVED_FIELDS = frozenset({
+    "_first_cycle_done",
     "data", "username", "password", "scraper_device_id", "modules", "mode",
     "update_interval", "scan_interval", "scan_interval_api", "language",
     "_api_lock", "headers", "device_types", "_previous_scraper_keys",
@@ -2407,10 +2413,35 @@ def test_a_failed_re_read_is_not_retried_on_the_very_next_cycle():
     assert len(calls) == 1, "a refused module was asked again immediately"
 
 
-def test_a_module_that_never_had_parameters_is_still_dropped():
-    """The additive rule must not keep a module the portal cannot describe
-    at all - that is what the delete list is for."""
-    api, _calls = _discovery_api([{"Parameters": []}])
+def test_a_module_described_as_empty_is_kept_and_not_asked_again():
+    """Deleting it achieved nothing: Device/Read brings the module back on
+    the next start, it is asked again, described as empty again and dropped
+    again - one wasted request and one warning per session, for ever, about a
+    module that is merely empty. Kept with an empty list and a timestamp, it
+    falls under the normal interval like everything else."""
+    api, calls = _discovery_api([{"Parameters": []}, {"Parameters": []}])
+    del api.modules["1234"][(0, 1)]["parameters"]
+
+    api.get_parameters()
+
+    assert (0, 1) in api.modules["1234"], "an empty module was deleted"
+    assert api.modules["1234"][(0, 1)]["parameters"] == {}
+    assert len(calls) == 1
+
+    api.get_parameters()
+    assert len(calls) == 1, "the empty module was asked again on the next cycle"
+
+
+def test_a_module_the_portal_rejects_is_still_dropped():
+    """The other half: a 400 means the portal does not accept the module at
+    all, which is not the same as describing it as empty."""
+    import requests as real_requests
+
+    rejected = exceptions.WemPortalError("bad request")
+    response = FakeResponse({}, status_code=400)
+    rejected.__cause__ = real_requests.exceptions.HTTPError(response=response)
+
+    api, _calls = _discovery_api([rejected])
     del api.modules["1234"][(0, 1)]["parameters"]
 
     api.get_parameters()
@@ -2442,3 +2473,58 @@ def test_get_devices_carries_the_parameter_timestamp_too():
     api.get_devices()
 
     assert api.modules["1234"][(0, 1)]["parameters_fetched_at"] == fetched_at
+
+
+def _cycle_api(fetched_at):
+    """An api whose one module has a parameter list of the given age."""
+    api = _api()
+    api.data = {"1234": {"ConnectionStatus": 0}}
+    api.modules = {
+        "1234": {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
+                          "parameters": {"Known": {"ParameterID": "Known"}},
+                          "parameters_fetched_at": fetched_at}}
+    }
+    api._devices_fetched_this_session = True
+    api.valid_login = True
+    read = []
+    api.get_parameters = lambda: read.append("read")
+    api.get_data = lambda *_a, **_k: None
+    return api, read
+
+
+def test_stale_definitions_wait_for_the_second_cycle():
+    """The first refresh runs inside Home Assistant's setup, and this
+    discovery sleeps five seconds per module - a re-read there turns every
+    restart with an expired cache into a slow startup, which Home Assistant
+    then complains about. Nothing is lost by waiting one interval for
+    something that is already a day old."""
+    api, read = _cycle_api(
+        time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    )
+
+    api.fetch_data()
+
+    assert read == [], "the daily re-read ran during the first refresh"
+
+
+def test_stale_definitions_are_read_on_a_later_cycle():
+    api, read = _cycle_api(
+        time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    )
+
+    api.fetch_data()
+    api.fetch_data()
+
+    assert read == ["read"], "the daily re-read never happened"
+
+
+def test_missing_definitions_are_read_at_once():
+    """A module with no list at all is a different urgency: without it there
+    is nothing to read and nothing to show, so it cannot wait a cycle."""
+    api, read = _cycle_api(0)
+    del api.modules["1234"][(0, 1)]["parameters"]
+
+    api.fetch_data()
+
+    assert read == ["read"]
+

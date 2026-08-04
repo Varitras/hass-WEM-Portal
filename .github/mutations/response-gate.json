@@ -826,11 +826,11 @@
     "tests": "failed_re_read_keeps_the_parameters_it_had"
   },
   {
-    "label": "rediscovery: keeping a module that has nothing must be noticed",
+    "label": "rediscovery: keeping a module the portal rejects must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        delete_candidates.append((values[\"Index\"], values[\"Type\"]))",
     "new": "        pass",
-    "tests": "module_that_never_had_parameters_is_still_dropped"
+    "tests": "module_the_portal_rejects_is_still_dropped"
   },
   {
     "label": "rediscovery: retrying a refused module at once must be noticed",
@@ -887,5 +887,33 @@
     "old": "            if not required:\n                return None",
     "new": "            return None",
     "tests": "fresh_login_that_finds_nothing_still_fails"
+  },
+  {
+    "label": "rediscovery: deleting a module that is merely empty must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not unsupported:",
+    "new": "        if False:",
+    "tests": "module_described_as_empty_is_kept_and_not_asked_again"
+  },
+  {
+    "label": "rediscovery: asking an empty module again every cycle must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                if \"parameters\" in values:",
+    "new": "                if \"parameters\" in values and values[\"parameters\"]:",
+    "tests": "module_described_as_empty_is_kept_and_not_asked_again"
+  },
+  {
+    "label": "startup: re-reading during the first refresh must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                if missing or (stale and self._first_cycle_done):",
+    "new": "                if missing or stale:",
+    "tests": "stale_definitions_wait_for_the_second_cycle"
+  },
+  {
+    "label": "startup: never re-reading at all must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                if missing or (stale and self._first_cycle_done):",
+    "new": "                if missing:",
+    "tests": "stale_definitions_are_read_on_a_later_cycle"
   }
 ]

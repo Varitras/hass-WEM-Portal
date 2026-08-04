@@ -278,6 +278,12 @@ class WemPortalApi:
         """State that always starts empty: the HTTP transport, the
         per-session caches and the timestamps a cycle fills in.
         """
+        # Whether a full cycle has completed in this session. The daily
+        # parameter re-read waits for it: the FIRST refresh runs inside Home
+        # Assistant's setup, and a discovery there (five seconds of sleep per
+        # module) turns every restart with an expired cache into a slow
+        # startup.
+        self._first_cycle_done = False
         # Tracks whether get_devices() has already run once during the
         # lifetime of this WemPortalApi instance (i.e. once per Home
         # Assistant session/restart), so it isn't repeated on every single
@@ -563,14 +569,33 @@ class WemPortalApi:
                 # limited. With a valid persisted cache, this is skipped
                 # entirely after a restart, which is what makes Home
                 # Assistant startup fast again.
-                needs_recovery = False
-                for _, modules in self.modules.items():
-                    for module in modules.values():
-                        if "parameters" not in module:
-                            needs_recovery = True
-                            break
-                if needs_recovery:
-                    _LOGGER.info("Attempting to recover missing parameter definitions...")
+                # Two different reasons to run it, with different urgency.
+                #
+                # MISSING definitions have to be fetched now: without them
+                # there is nothing to read and nothing to show.
+                #
+                # STALE ones are the daily re-read, and it deliberately waits
+                # for the second cycle. The first refresh runs INSIDE Home
+                # Assistant's setup, and this discovery sleeps five seconds
+                # per module - a re-read there would make every restart with
+                # an expired cache a slow startup, which Home Assistant then
+                # complains about. Nothing is lost by waiting one interval
+                # for something that is a day old already.
+                missing = any(
+                    "parameters" not in module
+                    for modules in self.modules.values()
+                    for module in modules.values()
+                )
+                stale = any(
+                    self._parameters_are_stale(module)
+                    for modules in self.modules.values()
+                    for module in modules.values()
+                )
+                if missing or (stale and self._first_cycle_done):
+                    _LOGGER.info(
+                        "Reading parameter definitions from the portal (%s).",
+                        "some are missing" if missing else "the cached ones are due",
+                    )
                     self.get_parameters()
 
             # Select data source based on mode
@@ -635,6 +660,10 @@ class WemPortalApi:
                 # Get data using API (always run as a resilient fallback)
                 self.get_data(enabled_devices)
 
+            # Set only after a cycle got this far, so a setup that fails
+            # halfway does not let the next attempt count as "not the first
+            # one" and slow itself down with a re-read.
+            self._first_cycle_done = True
 
             # Return data
             return self.data
@@ -1363,7 +1392,8 @@ class WemPortalApi:
         self.modules = new_modules
         self.data = new_data
 
-    def _keep_or_drop_module(self, device_id, key, values, delete_candidates, why):
+    def _keep_or_drop_module(self, device_id, key, values, delete_candidates,
+                            why, unsupported):
         """A module the portal would not describe: keep what we have, or drop it.
 
         This is what makes a re-scan purely ADDITIVE, and it is the condition
@@ -1391,12 +1421,47 @@ class WemPortalApi:
                 - PARAMETER_REDISCOVERY_RETRY_SECONDS,
             )
             return
+
+        if not unsupported:
+            # An empty description is a normal answer, not a fault: some
+            # modules simply have nothing to poll. Deleting one meant it came
+            # back through Device/Read on the next start, was asked again,
+            # described as empty again and dropped again - one wasted request
+            # and one WARNING per session, for ever, about a module that is
+            # merely empty.
+            #
+            # Kept with an empty list and a timestamp instead, so the normal
+            # interval applies and it is asked once a day like everything
+            # else. If it ever does gain parameters, that is exactly when
+            # they are found.
+            _LOGGER.debug(
+                "Device %s module %s/%s (%s) describes no parameters; nothing "
+                "to poll from it. Asking again in about %d h.",
+                device_id, values["Index"], values["Type"],
+                values.get("Name", "?"),
+                PARAMETER_REDISCOVERY_INTERVAL_SECONDS // 3600,
+            )
+            values["parameters"] = {}
+            values["parameters_fetched_at"] = time.time()
+            return
+
         _LOGGER.warning(
             "Module index %s type %s is unsupported by WEM Portal (%s). "
             "Deleting from cache.",
             values["Index"], values["Type"], why,
         )
         delete_candidates.append((values["Index"], values["Type"]))
+
+    def _parameters_are_stale(self, module) -> bool:
+        """Whether this module's parameter list is due for a re-read.
+
+        A module with no list at all is NOT stale - it is missing, which is a
+        different urgency and a different caller decision.
+        """
+        if "parameters" not in module:
+            return False
+        age = time.time() - module.get("parameters_fetched_at", 0)
+        return age >= PARAMETER_REDISCOVERY_INTERVAL_SECONDS
 
     def get_parameters(self):
         if self.modules is None:
@@ -1418,7 +1483,10 @@ class WemPortalApi:
                 # error and no way to force a re-scan short of removing the
                 # integration. A NEW module was always found; a new parameter
                 # on an existing one never was.
-                if "parameters" in values and values["parameters"]:
+                # Keyed on the timestamp, not on having parameters: a
+                # module the portal describes as empty is answered too, and
+                # asking it again every cycle is the waste this replaced.
+                if "parameters" in values:
                     age = time.time() - values.get("parameters_fetched_at", 0)
                     if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:
                         _LOGGER.debug(
@@ -1467,6 +1535,7 @@ class WemPortalApi:
                             self._keep_or_drop_module(
                                 device_id, key, values, delete_candidates,
                                 "the portal rejected the request",
+                                unsupported=True,
                             )
                             continue
                     raise
@@ -1478,6 +1547,7 @@ class WemPortalApi:
                         self._keep_or_drop_module(
                             device_id, key, values, delete_candidates,
                             "it described no parameters",
+                            unsupported=False,
                         )
                     else:
                         self.modules[device_id][key]["parameters"] = parameters
