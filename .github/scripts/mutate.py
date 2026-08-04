@@ -68,11 +68,67 @@ PYTEST_NO_TESTS = 5
 TEST_TIMEOUT_SECONDS = 900
 
 
-def run_tests(selector: str) -> bool:
+def collect_test_locations() -> dict:
+    """Which file each test lives in, collected once before anything is broken.
+
+    Every mutation used to run `pytest tests/`, and collecting the whole tree
+    costs about four seconds - repeated for each of a hundred-odd mutations,
+    while the tests actually selected are usually one or two. Measured:
+    collection was the run. Handing pytest only the files that hold the
+    selected tests cuts roughly a third off the total.
+
+    Derived rather than written into the plan by hand: a `file` field per
+    mutation is one more thing to keep true when a test moves, and this stays
+    correct by construction.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/", "-q", "-m", "", "--collect-only"],
+        cwd=REPO, capture_output=True, text=True, timeout=TEST_TIMEOUT_SECONDS,
+    )
+    if result.returncode != PYTEST_ALL_PASSED:
+        raise SystemExit(
+            "Could not collect the test suite, so no mutation can be run "
+            f"against the right file. pytest exited {result.returncode}:\n"
+            + (result.stderr or result.stdout).strip()[-2000:]
+        )
+
+    locations: dict = {}
+    for line in result.stdout.splitlines():
+        path, sep, rest = line.partition("::")
+        if not sep or not path.endswith(".py"):
+            continue
+        # "tests/x.py::test_name[param]" and "tests/x.py::Class::test_name"
+        name = rest.split("[")[0].split("::")[-1].strip()
+        locations.setdefault(name, set()).add(path)
+    return locations
+
+
+def files_for(selector: str, locations: dict) -> list:
+    """The files holding the tests this selector names.
+
+    `-k` matches substrings, so the same rule applies here - a clause selects
+    every test whose name contains it.
+    """
+    files = set()
+    for clause in selector.split(" or "):
+        clause = clause.strip()
+        if not clause:
+            continue
+        for name, paths in locations.items():
+            if clause in name:
+                files |= paths
+    return sorted(files)
+
+
+def run_tests(selector: str, paths=None) -> bool:
     """True if the selected tests FAIL, i.e. the mutation was caught."""
+    targets = list(paths) if paths else ["tests/"]
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests/", "-q", "-m", "", "-k", selector],
+            # -x: the question is whether at least one selected test notices,
+            # not how many do.
+            [sys.executable, "-m", "pytest", *targets, "-q", "-m", "", "-x",
+             "-k", selector],
             cwd=REPO,
             capture_output=True,
             text=True,
@@ -135,11 +191,23 @@ def main() -> int:
     cases = json.loads(args.plan.read_text(encoding="utf-8"))
     survived = []
 
+    locations = collect_test_locations()
+    # Resolved for every case BEFORE the first mutation is applied: a selector
+    # that names nothing is a broken plan, and finding that out halfway
+    # through leaves the run half-done for no reason.
+    targets = {}
+    for case in cases:
+        selector = case["tests"]
+        files = files_for(selector, locations)
+        if not files:
+            raise SystemExit(f"selector {selector!r} matched no tests")
+        targets[selector] = files
+
     for case in cases:
         label = case.get("label", case["path"])
         target, backup = apply_mutation(case)
         try:
-            caught = run_tests(case["tests"])
+            caught = run_tests(case["tests"], targets[case["tests"]])
         finally:
             shutil.copy(backup, target)
         print(f"{'caught  ' if caught else 'SURVIVED'} {label}")

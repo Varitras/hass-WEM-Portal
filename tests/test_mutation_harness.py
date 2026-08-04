@@ -32,9 +32,17 @@ mutate = _load()
 
 
 class _Result:
-    def __init__(self, returncode, stdout=""):
+    """What subprocess.run returns, as far as the harness reads it.
+
+    `stderr` is part of that: the harness quotes it when a run says nothing
+    useful about the mutation, and a double without it turns the harness's own
+    diagnostics into AttributeErrors that look like harness bugs.
+    """
+
+    def __init__(self, returncode, stdout="", stderr=""):
         self.returncode = returncode
         self.stdout = stdout
+        self.stderr = stderr
 
 
 def test_a_snippet_that_no_longer_matches_is_an_error(tmp_path, monkeypatch):
@@ -101,8 +109,14 @@ def test_the_file_is_restored_even_when_the_run_explodes(tmp_path, monkeypatch):
     original = "value = 1\n"
     target.write_text(original, encoding="utf-8")
     monkeypatch.setattr(mutate, "REPO", tmp_path)
+    # main() resolves every selector to its file before touching anything, so
+    # the map has to exist here - there is no test suite in tmp_path.
     monkeypatch.setattr(
-        mutate, "run_tests", lambda selector: (_ for _ in ()).throw(RuntimeError("boom"))
+        mutate, "collect_test_locations", lambda: {"anything": {"tests/x.py"}}
+    )
+    monkeypatch.setattr(
+        mutate, "run_tests",
+        lambda selector, paths=None: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     plan = tmp_path / "plan.json"
     plan.write_text(
@@ -244,3 +258,120 @@ def test_every_mutation_produces_code_that_still_parses():
                 f"({exc.msg} at line {exc.lineno}). A broken parser is not a "
                 "broken behaviour - write a mutation that runs."
             ) from exc
+
+
+# --- the harness only collects what it needs ---------------------------
+
+
+COLLECTED = """tests/test_alpha.py::test_one
+tests/test_alpha.py::test_two[case-a]
+tests/test_beta.py::test_two[case-b]
+tests/test_gamma.py::TestGroup::test_three
+"""
+
+
+def _locations(monkeypatch):
+    monkeypatch.setattr(
+        mutate.subprocess, "run", lambda *a, **k: _Result(0, COLLECTED)
+    )
+    return mutate.collect_test_locations()
+
+
+def test_a_test_is_found_in_the_file_it_lives_in(monkeypatch):
+    locations = _locations(monkeypatch)
+
+    assert locations["test_one"] == {"tests/test_alpha.py"}
+    # Parameters are stripped, and a class in the path does not hide the name.
+    assert locations["test_three"] == {"tests/test_gamma.py"}
+
+
+def test_a_name_shared_by_two_files_yields_both(monkeypatch):
+    """Handing pytest only one of them would run half the guard and report
+    the other half as passing."""
+    locations = _locations(monkeypatch)
+
+    assert locations["test_two"] == {"tests/test_alpha.py", "tests/test_beta.py"}
+
+
+def test_the_selector_resolves_the_way_pytest_would(monkeypatch):
+    """-k matches substrings, so this has to as well - otherwise the harness
+    would hand over fewer files than the selector actually reaches."""
+    locations = _locations(monkeypatch)
+
+    assert mutate.files_for("test_one", locations) == ["tests/test_alpha.py"]
+    assert mutate.files_for("_thr", locations) == ["tests/test_gamma.py"]
+    assert mutate.files_for("test_one or test_three", locations) == [
+        "tests/test_alpha.py",
+        "tests/test_gamma.py",
+    ]
+    assert mutate.files_for("nothing_matches", locations) == []
+
+
+def test_a_failed_collection_stops_the_run(monkeypatch):
+    """Without the map every mutation would silently fall back to the whole
+    suite, or worse, to nothing."""
+    monkeypatch.setattr(
+        mutate.subprocess, "run", lambda *a, **k: _Result(2, "boom")
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        mutate.collect_test_locations()
+
+    assert "Could not collect" in str(excinfo.value)
+
+
+def test_the_run_is_restricted_to_the_given_files(monkeypatch):
+    seen = {}
+
+    def record(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return _Result(1, "1 failed")
+
+    monkeypatch.setattr(mutate.subprocess, "run", record)
+
+    mutate.run_tests("something", ["tests/test_alpha.py"])
+
+    assert "tests/test_alpha.py" in seen["cmd"]
+    assert "tests/" not in seen["cmd"], "the whole suite was collected anyway"
+    assert "-x" in seen["cmd"], "the run does not stop at the first failure"
+
+
+def test_a_dead_selector_stops_before_anything_is_mutated(tmp_path, monkeypatch):
+    """Resolved for every case up front, on purpose.
+
+    A selector that names nothing is a broken plan. Finding that out halfway
+    through leaves the run half-done for no reason - and falling back to the
+    whole suite instead would quietly run a mutation against tests that have
+    nothing to do with it, which is worse than stopping.
+    """
+    target = tmp_path / "module.py"
+    original = "value = 1\n"
+    target.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    monkeypatch.setattr(
+        mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
+    )
+    # The observable is that no run happens at all. Asserting on the message
+    # cannot separate the two: falling back to the whole suite ends in
+    # "matched no tests" as well, just several seconds and one applied
+    # mutation later.
+    runs = []
+    monkeypatch.setattr(
+        mutate, "run_tests", lambda selector, paths=None: runs.append(paths) or True
+    )
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps([{"path": "module.py", "old": "value = 1", "new": "value = 2",
+                     "tests": "nothing_matches_this"}]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan)])
+
+    with pytest.raises(SystemExit) as excinfo:
+        mutate.main()
+
+    assert "matched no tests" in str(excinfo.value)
+    assert runs == [], "the plan was run although a selector named nothing"
+    assert target.read_text(encoding="utf-8") == original, (
+        "a mutation was applied before the plan was known to be sound"
+    )

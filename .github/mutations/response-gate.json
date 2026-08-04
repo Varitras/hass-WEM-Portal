@@ -943,5 +943,19 @@
     "old": "                f\"Error changing parameter {parameter_id}: {exc}\"",
     "new": "                f\"Error changing parameter {parameter_id} value\"",
     "tests": "refused_write_says_what_the_portal_answered"
+  },
+  {
+    "label": "harness: collecting the whole suite per mutation must be noticed",
+    "path": ".github/scripts/mutate.py",
+    "old": "    targets = list(paths) if paths else [\"tests/\"]",
+    "new": "    targets = [\"tests/\"]",
+    "tests": "run_is_restricted_to_the_given_files"
+  },
+  {
+    "label": "harness: a selector that names nothing must stop the run",
+    "path": ".github/scripts/mutate.py",
+    "old": "        if not files:\n            raise SystemExit(f\"selector {selector!r} matched no tests\")",
+    "new": "        if not files:\n            files = [\"tests/\"]",
+    "tests": "dead_selector_stops_before_anything_is_mutated"
   }
 ]
