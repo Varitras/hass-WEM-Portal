@@ -69,18 +69,25 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # A MISSING reading is expected, not invalid: the portal regularly
         # reports "--" (or an empty string) for a parameter it has no current
         # value for, and that is deliberately mapped to None so the sensor
-        # shows as unavailable instead of a fabricated 0.0. Logging this at
+        # shows as unknown instead of a fabricated 0.0. Logging this at
         # warning level (as an "invalid value") made a normal condition look
         # like a defect and drowned out real problems - so it is debug.
         # Genuinely un-coercible values are still warned about below.
+        #
+        # "unknown", not "unavailable": those are different states, and the
+        # log used to name the wrong one. A None native value is an available
+        # entity with no reading; unavailable comes only from `available`
+        # below, i.e. a failed cycle or an unreachable device. Saying
+        # "unavailable" here sent a reader looking for a fault in the wrong
+        # half of the integration.
         if val is None:
-            _LOGGER.debug('No value for "%s" this cycle -> unavailable', self._attr_name)
+            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
             return None
 
         if isinstance(val, str):
             val = val.strip()
             if val == "":
-                _LOGGER.debug('Empty value for "%s" this cycle -> unavailable', self._attr_name)
+                _LOGGER.debug('Empty value for "%s" this cycle -> unknown', self._attr_name)
                 return None
             if val.startswith("{"):
                 return "Programmed"
