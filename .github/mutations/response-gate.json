@@ -439,5 +439,54 @@
     "old": "    if status is not None and not status_is_success(status):",
     "new": "    if False:",
     "tests": "refresh_is_read_as_accepted or rejected_refresh_is_not_read"
+  },
+  {
+    "label": "transport: reporting a timeout as a server answer must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                is_transport_error = response is None",
+    "new": "                is_transport_error = False",
+    "tests": "retries_a_request_that_never_arrived or does_not_claim_a_server_answer"
+  },
+  {
+    "label": "transport: dropping the retry must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                if is_transport_error and retry_transport and attempt < attempts - 1:",
+    "new": "                if False and retry_transport and attempt < attempts - 1:",
+    "tests": "retries_a_request_that_never_arrived or transport_retry_does_not_need_the_session_retry"
+  },
+  {
+    "label": "transport: re-authenticating on a network hiccup must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                    time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)",
+    "new": "                    self.api_login()\n                    time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)",
+    "tests": "does_not_re_authenticate"
+  },
+  {
+    "label": "transport: tying the retry to do_retry must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        attempts = 2 if (do_retry or retry_transport) else 1",
+    "new": "        attempts = 2 if do_retry else 1",
+    "tests": "transport_retry_does_not_need_the_session_retry"
+  },
+  {
+    "label": "transport: spreading the retry to statistics must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                    API_STATISTICS_READ_URL,",
+    "new": "                    API_STATISTICS_READ_URL, retry_transport=True,",
+    "tests": "exactly_the_value_path_asks_for_a_transport_retry"
+  },
+  {
+    "label": "transport: losing the retry on the value read must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                data=read_data,\n                do_retry=True,\n                retry_transport=True,",
+    "new": "                data=read_data,\n                do_retry=True,",
+    "tests": "exactly_the_value_path_asks_for_a_transport_retry"
+  },
+  {
+    "label": "transport: putting the retry back on the job-creating refresh must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                API_REFRESH_URL,\n                data=data,\n            )",
+    "new": "                API_REFRESH_URL,\n                data=data,\n                retry_transport=True,\n            )",
+    "tests": "exactly_the_value_path_asks_for_a_transport_retry"
   }
 ]

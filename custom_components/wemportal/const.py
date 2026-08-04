@@ -136,7 +136,19 @@ SCRAPER_REQUEST_TIMEOUT_SECONDS: Final = 30
 # had no timeout at all, so a hanging server could block the executor
 # thread indefinitely (the coordinator's async timeout only abandons the
 # await - the thread itself would stay stuck).
-API_REQUEST_TIMEOUT_SECONDS: Final = 10
+#
+# Raised from 10s after a live log showed a /DataAccess/Read give up at
+# exactly 10.0s and fail the whole cycle. The portal is occasionally just
+# slow, and the budget has room: even if EVERY request of an hourly cycle
+# ran into this timeout, the worst case stays at roughly 74% of the
+# coordinator's DEFAULT_TIMEOUT.
+API_REQUEST_TIMEOUT_SECONDS: Final = 12
+
+# How long to wait before the single retry of a request that never reached
+# the portal at all. Deliberately shorter than make_api_call()'s `delay`,
+# which covers the re-login path: nothing has to settle here, we are only
+# avoiding an instant second attempt into the same hiccup.
+API_TRANSPORT_RETRY_DELAY_SECONDS: Final = 2
 
 # How many CONSECUTIVE AuthErrors the coordinator tolerates before
 # escalating to ConfigEntryAuthFailed (HA's reauth flow, which stops all

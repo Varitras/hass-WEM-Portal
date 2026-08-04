@@ -47,6 +47,19 @@ to ask the user for new credentials.
   error, so three portal outages in a row could ask for a password that was
   correct. The re-authentication counter is now genuinely consecutive: any
   other kind of failure in between resets it.
+- **A request that never reached the portal no longer reports itself as a
+  server answer.** A timed-out read was logged as "Server returned status
+  code:  and message: " - two empty fields, because there was no response to
+  read them from - which sends anyone looking at that line to the portal for
+  a fault on this side of the connection.
+- **A slow answer no longer fails the whole cycle on the first try.** The
+  per-request timeout is 12 seconds instead of 10, and the two reads that
+  carry readings retry once if they did not reach the portal at all.
+  Statistics and heating schedules deliberately do not: they are the bulk of
+  an hourly cycle, optional, and an hour stale at worst, so retrying those as
+  well would push a bad cycle past the timeout covering the whole update. The
+  request that starts a measurement is left out for a different reason - it
+  is not safe to repeat when only its answer was lost.
 - **Re-authentication is actually reachable during startup.** The counter
   lived on the coordinator, and a failed first refresh makes Home Assistant
   build a new one - so a password changed while Home Assistant was off left

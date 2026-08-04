@@ -55,6 +55,7 @@ from .const import (
     STATISTICS_RETRY_INTERVAL_SECONDS,
     API_LOCK_TIMEOUT_SECONDS,
     API_REQUEST_TIMEOUT_SECONDS,
+    API_TRANSPORT_RETRY_DELAY_SECONDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     SCRAPER_FALLBACK_DEVICE_ID,
     WEB_LOGIN_URL,
@@ -1001,9 +1002,29 @@ class WemPortalApi:
 
 
     def make_api_call(
-        self, url: str, headers=None, data=None, do_retry=True, delay=5
+        self, url: str, headers=None, data=None, do_retry=True, delay=5,
+        retry_transport=False,
     ) -> reqs.Response:
-        attempts = 2 if do_retry else 1
+        """One mobile-API request, with two kinds of retry sharing one attempt.
+
+        `do_retry` covers an expired session: re-login once and try again.
+        `retry_transport` covers a request that never reached the portal at
+        all - a timeout, a reset connection, DNS.
+
+        They are separate REASONS, not separate budgets: there is exactly one
+        extra attempt, whichever reason claims it. A transport hiccup followed
+        by an expired session is therefore not retried twice, on purpose - the
+        cycle has a time budget and a third attempt would eat into it.
+
+        `retry_transport` is opt-in per call site rather than on by default,
+        for two different reasons. Cost: an hourly cycle is roughly fifteen
+        requests on a single-device installation and more on larger ones, so
+        letting all of them retry into a timeout would push a bad cycle well
+        past the coordinator's own limit. Safety: a request that starts
+        something at the portal must not be repeated when only its answer was
+        lost. Only the two reads that carry values ask for this.
+        """
+        attempts = 2 if (do_retry or retry_transport) else 1
         response = None
 
         for attempt in range(attempts):
@@ -1066,6 +1087,26 @@ class WemPortalApi:
                     forbidden_error.server_status = server_status
                     raise forbidden_error from exc
 
+                # Nothing came back at all: the request timed out, the
+                # connection was reset, DNS failed. `response` is set to None
+                # at the top of every attempt and only ever assigned by the
+                # get/post below, so this is exactly "no HTTP response was
+                # received" - a 403, a 401 and the login-redirect check all
+                # need a response to have been raised in the first place.
+                is_transport_error = response is None
+
+                if is_transport_error and retry_transport and attempt < attempts - 1:
+                    # Deliberately no re-login: the session is fine, the
+                    # network was not. Logging in again would spend an extra
+                    # request at the worst possible moment and throw away a
+                    # session that nothing is wrong with.
+                    _LOGGER.info(
+                        "Request to %s did not reach the portal (%s). Retrying once.",
+                        url, exc,
+                    )
+                    time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)
+                    continue
+
                 # A genuinely expired session (401, or a stealthy redirect
                 # to the login page) is worth one immediate retry with a
                 # fresh login - unlike a 403, this isn't a sign we're
@@ -1087,9 +1128,21 @@ class WemPortalApi:
                 # we invalidate the login state so the next cycle creates a fresh requests.Session.
                 self.valid_login = False
 
-                wem_error = WemPortalError(
-                    f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
-                )
+                if is_transport_error:
+                    # There was no server and no answer, so there is no status
+                    # code and no message to report. Saying "Server returned
+                    # status code:  and message: " anyway - which is what a
+                    # timeout produced - sends every reader of that line
+                    # looking at the portal for a fault that is on this side
+                    # of the connection. The web path already words this
+                    # correctly; see scraper.py's login handler.
+                    wem_error = WemPortalError(
+                        f"{DATA_GATHERING_ERROR} Could not reach the WEM Portal: {exc}"
+                    )
+                else:
+                    wem_error = WemPortalError(
+                        f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
+                    )
                 # Expose the server-side status code so callers can react to
                 # specific ones (e.g. Statistics skips an invalid group)
                 # without parsing the message string.
@@ -1439,7 +1492,8 @@ class WemPortalApi:
             status_response = self.make_api_call(
                 API_DEVICE_STATUS_READ_URL,
                 data={"DeviceID": int(device_id)},
-                do_retry=True
+                do_retry=True,
+                retry_transport=True,
             ).json()
 
             raw_status = status_response.get("ConnectionStatus", -1)
@@ -1551,6 +1605,14 @@ class WemPortalApi:
             raise WemPortalError(DATA_GATHERING_ERROR) from exc
 
         try:
+            # Deliberately NO retry_transport here, unlike the two reads
+            # around it. This POST starts a measurement job, so it is the one
+            # request on the value path that is not safe to repeat: if the
+            # portal received it and only the answer was lost, a second
+            # attempt starts a SECOND job - and overlapping jobs handing back
+            # each other's values is the exact hazard the JobID handling below
+            # exists to prevent. A lost refresh costs this cycle; a duplicated
+            # one can cost the next cycle its correctness.
             refresh_response = self.make_api_call(
                 API_REFRESH_URL,
                 data=data,
@@ -1605,7 +1667,8 @@ class WemPortalApi:
             values = self.make_api_call(
                 API_DATA_ACCESS_READ_URL,
                 data=read_data,
-                do_retry=True
+                do_retry=True,
+                retry_transport=True,
             ).json()
             # An HTTP 200 with nothing in it is not a refreshed device. The
             # mapper simply finds no modules to walk, so this used to return
