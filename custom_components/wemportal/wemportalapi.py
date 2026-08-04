@@ -51,6 +51,7 @@ from .const import (
     FORBIDDEN_COOLDOWN_SECONDS,
     EXPERT_FORBIDDEN_COOLDOWN_SECONDS,
     CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
+    CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
     STATISTICS_REFRESH_INTERVAL_SECONDS,
     STATISTICS_RETRY_INTERVAL_SECONDS,
     API_LOCK_TIMEOUT_SECONDS,
@@ -1824,9 +1825,11 @@ class WemPortalApi:
                             # load. Skip if we already fetched this
                             # specific schedule recently enough.
                             cache_key = (device_id, param_id)
+                            now = time.time()
                             last_fetch = self._last_circuit_times_fetch.get(cache_key, 0)
-                            if time.time() - last_fetch < CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS:
+                            if now - last_fetch < CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS:
                                 continue
+                            fetched = False
                             try:
                                 refresh_payload = {
                                     "DeviceID": int(device_id),
@@ -1879,12 +1882,36 @@ class WemPortalApi:
                                 self.data[device_id][sensor_name]["CircuitTimesDay"] = schedule_resp.get("CircuitTimesDay", [])
                                 self.data[device_id][sensor_name]["PossibleValues"] = schedule_resp.get("PossibleValues", [])
                                 self.data[device_id][sensor_name]["value"] = "Active"
-                                self._last_circuit_times_fetch[cache_key] = time.time()
+                                fetched = True
 
                             except Exception as exc:
                                 # Broad: one heating program failing is
                                 # not a reason to skip the rest.
                                 _LOGGER.warning("Failed to fetch CircuitTimes for %s: %s", param_id, exc)
+                            finally:
+                                # Records the ATTEMPT, on every way out of the
+                                # block - including the `continue` above, which
+                                # has already spent a request.
+                                #
+                                # Written only after a SUCCESS, as it was, the
+                                # interval guard never engages for a schedule
+                                # that keeps failing: every coordinator cycle
+                                # spends two more requests on it, at a portal
+                                # that is already failing, against an IP the
+                                # portal blocks past 10,000 requests per 12
+                                # hours. Back-dated rather than blocked when
+                                # it did not work out, so one bad cycle does
+                                # not cost a full hour either. Same shape and
+                                # same reasoning as get_statistics().
+                                self._last_circuit_times_fetch[cache_key] = (
+                                    now
+                                    if fetched
+                                    else now - max(
+                                        0,
+                                        CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
+                                        - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
+                                    )
+                                )
         except Exception as exc:
             # Broad: heating programs are extra detail on top of the
             # readings. Losing them must never cost the update itself.

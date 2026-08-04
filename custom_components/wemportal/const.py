@@ -163,6 +163,14 @@ AUTH_ERROR_ESCALATION_THRESHOLD: Final = 3
 # cycle is unnecessary load; this caps how often they're refreshed.
 CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
 
+# How soon a schedule that FAILED to load is tried again. Shorter than the
+# refresh interval, so a transient failure does not cost a full hour, but
+# still an interval: the timestamp records the attempt rather than the
+# success, otherwise a schedule that keeps failing is re-fetched on every
+# coordinator cycle - two requests each time, at the portal that is already
+# failing. Same reasoning and same value as the statistics retry.
+CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
+
 # Energy statistics are daily aggregates - they don't need per-cycle
 # refreshes. This caps how often they're refreshed.
 STATISTICS_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour

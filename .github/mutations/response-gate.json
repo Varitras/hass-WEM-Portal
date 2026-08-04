@@ -600,5 +600,26 @@
     "old": "    api.close_transport()",
     "new": "    close = getattr(api, 'close_transport', None)\n    if callable(close):\n        close()",
     "tests": "close_api_sessions_calls_the_api_rather_than_reaching_inside"
+  },
+  {
+    "label": "schedules: recording the attempt only on success must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                                _LOGGER.warning(\"Failed to fetch CircuitTimes for %s: %s\", param_id, exc)\n                            finally:",
+    "new": "                                _LOGGER.warning(\"Failed to fetch CircuitTimes for %s: %s\", param_id, exc)\n                            else:",
+    "tests": "failing_schedule_is_not_refetched_on_every_cycle or refresh_without_a_job_id_also_counts"
+  },
+  {
+    "label": "schedules: not shortening the wait after a failure must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                                    else now - max(\n                                        0,\n                                        CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS\n                                        - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,\n                                    )",
+    "new": "                                    else now - CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS",
+    "tests": "failed_schedule_is_tried_again_after_the_retry_interval"
+  },
+  {
+    "label": "schedules: back-dating a successful fetch must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                                fetched = True",
+    "new": "                                fetched = False",
+    "tests": "successful_schedule_keeps_the_full_interval"
   }
 ]

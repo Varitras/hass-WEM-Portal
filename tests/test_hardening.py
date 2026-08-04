@@ -2068,3 +2068,92 @@ def test_close_api_sessions_calls_the_api_rather_than_reaching_inside():
 
     with pytest.raises(AttributeError):
         utils.close_api_sessions(object())
+
+
+# --- a heating schedule that fails must not be re-fetched every cycle ---
+
+
+def _circuit_times_api(responses):
+    """An api with one schedule parameter, answering from `responses`."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {
+        "1234": {
+            (0, 1): {
+                "Index": 0, "Type": 1, "Name": "Heating circuit 1",
+                "parameters": {"Heizprogramm1": {"ParameterID": "Heizprogramm1",
+                                                 "DataType": 6}},
+            }
+        }
+    }
+    calls = []
+
+    def make_api_call(url, **_kwargs):
+        calls.append(url)
+        answer = responses.pop(0) if responses else None
+        if isinstance(answer, Exception):
+            raise answer
+        return FakeResponse(answer)
+
+    api.make_api_call = make_api_call
+    return api, calls
+
+
+def test_a_failing_schedule_is_not_refetched_on_every_cycle():
+    """The timestamp used to be written after a SUCCESS.
+
+    A schedule that keeps failing therefore never engaged the interval guard,
+    so every coordinator cycle spent two more requests on it - at a portal
+    that was already failing, against an IP the portal blocks past 10,000
+    requests per 12 hours.
+    """
+    api, calls = _circuit_times_api([exceptions.WemPortalError("portal unavailable")] * 10)
+
+    api._fetch_circuit_times("1234")
+    after_first = len(calls)
+    api._fetch_circuit_times("1234")
+
+    assert after_first >= 1, "the first cycle did not even try"
+    assert len(calls) == after_first, (
+        "the failed schedule was fetched again on the very next cycle"
+    )
+
+
+def test_a_refresh_without_a_job_id_also_counts_as_an_attempt():
+    """The early `continue` costs a request just like a raised error does."""
+    api, calls = _circuit_times_api([{"NoJobID": True}] * 10)
+
+    api._fetch_circuit_times("1234")
+    after_first = len(calls)
+    api._fetch_circuit_times("1234")
+
+    assert after_first == 1, "the refresh should have been the only request"
+    assert len(calls) == 1, "a refresh that named no job was repeated at once"
+
+
+def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
+    """Back-dated, not blocked: one bad cycle must not cost a full hour."""
+    api, calls = _circuit_times_api([exceptions.WemPortalError("nope")] * 10)
+
+    api._fetch_circuit_times("1234")
+    stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
+
+    waited = time.time() - stamp
+    assert waited >= wemportalapi.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS - (
+        wemportalapi.CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS + 5
+    ), "the retry was pushed out further than the retry interval"
+    assert waited < wemportalapi.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS, (
+        "the schedule would be retried immediately"
+    )
+
+
+def test_a_successful_schedule_keeps_the_full_interval():
+    api, calls = _circuit_times_api([
+        {"JobID": 7},
+        {"CircuitTimesDay": [], "PossibleValues": []},
+    ])
+
+    api._fetch_circuit_times("1234")
+    stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
+
+    assert time.time() - stamp < 5, "a successful fetch was back-dated like a failure"

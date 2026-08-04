@@ -62,6 +62,12 @@ to ask the user for new credentials.
   error, so three portal outages in a row could ask for a password that was
   correct. The re-authentication counter is now genuinely consecutive: any
   other kind of failure in between resets it.
+- **A heating schedule that fails to load is no longer re-fetched every
+  cycle.** The hourly interval was recorded only after a SUCCESS, so a
+  schedule that kept failing never engaged it: every update spent two more
+  requests on it, at a portal that was already failing. The attempt is what
+  counts now, and a failed one is retried after fifteen minutes rather than
+  a full hour.
 - **A writeable dropdown whose options the portal left out is a plain sensor
   now.** It had two different outcomes depending on how the options were
   missing: an empty field produced a dropdown with nothing to choose from,
