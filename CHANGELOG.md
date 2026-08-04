@@ -70,6 +70,19 @@ to ask the user for new credentials.
   device selector, which needs a multi-device account to develop against -
   but the log now names the device the sensors were filed under, and the
   README says `api` mode covers every device correctly.
+- **A reused web session that lands on the wrong page no longer costs the
+  whole scrape.** The fast path reuses a cached session and posts to select
+  the Expert tab, and that postback carries state the portal can refuse - in
+  which case the answer is still HTTP 200, just the main page instead of the
+  expert view, with no redirect and no error status for the existing checks
+  to catch. The parse then found nothing and the cycle ended there, although
+  the fresh login it falls back to would have worked.
+- **An expert page with no readings now says what it was.** "Contained no
+  readable panels" is true of two unrelated problems and names neither: a
+  page that is not the expert view at all, and the expert view with markup
+  the selectors no longer match. The log now reports the size, the title and
+  how many panel containers were found - zero means the wrong page, one or
+  more means the page changed.
 - **A portal that says "stop" is no longer answered with a login.** The
   expert path reuses a cached web session and falls back to a full login
   when it turns out to be stale. Only a rate-limit answer was recognised as

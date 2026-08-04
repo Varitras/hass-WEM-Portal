@@ -595,3 +595,88 @@ def test_a_portal_answer_does_not_trigger_a_full_login(answer):
     assert logins == [], (
         f"a {answer} answer was followed by a full login handshake"
     )
+
+
+def _expert_page():
+    return _page(_panel("Heat pump", [("Outside temperature", "12.3 C")]))
+
+
+def _with_cached_session(scraper, reused_html):
+    """A scraper whose cached session hands back `reused_html`.
+
+    The full login is NOT stubbed: it lives inline in scrape(), and the
+    suite's global guard makes any real request fail with a recognisable
+    error. That is what makes "did we fall through to the login" visible
+    without building a whole fake portal.
+    """
+    scraper.cookie = {"ASP.NET_SessionId": "abc"}
+    scraper._load_expert_page = lambda: reused_html
+
+
+def test_a_reused_session_that_missed_the_expert_page_logs_in_fresh(scraper, caplog):
+    """The postback that selects the Expert tab carries state from the reused
+    session. When the portal no longer honours it the answer is still HTTP
+    200 - the main page, with no login redirect and no error status - so the
+    parse finds nothing. Raising there lost the whole scrape for a cycle
+    while the fresh login, which scrape() performs a few lines further down,
+    would have worked.
+    """
+    import logging
+
+    from custom_components.wemportal.exceptions import ServerError
+
+    _with_cached_session(scraper, "<html><title>Main</title></html>")
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(ServerError) as excinfo:
+            scraper.scrape()
+
+    # What comes out is the LOGIN failing, not "no readable panels": the
+    # reuse branch handed over instead of ending the cycle.
+    assert "no readable panels" not in str(excinfo.value).lower()
+    assert "login page" in str(excinfo.value)
+    assert "the reused session" in caplog.text
+
+
+def test_a_reused_session_that_worked_does_not_log_in(scraper):
+    """The whole point of the fast path: two requests saved when it holds."""
+    _with_cached_session(scraper, _expert_page())
+
+    result = scraper.scrape()
+
+    assert result[0], "the reused page was not used"
+
+
+def test_a_fresh_login_that_finds_nothing_still_fails(scraper):
+    """There is nothing left to try there, so it must stay an error."""
+    from custom_components.wemportal.exceptions import ServerError
+
+    with pytest.raises(ServerError):
+        scraper.parse_expert_page("<html><title>Oops</title></html>")
+
+
+def test_the_report_separates_a_wrong_page_from_changed_markup(scraper, caplog):
+    """The two problems the old message could not tell apart."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        scraper.parse_expert_page("<html><title>Main</title></html>", required=False)
+    assert "0 panel container(s)" in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        scraper.parse_expert_page(
+            '<html><div class="RadPanelBar RadPanelBar_Default rpbSimpleData">'
+            "</div></html>",
+            required=False,
+        )
+    assert "1 panel container(s)" in caplog.text
+
+
+def test_the_report_survives_unparseable_html(scraper, caplog):
+    """A diagnostic must never be the thing that fails."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        assert scraper.parse_expert_page("<<< not html", required=False) is None
+    assert "No readable panels" in caplog.text

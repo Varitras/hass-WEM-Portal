@@ -34,6 +34,11 @@ from .utils import (
 
 
 
+# The panel container the expert page is built from. Named once because two
+# things ask about it: the parser, and the report that explains an empty page.
+PANEL_XPATH = '//div[contains(@class, "RadPanelBar RadPanelBar_Default rpbSimpleData")]'
+
+
 class WemPortalScraper:
     """Scraper for navigating and extracting data from WEM Portal using curl_cffi."""
 
@@ -194,8 +199,27 @@ class WemPortalScraper:
                     reused_html = None
 
                 if reused_html is not None:
-                    _LOGGER.debug("Reused existing WEM Portal web session (skipped full login).")
-                    return self.parse_expert_page(reused_html)
+                    # required=False: for the fast path an empty page is not a
+                    # broken portal. The postback that selects the Expert tab
+                    # carries state from the reused session, and when the
+                    # portal no longer honours it the answer is still HTTP
+                    # 200 - the main page instead of the expert view, with no
+                    # login redirect and no error status for the checks above
+                    # to catch. Raising there lost the whole scrape for a
+                    # cycle while a fresh login, which the lines below already
+                    # perform, would have worked.
+                    panels = self.parse_expert_page(
+                        reused_html, source="the reused session", required=False
+                    )
+                    if panels is not None:
+                        _LOGGER.debug(
+                            "Reused existing WEM Portal web session (skipped full login)."
+                        )
+                        return panels
+                    _LOGGER.debug(
+                        "The reused session did not reach the expert page; "
+                        "logging in fresh."
+                    )
 
                 _LOGGER.debug("Cached WEM Portal session is no longer valid, logging in again.")
                 try:
@@ -263,14 +287,56 @@ class WemPortalScraper:
             raise AuthError("Scraping Error: Could not find VIEWSTATE on main page.")
 
         # 5. Extract data
-        return self.parse_expert_page(expert_html)
+        return self.parse_expert_page(expert_html, source="the expert page")
 
-    def parse_expert_page(self, html_content):
-        _LOGGER.debug("Parsing expert page HTML")
+    def _report_empty_page(self, html_content, source):
+        """Say what the page WAS, because the failure message cannot.
+
+        "Contained no readable panels" is true of two completely different
+        problems and names neither: a page that is not the expert view at all,
+        and the expert view with markup the selectors no longer match. The
+        panel container is what separates them - present but unparsed means
+        the portal changed its HTML, absent means we were looking at the wrong
+        page - and the answer decides whether this needs a new selector or a
+        fresh login.
+        """
+        text = html_content or ""
+        title = ""
+        containers = 0
+        try:
+            tree = html.fromstring(text)
+            found = tree.xpath("//title/text()")
+            title = found[0].strip() if found else ""
+            # Counted with the SAME selector the parser uses, not by looking
+            # for the class name in the text: "RadPanelBar" appears twice in
+            # one container's class attribute, so a substring count answers a
+            # different question than the one being asked.
+            containers = len(tree.xpath(PANEL_XPATH))
+        except Exception:  # pylint: disable=broad-except
+            # The report must never be the thing that fails.
+            title = "<unparseable>"
+        _LOGGER.warning(
+            "No readable panels on %s: %d bytes, title %r, %d panel container(s). "
+            "%s",
+            source, len(text), title, containers,
+            "Zero containers means this was not the expert page; one or more "
+            "means the page is there but its markup no longer matches.",
+        )
+
+    def parse_expert_page(self, html_content, source="the expert page", required=True):
+        """Turn the expert page into sensor dicts.
+
+        `required=False` means "tell me if this is not the expert page" -
+        return None instead of raising. The session-reuse path needs that: for
+        it, a page with no panels is not a broken portal but a session that
+        did not get us to the expert view, which is exactly what the full
+        login below exists to answer.
+        """
+        _LOGGER.debug("Parsing expert page HTML (%s)", source)
         output = {}
         tree = html.fromstring(html_content)
 
-        for div in tree.xpath('//div[contains(@class, "RadPanelBar RadPanelBar_Default rpbSimpleData")]'):
+        for div in tree.xpath(PANEL_XPATH):
             header_elems = div.xpath('.//th[contains(@class, "simpleDataHeaderTextCell")]/span/text()')
             if not header_elems:
                 # No header -> can't build stable sensor names for this
@@ -346,6 +412,9 @@ class WemPortalScraper:
         # the retry counter and timestamp as if data had arrived, so the
         # existing readings stayed on display looking current.
         if not output:
+            self._report_empty_page(html_content, source)
+            if not required:
+                return None
             raise ServerError(
                 "The WEM Portal expert page contained no readable panels."
             )

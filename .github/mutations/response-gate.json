@@ -852,5 +852,40 @@
     "old": "                    module[\"parameters_fetched_at\"] = 0",
     "new": "                    pass",
     "tests": "rescan_option_marks_the_cached_lists_as_due"
+  },
+  {
+    "label": "reuse: losing the cycle instead of logging in must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                        reused_html, source=\"the reused session\", required=False",
+    "new": "                        reused_html, source=\"the reused session\", required=True",
+    "tests": "reused_session_that_missed_the_expert_page_logs_in_fresh"
+  },
+  {
+    "label": "reuse: logging in although the reused page worked must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                    if panels is not None:",
+    "new": "                    if False:",
+    "tests": "reused_session_that_worked_does_not_log_in"
+  },
+  {
+    "label": "empty page: an unexplained failure must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            self._report_empty_page(html_content, source)",
+    "new": "            pass",
+    "tests": "report_separates_a_wrong_page_from_changed_markup"
+  },
+  {
+    "label": "empty page: counting containers by substring must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            containers = len(tree.xpath(PANEL_XPATH))",
+    "new": "            containers = text.count(\"RadPanelBar\")",
+    "tests": "report_separates_a_wrong_page_from_changed_markup"
+  },
+  {
+    "label": "empty page: a fresh login that finds nothing must still fail",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            if not required:\n                return None",
+    "new": "            return None",
+    "tests": "fresh_login_that_finds_nothing_still_fails"
   }
 ]
