@@ -134,6 +134,17 @@ The same parameter cannot be selected in two slots. A discovery only runs
 when you ask for it, never in the background, and the module list is cached
 so re-opening the dialog does not hit the portal again.
 
+Two limits worth knowing before you build on this:
+
+- **Ten slots per account.** Only a parameter sitting in one of them can be
+  read by the auto-poll or written by the service - the service is not a
+  general write primitive for any parameter of the installation.
+- **One expert account at a time.** The service is a single domain-wide
+  registration with no account to target, so it refuses while more than one
+  configured account has expert write enabled. Polling and every other
+  feature keep working for all of them; only the service is affected, and it
+  says so rather than guessing which heating system to change.
+
 If discovery cannot run, the form says which of three things happened:
 portal access is briefly backing off after a 403, the search failed, or the
 search ran but found nothing.

@@ -99,7 +99,7 @@
   "services": {
     "set_expert_parameter": {
       "name": "Set expert parameter",
-      "description": "Writes a Fachmann/expert parameter via the WEM Portal web frontend. Only available while the \"Expert write access (web)\" option is enabled. The value is validated against the device's own allowed range and the write is verified by re-reading the parameter afterwards.",
+      "description": "Writes a Fachmann/expert parameter via the WEM Portal web frontend. Only available while the \"Expert write access (web)\" option is enabled. The value is validated against the device's own allowed range and the write is verified by re-reading the parameter afterwards. Two limits the service enforces: it only accepts a parameter ID that is configured in one of the ten expert slots, and it refuses when more than one account has expert write enabled - a single service cannot say which account a write is meant for, and guessing would change a setting on the wrong heating system.",
       "fields": {
         "entityvalue": {
           "name": "Entity value",

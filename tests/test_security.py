@@ -243,3 +243,61 @@ def test_no_module_imports_the_expert_client_at_module_level():
         "it inside the function that needs it; the pure option helpers live "
         "in expert_options.py precisely so this stays possible."
     )
+
+
+# --- the documented limits have to be the enforced ones -----------------
+
+
+def test_the_documented_slot_count_is_the_enforced_one():
+    """The README and the service description both say "ten slots".
+
+    A number written out in prose drifts silently: raising EXPERT_SLOT_COUNT
+    leaves three texts claiming the old one, and the service description is
+    what a user reads before deciding whether this feature fits.
+    """
+    import json
+    from pathlib import Path
+
+    from custom_components.wemportal.const import EXPERT_SLOT_COUNT
+
+    spelled = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+               6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+    word = spelled.get(EXPERT_SLOT_COUNT)
+    assert word, (
+        f"EXPERT_SLOT_COUNT is {EXPERT_SLOT_COUNT} and this test only knows "
+        "how to spell up to ten - extend it together with the texts."
+    )
+
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert f"{word.capitalize()} slots per account" in readme, (
+        f"the README no longer says how many slots there are ({word})"
+    )
+
+    strings = json.loads(
+        (root / "custom_components" / "wemportal" / "strings.json")
+        .read_text(encoding="utf-8")
+    )
+    description = strings["services"]["set_expert_parameter"]["description"]
+    assert f"one of the {word} expert slots" in description, (
+        "the service description no longer states the slot limit it enforces"
+    )
+
+
+def test_the_service_description_states_the_single_account_limit():
+    """_resolve_expert_entry refuses when more than one account has expert
+    write enabled, and that refusal is invisible until it happens."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    strings = json.loads(
+        (root / "custom_components" / "wemportal" / "strings.json")
+        .read_text(encoding="utf-8")
+    )
+    description = strings["services"]["set_expert_parameter"]["description"]
+
+    assert "more than one account" in description
+    assert "One expert account at a time" in (
+        (root / "README.md").read_text(encoding="utf-8")
+    )

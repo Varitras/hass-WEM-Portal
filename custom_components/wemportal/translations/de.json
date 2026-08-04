@@ -99,7 +99,7 @@
   "services": {
     "set_expert_parameter": {
       "name": "Fachmann-Parameter setzen",
-      "description": "Schreibt einen Fachmann-Parameter über das Web-Frontend des WEM Portals. Nur verfügbar, solange die Option „Experten-Schreibzugriff über Web“ aktiviert ist. Der Wert wird gegen den vom Gerät erlaubten Bereich geprüft, und der Schreibvorgang wird durch erneutes Lesen verifiziert.",
+      "description": "Schreibt einen Fachmann-Parameter über das Web-Frontend des WEM Portals. Nur verfügbar, solange die Option „Fachmann-Schreibzugriff (Web)“ aktiv ist. Der Wert wird gegen den vom Gerät erlaubten Bereich geprüft und der Schreibvorgang anschließend durch erneutes Lesen bestätigt. Zwei Grenzen, die der Dienst durchsetzt: Er akzeptiert nur Parameter-IDs, die in einem der zehn Fachmann-Slots eingetragen sind, und er verweigert, sobald mehr als ein Konto den Fachmann-Schreibzugriff aktiviert hat – ein einzelner Dienst kann nicht sagen, welches Konto gemeint ist, und Raten würde eine Einstellung an der falschen Heizung ändern.",
       "fields": {
         "entityvalue": {
           "name": "Entity-Value",

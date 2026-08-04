@@ -733,5 +733,12 @@
     "old": "        if \"deprecat\" not in message.lower():\n            continue",
     "new": "        if False:\n            continue",
     "tests": "tripwire_watches_the_channel_the_report_arrives_on"
+  },
+  {
+    "label": "docs: a slot count the texts do not mention must be noticed",
+    "path": "custom_components/wemportal/const.py",
+    "old": "EXPERT_SLOT_COUNT: Final = 10",
+    "new": "EXPERT_SLOT_COUNT: Final = 8",
+    "tests": "documented_slot_count_is_the_enforced_one"
   }
 ]
