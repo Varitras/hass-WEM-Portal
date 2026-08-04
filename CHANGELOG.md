@@ -62,6 +62,17 @@ to ask the user for new credentials.
   error, so three portal outages in a row could ask for a password that was
   correct. The re-authentication counter is now genuinely consecutive: any
   other kind of failure in between resets it.
+- **A scraped reading the portal no longer has is no longer shown as
+  current.** The web path deliberately carried the previous value over
+  whenever a scrape came back without one, on the assumption that it was
+  "still very likely accurate". It is not: the portal renders "--" for a
+  value it does not currently have, and a setpoint was observed reading 50.5
+  degrees for three hours while the portal and the heat pump both showed
+  nothing. Only reloading the integration cleared it. A gap is the truthful
+  record of an hour without a reading; a flat line at the last value is what
+  automations act on. A row that stops being scraped altogether is cleared
+  for the same reason. The unit is still carried over - a "--" row has none,
+  and Home Assistant objects when a unit changes.
 - **A bad expert poll is no longer blamed on the configured parameter
   IDs.** When every configured parameter failed to read in the same cycle,
   each of them was counted as a broken ID, and after three cycles the user

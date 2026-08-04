@@ -2157,3 +2157,85 @@ def test_a_successful_schedule_keeps_the_full_interval():
     stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
 
     assert time.time() - stamp < 5, "a successful fetch was back-dated like a failure"
+
+
+# --- a scraped reading that is gone must not be shown as current -------
+
+
+def _scraped_row(value, unit="°C"):
+    """One row as the scraper hands it over. Named apart from _scraped_row()
+    above, which builds a whole scrape from key names - defining a second
+    `_scraped` silently rebound the first for every test in this file."""
+    return {"value": value, "unit": unit, "friendlyName": "Setpoint",
+            "name": "wp-solltemperatur", "icon": None,
+            "ParameterID": "wp-solltemperatur", "platform": "sensor"}
+
+
+def test_a_scraped_row_without_a_value_clears_the_sensor():
+    """Measured on a live installation: the portal renders "--" for a value
+    it does not have, the scrape maps that to None - and the old value was
+    carried over, so a setpoint read 50.5 degrees for three hours while the
+    portal and the heat pump both showed nothing."""
+    api = _api()
+    api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(50.5)})
+    assert api.data["0000"]["wp-solltemperatur"]["value"] == 50.5
+
+    api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(None, unit="")})
+
+    assert api.data["0000"]["wp-solltemperatur"]["value"] is None, (
+        "a reading the portal no longer has was reported as current"
+    )
+
+
+def test_the_unit_is_still_carried_over():
+    """The other half of the same block, and it must stay: a "--" row has no
+    unit, and Home Assistant complains when one changes."""
+    api = _api()
+    api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(50.5)})
+
+    api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(None, unit="")})
+
+    assert api.data["0000"]["wp-solltemperatur"]["unit"] == "°C"
+
+
+def test_a_row_that_stops_being_scraped_stops_showing_its_last_value():
+    api = _api()
+    api._merge_webscraping_data("0000", {
+        "wp-solltemperatur": _scraped_row(50.5),
+        "wp-vorlauf": _scraped_row(31.0),
+    })
+
+    api._merge_webscraping_data("0000", {"wp-vorlauf": _scraped_row(32.0)})
+
+    assert api.data["0000"]["wp-solltemperatur"]["value"] is None
+    assert api.data["0000"]["wp-vorlauf"]["value"] == 32.0
+
+
+def test_the_entity_of_a_vanished_row_is_kept():
+    """Cleared, not removed: the entity still exists in Home Assistant, and
+    dropping the key makes its platform log "Can't find ..." every cycle."""
+    api = _api()
+    api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(50.5)})
+
+    api._merge_webscraping_data("0000", {"wp-vorlauf": _scraped_row(31.0)})
+
+    assert "wp-solltemperatur" in api.data["0000"]
+
+
+def test_the_first_cycle_clears_nothing():
+    """There is nothing to compare against yet.
+
+    The reading just scraped is the one that matters here: an off-by-one in
+    which set is returned - the keys that are gone, or the keys that are
+    here - wipes every value on the very first cycle of every session, and
+    the entities come up empty until the second one.
+    """
+    api = _api()
+    api.data["0000"] = {"left-over": _scraped_row(12.0)}
+
+    api._merge_webscraping_data("0000", {"wp-vorlauf": _scraped_row(31.0)})
+
+    assert api.data["0000"]["wp-vorlauf"]["value"] == 31.0, (
+        "the first cycle cleared the values it had just read"
+    )
+    assert api.data["0000"]["left-over"]["value"] == 12.0

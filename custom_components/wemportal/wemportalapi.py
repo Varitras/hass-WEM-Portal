@@ -638,12 +638,16 @@ class WemPortalApi:
         Nothing can prevent that here, but silently splitting a sensor's
         history is the kind of thing people notice weeks later. If keys
         disappear and others appear in the same cycle, say so.
+
+        Returns the keys that are no longer scraped, which the caller needs
+        for a second reason: whatever they were showing is not current any
+        more either.
         """
         previous = self._previous_scraper_keys
         self._previous_scraper_keys = set(scraped_keys)
         if not previous:
             # First cycle of this session: nothing to compare against.
-            return
+            return set()
         gone = previous - set(scraped_keys)
         added = set(scraped_keys) - previous
         if gone and added:
@@ -654,12 +658,13 @@ class WemPortalApi:
                 "and their history stays with the old ones.",
                 ", ".join(sorted(gone)), ", ".join(sorted(added)),
             )
+        return gone
 
     def _merge_webscraping_data(self, device_id, webscraping_data):
         if str(device_id) not in self.data:
             self.data[str(device_id)] = {}
 
-        self._warn_about_renamed_scraper_keys(
+        vanished = self._warn_about_renamed_scraper_keys(
             [k for k, v in webscraping_data.items() if isinstance(v, dict)]
         )
 
@@ -675,17 +680,41 @@ class WemPortalApi:
                     if isinstance(old_val, dict) and old_val.get("unit") not in (None, ""):
                         new_val["unit"] = old_val.get("unit")
 
-                # Preserve the old value if the current scrape returned no
-                # value at all. Without this, a single missed/garbled read
-                # would make the sensor drop to "Unknown" and create a gap
-                # in its history, even though the previous value is still
-                # very likely accurate until the next successful update.
-                if new_val.get("value") is None:
-                    old_val = self.data[str(device_id)].get(key)
-                    if isinstance(old_val, dict) and old_val.get("value") is not None:
-                        new_val["value"] = old_val.get("value")
+                # The old value is deliberately NOT carried over when this
+                # scrape has none.
+                #
+                # It used to be, to avoid "a gap in the history, even though
+                # the previous value is still very likely accurate". Measured
+                # on a live installation, that premise does not hold: the
+                # portal renders "--" for a value it does not currently have,
+                # the scrape maps that to None, and the sensor then reported a
+                # setpoint of 50.5 degrees for three hours while the portal
+                # and the heat pump both showed nothing. Only reloading the
+                # integration cleared it.
+                #
+                # A gap is the truthful record of an hour with no reading. A
+                # flat line at the last value is not, and it is the shape
+                # automations act on.
+                #
+                # We only get here after a scrape that produced rows at all -
+                # a page with no readings is rejected earlier - so a row that
+                # came back without a value is the portal saying it has none,
+                # not evidence that the read went wrong.
 
             self.data[str(device_id)][key] = new_val
+
+        # Same reasoning for a row that stopped coming back entirely: it is
+        # not being scraped any more, so whatever it still shows is old. The
+        # key itself stays, because the entity does too and Home Assistant
+        # would otherwise report it as merely missing from the data.
+        for key in vanished:
+            entry = self.data[str(device_id)].get(key)
+            if isinstance(entry, dict) and entry.get("value") is not None:
+                _LOGGER.debug(
+                    "Scraped row %s is no longer on the page; its last value "
+                    "is not current any more.", key,
+                )
+                entry["value"] = None
 
     def reset_transport(self):
         """Throw away the HTTP state and force a fresh login next cycle.

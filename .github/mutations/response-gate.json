@@ -670,5 +670,33 @@
     "old": "        except KeyError:\n            self._attr_native_value = None",
     "new": "        except KeyError:\n            pass",
     "tests": "disappearing_parameter_clears_the_day_instead_of_keeping_it"
+  },
+  {
+    "label": "scrape freshness: carrying the old value over again must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self.data[str(device_id)][key] = new_val\n",
+    "new": "            if isinstance(new_val, dict) and new_val.get(\"value\") is None:\n                old_val = self.data[str(device_id)].get(key)\n                if isinstance(old_val, dict) and old_val.get(\"value\") is not None:\n                    new_val[\"value\"] = old_val.get(\"value\")\n            self.data[str(device_id)][key] = new_val\n",
+    "tests": "scraped_row_without_a_value_clears_the_sensor"
+  },
+  {
+    "label": "scrape freshness: losing the unit must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                if new_val.get(\"unit\") in (None, \"\"):",
+    "new": "                if False:",
+    "tests": "the_unit_is_still_carried_over"
+  },
+  {
+    "label": "scrape freshness: keeping a vanished row's last value must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                entry[\"value\"] = None",
+    "new": "                pass",
+    "tests": "row_that_stops_being_scraped_stops_showing_its_last_value"
+  },
+  {
+    "label": "scrape freshness: clearing on the first cycle must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            # First cycle of this session: nothing to compare against.\n            return set()",
+    "new": "            # First cycle of this session: nothing to compare against.\n            return set(self._previous_scraper_keys or ())",
+    "tests": "first_cycle_clears_nothing"
   }
 ]
