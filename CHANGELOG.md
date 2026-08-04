@@ -77,6 +77,16 @@ to ask the user for new credentials.
   error both sent the two requests of a login handshake immediately after
   the portal said it was unavailable. The web scraper has treated all three
   as answers for a while; the expert path does now too.
+- **An API reading the portal did not send is no longer shown as current.**
+  The data a cycle writes into is only rebuilt once per session, and each
+  cycle writes only what came back, so a parameter the portal left out kept
+  its previous value for the rest of the session - with nothing in the log
+  saying anything was missing. Holiday begin and end are included on
+  purpose: the portal stops sending them once no holiday is set, and last
+  year's date standing as current is the same mistake somewhere less
+  obvious. Heating schedules are not, because they are fetched on their own
+  path that keeps them fresh, and a module the portal did not answer for at
+  all is left alone.
 - **A scraped reading the portal no longer has is no longer shown as
   current.** The web path deliberately carried the previous value over
   whenever a scrape came back without one, on the assumption that it was

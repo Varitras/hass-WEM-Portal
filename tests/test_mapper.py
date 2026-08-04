@@ -544,3 +544,92 @@ def test_an_optionless_dropdown_stays_a_sensor():
     )
 
     assert data["Heat pump-Mystery"]["platform"] == "sensor"
+
+
+# --- a parameter the portal did not send is not current any more --------
+
+
+def _two_parameters(**overrides):
+    return _modules(
+        _parameter("AktRaumSoll", **overrides),
+        _parameter("Vorlaufsoll", **overrides),
+    )
+
+
+def test_a_parameter_the_portal_left_out_stops_being_current():
+    """api_data is only rebuilt once per session, and each cycle writes only
+    what came back - so a parameter the portal leaves out kept its previous
+    entry and went on being published as current."""
+    modules = _two_parameters()
+    existing = {
+        "Heat pump-AktRaumSoll": {"value": 21.0, "ParameterID": "AktRaumSoll",
+                                  "unit": "°C", "platform": "sensor"},
+        "Heat pump-Vorlaufsoll": {"value": 50.5, "ParameterID": "Vorlaufsoll",
+                                  "unit": "°C", "platform": "sensor"},
+    }
+
+    data = _process(
+        modules,
+        _values(_value("AktRaumSoll", numeric=22.0)),
+        existing=existing,
+    )
+
+    assert data["Heat pump-AktRaumSoll"]["value"] == 22.0
+    assert data["Heat pump-Vorlaufsoll"]["value"] is None, (
+        "a reading the portal did not send was still reported as current"
+    )
+    assert data["Heat pump-Vorlaufsoll"]["unit"] == "°C", "the unit was thrown away"
+
+
+def test_a_module_the_portal_did_not_answer_for_is_left_alone():
+    """A whole module missing is more likely a partial answer than a claim
+    that none of its parameters has a value."""
+    modules = _two_parameters()
+    existing = {
+        "Heat pump-AktRaumSoll": {"value": 21.0, "ParameterID": "AktRaumSoll",
+                                  "unit": "°C", "platform": "sensor"},
+    }
+
+    data = _process(modules, {"Modules": []}, existing=existing)
+
+    assert data["Heat pump-AktRaumSoll"]["value"] == 21.0
+
+
+def test_a_heating_schedule_is_not_cleared_by_the_value_read():
+    """Schedules are fetched on their own path with their own hourly
+    throttle, so clearing them here throws away what that path maintains."""
+    modules = _modules(
+        _parameter("AktRaumSoll"),
+        _parameter("Heizprogramm1", DataType=WemDataType.PROGRAM),
+    )
+    existing = {
+        "Heat pump-Heizprogramm1": {"value": "Active", "ParameterID": "Heizprogramm1",
+                                    "unit": None, "platform": "sensor",
+                                    "CircuitTimesDay": [{"day": "MO"}]},
+    }
+
+    data = _process(modules, _values(_value("AktRaumSoll", numeric=22.0)),
+                    existing=existing)
+
+    assert data["Heat pump-Heizprogramm1"]["value"] == "Active"
+    assert data["Heat pump-Heizprogramm1"]["CircuitTimesDay"] == [{"day": "MO"}]
+
+
+def test_a_holiday_date_stops_being_current_once_the_portal_drops_it():
+    """Intended, and the reason this is not an exception: the portal stops
+    sending holiday begin once no holiday is set, and last August's date
+    standing as current is the same mistake in a less obvious place."""
+    modules = _modules(
+        _parameter("AktRaumSoll"),
+        _parameter("U_Beginn", IsWriteable=True, DataType=WemDataType.SWITCH,
+                   MinValue=None, MaxValue=None, EnumValues=None),
+    )
+    existing = {
+        "Heat pump-U_Beginn": {"value": 1785715200.0, "ParameterID": "U_Beginn",
+                               "unit": None, "platform": "date"},
+    }
+
+    data = _process(modules, _values(_value("AktRaumSoll", numeric=22.0)),
+                    existing=existing)
+
+    assert data["Heat pump-U_Beginn"]["value"] is None

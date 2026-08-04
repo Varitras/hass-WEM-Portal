@@ -353,6 +353,65 @@ def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
     }
 
 
+def _clear_unanswered(device_id, values_json, modules_dict, parsed_sensors, api_data) -> None:
+    """Stop presenting a reading the portal did not send this cycle.
+
+    api_data is only rebuilt by get_devices(), which runs once per session,
+    and every cycle writes only what came back. A parameter the portal leaves
+    out therefore keeps its previous entry, and the entity goes on publishing
+    it as current - for as long as the session lasts, with no log line saying
+    anything is missing. Measured on the web path as a setpoint reading 50.5
+    degrees for three hours; this is the same gap on the API path.
+
+    Three deliberate limits on what gets cleared:
+
+      * only inside modules the portal ANSWERED for. A module missing
+        altogether is more likely a partial answer than a claim that none of
+        its parameters has a value.
+      * never a heating schedule (DataType 6). Those are fetched on their own
+        path with their own hourly throttle, so their freshness is somebody
+        else's job and clearing them here would throw away what that path
+        maintains.
+      * only the `value`. Unit, name and icon stay, so the entity keeps its
+        identity and Home Assistant is not told a unit changed.
+
+    Holiday begin and end fall in here too, and that is intended: the portal
+    stops sending them once no holiday is set, and last August's date
+    standing as current is the same mistake in a less obvious place.
+    """
+    device_data = api_data.get(device_id)
+    if not device_data:
+        return
+
+    for module in values_json.get("Modules", []):
+        try:
+            module_key = (module["ModuleIndex"], module["ModuleType"])
+        except (KeyError, TypeError):
+            continue
+        device_module = modules_dict.get(device_id, {}).get(module_key)
+        if not device_module or not device_module.get("parameters"):
+            continue
+
+        cleared = []
+        for param_id, parameter in device_module["parameters"].items():
+            if parameter.get("DataType") == WemDataType.PROGRAM:
+                continue
+            name = f"{device_module['Name']}-{param_id}"
+            if name in parsed_sensors:
+                continue
+            entry = device_data.get(name)
+            if isinstance(entry, dict) and entry.get("value") is not None:
+                entry["value"] = None
+                cleared.append(param_id)
+
+        if cleared:
+            _LOGGER.debug(
+                "Device %s module %s/%s: the portal sent no value for %s; "
+                "their last reading is not current any more.",
+                device_id, module_key[0], module_key[1], ", ".join(sorted(cleared)),
+            )
+
+
 class WemPortalDataMapper:
     """Handles mapping of raw API and Scraped data into Home Assistant platforms."""
 
@@ -396,3 +455,8 @@ class WemPortalDataMapper:
                 )
             else:
                 _emit_plain_sensor(device_id, key, sensor, api_data)
+
+        # Last, so it sees everything this cycle actually wrote.
+        _clear_unanswered(
+            device_id, values_json, modules_dict, parsed_sensors, api_data
+        )
