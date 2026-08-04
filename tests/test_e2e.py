@@ -1668,13 +1668,39 @@ DEPRECATED_DEVICE_REGISTRY_APIS = (
 )
 
 
-async def test_the_device_registry_apis_are_not_deprecated_yet(hass, recwarn):
+def _deprecation_reports(records):
+    """The device-registry deprecations among captured log records.
+
+    Home Assistant announces these through helpers.frame.report_usage, and
+    that writes to a LOGGER - `warnings` is not imported in that module at
+    all. This test used to watch warnings.catch_warnings(), which meant it
+    could not fail: the channel it listened on never carries the message.
+    """
+    import logging
+
+    hits = []
+    for record in records:
+        if record.levelno < logging.WARNING:
+            continue
+        message = record.getMessage()
+        # Both signals, not just the API name: "config_entries" appears in
+        # every log line that quotes a path through config_entries.py, and
+        # asyncio's slow-task warning does exactly that during setup. Asking
+        # for the name alone made this fire on it.
+        if "deprecat" not in message.lower():
+            continue
+        if any(name in message for name in DEPRECATED_DEVICE_REGISTRY_APIS):
+            hits.append(message)
+    return hits
+
+
+async def test_the_device_registry_apis_are_not_deprecated_yet(hass, caplog):
     """A tripwire, not a fix.
 
     Three device-registry APIs this integration uses are announced as
     deprecated in Home Assistant 2026.8 and removed in 2027.8:
     DeviceEntry.config_entries, async_get_device() and DeviceInfo.via_device.
-    Measured against the installed 2026.7.2, none of them warns yet - and
+    Measured against the installed 2026.7.2, none of them reports yet - and
     their replacements cannot be written against an API that is not there to
     read. Guessing the replacement is how the last two wrong claims in this
     repository were made.
@@ -1684,20 +1710,24 @@ async def test_the_device_registry_apis_are_not_deprecated_yet(hass, recwarn):
     adapters can be written against something real, with feature detection
     rather than a version comparison - the minimum supported version is
     2024.12, so both shapes have to work.
-    """
-    import warnings
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    Two things had to be true for it to be able to fail at all, and neither
+    was. It listened on `warnings`, while report_usage writes to a logger.
+    And report_usage remembers what it has already said in a module-level
+    set, so the first test in the session to touch the same API consumes the
+    only report there will be - which is why that set is cleared here.
+    """
+    import logging
+
+    from homeassistant.helpers import frame
+
+    frame._REPORTED_INTEGRATIONS.clear()
+
+    with caplog.at_level(logging.WARNING):
         entry = await _setup(hass, _entry(hass))
         await hass.async_block_till_done()
 
-    hits = [
-        str(w.message)
-        for w in caught
-        if issubclass(w.category, DeprecationWarning)
-        and any(name in str(w.message) for name in DEPRECATED_DEVICE_REGISTRY_APIS)
-    ]
+    hits = _deprecation_reports(caplog.records)
 
     assert not hits, (
         "Home Assistant now deprecates a device-registry API this integration "
@@ -1706,6 +1736,39 @@ async def test_the_device_registry_apis_are_not_deprecated_yet(hass, recwarn):
         "before removal."
     )
     assert entry.state is ConfigEntryState.LOADED
+
+
+def test_the_tripwire_watches_the_channel_the_report_arrives_on():
+    """Guards the guard, and this one had actually failed silently.
+
+    A tripwire that watches the wrong channel passes forever and reads as
+    "not deprecated yet". The point is not that the collector can match a
+    string - it is that it matches a LOG record, which is what
+    helpers.frame.report_usage produces.
+    """
+    import logging
+
+    record = logging.LogRecord(
+        "homeassistant.helpers.frame", logging.WARNING, __file__, 0,
+        "Detected that custom integration 'wemportal' accesses via_device, "
+        "which is deprecated and will stop working in HA Core 2027.8",
+        None, None,
+    )
+
+    assert _deprecation_reports([record])
+
+    def _record(message):
+        return logging.LogRecord("x", logging.WARNING, __file__, 0, message,
+                                 None, None)
+
+    assert not _deprecation_reports([_record("something else")])
+    # The false positive this collector produced on its first run: asyncio's
+    # slow-task warning quotes a path through config_entries.py, and
+    # "config_entries" is one of the names being watched for.
+    assert not _deprecation_reports([_record(
+        "Executing <Task finished ... defined at "
+        ".../homeassistant/config_entries.py:951> took 0.2 seconds"
+    )])
 
 
 async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatch):
