@@ -642,5 +642,33 @@
     "old": "        if unreadable_id:",
     "new": "        if True:",
     "tests": "a_single_configured_id_is_still_reported"
+  },
+  {
+    "label": "date: an inexact write encoding must be noticed",
+    "path": "custom_components/wemportal/date.py",
+    "old": "    return datetime(\n        value.year, value.month, value.day, tzinfo=timezone.utc\n    ).timestamp()",
+    "new": "    return datetime(\n        value.year, value.month, value.day, tzinfo=timezone.utc\n    ).timestamp() + 3600",
+    "tests": "writing_uses_the_encoding_the_portal_sent or setting_a_day_writes_the_portal_encoding"
+  },
+  {
+    "label": "date: an inexact read decoding must be noticed",
+    "path": "custom_components/wemportal/date.py",
+    "old": "        return datetime.fromtimestamp(seconds, tz=timezone.utc).date()",
+    "new": "        return datetime.fromtimestamp(seconds + 86400, tz=timezone.utc).date()",
+    "tests": "measured_values_decode_to_the_days_they_stood_for"
+  },
+  {
+    "label": "date: showing a day the portal never took must be noticed",
+    "path": "custom_components/wemportal/date.py",
+    "old": "        await self.async_write_parameter(date_to_epoch(value))\n        self._attr_native_value = value",
+    "new": "        self._attr_native_value = value\n        await self.async_write_parameter(date_to_epoch(value))",
+    "tests": "write_is_not_reported_before_the_portal_took_it"
+  },
+  {
+    "label": "date: keeping a vanished day must be noticed",
+    "path": "custom_components/wemportal/date.py",
+    "old": "        except KeyError:\n            self._attr_native_value = None",
+    "new": "        except KeyError:\n            pass",
+    "tests": "disappearing_parameter_clears_the_day_instead_of_keeping_it"
   }
 ]
