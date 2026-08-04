@@ -1626,9 +1626,18 @@ class WemPortalApi:
         except Exception as exc:
             # Broad: every way a write can fail must reach the caller as
             # one failure type, so the service and the entities can
-            # report it. The original is kept as the cause.
+            # report it.
+            #
+            # The cause is quoted, not just chained. Home Assistant shows a
+            # failed service call as str(exception) and nothing else, so a
+            # message that says only "Error changing parameter X value"
+            # discards what the portal actually answered - which at that
+            # moment is the one thing anybody wants. A rejected holiday date
+            # read exactly that in practice, while "Server returned status
+            # code: -1 and message: Unbekannter Fehler" sat one exception
+            # deeper where only a debug log would show it.
             raise ParameterChangeError(
-                f"Error changing parameter {parameter_id} value"
+                f"Error changing parameter {parameter_id}: {exc}"
             ) from exc
 
         # What a SUCCESSFUL write actually answers, captured from the real

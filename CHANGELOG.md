@@ -70,6 +70,11 @@ to ask the user for new credentials.
   device selector, which needs a multi-device account to develop against -
   but the log now names the device the sensors were filed under, and the
   README says `api` mode covers every device correctly.
+- **A refused write says what the portal answered.** Home Assistant shows a
+  failed service call as the exception text and nothing else, and that text
+  was "Error changing parameter X value" - while the portal's own reply sat
+  one exception deeper, where only debug logging would have shown it. A
+  rejected holiday date read exactly that.
 - **A reused web session that lands on the wrong page no longer costs the
   whole scrape.** The fast path reuses a cached session and posts to select
   the Expert tab, and that postback carries state the portal can refuse - in

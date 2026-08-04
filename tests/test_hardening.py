@@ -2563,3 +2563,30 @@ def test_something_that_is_not_a_programme_adds_no_attribute(raw):
     from custom_components.wemportal.sensor import _readable_schedule
 
     assert _readable_schedule(raw) is None
+
+
+def test_a_refused_write_says_what_the_portal_answered():
+    """Home Assistant shows a failed service call as str(exception) and
+    nothing else. "Error changing parameter X value" therefore discarded the
+    portal's own words at exactly the moment somebody wanted them - a
+    rejected holiday date read precisely that, while "Status -1: Unbekannter
+    Fehler" sat one exception deeper.
+    """
+    api = _api()
+    api.session = object()
+
+    def refuse(*_args, **_kwargs):
+        raise exceptions.WemPortalError(
+            "Server returned status code: -1 and message: Unbekannter Fehler"
+        )
+
+    api.make_api_call = refuse
+
+    with pytest.raises(exceptions.ParameterChangeError) as excinfo:
+        api.change_value("1234", "U_Beginn", 1, 2, 1785801600.0, login=False)
+
+    message = str(excinfo.value)
+    assert "U_Beginn" in message
+    assert "Unbekannter Fehler" in message, (
+        "the portal's own answer was dropped from the error the user sees"
+    )

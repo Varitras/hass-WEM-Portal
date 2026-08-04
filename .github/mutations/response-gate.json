@@ -936,5 +936,12 @@
     "old": "    if not isinstance(parsed, dict):\n        return None",
     "new": "    if False:\n        return None",
     "tests": "something_that_is_not_a_programme_adds_no_attribute"
+  },
+  {
+    "label": "write error: dropping the portal's own answer must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                f\"Error changing parameter {parameter_id}: {exc}\"",
+    "new": "                f\"Error changing parameter {parameter_id} value\"",
+    "tests": "refused_write_says_what_the_portal_answered"
   }
 ]
