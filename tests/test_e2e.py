@@ -2110,3 +2110,52 @@ async def test_a_single_configured_id_is_still_reported(hass, monkeypatch):
     # It was requested and failed, so the portal is a candidate too - the
     # message must not assert the configuration is wrong.
     assert "portal" in notifications[0]["message"]
+
+
+async def test_the_rescan_option_marks_the_cached_lists_as_due(hass):
+    """The button is for the moment right after something changed in the
+    portal, when waiting a day for the interval is the wrong answer.
+
+    It does no portal work of its own: setting the timestamps back is enough,
+    and the next update cycle re-reads through the normal path, with the
+    normal rate limiting and the normal "keep what we have if the re-read
+    fails" rule.
+    """
+    entry = await _setup(hass, _entry(hass))
+    api = entry.runtime_data.api
+    api.modules = {
+        "1234": {
+            (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
+                     "parameters": {"P": {}}, "parameters_fetched_at": 9999.0},
+            (0, 7): {"Index": 0, "Type": 7, "Name": "Boiler"},
+        }
+    }
+
+    result = await _open_options(hass, entry, "rescan_parameters")
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "configure", (
+        "the re-scan should hand the user back to the settings form"
+    )
+    assert api.modules["1234"][(0, 1)]["parameters_fetched_at"] == 0, (
+        "the cached list was not marked for a re-read"
+    )
+    # A module with no discovered list needs no marking - it is read anyway.
+    assert "parameters_fetched_at" not in api.modules["1234"][(0, 7)]
+
+
+async def test_the_rescan_option_makes_no_portal_requests(hass):
+    """Doing the reads here would put a multi-second round trip inside a
+    dialog and duplicate the rate limiting the normal path already has."""
+    entry = await _setup(hass, _entry(hass))
+    api = entry.runtime_data.api
+    api.modules = {
+        "1234": {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
+                          "parameters": {"P": {}}, "parameters_fetched_at": 1.0}}
+    }
+    calls = []
+    api.make_api_call = lambda url, **_k: calls.append(url)
+
+    await _open_options(hass, entry, "rescan_parameters")
+
+    assert calls == []

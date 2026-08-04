@@ -36,7 +36,8 @@
       "init": {
         "menu_options": {
           "configure": "Einstellungen und Fachmann-Slots konfigurieren",
-          "discover_modules": "Fachmann-Parameter aus dem Portal auslesen"
+          "discover_modules": "Fachmann-Parameter aus dem Portal auslesen",
+          "rescan_parameters": "Portal nach neuen API-Parametern durchsuchen"
         }
       },
       "configure": {

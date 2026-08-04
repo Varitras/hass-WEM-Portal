@@ -69,6 +69,14 @@ Configuration variables during initial setup:
 
 Optional settings (available via `CONFIGURE` after setup):
 
+> **New parameters are picked up within a day.** Which parameters a module
+> has is discovered once and then cached, so activating an input or output in
+> the portal is not visible immediately. The list is re-read every 24 hours;
+> `Settings > Devices & Services > WEM Portal > CONFIGURE >`
+> `Search the portal for new API parameters` marks it for a re-read on the
+> next update if you do not want to wait. This concerns the mobile API only -
+> the web scraper re-reads the whole page every cycle anyway.
+
 > **One device per account on the web path.** The scraper reads a single
 > expert page and the portal decides which device that page shows, so with
 > more than one device on the account its sensors are filed under the first

@@ -34,7 +34,8 @@
       "init": {
         "menu_options": {
           "configure": "Configure settings and expert slots",
-          "discover_modules": "Discover expert parameters from the portal"
+          "discover_modules": "Discover expert parameters from the portal",
+          "rescan_parameters": "Search the portal for new API parameters"
         }
       },
       "configure": {

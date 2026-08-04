@@ -803,5 +803,54 @@
     "old": "            if not self.modules.get(device_id):",
     "new": "            if False:",
     "tests": "device_with_no_modules_at_all_is_not_a_failure"
+  },
+  {
+    "label": "rediscovery: caching the parameter list forever must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                    if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:",
+    "new": "                    if True:",
+    "tests": "stale_parameter_list_is_re_read or list_with_no_timestamp_is_re_read_once"
+  },
+  {
+    "label": "rediscovery: re-reading a list that is still fresh must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                    if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:",
+    "new": "                    if False:",
+    "tests": "fresh_parameter_list_is_not_re_read"
+  },
+  {
+    "label": "rediscovery: a failed re-read must not drop what it had",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if values.get(\"parameters\"):",
+    "new": "        if False:",
+    "tests": "failed_re_read_keeps_the_parameters_it_had"
+  },
+  {
+    "label": "rediscovery: keeping a module that has nothing must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        delete_candidates.append((values[\"Index\"], values[\"Type\"]))",
+    "new": "        pass",
+    "tests": "module_that_never_had_parameters_is_still_dropped"
+  },
+  {
+    "label": "rediscovery: retrying a refused module at once must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            values[\"parameters_fetched_at\"] = time.time() - max(",
+    "new": "            values[\"parameters_fetched_at\"] = 0 * max(",
+    "tests": "failed_re_read_is_not_retried_on_the_very_next_cycle"
+  },
+  {
+    "label": "rediscovery: forgetting the timestamp across a device refresh must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                    module_entry[\"parameters_fetched_at\"] = cached_module.get(\n                        \"parameters_fetched_at\", 0\n                    )",
+    "new": "                    pass",
+    "tests": "get_devices_carries_the_parameter_timestamp_too"
+  },
+  {
+    "label": "rediscovery: the re-scan button must actually mark the lists",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                    module[\"parameters_fetched_at\"] = 0",
+    "new": "                    pass",
+    "tests": "rescan_option_marks_the_cached_lists_as_due"
   }
 ]

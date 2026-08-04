@@ -2317,3 +2317,128 @@ def test_a_device_with_parameters_is_still_read():
 
     assert api._fetch_parameter_values("1234") is True
     assert wemportalapi.API_REFRESH_URL in calls
+
+
+# --- the parameter list is re-read, and a failed re-read keeps it -------
+
+
+def _discovery_api(answers, fetched_at=None):
+    """An api with one cached module, answering EventType/Read from `answers`."""
+    api = _api()
+    api.data = {"1234": {"ConnectionStatus": 0}}
+    module = {"Index": 0, "Type": 1, "Name": "Heat pump",
+              "parameters": {"Known": {"ParameterID": "Known"}}}
+    if fetched_at is not None:
+        module["parameters_fetched_at"] = fetched_at
+    api.modules = {"1234": {(0, 1): module}}
+    calls = []
+
+    def make_api_call(url, **_kwargs):
+        calls.append(url)
+        answer = answers.pop(0) if answers else None
+        if isinstance(answer, Exception):
+            raise answer
+        return FakeResponse(answer)
+
+    api.make_api_call = make_api_call
+    return api, calls
+
+
+def test_a_fresh_parameter_list_is_not_re_read():
+    api, calls = _discovery_api([], fetched_at=time.time())
+
+    api.get_parameters()
+
+    assert calls == [], "a list read minutes ago was read again"
+
+
+def test_a_stale_parameter_list_is_re_read():
+    """Cached forever, a parameter added on a module the integration already
+    knew - activating an input or output in the portal - was never
+    discovered, with no error and no way to force a re-scan."""
+    api, calls = _discovery_api(
+        [{"Parameters": [{"ParameterID": "Known"}, {"ParameterID": "New"}]}],
+        fetched_at=time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60),
+    )
+
+    api.get_parameters()
+
+    assert calls == [wemportalapi.API_EVENT_TYPE_READ_URL]
+    assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known", "New"}
+
+
+def test_a_list_with_no_timestamp_is_re_read_once():
+    """A cache written before this existed must heal itself."""
+    api, calls = _discovery_api([{"Parameters": [{"ParameterID": "Known"}]}])
+
+    api.get_parameters()
+
+    assert calls == [wemportalapi.API_EVENT_TYPE_READ_URL]
+    assert api.modules["1234"][(0, 1)]["parameters_fetched_at"] > 0
+
+
+def test_a_failed_re_read_keeps_the_parameters_it_had():
+    """The condition the whole interval rests on.
+
+    Discovery used to run once per session, so dropping a module the portal
+    would not describe was harmless. On a timer that path runs again and
+    again, and one 403 or maintenance window would throw away a working
+    parameter list - straight into "device has no parameters".
+    """
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, _calls = _discovery_api([{"Parameters": []}], fetched_at=stale)
+
+    api.get_parameters()
+
+    assert (0, 1) in api.modules["1234"], "a working module was deleted"
+    assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known"}
+
+
+def test_a_failed_re_read_is_not_retried_on_the_very_next_cycle():
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, calls = _discovery_api([{"Parameters": []}, {"Parameters": []}],
+                                fetched_at=stale)
+
+    api.get_parameters()
+    after_first = len(calls)
+    api.get_parameters()
+
+    assert after_first == 1
+    assert len(calls) == 1, "a refused module was asked again immediately"
+
+
+def test_a_module_that_never_had_parameters_is_still_dropped():
+    """The additive rule must not keep a module the portal cannot describe
+    at all - that is what the delete list is for."""
+    api, _calls = _discovery_api([{"Parameters": []}])
+    del api.modules["1234"][(0, 1)]["parameters"]
+
+    api.get_parameters()
+
+    assert (0, 1) not in api.modules["1234"]
+
+
+def test_get_devices_carries_the_parameter_timestamp_too():
+    """It travels with the list it belongs to.
+
+    Left behind, every session starts with the cache looking expired and
+    re-reads every module on its first cycle - which is the portal load the
+    interval exists to avoid, arriving on every restart instead.
+    """
+    fetched_at = time.time() - 60
+    cached = {
+        "1234": {
+            (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
+                     "parameters": {"P1": {"ParameterID": "P1"}},
+                     "parameters_fetched_at": fetched_at},
+        }
+    }
+    api = _api(cached_modules=cached)
+    api.make_api_call = lambda *a, **k: FakeResponse({
+        "Devices": [{"ID": 1234, "ConnectionStatus": 0,
+                     "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}]}]
+    })
+
+    api.get_devices()
+
+    assert api.modules["1234"][(0, 1)]["parameters_fetched_at"] == fetched_at

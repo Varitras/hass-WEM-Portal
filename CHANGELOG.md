@@ -77,6 +77,17 @@ to ask the user for new credentials.
   error both sent the two requests of a login handshake immediately after
   the portal said it was unavailable. The web scraper has treated all three
   as answers for a while; the expert path does now too.
+- **A parameter added in the portal is found without reinstalling.** The
+  discovered parameter list of a module was cached forever, so activating an
+  input or output on a module the integration already knew produced
+  something it would never see - no error, no log line, and no way to force a
+  re-scan short of removing and re-adding the integration. A new MODULE was
+  always found; a new parameter on an existing one never was. The list is
+  re-read once a day now, and `Configure` has a `Search the portal for new
+  API parameters` entry for the moment right after something changed. A
+  re-read that fails keeps the parameters it already had - only a module that
+  never had any is dropped. The web path was never affected: it re-reads the
+  whole page every cycle.
 - **A device with nothing to read is no longer asked anyway.** The portal
   rejects a value read that names no modules with 400 Bad Request, and the
   integration built exactly that request whenever parameter discovery had

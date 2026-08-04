@@ -161,6 +161,29 @@ AUTH_ERROR_ESCALATION_THRESHOLD: Final = 3
 # them directly in the WEM Portal app (this integration only ever shows
 # them as read-only sensors). Refetching them every single coordinator
 # cycle is unnecessary load; this caps how often they're refreshed.
+# How long a module's discovered parameter list is trusted before the portal
+# is asked again.
+#
+# The list used to be cached forever: activating an input or output on a
+# module the integration already knew produced a parameter it would never
+# discover, with no error and no way to force a re-scan short of removing and
+# re-adding the integration. A NEW module was found (it has no cached
+# parameters), a new parameter on an existing one was not.
+#
+# One JSON request per module makes this cheap enough to do on a timer -
+# unlike the Fachmann discovery, which is a full web navigation and stays
+# on-demand only. Four modules once a day is 0.04% of the portal's 10,000
+# requests per 12 hours.
+#
+# Wall clock, not monotonic: the timestamp is persisted with the module cache
+# and has to survive a restart, which monotonic does not.
+PARAMETER_REDISCOVERY_INTERVAL_SECONDS: Final = 24 * 3600  # 1 day
+
+# How soon a FAILED re-scan is attempted again. Shorter than the interval
+# above, but not immediate: a portal that just refused must not be asked once
+# per cycle. Same shape as the statistics and schedule retries.
+PARAMETER_REDISCOVERY_RETRY_SECONDS: Final = 3600  # 1 hour
+
 CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
 
 # How soon a schedule that FAILED to load is tried again. Shorter than the

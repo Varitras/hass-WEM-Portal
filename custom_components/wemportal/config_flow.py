@@ -296,11 +296,49 @@ class WemportalOptionsFlow(OptionsFlow):
     _module_list: list | None = None
 
     async def async_step_init(self, user_input=None):
-        """Options menu: configure directly, or discover expert parameters."""
+        """Options menu: configure, discover expert parameters, or re-scan."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["configure", "discover_modules"],
+            menu_options=["configure", "discover_modules", "rescan_parameters"],
         )
+
+    async def async_step_rescan_parameters(self, user_input=None):
+        """Mark the cached API parameter lists as due for a re-read.
+
+        The lists are refreshed on their own once a day. This is for the
+        moment right after something changed in the portal - activating an
+        input or output on a module the integration already knows - when
+        waiting for the interval is the wrong answer.
+
+        It does no portal work itself. Setting the timestamps back is enough:
+        the next update cycle reads the modules again through the normal path,
+        with the normal rate limiting and the normal "keep what we have if the
+        re-read fails" rule. Doing the requests here would put a multi-second
+        portal round trip inside a dialog and duplicate all of that.
+        """
+        data = getattr(self.config_entry, "runtime_data", None)
+        api = getattr(data, "api", None) if data is not None else None
+        modules = getattr(api, "modules", None) if api is not None else None
+
+        marked = 0
+        for device_modules in (modules or {}).values():
+            for module in device_modules.values():
+                if module.get("parameters"):
+                    module["parameters_fetched_at"] = 0
+                    marked += 1
+
+        if marked:
+            _LOGGER.info(
+                "Options: marked the parameter list of %d module(s) for a "
+                "re-read on the next update.", marked,
+            )
+        else:
+            # Nothing loaded, or nothing discovered yet - in both cases the
+            # next cycle discovers anyway, so this is not an error.
+            _LOGGER.debug(
+                "Options: no cached parameter lists to mark for a re-read."
+            )
+        return await self.async_step_configure()
 
     async def async_step_configure(self, user_input=None):
         """Manage the options."""

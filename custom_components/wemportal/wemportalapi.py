@@ -51,6 +51,8 @@ from .const import (
     FORBIDDEN_COOLDOWN_SECONDS,
     EXPERT_FORBIDDEN_COOLDOWN_SECONDS,
     CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
+    PARAMETER_REDISCOVERY_INTERVAL_SECONDS,
+    PARAMETER_REDISCOVERY_RETRY_SECONDS,
     CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
     STATISTICS_REFRESH_INTERVAL_SECONDS,
     STATISTICS_RETRY_INTERVAL_SECONDS,
@@ -1345,6 +1347,13 @@ class WemPortalApi:
                 cached_module = previously_known_device_modules.get(module_key)
                 if cached_module and "parameters" in cached_module:
                     module_entry["parameters"] = cached_module["parameters"]
+                    # Carried across with the list it belongs to. Left behind,
+                    # every session would look like the cache had just expired
+                    # and re-read every module on the first cycle - the exact
+                    # portal load the interval exists to avoid.
+                    module_entry["parameters_fetched_at"] = cached_module.get(
+                        "parameters_fetched_at", 0
+                    )
                 new_modules[device_id_str][module_key] = module_entry
             new_data[device_id_str]["ConnectionStatus"] = device["ConnectionStatus"]
             # Kept out of new_data: the entity platforms iterate that dict
@@ -1353,6 +1362,41 @@ class WemPortalApi:
                 self.device_types[device_id_str] = device["DeviceType"]
         self.modules = new_modules
         self.data = new_data
+
+    def _keep_or_drop_module(self, device_id, key, values, delete_candidates, why):
+        """A module the portal would not describe: keep what we have, or drop it.
+
+        This is what makes a re-scan purely ADDITIVE, and it is the condition
+        the whole TTL rests on. Discovery used to run once per session, so
+        dropping a module the portal refused to describe was harmless. On a
+        timer that same path runs again and again, and a 403, a maintenance
+        window or one bad answer would throw away a parameter list that was
+        working - straight into "device has no parameters", the state the
+        empty-read guard exists for.
+
+        So a module that already HAS parameters keeps them and is simply not
+        asked again for a while. Only one that never had any is dropped.
+        """
+        if values.get("parameters"):
+            _LOGGER.warning(
+                "Could not re-read the parameters of device %s module %s/%s (%s). "
+                "Keeping the %d already known; trying again in about %d h.",
+                device_id, values["Index"], values["Type"], why,
+                len(values["parameters"]),
+                PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,
+            )
+            values["parameters_fetched_at"] = time.time() - max(
+                0,
+                PARAMETER_REDISCOVERY_INTERVAL_SECONDS
+                - PARAMETER_REDISCOVERY_RETRY_SECONDS,
+            )
+            return
+        _LOGGER.warning(
+            "Module index %s type %s is unsupported by WEM Portal (%s). "
+            "Deleting from cache.",
+            values["Index"], values["Type"], why,
+        )
+        delete_candidates.append((values["Index"], values["Type"]))
 
     def get_parameters(self):
         if self.modules is None:
@@ -1367,13 +1411,27 @@ class WemPortalApi:
             delete_candidates = []
             forbidden_count = 0
             for key, values in self.modules[device_id].items():
-                # Check if parameters are already cached
+                # Cached AND still young enough to trust. Without the age
+                # check the list was kept forever, so a parameter added on a
+                # module the integration already knew - activating an input
+                # or output in the portal - was never discovered, with no
+                # error and no way to force a re-scan short of removing the
+                # integration. A NEW module was always found; a new parameter
+                # on an existing one never was.
                 if "parameters" in values and values["parameters"]:
+                    age = time.time() - values.get("parameters_fetched_at", 0)
+                    if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:
+                        _LOGGER.debug(
+                            "Parameters for device %s, index %s, and type %s are "
+                            "cached and %.1f h old.",
+                            device_id, values["Index"], values["Type"], age / 3600,
+                        )
+                        continue
                     _LOGGER.debug(
-                        "Parameters for device %s, index %s, and type %s are already cached.",
-                        device_id, values["Index"], values["Type"]
+                        "Re-reading parameters for device %s, index %s, type %s "
+                        "(cached list is %.1f h old).",
+                        device_id, values["Index"], values["Type"], age / 3600,
                     )
-                    continue
                 data = {
                     "DeviceID": int(device_id),
                     "ModuleIndex": values["Index"],
@@ -1406,13 +1464,10 @@ class WemPortalApi:
                             )
                             continue
                         elif status_code == 400:
-                            _LOGGER.warning(
-                                "Module index %s type %s is unsupported by WEM Portal. "
-                                "Deleting from cache.",
-                                values["Index"],
-                                values["Type"]
+                            self._keep_or_drop_module(
+                                device_id, key, values, delete_candidates,
+                                "the portal rejected the request",
                             )
-                            delete_candidates.append((values["Index"], values["Type"]))
                             continue
                     raise
                 parameters = {}
@@ -1420,9 +1475,13 @@ class WemPortalApi:
                     for parameter in response.json()["Parameters"]:
                         parameters[parameter["ParameterID"]] = parameter
                     if not parameters:
-                        delete_candidates.append((values["Index"], values["Type"]))
+                        self._keep_or_drop_module(
+                            device_id, key, values, delete_candidates,
+                            "it described no parameters",
+                        )
                     else:
                         self.modules[device_id][key]["parameters"] = parameters
+                        self.modules[device_id][key]["parameters_fetched_at"] = time.time()
                 except (KeyError, ValueError):
                     # ValueError also covers a JSON-decode failure (e.g. an
                     # HTML error page returned instead of JSON) - without
