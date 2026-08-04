@@ -550,3 +550,48 @@ def test_a_broken_main_page_is_not_a_credential_problem():
         scraper._load_expert_page()
 
     assert not isinstance(excinfo.value, AuthError)
+
+
+@pytest.mark.parametrize("answer", ["forbidden", "maintenance", "server_error"])
+def test_a_portal_answer_does_not_trigger_a_full_login(answer):
+    """The three answers that must not be followed by a login handshake.
+
+    A stale session and a portal that says "rate limited", "we are down for
+    maintenance" or "something broke" both surface as an exception here, and
+    only the first is a reason to log in again. Falling through sends the two
+    requests of a full login immediately after the portal asked us to stop -
+    against an IP it blocks past 10,000 requests per 12 hours.
+
+    The web scraper has covered all three since the same defect was found
+    there; only ForbiddenError was covered here.
+    """
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import (
+        ForbiddenError,
+        PortalMaintenanceError,
+        ServerError,
+    )
+
+    errors = {
+        "forbidden": ForbiddenError("rate limited"),
+        "maintenance": PortalMaintenanceError("planned downtime"),
+        "server_error": ServerError("WEM Portal returned 500"),
+    }
+    jar = {"cookies": {"ASP.NET_SessionId": "abc"}, "saved_at": time.monotonic()}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    logins = []
+    client._full_login = lambda: logins.append(True)
+
+    def refuse():
+        raise errors[answer]
+
+    client._establish_context = refuse
+
+    with pytest.raises(type(errors[answer])):
+        client._login()
+
+    assert logins == [], (
+        f"a {answer} answer was followed by a full login handshake"
+    )

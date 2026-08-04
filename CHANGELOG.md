@@ -62,6 +62,13 @@ to ask the user for new credentials.
   error, so three portal outages in a row could ask for a password that was
   correct. The re-authentication counter is now genuinely consecutive: any
   other kind of failure in between resets it.
+- **A portal that says "stop" is no longer answered with a login.** The
+  expert path reuses a cached web session and falls back to a full login
+  when it turns out to be stale. Only a rate-limit answer was recognised as
+  something other than staleness, so announced maintenance and a server
+  error both sent the two requests of a login handshake immediately after
+  the portal said it was unavailable. The web scraper has treated all three
+  as answers for a while; the expert path does now too.
 - **A scraped reading the portal no longer has is no longer shown as
   current.** The web path deliberately carried the previous value over
   whenever a scrape came back without one, on the assumption that it was

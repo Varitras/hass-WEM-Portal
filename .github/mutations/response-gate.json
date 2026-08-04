@@ -698,5 +698,12 @@
     "old": "            # First cycle of this session: nothing to compare against.\n            return set()",
     "new": "            # First cycle of this session: nothing to compare against.\n            return set(self._previous_scraper_keys or ())",
     "tests": "first_cycle_clears_nothing"
+  },
+  {
+    "label": "expert login: logging in again after a portal answer must be noticed",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        except (ForbiddenError, PortalMaintenanceError, ServerError):",
+    "new": "        except ForbiddenError:",
+    "tests": "portal_answer_does_not_trigger_a_full_login"
   }
 ]

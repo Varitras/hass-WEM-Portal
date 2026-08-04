@@ -451,12 +451,25 @@ class WemPortalExpertClient:
 
         try:
             self._establish_context()
-        except ForbiddenError:
-            # A real rejection by the portal - propagate so the caller backs
-            # off. Retrying with a full login here would only add another
-            # rejected request.
+        except (ForbiddenError, PortalMaintenanceError, ServerError):
+            # All three are ANSWERS, not signs that the cached session went
+            # stale, so none of them is a reason to log in again. Falling
+            # through would send the two requests of a full login handshake
+            # immediately after the portal said "rate limited", "we are down
+            # for maintenance" or "something broke" - the opposite of backing
+            # off, and against an IP the portal blocks past 10,000 requests
+            # per 12 hours.
+            #
+            # Only ForbiddenError was re-raised here. The web scraper has
+            # covered all three since the same defect was found there; this
+            # is that fix in the module next door, which is where this
+            # codebase keeps finding the other half of a fix.
             raise
         except Exception as exc:  # pylint: disable=broad-except
+            # Broad, but the three answers that must NOT be retried are
+            # re-raised above. What is left really is a stale session -
+            # AuthError, a dropped connection - and a fresh login is the
+            # right answer to those.
             _LOGGER.debug(
                 "Cached expert session no longer usable (%s), logging in fresh.", exc
             )
