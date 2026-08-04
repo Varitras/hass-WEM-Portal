@@ -782,5 +782,26 @@
     "old": "                entry[\"value\"] = None\n",
     "new": "                entry.clear()\n",
     "tests": "parameter_the_portal_left_out_stops_being_current"
+  },
+  {
+    "label": "empty read: sending a read with no modules must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not data[\"Modules\"]:",
+    "new": "        if False:",
+    "tests": "device_with_no_parameters_is_not_asked_for_values"
+  },
+  {
+    "label": "empty read: counting a skipped device as refreshed must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                device_id,\n            )\n            return False\n",
+    "new": "                device_id,\n            )\n            return True\n",
+    "tests": "device_with_no_parameters_is_not_asked_for_values"
+  },
+  {
+    "label": "empty read: failing a device that is simply empty must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if not self.modules.get(device_id):",
+    "new": "            if False:",
+    "tests": "device_with_no_modules_at_all_is_not_a_failure"
   }
 ]

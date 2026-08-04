@@ -1757,6 +1757,43 @@ class WemPortalApi:
             _LOGGER.debug("%s: missing module data for device %s", DATA_GATHERING_ERROR, device_id)
             raise WemPortalError(DATA_GATHERING_ERROR) from exc
 
+        if not data["Modules"]:
+            # Nothing to ask for, and asking anyway is not merely pointless:
+            # the portal answers a read with an empty module list with 400
+            # Bad Request. Upstream issue #66 is a log of exactly that shape,
+            # {'DeviceID': ..., 'Modules': []}, failing every cycle until the
+            # reporter gave up and switched to web mode. Reachable here from
+            # the other side too - a module whose EventType/Read answers 400
+            # is dropped from the cache as unsupported, so a device where
+            # that happens to all of them ends up with this list.
+            #
+            # The two ways to get here are NOT the same thing, and reporting
+            # them alike was the first version of this guard: it made a
+            # device that genuinely has nothing to poll fail every cycle,
+            # which three existing tests object to for good reason.
+            if not self.modules.get(device_id):
+                # No modules at all. There is nothing to poll and nothing
+                # wrong - failing the cycle for it would drag every other
+                # device into a backoff over a device that is simply empty.
+                _LOGGER.debug(
+                    "Device %s has no modules; nothing to read.", device_id
+                )
+                return True
+
+            # Modules, but not one with parameters: discovery has not
+            # produced any yet. That IS a failed refresh - no values were
+            # read - and saying so is what keeps the cycle honest. Discovery
+            # runs again next cycle for any module without parameters, so it
+            # can still recover on its own.
+            _LOGGER.warning(
+                "Device %s has modules but no known parameters, so there is "
+                "nothing to read. Parameter discovery has not produced any "
+                "yet and runs again next cycle. Not sending the refresh - "
+                "the portal rejects a read with an empty module list.",
+                device_id,
+            )
+            return False
+
         try:
             # Deliberately NO retry_transport here, unlike the two reads
             # around it. This POST starts a measurement job, so it is the one

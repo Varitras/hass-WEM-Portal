@@ -2239,3 +2239,81 @@ def test_the_first_cycle_clears_nothing():
         "the first cycle cleared the values it had just read"
     )
     assert api.data["0000"]["left-over"]["value"] == 12.0
+
+
+# --- a device with nothing discovered must not be asked for values ------
+
+
+def test_a_device_with_no_parameters_is_not_asked_for_values(caplog):
+    """The portal answers a read with an empty module list with 400.
+
+    Upstream issue #66 is a log of exactly that: {'DeviceID': 424,
+    'Modules': []} rejected every cycle until the reporter switched to web
+    mode. It is reachable from the other side here too - a module whose
+    EventType/Read answers 400 is dropped from the cache as unsupported, so
+    a device where that happens to all of them ends up with this list.
+    """
+    import logging
+
+    api = _api()
+    api.data = {"1234": {}}
+    # Modules ARE known - discovery just never produced parameters for them.
+    # That is what separates this from a device that has no modules at all,
+    # which has nothing to poll and is not a failure.
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump"}}}
+    calls = []
+    api.make_api_call = lambda url, **_k: calls.append(url) or FakeResponse({})
+
+    with caplog.at_level(logging.WARNING):
+        refreshed = api._fetch_parameter_values("1234")
+
+    assert calls == [], "a read with an empty module list was sent anyway"
+    assert refreshed is False, (
+        "a device whose discovery produced nothing was counted as refreshed"
+    )
+    assert "no known parameters" in caplog.text
+
+
+def test_a_device_with_no_modules_at_all_is_not_a_failure():
+    """The distinction the first version of the guard missed.
+
+    A device the portal lists but that has nothing to poll is not broken.
+    Failing the cycle for it drags every other device into a backoff over a
+    device that is simply empty - which three existing tests object to.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    calls = []
+    api.make_api_call = lambda url, **_k: calls.append(url) or FakeResponse({})
+
+    assert api._fetch_parameter_values("1234") is True
+    assert calls == [], "a read with an empty module list was sent anyway"
+
+
+def test_a_device_with_parameters_is_still_read():
+    """The guard must not swallow the ordinary case."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {
+        "1234": {
+            (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
+                     "parameters": {"AktRaumSoll": {"ParameterID": "AktRaumSoll"}}}
+        }
+    }
+    calls = []
+
+    def make_api_call(url, **_kwargs):
+        calls.append(url)
+        if url == wemportalapi.API_REFRESH_URL:
+            return FakeResponse({"Status": 0, "JobID": 7})
+        return FakeResponse({"Modules": [
+            {"ModuleIndex": 0, "ModuleType": 1, "Values": [
+                {"ParameterID": "AktRaumSoll", "NumericValue": 21.0, "Unit": "°C"}
+            ]}
+        ]})
+
+    api.make_api_call = make_api_call
+
+    assert api._fetch_parameter_values("1234") is True
+    assert wemportalapi.API_REFRESH_URL in calls

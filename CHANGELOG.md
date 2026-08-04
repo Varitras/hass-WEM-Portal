@@ -77,6 +77,15 @@ to ask the user for new credentials.
   error both sent the two requests of a login handshake immediately after
   the portal said it was unavailable. The web scraper has treated all three
   as answers for a while; the expert path does now too.
+- **A device with nothing to read is no longer asked anyway.** The portal
+  rejects a value read that names no modules with 400 Bad Request, and the
+  integration built exactly that request whenever parameter discovery had
+  produced nothing for a device - every cycle, for as long as it stayed that
+  way. Two requests spent per cycle on an answer that cannot come, and a
+  generic "an error occurred while gathering data" in the log. It now says
+  which of the two situations it is: a device that has no modules at all is
+  simply empty and not a failure, while a device whose discovery produced no
+  parameters is reported as one.
 - **An API reading the portal did not send is no longer shown as current.**
   The data a cycle writes into is only rebuilt once per session, and each
   cycle writes only what came back, so a parameter the portal left out kept
