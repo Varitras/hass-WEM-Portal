@@ -93,10 +93,10 @@ def close_api_sessions(api) -> None:
 def build_device_info(entry_id, device_id, sw_version=None, model=None):
     """Build the DeviceInfo dict for a WEM Portal sub-device.
 
-    Every entity platform (number, select, sensor, switch) exposes the same
+    Every entity platform (date, number, select, sensor, switch) exposes the same
     per-device identity - a child device keyed by "<entry_id>:<device_id>"
     that links back to the integration hub via via_device. Centralizing it
-    here keeps the four platforms in sync; previously each duplicated the
+    here keeps them in sync; previously each duplicated the
     same dict. `sw_version` is optional (only the sensor platform has an
     API version to report).
     """

@@ -122,6 +122,38 @@ def _migrate_device_unique_ids(er, config_entry, device_id, data) -> bool:
     return change
 
 
+def _remove_entities_from_a_previous_platform(er, config_entry, device_id, data) -> None:
+    """Drop registry entries this integration no longer provides.
+
+    A parameter can change platform between releases when we learn what it
+    actually is. Holiday begin and end were switches until the portal's own
+    parameter list showed them to be dates - and because our unique_id does
+    not carry the platform, the old switch entry survives the change and sits
+    in the registry unavailable, next to the working date entity.
+
+    Only entries under OUR unique_id and OUR own platforms are touched, and
+    only the ones the current data says belong to a different platform now.
+    """
+    for unique_id, values in data.items():
+        if isinstance(values, int):
+            continue
+        current = values.get("platform", "sensor")
+        entity_unique_id = get_wemportal_unique_id(
+            config_entry.entry_id, device_id, unique_id
+        )
+        for platform in PLATFORMS:
+            if platform == current:
+                continue
+            stale = er.async_get_entity_id(platform, DOMAIN, entity_unique_id)
+            if stale is None:
+                continue
+            _LOGGER.info(
+                "%s is a %s now, not a %s - removing the entity it left behind.",
+                stale, current, platform,
+            )
+            er.async_remove(stale)
+
+
 async def migrate_unique_ids(
     hass: HomeAssistant, config_entry: ConfigEntry, coordinator
 ):
@@ -139,6 +171,12 @@ async def migrate_unique_ids(
     for device_id in coordinator.data:
         if _migrate_device_unique_ids(er, config_entry, device_id, coordinator.data[device_id]):
             change = True
+        # After the id migration, not before: that step may still move an old
+        # entry onto the current unique_id, and removing it first would throw
+        # away the history it exists to preserve.
+        _remove_entities_from_a_previous_platform(
+            er, config_entry, device_id, coordinator.data[device_id]
+        )
 
     if change:
         # A debounced refresh is enough to update the migrated entities.

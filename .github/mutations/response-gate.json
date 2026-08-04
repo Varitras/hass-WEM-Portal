@@ -79,8 +79,8 @@
   {
     "label": "golden: a swapped option field must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "\"options\": [x[\"Value\"] for x in parameter.get(\"EnumValues\", [])],",
-    "new": "\"options\": [x[\"Name\"] for x in parameter.get(\"EnumValues\", [])],",
+    "old": "\"options\": [x[\"Value\"] for x in enum_values],",
+    "new": "\"options\": [x[\"Name\"] for x in enum_values],",
     "tests": "mapper_output_is_unchanged"
   },
   {
@@ -488,5 +488,54 @@
     "old": "                API_REFRESH_URL,\n                data=data,\n            )",
     "new": "                API_REFRESH_URL,\n                data=data,\n                retry_transport=True,\n            )",
     "tests": "exactly_the_value_path_asks_for_a_transport_retry"
+  },
+  {
+    "label": "mapper: calling an unbounded time parameter a switch must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        if _is_time_or_programme(parameter):",
+    "new": "        if False:",
+    "tests": "mapper_output_is_unchanged or holiday_date or unbounded"
+  },
+  {
+    "label": "mapper: treating an enumerated switch as a time parameter must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    if parameter.get(\"EnumValues\"):\n        return False\n    return not _declares_bounds(parameter)",
+    "new": "    return not _declares_bounds(parameter)",
+    "tests": "mapper_output_is_unchanged or binary_switch_becomes_a_switch"
+  },
+  {
+    "label": "mapper: reading a word as an epoch must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                common_attrs, value.get(\"NumericValue\") is not None",
+    "new": "                common_attrs, True",
+    "tests": "mapper_output_is_unchanged or holiday_date or word"
+  },
+  {
+    "label": "mapper: an optionless dropdown must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        if not enum_values:\n            return None",
+    "new": "        if False:\n            return None",
+    "tests": "mapper_output_is_unchanged or optionless"
+  },
+  {
+    "label": "migration: deleting the entity that is currently correct must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if platform == current:\n                continue",
+    "new": "            if False:\n                continue",
+    "tests": "entity_that_is_currently_correct or unchanged_platform_removes_nothing"
+  },
+  {
+    "label": "migration: leaving the old platform's entity behind must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            er.async_remove(stale)",
+    "new": "            pass",
+    "tests": "entity_left_behind_by_a_platform_change"
+  },
+  {
+    "label": "migration: reaching outside our own unique_ids must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            stale = er.async_get_entity_id(platform, DOMAIN, entity_unique_id)",
+    "new": "            stale = er.async_get_entity_id(platform, DOMAIN, unique_id)",
+    "tests": "only_our_own_unique_ids_are_touched"
   }
 ]

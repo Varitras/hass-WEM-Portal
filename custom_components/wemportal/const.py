@@ -63,7 +63,7 @@ CONF_LANGUAGE: Final = "language"
 CONF_MODE: Final = "mode"
 DEFAULT_MODE: Final = "api"
 AVAILABLE_MODES: Final = ["api", "web", "both"]
-PLATFORMS = ["number", "select", "sensor", "switch"]
+PLATFORMS = ["date", "number", "select", "sensor", "switch"]
 
 # Placeholder device id the web scraper falls back to when no real
 # API-discovered device is known (a pure-web install that never ran the

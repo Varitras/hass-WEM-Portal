@@ -465,3 +465,82 @@ def test_a_real_api_value_still_wins_over_the_scraped_one():
     )
 
     assert data["heat_pump-outside"]["value"] == 12.5
+
+
+# --- DataType 2 is overloaded: switch, schedule, or date ----------------
+#
+# The portal types holiday begin/end, a weekly heating schedule and a real
+# on/off parameter identically. What separates them is what the parameter
+# DECLARES, and the whole family used to collapse into "switch" because
+# get_min_max() answers 0/1 for a parameter that declared no bounds at all.
+#
+# The shapes below are taken from a live installation's parameter list, not
+# invented: holiday begin/end arrive as DataType 2 with MinValue and MaxValue
+# null, EnumValues null, and a NumericValue holding Unix epoch seconds on an
+# exact midnight UTC boundary.
+
+HOLIDAY_BEGIN_EPOCH = 1785715200.0  # 2026-08-03 00:00:00 UTC
+
+
+def test_an_unbounded_time_parameter_becomes_a_holiday_date():
+    data = _process(
+        _modules(
+            _parameter("U_Beginn", IsWriteable=True, DataType=WemDataType.SWITCH,
+                       MinValue=None, MaxValue=None, EnumValues=None)
+        ),
+        _values(_value("U_Beginn", numeric=HOLIDAY_BEGIN_EPOCH)),
+    )
+
+    entity = data["Heat pump-U_Beginn"]
+    assert entity["platform"] == "date", (
+        "an unbounded time parameter became a writeable toggle again - "
+        "switching it writes epoch 0/1, i.e. 1970, to the heating system"
+    )
+    assert entity["value"] == HOLIDAY_BEGIN_EPOCH
+
+
+def test_an_unbounded_parameter_that_answered_with_a_word_is_not_a_date():
+    """sanitize_value() turns "Off" into 0.0, which looks numeric.
+
+    Deciding on the mapped value rather than the raw one would publish the
+    1st of January 1970 as a date the user can act on.
+    """
+    data = _process(
+        _modules(
+            _parameter("Something", IsWriteable=True, DataType=WemDataType.SWITCH,
+                       MinValue=None, MaxValue=None, EnumValues=None)
+        ),
+        _values(_value("Something", string="Off")),
+    )
+
+    assert data["Heat pump-Something"]["platform"] == "sensor"
+
+
+def test_an_unbounded_schedule_stays_a_sensor():
+    """A weekly programme has the same type and bounds as a holiday date and
+    differs only in carrying JSON."""
+    data = _process(
+        _modules(
+            _parameter("Heizprogramm1", IsWriteable=True, DataType=WemDataType.SWITCH,
+                       MinValue=None, MaxValue=None, EnumValues=None)
+        ),
+        _values(_value("Heizprogramm1", string='{"MO-1":"00:00-24:00"}')),
+    )
+
+    assert data["Heat pump-Heizprogramm1"]["platform"] == "sensor"
+
+
+def test_an_optionless_dropdown_stays_a_sensor():
+    """The portal sends EnumValues as an explicit null, so .get()'s default
+    never applied and the option comprehension iterated None. That raised into
+    the caller's broad except once per value per cycle. The value already fell
+    back to a plain sensor - this says so without the exception."""
+    data = _process(
+        _modules(
+            _parameter("Mystery", IsWriteable=True, DataType=WemDataType.SELECT,
+                       EnumValues=None)
+        ),
+        _values(_value("Mystery", string="whatever")),
+    )
+
+    assert data["Heat pump-Mystery"]["platform"] == "sensor"

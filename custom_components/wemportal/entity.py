@@ -1,4 +1,4 @@
-"""Shared base class for the four WEM Portal entity platforms."""
+"""Shared base class for the WEM Portal entity platforms."""
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -10,11 +10,11 @@ from .utils import build_device_info, device_is_reachable, device_model
 
 
 class WemPortalEntity(CoordinatorEntity):
-    """What the sensor, number, select and switch platforms have in common.
+    """What the date, number, select, sensor and switch platforms share.
 
     Every entity is one row of the coordinator's data, addressed by device id
     and key. Identity, the device it belongs to and the availability rule are
-    the same for all four platforms; only what each does with the row's value
+    the same for every platform; only what each does with the row's value
     differs. Keeping them here means a fix lands once instead of four times -
     the diagnostic-availability rule below was fixed in three of four places
     once already.

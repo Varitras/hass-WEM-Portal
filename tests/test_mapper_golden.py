@@ -72,6 +72,18 @@ DATA_TYPES = [
 
 ENUMS = [{"Value": "0", "Name": "Aus"}, {"Value": "1", "Name": "Ein"}]
 
+# Whether the portal named the parameter's states. This is an axis and not a
+# constant because it decides two different things, and it was pinned to
+# "always present" until a real installation showed what that hid: a DataType
+# 2 parameter with no bounds AND no EnumValues is not a switch at all but a
+# date, and the whole date platform was therefore unreachable from this
+# matrix. It also changes the VALUE for every type - _describe_value only
+# runs a value through sanitize_value() when there are no EnumValues.
+ENUM_SETS = [
+    ("enum", ENUMS),
+    ("noenum", None),
+]
+
 # The bounds decide more than the range: a SWITCH with 0/1 becomes a toggle
 # while the same type with a wider range is a stepped number, and absent
 # bounds fall back to a guess from the parameter name. Fixing them at one
@@ -85,7 +97,7 @@ BOUNDS = [
 
 
 def _case(label, data_type, writeable, value_label, numeric, string, unit,
-          language, mode, is_scraper_device, min_value, max_value):
+          language, mode, is_scraper_device, min_value, max_value, enum_values):
     """One fully specified call, named so a diff points at the exact input."""
     parameter = {
         "ParameterID": "P1",
@@ -93,7 +105,7 @@ def _case(label, data_type, writeable, value_label, numeric, string, unit,
         "DataType": data_type,
         "MinValue": min_value,
         "MaxValue": max_value,
-        "EnumValues": ENUMS,
+        "EnumValues": enum_values,
     }
     modules = {
         DEVICE: {MODULE_KEY: {"Name": "Heat pump", "parameters": {"P1": parameter}}}
@@ -137,6 +149,7 @@ def build_snapshot():
     snapshot = {}
     for type_label, data_type in DATA_TYPES:
       for bounds_label, min_value, max_value in BOUNDS:
+       for enum_label, enum_values in ENUM_SETS:
         for writeable in (False, True):
             for value_label, numeric, string, unit in VALUES:
                 for language in ("en", "de"):
@@ -148,7 +161,7 @@ def build_snapshot():
                                 # rather than padded with duplicates.
                                 continue
                             label = "|".join([
-                                type_label, bounds_label,
+                                type_label, bounds_label, enum_label,
                                 "rw" if writeable else "ro",
                                 value_label, language, mode,
                                 "scraperdev" if is_scraper_device else "otherdev",
@@ -157,6 +170,7 @@ def build_snapshot():
                                 label, data_type, writeable, value_label,
                                 numeric, string, unit, language, mode,
                                 is_scraper_device, min_value, max_value,
+                                enum_values,
                             )
                             snapshot[key] = result
     return snapshot
@@ -177,12 +191,12 @@ def test_the_matrix_covers_a_meaningful_number_of_shapes():
         for entity in result.values()
     }
 
-    assert len(snapshot) >= 600
+    assert len(snapshot) >= 3000
     # Every platform the mapper can produce has to appear, or a refactor could
     # break one of them without the recording noticing. The switch platform
     # was missing from the first version of this matrix for exactly that
     # reason: its bounds were never 0/1.
-    assert platforms == {"sensor", "number", "select", "switch"}, platforms
+    assert platforms == {"sensor", "number", "select", "switch", "date"}, platforms
 
 
 def test_the_mapper_output_is_unchanged(request):

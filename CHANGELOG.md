@@ -25,6 +25,14 @@ to ask the user for new credentials.
   path. Neither the account nor those ids appear in the log any more.
 
 ### Added
+- **Holiday begin and end are dates now, not switches.** The portal types them
+  the same way it types a real on/off parameter, and the only thing telling
+  the two apart - whether it declared any bounds - was being filled in with a
+  guess. So they became toggles, and toggling one would have written a
+  holiday starting on the 1st of January 1970 to the heating system. They are
+  date entities on a new `date` platform, reading and writing the whole-day
+  encoding the portal actually uses. The switch entity each of them left
+  behind is removed on the next start.
 - **Every device reports its own availability.** The coordinator only knew
   whether a CYCLE succeeded, so on a multi-device installation a device that
   had been offline for days still presented its last reading as current. Its
@@ -47,6 +55,13 @@ to ask the user for new credentials.
   error, so three portal outages in a row could ask for a password that was
   correct. The re-authentication counter is now genuinely consecutive: any
   other kind of failure in between resets it.
+- **A writeable dropdown whose options the portal left out is a plain sensor
+  now.** It had two different outcomes depending on how the options were
+  missing: an empty field produced a dropdown with nothing to choose from,
+  while an explicit null - which is what the portal actually sends - raised
+  while building the option list and was logged as an "unexpected error" once
+  per value per cycle. Both show the value as a sensor now. A control with no
+  options cannot be operated, so presenting one was never right.
 - **A request that never reached the portal no longer reports itself as a
   server answer.** A timed-out read was logged as "Server returned status
   code:  and message: " - two empty fields, because there was no response to

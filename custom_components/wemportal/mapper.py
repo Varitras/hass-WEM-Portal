@@ -91,7 +91,66 @@ def _describe_value(param_id, module, device_module, parameter, value, language)
     }
 
 
-def _writeable_entity(sensor: dict, parameter: dict) -> dict | None:
+def _declares_bounds(parameter: dict) -> bool:
+    """Whether the portal gave this parameter BOTH bounds.
+
+    Asked of the raw parameter, never of get_min_max(): that function fills in
+    a range when there is none, which is useful for building a number entity
+    and actively wrong for deciding what kind of parameter this is.
+    """
+    for key in ("MinValue", "MaxValue"):
+        raw = parameter.get(key)
+        if raw is None or raw == "":
+            return False
+        try:
+            float(raw)
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def _is_time_or_programme(parameter: dict) -> bool:
+    """Whether this DataType 2 parameter is not a switch at all.
+
+    The type is overloaded, and TWO signals say a parameter is genuinely
+    binary. Bounds are one: a real switch declares MinValue 0 and MaxValue 1.
+    Named states are the other: a switch may instead ship EnumValues holding
+    its off/on wording, which _describe_value already relies on to normalise
+    "Ein"/"Aus" - so an enumerated parameter is a switch even with no bounds.
+
+    Neither present means a time or programme parameter. That is what the
+    portal's own parameter list shows: a weekly heating schedule and holiday
+    begin/end all arrive as DataType 2, no bounds, EnumValues null.
+    """
+    if parameter.get("EnumValues"):
+        return False
+    return not _declares_bounds(parameter)
+
+
+def _time_or_programme_entity(common_attrs: dict, sent_a_number: bool) -> dict | None:
+    """The writeable platform for a time or programme parameter, if any.
+
+    Two forms have been observed. A schedule comes as a JSON string and is
+    caught by the caller before this point. A date comes as a plain number:
+    Unix epoch seconds, always landing on midnight UTC, which is why it maps
+    to a date rather than a datetime.
+
+    Decided on the RAW NumericValue, not on the mapped one. sanitize_value()
+    turns "Off"/"Aus" into 0.0, so a parameter that answered with a word would
+    otherwise have looked like a number and become the 1st of January 1970 -
+    caught by the golden matrix the moment it gained an EnumValues axis.
+
+    Anything else stays a plain sensor. Guessing a writeable platform is the
+    mistake this function exists to undo - the guess turned two dates into
+    on/off switches, and switching one would have written epoch 0 or 1, i.e.
+    1970, to a heating system.
+    """
+    if sent_a_number:
+        return {**common_attrs, "platform": "date"}
+    return None
+
+
+def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None:
     """The platform entity a writeable parameter becomes, or None when its
     data type has no writeable platform - then it stays a plain sensor."""
     data_type = sensor["DataType"]
@@ -124,15 +183,38 @@ def _writeable_entity(sensor: dict, parameter: dict) -> dict | None:
             "step": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
         }
     if data_type == WemDataType.SELECT:
+        # `or []`, not .get()'s default: the portal sends the key with an
+        # explicit null rather than omitting it, so the default never applied
+        # and the comprehensions below iterated None. That raised inside the
+        # caller's broad except, which logged an "unexpected error" nobody
+        # could act on, once per value per cycle, and fell through to a plain
+        # sensor.
+        #
+        # Returning None reaches the same plain sensor deliberately: a
+        # dropdown with no options is not a better outcome than showing the
+        # value, it is a broken control. Same behaviour as before, minus the
+        # exception and the noise.
+        enum_values = parameter.get("EnumValues") or []
+        if not enum_values:
+            return None
         return {
             **common_attrs,
             "platform": "select",
-            "options": [x["Value"] for x in parameter.get("EnumValues", [])],
-            "optionsNames": [x["Name"] for x in parameter.get("EnumValues", [])],
+            "options": [x["Value"] for x in enum_values],
+            "optionsNames": [x["Name"] for x in enum_values],
         }
     if data_type == WemDataType.SWITCH:
         if isinstance(final_value, str) and final_value.startswith("{"):
             return None  # It's a JSON schedule, fallback to sensor
+        # Before the 0/1 test, because get_min_max() answers 0/1 for a
+        # parameter that declared no bounds at all - so the test below cannot
+        # tell "the portal says this is binary" from "the portal said
+        # nothing". That is the whole defect: every unbounded time parameter
+        # passed it and became a switch.
+        if _is_time_or_programme(parameter):
+            return _time_or_programme_entity(
+                common_attrs, value.get("NumericValue") is not None
+            )
         if int(min_val) == 0 and int(max_val) == 1:
             return {
                 **common_attrs,
@@ -185,7 +267,7 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> d
                 parsed_sensors[name] = sensor
 
                 if sensor["IsWriteable"]:
-                    entity = _writeable_entity(sensor, parameter)
+                    entity = _writeable_entity(sensor, parameter, value)
                     if entity is not None:
                         api_data[device_id][name] = entity
             except Exception as exc:  # pylint: disable=broad-except

@@ -103,15 +103,10 @@
   "no_enum_values_select": {
     "api_data": {
       "Heat pump-P": {
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
         "ParameterID": "P",
         "friendlyName": "Heat Pump P",
         "icon": null,
-        "options": [],
-        "optionsNames": [],
-        "platform": "select",
+        "platform": "sensor",
         "unit": "°C",
         "value": 21.5
       }
