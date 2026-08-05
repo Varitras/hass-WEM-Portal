@@ -627,7 +627,9 @@ def test_a_reused_session_that_missed_the_expert_page_logs_in_fresh(scraper, cap
 
     _with_cached_session(scraper, "<html><title>Main</title></html>")
 
-    with caplog.at_level(logging.WARNING):
+    # DEBUG, not WARNING: the reuse path deliberately reports its empty page
+    # quietly now - see the two tests about the level further down.
+    with caplog.at_level(logging.DEBUG):
         with pytest.raises(ServerError) as excinfo:
             scraper.scrape()
 
@@ -659,12 +661,12 @@ def test_the_report_separates_a_wrong_page_from_changed_markup(scraper, caplog):
     """The two problems the old message could not tell apart."""
     import logging
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         scraper.parse_expert_page("<html><title>Main</title></html>", required=False)
     assert "0 panel container(s)" in caplog.text
 
     caplog.clear()
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         scraper.parse_expert_page(
             '<html><div class="RadPanelBar RadPanelBar_Default rpbSimpleData">'
             "</div></html>",
@@ -677,6 +679,50 @@ def test_the_report_survives_unparseable_html(scraper, caplog):
     """A diagnostic must never be the thing that fails."""
     import logging
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         assert scraper.parse_expert_page("<<< not html", required=False) is None
     assert "No readable panels" in caplog.text
+
+
+def _empty_page_reports(caplog):
+    return [r for r in caplog.records if "No readable panels" in r.getMessage()]
+
+
+def test_the_reuse_path_reports_its_empty_page_quietly(scraper, caplog):
+    """A self-healing normal case must not fill the user's error log.
+
+    The reuse path answers an empty page by logging in fresh, and says so at
+    debug - but the report in front of it went out at warning for BOTH
+    callers. So a session the portal had stopped honouring produced a Home
+    Assistant error entry every cycle (sixteen in sixteen hours on one
+    installation) for something the next three lines repaired without losing
+    a single reading.
+    """
+    import logging
+
+    with caplog.at_level(logging.DEBUG):
+        assert scraper.parse_expert_page(
+            "<html><title>Main</title></html>", required=False
+        ) is None
+
+    reports = _empty_page_reports(caplog)
+    assert reports, "the report is gone entirely"
+    assert [r.levelname for r in reports] == ["DEBUG"]
+
+
+def test_the_full_login_path_still_warns_about_an_empty_page(scraper, caplog):
+    """After a full login the empty page IS the end of the road.
+
+    The counterpart to the test above, and the reason the level is bound to
+    the caller rather than lowered outright: silencing both would hide the
+    one case nothing else recovers from.
+    """
+    import logging
+
+    from custom_components.wemportal.exceptions import ServerError
+
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(ServerError):
+            scraper.parse_expert_page("<html><title>Main</title></html>")
+
+    assert [r.levelname for r in _empty_page_reports(caplog)] == ["WARNING"]

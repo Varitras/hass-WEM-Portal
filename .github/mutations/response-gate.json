@@ -870,7 +870,7 @@
   {
     "label": "empty page: an unexplained failure must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            self._report_empty_page(html_content, source)",
+    "old": "            self._report_empty_page(\n                html_content, source,\n                level=logging.WARNING if required else logging.DEBUG,\n            )",
     "new": "            pass",
     "tests": "report_separates_a_wrong_page_from_changed_markup"
   },
@@ -957,5 +957,19 @@
     "old": "        if not files:\n            raise SystemExit(f\"selector {selector!r} matched no tests\")",
     "new": "        if not files:\n            files = [\"tests/\"]",
     "tests": "dead_selector_stops_before_anything_is_mutated"
+  },
+  {
+    "label": "empty page: shouting about a handled reuse failure must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                level=logging.WARNING if required else logging.DEBUG,",
+    "new": "                level=logging.WARNING,",
+    "tests": "the_reuse_path_reports_its_empty_page_quietly"
+  },
+  {
+    "label": "empty page: silencing the full-login report must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                level=logging.WARNING if required else logging.DEBUG,",
+    "new": "                level=logging.DEBUG,",
+    "tests": "the_full_login_path_still_warns_about_an_empty_page"
   }
 ]

@@ -1,5 +1,6 @@
 """Web scraping scraper for WEM Portal using curl_cffi."""
 
+import logging
 import time
 from curl_cffi import requests
 from lxml import html
@@ -289,7 +290,7 @@ class WemPortalScraper:
         # 5. Extract data
         return self.parse_expert_page(expert_html, source="the expert page")
 
-    def _report_empty_page(self, html_content, source):
+    def _report_empty_page(self, html_content, source, level=logging.WARNING):
         """Say what the page WAS, because the failure message cannot.
 
         "Contained no readable panels" is true of two completely different
@@ -299,6 +300,9 @@ class WemPortalScraper:
         the portal changed its HTML, absent means we were looking at the wrong
         page - and the answer decides whether this needs a new selector or a
         fresh login.
+
+        `level` is the caller's, not this function's, because the same empty
+        page means different things to the two of them - see parse_expert_page.
         """
         text = html_content or ""
         title = ""
@@ -315,7 +319,8 @@ class WemPortalScraper:
         except Exception:  # pylint: disable=broad-except
             # The report must never be the thing that fails.
             title = "<unparseable>"
-        _LOGGER.warning(
+        _LOGGER.log(
+            level,
             "No readable panels on %s: %d bytes, title %r, %d panel container(s). "
             "%s",
             source, len(text), title, containers,
@@ -412,7 +417,17 @@ class WemPortalScraper:
         # the retry counter and timestamp as if data had arrived, so the
         # existing readings stayed on display looking current.
         if not output:
-            self._report_empty_page(html_content, source)
+            # The level follows `required`, because the two callers do not
+            # mean the same thing by an empty page. For the reuse path it is
+            # the expected end of a cheap attempt - scrape() falls back to a
+            # full login three lines later and says so at debug - so a warning
+            # put a self-healing normal case into the user's error log
+            # sixteen times a day while the code quietly repaired it. After a
+            # full login there is nothing left to try, so it stays a warning.
+            self._report_empty_page(
+                html_content, source,
+                level=logging.WARNING if required else logging.DEBUG,
+            )
             if not required:
                 return None
             raise ServerError(

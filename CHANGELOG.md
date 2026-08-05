@@ -259,6 +259,13 @@ to ask the user for new credentials.
   `wemportal:` block is reported instead of being ignored.
 - Sensor icons follow the device class where Home Assistant provides one,
   rather than every entity showing the same generic icon.
+- **A reused web session that missed the expert page is no longer reported as
+  an error.** The scraper answers such a page by logging in fresh and loses no
+  readings, but the diagnostic in front of that fallback went out as a warning
+  for every caller - so a self-healing normal case filled the Home Assistant
+  error log, sixteen entries in sixteen hours on one installation. On that
+  path it is a debug message now. After a full login, where nothing else can
+  recover, it stays a warning.
 
 ## [1.11.0b2] – 2026-07-28
 
