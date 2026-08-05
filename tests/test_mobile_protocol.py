@@ -20,13 +20,13 @@ from custom_components.wemportal.mobile_protocol import (
     ("status", "ok"),
     [
         (0, True),
-        (False, False),   # the bug: equal to 0 in Python, not a success
+        (False, False),  # the bug: equal to 0 in Python, not a success
         (True, False),
         (3, False),
         (-1, False),
         (None, False),
         ("0", False),
-        (0.0, False),     # also == 0, also not what the portal sends
+        (0.0, False),  # also == 0, also not what the portal sends
         ([], False),
     ],
 )
@@ -43,7 +43,7 @@ def test_only_the_integer_zero_is_a_portal_success(status, ok):
         ({"Status": 3, "Message": "value out of range"}, False),
         ({"Status": None}, False),
         ({"Message": "write failed"}, False),
-        ({"JobID": 1}, False),          # a result, but not a verdict
+        ({"JobID": 1}, False),  # a result, but not a verdict
         ({}, False),
         ([], False),
         (None, False),
@@ -74,8 +74,8 @@ def test_a_successful_write_may_carry_a_message_too():
     ("payload", "accepted", "job_id"),
     [
         ({"Status": 0, "JobID": 100000001}, True, 100000001),
-        ({"JobID": 100000001}, True, 100000001),   # no status is acceptable
-        ({"Status": 0}, True, None),               # accepted, but named no job
+        ({"JobID": 100000001}, True, 100000001),  # no status is acceptable
+        ({"Status": 0}, True, None),  # accepted, but named no job
         ({}, True, None),
         ({"Status": 3}, False, None),
         ({"Status": False}, False, None),

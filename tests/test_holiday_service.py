@@ -26,14 +26,22 @@ pytest.importorskip("homeassistant")
 from homeassistant.exceptions import HomeAssistantError  # noqa: E402
 
 BEGIN_ROW = {
-    "friendlyName": "Holiday begin", "ParameterID": "U_Beginn",
-    "value": date_to_epoch(date(2026, 8, 3)), "unit": None, "platform": "date",
-    "ModuleIndex": 1, "ModuleType": 2,
+    "friendlyName": "Holiday begin",
+    "ParameterID": "U_Beginn",
+    "value": date_to_epoch(date(2026, 8, 3)),
+    "unit": None,
+    "platform": "date",
+    "ModuleIndex": 1,
+    "ModuleType": 2,
 }
 END_ROW = {
-    "friendlyName": "Holiday end", "ParameterID": "U_Ende",
-    "value": date_to_epoch(date(2026, 8, 4)), "unit": None, "platform": "date",
-    "ModuleIndex": 1, "ModuleType": 2,
+    "friendlyName": "Holiday end",
+    "ParameterID": "U_Ende",
+    "value": date_to_epoch(date(2026, 8, 4)),
+    "unit": None,
+    "platform": "date",
+    "ModuleIndex": 1,
+    "ModuleType": 2,
 }
 
 
@@ -52,9 +60,14 @@ class _Api:
 
 def _world(monkeypatch, rows=None, refuse=False):
     """One loaded account with a holiday pair, wired to a fake registry."""
-    rows = rows if rows is not None else {
-        "Circuit-U_Beginn": dict(BEGIN_ROW), "Circuit-U_Ende": dict(END_ROW),
-    }
+    rows = (
+        rows
+        if rows is not None
+        else {
+            "Circuit-U_Beginn": dict(BEGIN_ROW),
+            "Circuit-U_Ende": dict(END_ROW),
+        }
+    )
     coordinator = types.SimpleNamespace(
         data={"1234": rows}, async_update_listeners=lambda: None
     )
@@ -62,23 +75,30 @@ def _world(monkeypatch, rows=None, refuse=False):
     entry = types.SimpleNamespace(entry_id="e1")
     entry.runtime_data = WemPortalData(api=api, coordinator=coordinator)
 
-    registry = types.SimpleNamespace(async_get=lambda entity_id: {
-        "date.holiday_begin": types.SimpleNamespace(
-            platform="wemportal", config_entry_id="e1",
-            unique_id="e1:1234:Circuit-U_Beginn",
-        ),
-        "date.holiday_end": types.SimpleNamespace(
-            platform="wemportal", config_entry_id="e1",
-            unique_id="e1:1234:Circuit-U_Ende",
-        ),
-        "date.other_module": types.SimpleNamespace(
-            platform="wemportal", config_entry_id="e1",
-            unique_id="e1:1234:Other-U_Ende",
-        ),
-        "date.not_ours": types.SimpleNamespace(
-            platform="demo", config_entry_id="e1", unique_id="whatever",
-        ),
-    }.get(entity_id))
+    registry = types.SimpleNamespace(
+        async_get=lambda entity_id: {
+            "date.holiday_begin": types.SimpleNamespace(
+                platform="wemportal",
+                config_entry_id="e1",
+                unique_id="e1:1234:Circuit-U_Beginn",
+            ),
+            "date.holiday_end": types.SimpleNamespace(
+                platform="wemportal",
+                config_entry_id="e1",
+                unique_id="e1:1234:Circuit-U_Ende",
+            ),
+            "date.other_module": types.SimpleNamespace(
+                platform="wemportal",
+                config_entry_id="e1",
+                unique_id="e1:1234:Other-U_Ende",
+            ),
+            "date.not_ours": types.SimpleNamespace(
+                platform="demo",
+                config_entry_id="e1",
+                unique_id="whatever",
+            ),
+        }.get(entity_id)
+    )
     monkeypatch.setattr(holiday.entity_registry, "async_get", lambda _hass: registry)
 
     async def _executor(func, *args):
@@ -94,12 +114,20 @@ def _world(monkeypatch, rows=None, refuse=False):
     return hass, api, rows
 
 
-def _call(begin=date(2026, 8, 20), end=date(2026, 8, 27),
-          begin_entity="date.holiday_begin", end_entity="date.holiday_end"):
-    return types.SimpleNamespace(data={
-        "begin_entity": begin_entity, "begin": begin,
-        "end_entity": end_entity, "end": end,
-    })
+def _call(
+    begin=date(2026, 8, 20),
+    end=date(2026, 8, 27),
+    begin_entity="date.holiday_begin",
+    end_entity="date.holiday_end",
+):
+    return types.SimpleNamespace(
+        data={
+            "begin_entity": begin_entity,
+            "begin": begin,
+            "end_entity": end_entity,
+            "end": end,
+        }
+    )
 
 
 async def test_both_dates_travel_in_one_request(monkeypatch):
@@ -185,9 +213,7 @@ async def test_the_same_entity_twice_is_refused(monkeypatch):
     hass, api, _rows = _world(monkeypatch)
 
     with pytest.raises(HomeAssistantError):
-        await holiday._write_holiday(
-            hass, _call(end_entity="date.holiday_begin")
-        )
+        await holiday._write_holiday(hass, _call(end_entity="date.holiday_begin"))
 
     assert api.calls == []
 

@@ -119,8 +119,16 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
             self._attr_current_option = self._resolve_option(entity_data.get("value"))
         except (ValueError, TypeError):
             self._attr_current_option = None
-            _LOGGER.warning("Value %s not found in options %s (names: %s) for select %s", entity_data.get("value"), self._options, self._options_names, self._attr_name)
-        _LOGGER.debug('Init select: %s: "%s"', self._attr_name, self._attr_current_option)
+            _LOGGER.warning(
+                "Value %s not found in options %s (names: %s) for select %s",
+                entity_data.get("value"),
+                self._options,
+                self._options_names,
+                self._attr_name,
+            )
+        _LOGGER.debug(
+            'Init select: %s: "%s"', self._attr_name, self._attr_current_option
+        )
 
     async def async_select_option(self, option: str) -> None:
         """Call the API to change the parameter value"""
@@ -158,6 +166,12 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
             _LOGGER.debug("Sensor data %s", self.coordinator.data)
         except (ValueError, TypeError):
             self._attr_current_option = None
-            _LOGGER.warning("Value %s not found in options %s (names: %s) for select %s", val, self._options, self._options_names, self._attr_name)
+            _LOGGER.warning(
+                "Value %s not found in options %s (names: %s) for select %s",
+                val,
+                self._options,
+                self._options_names,
+                self._attr_name,
+            )
 
         self.async_write_ha_state()

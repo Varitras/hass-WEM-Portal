@@ -59,13 +59,25 @@ def _value(param_id, numeric=None, string="", unit=None):
     }
 
 
-def _process(modules, values, mode="api", language="en", existing=None,
-             scraping_mapper=None, scraper_device_id=DEVICE):
+def _process(
+    modules,
+    values,
+    mode="api",
+    language="en",
+    existing=None,
+    scraping_mapper=None,
+    scraper_device_id=DEVICE,
+):
     api_data = {DEVICE: dict(existing or {})}
     WemPortalDataMapper.process_api_values(
-        DEVICE, values, modules, language,
+        DEVICE,
+        values,
+        modules,
+        language,
         scraping_mapper if scraping_mapper is not None else {},
-        mode, api_data, scraper_device_id,
+        mode,
+        api_data,
+        scraper_device_id,
     )
     return api_data[DEVICE]
 
@@ -74,7 +86,10 @@ def _process(modules, values, mode="api", language="en", existing=None,
 
 
 def test_explicit_bounds_win():
-    assert get_min_max("anything", WemDataType.NUMBER_STEP_ONE, "5", "40") == (5.0, 40.0)
+    assert get_min_max("anything", WemDataType.NUMBER_STEP_ONE, "5", "40") == (
+        5.0,
+        40.0,
+    )
 
 
 def test_switch_defaults_to_zero_one():
@@ -127,8 +142,13 @@ def test_read_only_parameter_becomes_a_sensor():
 def test_writeable_number_carries_its_step_and_bounds(data_type, expected_step):
     data = _process(
         _modules(
-            _parameter("Setpoint", IsWriteable=True, DataType=data_type,
-                       MinValue=10, MaxValue=30)
+            _parameter(
+                "Setpoint",
+                IsWriteable=True,
+                DataType=data_type,
+                MinValue=10,
+                MaxValue=30,
+            )
         ),
         _values(_value("Setpoint", numeric=21, unit="°C")),
     )
@@ -167,9 +187,15 @@ def test_writeable_enum_becomes_a_select_with_both_option_lists():
 def test_binary_switch_becomes_a_switch():
     data = _process(
         _modules(
-            _parameter("Pump", IsWriteable=True, DataType=WemDataType.SWITCH,
-                       EnumValues=[{"Value": "0", "Name": "Aus"},
-                                   {"Value": "1", "Name": "Ein"}])
+            _parameter(
+                "Pump",
+                IsWriteable=True,
+                DataType=WemDataType.SWITCH,
+                EnumValues=[
+                    {"Value": "0", "Name": "Aus"},
+                    {"Value": "1", "Name": "Ein"},
+                ],
+            )
         ),
         _values(_value("Pump", string="Ein")),
     )
@@ -185,8 +211,13 @@ def test_switch_with_a_wider_range_becomes_a_number():
     (e.g. a 0-240 minute duration) and must not become a toggle."""
     data = _process(
         _modules(
-            _parameter("Push", IsWriteable=True, DataType=WemDataType.SWITCH,
-                       MinValue=0, MaxValue=240)
+            _parameter(
+                "Push",
+                IsWriteable=True,
+                DataType=WemDataType.SWITCH,
+                MinValue=0,
+                MaxValue=240,
+            )
         ),
         _values(_value("Push", numeric=60)),
     )
@@ -200,9 +231,7 @@ def test_json_schedule_falls_back_to_a_sensor():
     """A time program arrives as a JSON blob - it is neither a switch nor a
     number, so it stays a plain sensor."""
     data = _process(
-        _modules(
-            _parameter("Program", IsWriteable=True, DataType=WemDataType.SWITCH)
-        ),
+        _modules(_parameter("Program", IsWriteable=True, DataType=WemDataType.SWITCH)),
         _values(_value("Program", string='{"Mon":[]}')),
     )
 
@@ -261,7 +290,7 @@ def test_malformed_entries_do_not_cost_the_remaining_values():
 
 
 def test_missing_value_becomes_none_rather_than_zero():
-    """"--" is missing data. Reported as 0 it would look like a real
+    """ "--" is missing data. Reported as 0 it would look like a real
     reading and could trigger automations."""
     data = _process(
         _modules(_parameter("Outside")),
@@ -380,7 +409,9 @@ def test_both_mode_still_merges_when_a_second_device_exists():
     )
 
     assert api_data[DEVICE]["heat_pump-outside"]["value"] == 12.5
-    assert "Heat pump-Outside" not in api_data[DEVICE], "a second entity for one reading"
+    assert "Heat pump-Outside" not in api_data[DEVICE], (
+        "a second entity for one reading"
+    )
 
 
 def test_a_device_the_scraper_does_not_write_into_keeps_its_own_key():
@@ -398,7 +429,9 @@ def test_a_device_the_scraper_does_not_write_into_keeps_its_own_key():
     )
 
     assert data["Heat pump-Outside"]["value"] == 12.5
-    assert data["heat_pump-outside"]["value"] == 11.0, "another device's row was rewritten"
+    assert data["heat_pump-outside"]["value"] == 11.0, (
+        "another device's row was rewritten"
+    )
 
 
 def test_a_malformed_parameter_does_not_cost_the_others(caplog):
@@ -416,8 +449,12 @@ def test_a_malformed_parameter_does_not_cost_the_others(caplog):
     modules = _modules(
         # EnumValues of non-dicts: the SELECT branch subscripts them and
         # raises, which no malformed VALUE could trigger.
-        _parameter("Broken", IsWriteable=True, DataType=WemDataType.SELECT,
-                   EnumValues=["not-a-dict"]),
+        _parameter(
+            "Broken",
+            IsWriteable=True,
+            DataType=WemDataType.SELECT,
+            EnumValues=["not-a-dict"],
+        ),
         _parameter("Healthy"),
     )
     values = _values(
@@ -485,8 +522,14 @@ HOLIDAY_BEGIN_EPOCH = 1785715200.0  # 2026-08-03 00:00:00 UTC
 def test_an_unbounded_time_parameter_becomes_a_holiday_date():
     data = _process(
         _modules(
-            _parameter("U_Beginn", IsWriteable=True, DataType=WemDataType.SWITCH,
-                       MinValue=None, MaxValue=None, EnumValues=None)
+            _parameter(
+                "U_Beginn",
+                IsWriteable=True,
+                DataType=WemDataType.SWITCH,
+                MinValue=None,
+                MaxValue=None,
+                EnumValues=None,
+            )
         ),
         _values(_value("U_Beginn", numeric=HOLIDAY_BEGIN_EPOCH)),
     )
@@ -507,8 +550,14 @@ def test_an_unbounded_parameter_that_answered_with_a_word_is_not_a_date():
     """
     data = _process(
         _modules(
-            _parameter("Something", IsWriteable=True, DataType=WemDataType.SWITCH,
-                       MinValue=None, MaxValue=None, EnumValues=None)
+            _parameter(
+                "Something",
+                IsWriteable=True,
+                DataType=WemDataType.SWITCH,
+                MinValue=None,
+                MaxValue=None,
+                EnumValues=None,
+            )
         ),
         _values(_value("Something", string="Off")),
     )
@@ -521,8 +570,14 @@ def test_an_unbounded_schedule_stays_a_sensor():
     differs only in carrying JSON."""
     data = _process(
         _modules(
-            _parameter("Heizprogramm1", IsWriteable=True, DataType=WemDataType.SWITCH,
-                       MinValue=None, MaxValue=None, EnumValues=None)
+            _parameter(
+                "Heizprogramm1",
+                IsWriteable=True,
+                DataType=WemDataType.SWITCH,
+                MinValue=None,
+                MaxValue=None,
+                EnumValues=None,
+            )
         ),
         _values(_value("Heizprogramm1", string='{"MO-1":"00:00-24:00"}')),
     )
@@ -537,8 +592,12 @@ def test_an_optionless_dropdown_stays_a_sensor():
     back to a plain sensor - this says so without the exception."""
     data = _process(
         _modules(
-            _parameter("Mystery", IsWriteable=True, DataType=WemDataType.SELECT,
-                       EnumValues=None)
+            _parameter(
+                "Mystery",
+                IsWriteable=True,
+                DataType=WemDataType.SELECT,
+                EnumValues=None,
+            )
         ),
         _values(_value("Mystery", string="whatever")),
     )
@@ -562,10 +621,18 @@ def test_a_parameter_the_portal_left_out_stops_being_current():
     entry and went on being published as current."""
     modules = _two_parameters()
     existing = {
-        "Heat pump-AktRaumSoll": {"value": 21.0, "ParameterID": "AktRaumSoll",
-                                  "unit": "°C", "platform": "sensor"},
-        "Heat pump-Vorlaufsoll": {"value": 50.5, "ParameterID": "Vorlaufsoll",
-                                  "unit": "°C", "platform": "sensor"},
+        "Heat pump-AktRaumSoll": {
+            "value": 21.0,
+            "ParameterID": "AktRaumSoll",
+            "unit": "°C",
+            "platform": "sensor",
+        },
+        "Heat pump-Vorlaufsoll": {
+            "value": 50.5,
+            "ParameterID": "Vorlaufsoll",
+            "unit": "°C",
+            "platform": "sensor",
+        },
     }
 
     data = _process(
@@ -586,8 +653,12 @@ def test_a_module_the_portal_did_not_answer_for_is_left_alone():
     that none of its parameters has a value."""
     modules = _two_parameters()
     existing = {
-        "Heat pump-AktRaumSoll": {"value": 21.0, "ParameterID": "AktRaumSoll",
-                                  "unit": "°C", "platform": "sensor"},
+        "Heat pump-AktRaumSoll": {
+            "value": 21.0,
+            "ParameterID": "AktRaumSoll",
+            "unit": "°C",
+            "platform": "sensor",
+        },
     }
 
     data = _process(modules, {"Modules": []}, existing=existing)
@@ -603,13 +674,18 @@ def test_a_heating_schedule_is_not_cleared_by_the_value_read():
         _parameter("Heizprogramm1", DataType=WemDataType.PROGRAM),
     )
     existing = {
-        "Heat pump-Heizprogramm1": {"value": "Active", "ParameterID": "Heizprogramm1",
-                                    "unit": None, "platform": "sensor",
-                                    "CircuitTimesDay": [{"day": "MO"}]},
+        "Heat pump-Heizprogramm1": {
+            "value": "Active",
+            "ParameterID": "Heizprogramm1",
+            "unit": None,
+            "platform": "sensor",
+            "CircuitTimesDay": [{"day": "MO"}],
+        },
     }
 
-    data = _process(modules, _values(_value("AktRaumSoll", numeric=22.0)),
-                    existing=existing)
+    data = _process(
+        modules, _values(_value("AktRaumSoll", numeric=22.0)), existing=existing
+    )
 
     assert data["Heat pump-Heizprogramm1"]["value"] == "Active"
     assert data["Heat pump-Heizprogramm1"]["CircuitTimesDay"] == [{"day": "MO"}]
@@ -621,15 +697,26 @@ def test_a_holiday_date_stops_being_current_once_the_portal_drops_it():
     standing as current is the same mistake in a less obvious place."""
     modules = _modules(
         _parameter("AktRaumSoll"),
-        _parameter("U_Beginn", IsWriteable=True, DataType=WemDataType.SWITCH,
-                   MinValue=None, MaxValue=None, EnumValues=None),
+        _parameter(
+            "U_Beginn",
+            IsWriteable=True,
+            DataType=WemDataType.SWITCH,
+            MinValue=None,
+            MaxValue=None,
+            EnumValues=None,
+        ),
     )
     existing = {
-        "Heat pump-U_Beginn": {"value": 1785715200.0, "ParameterID": "U_Beginn",
-                               "unit": None, "platform": "date"},
+        "Heat pump-U_Beginn": {
+            "value": 1785715200.0,
+            "ParameterID": "U_Beginn",
+            "unit": None,
+            "platform": "date",
+        },
     }
 
-    data = _process(modules, _values(_value("AktRaumSoll", numeric=22.0)),
-                    existing=existing)
+    data = _process(
+        modules, _values(_value("AktRaumSoll", numeric=22.0)), existing=existing
+    )
 
     assert data["Heat pump-U_Beginn"]["value"] is None

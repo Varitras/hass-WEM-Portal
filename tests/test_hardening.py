@@ -14,8 +14,13 @@ from custom_components.wemportal import exceptions
 
 
 class FakeResponse:
-    def __init__(self, json_data=None, status_code=200, url="https://www.wemportal.com/app/x",
-                 content=None):
+    def __init__(
+        self,
+        json_data=None,
+        status_code=200,
+        url="https://www.wemportal.com/app/x",
+        content=None,
+    ):
         self._json = json_data if json_data is not None else {}
         self.status_code = status_code
         self.url = url
@@ -66,7 +71,9 @@ def test_api_login_network_error_raises_clean_auth_error(monkeypatch):
     """A pure network failure (no response yet) surfaces as UnknownAuthError,
     not an UnboundLocalError in the handler."""
     api = _api()
-    session = RecordingSession(post_exc=real_requests.exceptions.ConnectionError("reset"))
+    session = RecordingSession(
+        post_exc=real_requests.exceptions.ConnectionError("reset")
+    )
     monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: session)
     with pytest.raises(exceptions.UnknownAuthError):
         api.api_login()
@@ -79,12 +86,19 @@ def test_api_login_post_has_timeout(monkeypatch):
     monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: session)
     api.api_login()
     assert api.valid_login is True
-    assert session.post_kwargs.get("timeout") == wemportalapi.API_REQUEST_TIMEOUT_SECONDS
+    assert (
+        session.post_kwargs.get("timeout") == wemportalapi.API_REQUEST_TIMEOUT_SECONDS
+    )
 
 
 CACHED_MODULES = {
     "1234": {
-        (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump", "parameters": {"P1": {"ParameterID": "P1"}}}
+        (0, 1): {
+            "Index": 0,
+            "Type": 1,
+            "Name": "Heat pump",
+            "parameters": {"P1": {"ParameterID": "P1"}},
+        }
     }
 }
 
@@ -107,7 +121,11 @@ def test_get_devices_success_carries_cached_parameters():
     api = _api(cached_modules=CACHED_MODULES)
     device_json = {
         "Devices": [
-            {"ID": 1234, "ConnectionStatus": 0, "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}]}
+            {
+                "ID": 1234,
+                "ConnectionStatus": 0,
+                "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}],
+            }
         ]
     }
     api.make_api_call = lambda *a, **k: FakeResponse(device_json)
@@ -124,7 +142,9 @@ def test_get_statistics_accepts_int_device_ids():
     # scraper-only devices (no API modules, e.g. the "0000" placeholder).
     api.modules = {"1234": {}}
     calls = []
-    api.make_api_call = lambda url, **k: calls.append(url) or FakeResponse({"GroupTypeDescriptions": []})
+    api.make_api_call = lambda url, **k: (
+        calls.append(url) or FakeResponse({"GroupTypeDescriptions": []})
+    )
     api.last_statistics_fetch = 0.0
     api.get_statistics(enabled_devices=[1234])
     assert calls, "statistics refresh was skipped for an int device id"
@@ -188,7 +208,8 @@ def test_expert_cooldown_survives_api_reinstantiation():
     api.activate_expert_cooldown()
 
     replacement = WemPortalApi(
-        "user@example.org", "secret",
+        "user@example.org",
+        "secret",
         expert_blocked_until=api._expert_blocked_until,
     )
 
@@ -288,8 +309,11 @@ def test_empty_enabled_devices_polls_nothing():
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
-    api.make_api_call = lambda url, **k: calls.append(url) or FakeResponse(
-        {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
+    api.make_api_call = lambda url, **k: (
+        calls.append(url)
+        or FakeResponse(
+            {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
+        )
     )
     api.last_statistics_fetch = 0.0
 
@@ -307,8 +331,16 @@ def test_none_enabled_devices_still_polls_everything():
     api.modules = {"1234": {}}
     # Online, so this stays a test about the filter and not about the
     # all-devices-offline case.
-    api.make_api_call = lambda url, **k: calls.append(url) or FakeResponse(
-        {"ConnectionStatus": 0, "Errors": [], "Modules": [], "GroupTypeDescriptions": []}
+    api.make_api_call = lambda url, **k: (
+        calls.append(url)
+        or FakeResponse(
+            {
+                "ConnectionStatus": 0,
+                "Errors": [],
+                "Modules": [],
+                "GroupTypeDescriptions": [],
+            }
+        )
     )
 
     api.get_data(enabled_devices=None)
@@ -395,7 +427,8 @@ def test_the_constructor_restores_the_state_that_was_persisted():
     old.expert_cookies = {"cookies": {"ASP.NET_SessionId": "keep-me"}, "saved_at": 1.0}
 
     new = WemPortalApi(
-        "user@example.org", "secret",
+        "user@example.org",
+        "secret",
         cached_modules=old.modules,
         blocked_until=old._blocked_until,
         expert_blocked_until=old._expert_blocked_until,
@@ -763,8 +796,12 @@ def test_device_type_is_recorded_but_kept_out_of_the_entity_data():
     api = _api()
     device_json = {
         "Devices": [
-            {"ID": 1234, "DeviceType": 2, "ConnectionStatus": 0,
-             "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}]}
+            {
+                "ID": 1234,
+                "DeviceType": 2,
+                "ConnectionStatus": 0,
+                "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}],
+            }
         ]
     }
     api.make_api_call = lambda *a, **k: FakeResponse(device_json)
@@ -906,7 +943,8 @@ def test_a_single_fault_reads_as_itself():
     from custom_components.wemportal.utils import error_state_and_detail
 
     assert error_state_and_detail(["E12 Sensor defect"]) == (
-        "E12 Sensor defect", ["E12 Sensor defect"]
+        "E12 Sensor defect",
+        ["E12 Sensor defect"],
     )
     assert error_state_and_detail([]) == ("None", [])
 
@@ -919,7 +957,9 @@ def test_a_fault_list_too_long_for_a_state_says_how_many_it_dropped():
 
     from custom_components.wemportal.utils import error_state_and_detail
 
-    faults = [f"E{index:02d} something is wrong with a component" for index in range(12)]
+    faults = [
+        f"E{index:02d} something is wrong with a component" for index in range(12)
+    ]
 
     state, detail = error_state_and_detail(faults)
 
@@ -950,8 +990,11 @@ def test_one_fault_too_long_on_its_own_is_cut_and_says_so():
 def test_the_full_fault_list_reaches_the_attribute():
     api = _api_with_a_read_status()
     api.make_api_call = lambda *a, **k: FakeResponse(
-        {"ConnectionStatus": 0, "Errors": ["E12 one", "E13 two"],
-         "GroupTypeDescriptions": []}
+        {
+            "ConnectionStatus": 0,
+            "Errors": ["E12 one", "E13 two"],
+            "GroupTypeDescriptions": [],
+        }
     )
 
     api._fetch_device_status("1234")
@@ -963,14 +1006,22 @@ def test_the_full_fault_list_reaches_the_attribute():
 
 def test_the_error_attribute_reaches_the_entity():
     """The full list is only worth carrying if it gets past the row."""
-    entity = _sensor_from_row("1234-ErrorMessages", {
-        "value": "E12 one (+3 more)", "unit": None,
-        "friendlyName": "Error Messages", "ParameterID": "ErrorMessages",
-        "Errors": ["E12 one", "E13 two", "E14 three", "E15 four"],
-    })
+    entity = _sensor_from_row(
+        "1234-ErrorMessages",
+        {
+            "value": "E12 one (+3 more)",
+            "unit": None,
+            "friendlyName": "Error Messages",
+            "ParameterID": "ErrorMessages",
+            "Errors": ["E12 one", "E13 two", "E14 three", "E15 four"],
+        },
+    )
 
     assert entity.extra_state_attributes["Errors"] == [
-        "E12 one", "E13 two", "E14 three", "E15 four"
+        "E12 one",
+        "E13 two",
+        "E14 three",
+        "E15 four",
     ]
 
 
@@ -997,7 +1048,7 @@ def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
 
 
 def test_a_status_nobody_could_read_leaves_the_entities_available():
-    """"Unknown" is the honest answer; unavailable would hide the entity
+    """ "Unknown" is the honest answer; unavailable would hide the entity
     that exists to explain the situation."""
     from custom_components.wemportal.utils import device_is_reachable
 
@@ -1028,7 +1079,8 @@ def test_a_failed_status_read_does_not_stop_parameter_discovery():
 
 
 @pytest.mark.parametrize(
-    ("status", "expected"), [(50, "offline"), (7, "wrong_secret"), (8, "busy"), (99, "unknown")]
+    ("status", "expected"),
+    [(50, "offline"), (7, "wrong_secret"), (8, "busy"), (99, "unknown")],
 )
 def test_a_device_that_is_not_online_does_not_fail_the_whole_cycle(status, expected):
     """An unreachable device is reported by its OWN entities, not by
@@ -1069,8 +1121,12 @@ def test_the_offline_warning_is_logged_once_per_change(caplog):
 
         caplog.clear()
         api.make_api_call = lambda *a, **k: FakeResponse(
-            {"ConnectionStatus": 0, "Errors": [], "Modules": [],
-             "GroupTypeDescriptions": []}
+            {
+                "ConnectionStatus": 0,
+                "Errors": [],
+                "Modules": [],
+                "GroupTypeDescriptions": [],
+            }
         )
         api.get_data(enabled_devices=["1234"])
 
@@ -1089,8 +1145,14 @@ def test_the_offline_warning_is_logged_once_per_change(caplog):
 
 
 def _pollable_module():
-    return {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
-                     "parameters": {"P1": {"ParameterID": "P1"}}}}
+    return {
+        (0, 1): {
+            "Index": 0,
+            "Type": 1,
+            "Name": "Heat pump",
+            "parameters": {"P1": {"ParameterID": "P1"}},
+        }
+    }
 
 
 def _api_with_one_pollable_device():
@@ -1177,14 +1239,25 @@ def _switch(value):
     from custom_components.wemportal.switch import WemPortalSwitch
 
     coordinator = types.SimpleNamespace(
-        data={"1234": {}}, api=_api(), last_update_success=True,
+        data={"1234": {}},
+        api=_api(),
+        last_update_success=True,
         async_add_listener=lambda *_a, **_k: None,
     )
     entry = types.SimpleNamespace(entry_id="e1")
     return WemPortalSwitch(
-        coordinator, entry, "1234", "Pump",
-        {"value": value, "unit": None, "friendlyName": "Pump",
-         "ParameterID": "P1", "ModuleIndex": 0, "ModuleType": 1},
+        coordinator,
+        entry,
+        "1234",
+        "Pump",
+        {
+            "value": value,
+            "unit": None,
+            "friendlyName": "Pump",
+            "ParameterID": "P1",
+            "ModuleIndex": 0,
+            "ModuleType": 1,
+        },
     )
 
 
@@ -1345,8 +1418,10 @@ def test_a_stored_interval_below_the_floor_is_raised(caplog):
 
     with caplog.at_level(logging.WARNING):
         value = clamped_scan_interval(
-            {CONF_SCAN_INTERVAL_API: 1}, CONF_SCAN_INTERVAL_API,
-            300, MIN_SCAN_INTERVAL_API_SECONDS,
+            {CONF_SCAN_INTERVAL_API: 1},
+            CONF_SCAN_INTERVAL_API,
+            300,
+            MIN_SCAN_INTERVAL_API_SECONDS,
         )
 
     assert value == MIN_SCAN_INTERVAL_API_SECONDS
@@ -1374,7 +1449,8 @@ def test_the_api_applies_the_floor_to_a_stored_interval():
     from custom_components.wemportal.const import CONF_MODE, CONF_SCAN_INTERVAL_API
 
     api = WemPortalApi(
-        "user@example.org", "secret",
+        "user@example.org",
+        "secret",
         config={CONF_MODE: "both", CONF_SCAN_INTERVAL: 1, CONF_SCAN_INTERVAL_API: 1},
     )
 
@@ -1469,7 +1545,9 @@ def test_a_write_answered_with_a_page_is_not_a_completed_write():
     """Reported as success, this told the user their heating parameter had
     been changed when it had not."""
     api = _api()
-    api.make_api_call = lambda *a, **k: _BodyResponse(b"<html>Service unavailable</html>")
+    api.make_api_call = lambda *a, **k: _BodyResponse(
+        b"<html>Service unavailable</html>"
+    )
 
     with pytest.raises(exceptions.ParameterChangeError):
         api.change_value("1234", "P1", 0, 1, 21.0, login=False)
@@ -1656,7 +1734,9 @@ def test_the_write_is_stopped_directly_before_the_portal_is_changed():
             raise expert_writer.ExpertOperationAborted("unloaded")
 
     client = expert_writer.WemPortalExpertClient(
-        "user@example.org", "secret", abort_check=gate,
+        "user@example.org",
+        "secret",
+        abort_check=gate,
     )
     session = _RecordingSession()
     client.session = session
@@ -1782,7 +1862,10 @@ def test_a_successful_scrape_clears_the_backoff():
 # The real answer from the portal, captured once instead of derived:
 # HTTP 200 {"JobID":762338890,"Status":0,"Message":null,"DetailMessages":null}
 REAL_WRITE_SUCCESS = {
-    "JobID": 762338890, "Status": 0, "Message": None, "DetailMessages": None,
+    "JobID": 762338890,
+    "Status": 0,
+    "Message": None,
+    "DetailMessages": None,
 }
 
 
@@ -1803,11 +1886,11 @@ def test_the_real_success_response_is_accepted():
 @pytest.mark.parametrize(
     "payload",
     [
-        {"Message": "write failed"},          # error shape, no Status
-        {"Status": None},                     # present but says nothing
+        {"Message": "write failed"},  # error shape, no Status
+        {"Status": None},  # present but says nothing
         {"Status": 3, "Message": "rejected"},  # explicit rejection
-        {"JobID": 1},                          # a result, but not a verdict
-        {"Status": False},                     # Python says False == 0. The portal does not.
+        {"JobID": 1},  # a result, but not a verdict
+        {"Status": False},  # Python says False == 0. The portal does not.
     ],
 )
 def test_anything_but_an_explicit_success_is_a_rejection(payload):
@@ -1853,7 +1936,10 @@ def test_a_rejected_write_puts_the_portal_answer_in_the_log(caplog):
         {"Status": 3, "Message": "value out of range"}
     )
 
-    with caplog.at_level(logging.WARNING), pytest.raises(exceptions.ParameterChangeError):
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(exceptions.ParameterChangeError),
+    ):
         api.change_value("1234", "P1", 0, 1, 21.0, login=False)
 
     warnings = " ".join(
@@ -1980,14 +2066,16 @@ def test_a_healthy_page_is_silent(caplog):
 
 # Dropped by a recovery: the HTTP state and everything that describes the
 # session it belonged to.
-TRANSPORT_FIELDS = frozenset({
-    "session",
-    "_scraper",
-    "valid_login",
-    "api_version",
-    "webscraping_cookie",
-    "_devices_fetched_this_session",
-})
+TRANSPORT_FIELDS = frozenset(
+    {
+        "session",
+        "_scraper",
+        "valid_login",
+        "api_version",
+        "webscraping_cookie",
+        "_devices_fetched_this_session",
+    }
+)
 
 # Kept across a recovery. Two groups here are not merely "not transport",
 # they are actively dangerous to reset, and both were reset in practice
@@ -2021,16 +2109,33 @@ TRANSPORT_FIELDS = frozenset({
 # out of Home Assistant's setup. A recovery does not un-complete the cycles
 # that already ran, and clearing it would only postpone that re-read by one
 # cycle for no reason.
-PRESERVED_FIELDS = frozenset({
-    "_first_cycle_done",
-    "data", "username", "password", "scraper_device_id", "modules", "mode",
-    "update_interval", "scan_interval", "scan_interval_api", "language",
-    "_api_lock", "headers", "device_types", "_previous_scraper_keys",
-    "_last_connection_status", "scraping_mapper", "last_statistics_fetch",
-    "_last_circuit_times_fetch",
-    "expert_cookies", "spider_wait_interval", "spider_retry_count",
-    "last_scraping_update",
-})
+PRESERVED_FIELDS = frozenset(
+    {
+        "_first_cycle_done",
+        "data",
+        "username",
+        "password",
+        "scraper_device_id",
+        "modules",
+        "mode",
+        "update_interval",
+        "scan_interval",
+        "scan_interval_api",
+        "language",
+        "_api_lock",
+        "headers",
+        "device_types",
+        "_previous_scraper_keys",
+        "_last_connection_status",
+        "scraping_mapper",
+        "last_statistics_fetch",
+        "_last_circuit_times_fetch",
+        "expert_cookies",
+        "spider_wait_interval",
+        "spider_retry_count",
+        "last_scraping_update",
+    }
+)
 
 
 class _Marker:
@@ -2154,7 +2259,8 @@ def test_a_missing_job_id_is_reported_once_per_device(caplog):
     api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
     api.make_api_call = lambda url, **_k: FakeResponse(
         {"Modules": [{"ModuleIndex": 1, "ModuleType": 2, "Values": []}]}
-        if "Read" in url else {"Status": 0}
+        if "Read" in url
+        else {"Status": 0}
     )
 
     with caplog.at_level(logging.WARNING):
@@ -2171,6 +2277,7 @@ def test_a_missing_job_id_is_reported_once_per_device(caplog):
 # waiting on that lock takes it in the same instant - and the recovery, which
 # ran on the event loop and took no lock at all, then closed the session out
 # from under that write.
+
 
 class _ClosingSession:
     """A session that records being closed."""
@@ -2389,16 +2496,25 @@ def _circuit_times_api(responses, data_type=6, value=None):
     rows = {}
     if value is not None:
         rows[SCHEDULE_ROW] = {
-            "value": value, "unit": None, "friendlyName": "Heating programme",
-            "ParameterID": "Heizprogramm1", "platform": "sensor",
+            "value": value,
+            "unit": None,
+            "friendlyName": "Heating programme",
+            "ParameterID": "Heizprogramm1",
+            "platform": "sensor",
         }
     api.data = {"1234": rows}
     api.modules = {
         "1234": {
             (0, 1): {
-                "Index": 0, "Type": 1, "Name": "Heating circuit 1",
-                "parameters": {"Heizprogramm1": {"ParameterID": "Heizprogramm1",
-                                                 "DataType": data_type}},
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heating circuit 1",
+                "parameters": {
+                    "Heizprogramm1": {
+                        "ParameterID": "Heizprogramm1",
+                        "DataType": data_type,
+                    }
+                },
             }
         }
     }
@@ -2423,7 +2539,9 @@ def test_a_failing_schedule_is_not_refetched_on_every_cycle():
     that was already failing, against an IP the portal blocks past 10,000
     requests per 12 hours.
     """
-    api, calls = _circuit_times_api([exceptions.WemPortalError("portal unavailable")] * 10)
+    api, calls = _circuit_times_api(
+        [exceptions.WemPortalError("portal unavailable")] * 10
+    )
 
     api._fetch_circuit_times("1234")
     after_first = len(calls)
@@ -2464,10 +2582,12 @@ def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
 
 
 def test_a_successful_schedule_keeps_the_full_interval():
-    api, calls = _circuit_times_api([
-        {"JobID": 7},
-        {"CircuitTimesDay": [], "PossibleValues": []},
-    ])
+    api, calls = _circuit_times_api(
+        [
+            {"JobID": 7},
+            {"CircuitTimesDay": [], "PossibleValues": []},
+        ]
+    )
 
     api._fetch_circuit_times("1234")
     stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
@@ -2489,7 +2609,8 @@ def test_a_programme_the_portal_types_as_a_switch_is_still_fetched():
     """
     api, calls = _circuit_times_api(
         [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}],
-        data_type=2, value='{"MO-1":"00:00-24:00"}',
+        data_type=2,
+        value='{"MO-1":"00:00-24:00"}',
     )
 
     api._fetch_circuit_times("1234")
@@ -2502,7 +2623,9 @@ def test_a_plain_switch_is_not_mistaken_for_a_programme():
     portal for the weekly schedule of a pump relay would waste two requests
     per switch per hour against an account it blocks past 10,000."""
     api, calls = _circuit_times_api(
-        [{"JobID": 7}, {"CircuitTimesDay": []}], data_type=2, value=1.0,
+        [{"JobID": 7}, {"CircuitTimesDay": []}],
+        data_type=2,
+        value=1.0,
     )
 
     api._fetch_circuit_times("1234")
@@ -2517,7 +2640,8 @@ def test_the_fetch_adds_to_the_programme_instead_of_replacing_it():
     schedule = '{"MO-1":"00:00-24:00"}'
     api, _calls = _circuit_times_api(
         [{"JobID": 7}, {"CircuitTimesDay": [{"day": "MO"}], "PossibleValues": ["H"]}],
-        data_type=2, value=schedule,
+        data_type=2,
+        value=schedule,
     )
 
     api._fetch_circuit_times("1234")
@@ -2547,9 +2671,15 @@ def _scraped_row(value, unit="°C"):
     """One row as the scraper hands it over. Named apart from _scraped_row()
     above, which builds a whole scrape from key names - defining a second
     `_scraped` silently rebound the first for every test in this file."""
-    return {"value": value, "unit": unit, "friendlyName": "Setpoint",
-            "name": "wp-solltemperatur", "icon": None,
-            "ParameterID": "wp-solltemperatur", "platform": "sensor"}
+    return {
+        "value": value,
+        "unit": unit,
+        "friendlyName": "Setpoint",
+        "name": "wp-solltemperatur",
+        "icon": None,
+        "ParameterID": "wp-solltemperatur",
+        "platform": "sensor",
+    }
 
 
 def test_a_scraped_row_without_a_value_clears_the_sensor():
@@ -2561,7 +2691,9 @@ def test_a_scraped_row_without_a_value_clears_the_sensor():
     api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(50.5)})
     assert api.data["0000"]["wp-solltemperatur"]["value"] == 50.5
 
-    api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(None, unit="")})
+    api._merge_webscraping_data(
+        "0000", {"wp-solltemperatur": _scraped_row(None, unit="")}
+    )
 
     assert api.data["0000"]["wp-solltemperatur"]["value"] is None, (
         "a reading the portal no longer has was reported as current"
@@ -2574,17 +2706,22 @@ def test_the_unit_is_still_carried_over():
     api = _api()
     api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(50.5)})
 
-    api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(None, unit="")})
+    api._merge_webscraping_data(
+        "0000", {"wp-solltemperatur": _scraped_row(None, unit="")}
+    )
 
     assert api.data["0000"]["wp-solltemperatur"]["unit"] == "°C"
 
 
 def test_a_row_that_stops_being_scraped_stops_showing_its_last_value():
     api = _api()
-    api._merge_webscraping_data("0000", {
-        "wp-solltemperatur": _scraped_row(50.5),
-        "wp-vorlauf": _scraped_row(31.0),
-    })
+    api._merge_webscraping_data(
+        "0000",
+        {
+            "wp-solltemperatur": _scraped_row(50.5),
+            "wp-vorlauf": _scraped_row(31.0),
+        },
+    )
 
     api._merge_webscraping_data("0000", {"wp-vorlauf": _scraped_row(32.0)})
 
@@ -2681,8 +2818,12 @@ def test_a_device_with_parameters_is_still_read():
     api.data = {"1234": {}}
     api.modules = {
         "1234": {
-            (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
-                     "parameters": {"AktRaumSoll": {"ParameterID": "AktRaumSoll"}}}
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heat pump",
+                "parameters": {"AktRaumSoll": {"ParameterID": "AktRaumSoll"}},
+            }
         }
     }
     calls = []
@@ -2691,11 +2832,23 @@ def test_a_device_with_parameters_is_still_read():
         calls.append(url)
         if url == wemportalapi.API_REFRESH_URL:
             return FakeResponse({"Status": 0, "JobID": 7})
-        return FakeResponse({"Modules": [
-            {"ModuleIndex": 0, "ModuleType": 1, "Values": [
-                {"ParameterID": "AktRaumSoll", "NumericValue": 21.0, "Unit": "°C"}
-            ]}
-        ]})
+        return FakeResponse(
+            {
+                "Modules": [
+                    {
+                        "ModuleIndex": 0,
+                        "ModuleType": 1,
+                        "Values": [
+                            {
+                                "ParameterID": "AktRaumSoll",
+                                "NumericValue": 21.0,
+                                "Unit": "°C",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
 
     api.make_api_call = make_api_call
 
@@ -2710,8 +2863,12 @@ def _discovery_api(answers, fetched_at=None):
     """An api with one cached module, answering EventType/Read from `answers`."""
     api = _api()
     api.data = {"1234": {"ConnectionStatus": 0}}
-    module = {"Index": 0, "Type": 1, "Name": "Heat pump",
-              "parameters": {"Known": {"ParameterID": "Known"}}}
+    module = {
+        "Index": 0,
+        "Type": 1,
+        "Name": "Heat pump",
+        "parameters": {"Known": {"ParameterID": "Known"}},
+    }
     if fetched_at is not None:
         module["parameters_fetched_at"] = fetched_at
     api.modules = {"1234": {(0, 1): module}}
@@ -2742,7 +2899,8 @@ def test_a_stale_parameter_list_is_re_read():
     discovered, with no error and no way to force a re-scan."""
     api, calls = _discovery_api(
         [{"Parameters": [{"ParameterID": "Known"}, {"ParameterID": "New"}]}],
-        fetched_at=time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60),
+        fetched_at=time.time()
+        - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60),
     )
 
     api.get_parameters()
@@ -2780,8 +2938,9 @@ def test_a_failed_re_read_keeps_the_parameters_it_had():
 
 def test_a_failed_re_read_is_not_retried_on_the_very_next_cycle():
     stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
-    api, calls = _discovery_api([{"Parameters": []}, {"Parameters": []}],
-                                fetched_at=stale)
+    api, calls = _discovery_api(
+        [{"Parameters": []}, {"Parameters": []}], fetched_at=stale
+    )
 
     api.get_parameters()
     after_first = len(calls)
@@ -2892,16 +3051,27 @@ def test_get_devices_carries_the_parameter_timestamp_too():
     fetched_at = time.time() - 60
     cached = {
         "1234": {
-            (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
-                     "parameters": {"P1": {"ParameterID": "P1"}},
-                     "parameters_fetched_at": fetched_at},
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heat pump",
+                "parameters": {"P1": {"ParameterID": "P1"}},
+                "parameters_fetched_at": fetched_at,
+            },
         }
     }
     api = _api(cached_modules=cached)
-    api.make_api_call = lambda *a, **k: FakeResponse({
-        "Devices": [{"ID": 1234, "ConnectionStatus": 0,
-                     "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}]}]
-    })
+    api.make_api_call = lambda *a, **k: FakeResponse(
+        {
+            "Devices": [
+                {
+                    "ID": 1234,
+                    "ConnectionStatus": 0,
+                    "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}],
+                }
+            ]
+        }
+    )
 
     api.get_devices()
 
@@ -2913,9 +3083,15 @@ def _cycle_api(fetched_at):
     api = _api()
     api.data = {"1234": {"ConnectionStatus": 0}}
     api.modules = {
-        "1234": {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
-                          "parameters": {"Known": {"ParameterID": "Known"}},
-                          "parameters_fetched_at": fetched_at}}
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heat pump",
+                "parameters": {"Known": {"ParameterID": "Known"}},
+                "parameters_fetched_at": fetched_at,
+            }
+        }
     }
     api._devices_fetched_this_session = True
     api.valid_login = True
@@ -2975,8 +3151,14 @@ def _row(raw, **extra):
     view of the same programme arrives beside it, and it is the better of the
     two sources.
     """
-    return {"value": raw, "unit": None, "friendlyName": "Programme",
-            "ParameterID": "Programm", "platform": "sensor", **extra}
+    return {
+        "value": raw,
+        "unit": None,
+        "friendlyName": "Programme",
+        "ParameterID": "Programm",
+        "platform": "sensor",
+        **extra,
+    }
 
 
 def _week_payload():
@@ -2993,10 +3175,16 @@ def _week_payload():
         payload[f"{day}-3"] = "00:00-00:00"
     for day in DAYS:
         payload[day] = "HLL"
-    payload.update({
-        "zone": "1", "type": "Functionlist", "TransferId": "00000000",
-        "mode": "cycletime", "cmd": "load", "status": "ok",
-    })
+    payload.update(
+        {
+            "zone": "1",
+            "type": "Functionlist",
+            "TransferId": "00000000",
+            "mode": "cycletime",
+            "cmd": "load",
+            "status": "ok",
+        }
+    )
     return json.dumps(payload)
 
 
@@ -3021,10 +3209,17 @@ def _sensor_from_row(key, row):
 
 def _schedule_sensor(raw):
     """A sensor built from one programme reading."""
-    return _sensor_from_row("Programm", {
-        "value": raw, "unit": None, "friendlyName": "Heating programme",
-        "ParameterID": "Programm", "ModuleIndex": 0, "ModuleType": 1,
-    })
+    return _sensor_from_row(
+        "Programm",
+        {
+            "value": raw,
+            "unit": None,
+            "friendlyName": "Heating programme",
+            "ParameterID": "Programm",
+            "ModuleIndex": 0,
+            "ModuleType": 1,
+        },
+    )
 
 
 # --- a word the portal knows and this integration does not --------------
@@ -3041,10 +3236,17 @@ def _forget_unreadable_reports():
 
 def _numeric_sensor(value):
     """A sensor that must hold a number - it carries a unit."""
-    return _sensor_from_row("Pump", {
-        "value": value, "unit": "%", "friendlyName": "Pump speed",
-        "ParameterID": "Drehzahl", "ModuleIndex": 0, "ModuleType": 1,
-    })
+    return _sensor_from_row(
+        "Pump",
+        {
+            "value": value,
+            "unit": "%",
+            "friendlyName": "Pump speed",
+            "ParameterID": "Drehzahl",
+            "ModuleIndex": 0,
+            "ModuleType": 1,
+        },
+    )
 
 
 def test_a_word_that_is_not_a_number_shows_as_unknown(_forget_unreadable_reports):
@@ -3135,10 +3337,7 @@ def test_a_letter_belongs_to_the_window_it_numbers():
     """
     from custom_components.wemportal.sensor import _readable_schedule
 
-    raw = (
-        '{"MO-1":"00:00-00:00","MO-2":"17:00-19:00","MO-3":"00:00-00:00",'
-        '"MO":"LHL"}'
-    )
+    raw = '{"MO-1":"00:00-00:00","MO-2":"17:00-19:00","MO-3":"00:00-00:00","MO":"LHL"}'
 
     assert _readable_schedule(_row(raw)) == {"MO": ["17:00-19:00 (H)"]}
 
@@ -3204,21 +3403,31 @@ def _measured_monday():
         payload[day] = "HLH" if day == "MO" else "HLL"
     payload.update({"zone": "1", "type": "Functionlist", "mode": "cycletime"})
 
-    circuit_times = [{
-        "Day": 1, "BlockNumber": 1, "CircuitTimes": [
-            {"MinutesSinceMidnight": 360, "Value": 3},
-            {"MinutesSinceMidnight": 610, "Value": 2},
-            {"MinutesSinceMidnight": 810, "Value": 1},
-            {"MinutesSinceMidnight": 1440, "Value": 3},
-        ],
-    }]
+    circuit_times = [
+        {
+            "Day": 1,
+            "BlockNumber": 1,
+            "CircuitTimes": [
+                {"MinutesSinceMidnight": 360, "Value": 3},
+                {"MinutesSinceMidnight": 610, "Value": 2},
+                {"MinutesSinceMidnight": 810, "Value": 1},
+                {"MinutesSinceMidnight": 1440, "Value": 3},
+            ],
+        }
+    ]
     for number in (2, 3, 4, 5, 6, 0):
-        circuit_times.append({
-            "Day": number, "BlockNumber": 2,
-            "CircuitTimes": [{"MinutesSinceMidnight": 1440, "Value": 3}],
-        })
-    return _row(json.dumps(payload),
-                CircuitTimesDay=circuit_times, PossibleValues=HEATING_LEVELS)
+        circuit_times.append(
+            {
+                "Day": number,
+                "BlockNumber": 2,
+                "CircuitTimes": [{"MinutesSinceMidnight": 1440, "Value": 3}],
+            }
+        )
+    return _row(
+        json.dumps(payload),
+        CircuitTimesDay=circuit_times,
+        PossibleValues=HEATING_LEVELS,
+    )
 
 
 def test_the_reduced_stretch_the_json_does_not_carry_is_shown():
@@ -3284,7 +3493,9 @@ def test_without_the_device_view_the_json_still_answers():
     del row["CircuitTimesDay"]
 
     assert _readable_schedule(row)["MO"] == [
-        "00:00-06:00 (H)", "06:00-10:10 (L)", "13:30-24:00 (H)"
+        "00:00-06:00 (H)",
+        "06:00-10:10 (L)",
+        "13:30-24:00 (H)",
     ]
 
 
@@ -3326,7 +3537,9 @@ def test_an_unused_slot_is_left_out():
     two or three periods that are actually set."""
     from custom_components.wemportal.sensor import _readable_schedule
 
-    assert _readable_schedule(_row('{"MO-1":"00:00-00:00","MO-2":"00:00-00:00"}')) is None
+    assert (
+        _readable_schedule(_row('{"MO-1":"00:00-00:00","MO-2":"00:00-00:00"}')) is None
+    )
 
 
 @pytest.mark.parametrize("raw", ["not json", "[1,2]", '"text"', "{}", ""])
@@ -3391,16 +3604,22 @@ def test_companion_parameters_travel_in_the_same_request():
     sent = _write_recorder(api)
 
     api.change_value(
-        "1234", "U_Ende", 1, 2, 1785974400.0, login=False,
+        "1234",
+        "U_Ende",
+        1,
+        2,
+        1785974400.0,
+        login=False,
         together_with={"U_Beginn": 1785715200.0},
     )
 
     assert len(sent) == 1, "the pair went out as two separate writes"
     module = sent[0]["Modules"][0]
     assert (module["ModuleIndex"], module["ModuleType"]) == (1, 2)
-    assert {
-        p["ParameterID"]: p["NumericValue"] for p in module["Parameters"]
-    } == {"U_Beginn": 1785715200.0, "U_Ende": 1785974400.0}
+    assert {p["ParameterID"]: p["NumericValue"] for p in module["Parameters"]} == {
+        "U_Beginn": 1785715200.0,
+        "U_Ende": 1785974400.0,
+    }
 
 
 def test_the_parameter_being_changed_wins_over_a_companion():
@@ -3411,7 +3630,12 @@ def test_the_parameter_being_changed_wins_over_a_companion():
     sent = _write_recorder(api)
 
     api.change_value(
-        "1234", "U_Ende", 1, 2, 1785974400.0, login=False,
+        "1234",
+        "U_Ende",
+        1,
+        2,
+        1785974400.0,
+        login=False,
         together_with={"U_Ende": 1785801600.0},
     )
 
@@ -3429,8 +3653,11 @@ def test_a_write_without_companions_is_unchanged():
 
     assert sent[0] == {
         "DeviceID": 1234,
-        "Modules": [{
-            "ModuleIndex": 0, "ModuleType": 1,
-            "Parameters": [{"ParameterID": "P1", "NumericValue": 21.0}],
-        }],
+        "Modules": [
+            {
+                "ModuleIndex": 0,
+                "ModuleType": 1,
+                "Parameters": [{"ParameterID": "P1", "NumericValue": 21.0}],
+            }
+        ],
     }

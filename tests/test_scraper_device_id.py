@@ -54,7 +54,9 @@ def test_merge_stores_scraped_data_under_resolved_id():
     then reused (locked) on the next scrape."""
     api = _api(cached_modules={"1234": {(0, 1): {"Index": 0, "Type": 1, "Name": "HP"}}})
     dev = api.resolve_scraper_device_id()
-    api._merge_webscraping_data(dev, {"hp-temp": {"value": 21.0, "friendlyName": "HP Temp"}})
+    api._merge_webscraping_data(
+        dev, {"hp-temp": {"value": 21.0, "friendlyName": "HP Temp"}}
+    )
     assert "1234" in api.data
     assert api.data["1234"]["hp-temp"]["value"] == 21.0
     assert api.resolve_scraper_device_id() == "1234"

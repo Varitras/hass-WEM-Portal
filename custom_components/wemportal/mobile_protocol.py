@@ -80,7 +80,8 @@ def read_refresh_ticket(payload: Any) -> RefreshTicket:
     """
     if not isinstance(payload, dict):
         return RefreshTicket(
-            False, None,
+            False,
+            None,
             f"answered with {type(payload).__name__} instead of an object",
         )
     status = payload.get("Status")

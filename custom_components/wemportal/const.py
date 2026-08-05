@@ -1,7 +1,9 @@
-""" Constants for the WEM Portal Integration """
+"""Constants for the WEM Portal Integration"""
+
 import logging
 from typing import Final
 from enum import IntEnum
+
 
 class WemDataType(IntEnum):
     NUMBER_STEP_HALF = -1
@@ -9,6 +11,7 @@ class WemDataType(IntEnum):
     SWITCH = 2
     NUMBER_STEP_ONE = 3
     PROGRAM = 6
+
 
 _LOGGER = logging.getLogger("custom_components.wemportal")
 DOMAIN: Final = "wemportal"
@@ -112,7 +115,9 @@ API_DATA_ACCESS_WRITE_URL: Final = "https://www.wemportal.com/app/DataAccess/Wri
 API_DATA_ACCESS_READ_URL: Final = "https://www.wemportal.com/app/DataAccess/Read"
 API_REFRESH_URL: Final = "https://www.wemportal.com/app/DataAccess/Refresh"
 API_DEVICE_STATUS_READ_URL: Final = "https://www.wemportal.com/app/DeviceStatus/Read"
-API_CIRCUIT_TIMES_REFRESH_URL: Final = "https://www.wemportal.com/app/CircuitTimes/Refresh"
+API_CIRCUIT_TIMES_REFRESH_URL: Final = (
+    "https://www.wemportal.com/app/CircuitTimes/Refresh"
+)
 API_CIRCUIT_TIMES_READ_URL: Final = "https://www.wemportal.com/app/CircuitTimes/Read"
 API_STATISTICS_REFRESH_URL: Final = "https://www.wemportal.com/app/Statistics/Refresh"
 API_STATISTICS_READ_URL: Final = "https://www.wemportal.com/app/Statistics/Read"
@@ -284,9 +289,7 @@ SERVICE_SET_HOLIDAY: Final = "set_holiday"
 # targets/arguments of that sequence.
 # (Formerly a second WEB_DEFAULT_URL constant existed with the identical
 # value as WEB_MAIN_URL; consolidated into WEB_MAIN_URL.)
-WEB_CODE_EXPERTS_URL: Final = (
-    "https://www.wemportal.com/Web/UControls/Weishaupt/DataDisplay/CodeExpertsDetails.aspx"
-)
+WEB_CODE_EXPERTS_URL: Final = "https://www.wemportal.com/Web/UControls/Weishaupt/DataDisplay/CodeExpertsDetails.aspx"
 # The portal's main pages don't use the standard __VIEWSTATE hidden field
 # but a Telerik/ECN variant, __ECNPAGEVIEWSTATE. The dialog pages
 # (CodeExpertsDetails, WwpsParameterDetails) do use plain __VIEWSTATE.
@@ -411,10 +414,8 @@ EXPERT_PAGE_TSM_VALUE: Final = (
 # ScriptManager panel prefix per event target - the value sent is always
 # "ctl00$ctl00$<panel>|<event_target>" (confirmed via HAR for both targets).
 EXPERT_PAGE_TSM_PANEL_BY_TARGET: Final = {
-    "ctl00$rdMain$C$controlExtension$iconMenu$rmMenuLayer":
-        "ctl00$ctl00$rdMain$C$controlExtension$ContentWithoutGridPanel",
-    "ctl00$DeviceContextControl1$timerUpdateData":
-        "ctl00$ctl00$DeviceContextControl1Panel",
+    "ctl00$rdMain$C$controlExtension$iconMenu$rmMenuLayer": "ctl00$ctl00$rdMain$C$controlExtension$ContentWithoutGridPanel",
+    "ctl00$DeviceContextControl1$timerUpdateData": "ctl00$ctl00$DeviceContextControl1Panel",
 }
 # RadAjaxManager client-event callback the browser fires on the PARENT
 # page whenever a RadWindow dialog (Fachmann unlock, parameter write)
@@ -461,11 +462,15 @@ EXPERT_RAM_MASTER_REFRESH_BUTTON_VALUE: Final = (
 EXPERT_MODULE_ICONMENU_STATE_FIELD: Final = (
     "ctl00_rdMain_C_controlExtension_iconMenu_rmMenuLayer_ClientState"
 )
-EXPERT_MODULE_ICONMENU_STATE_TEMPLATE: Final = '{"logEntries":[],"selectedItemIndex":"%s"}'
+EXPERT_MODULE_ICONMENU_STATE_TEMPLATE: Final = (
+    '{"logEntries":[],"selectedItemIndex":"%s"}'
+)
 # Icon-menu postback selecting a device module; ARG "6" = heat pump on the
 # reference installation. Configurable via CONF_EXPERT_MODULE_ARG because
 # the menu index can differ on other installations/module layouts.
-EXPERT_MODULE_MENU_TARGET: Final = "ctl00$rdMain$C$controlExtension$iconMenu$rmMenuLayer"
+EXPERT_MODULE_MENU_TARGET: Final = (
+    "ctl00$rdMain$C$controlExtension$iconMenu$rmMenuLayer"
+)
 EXPERT_MODULE_ARG_HEATPUMP: Final = "6"
 CONF_EXPERT_MODULE_ARG: Final = "expert_module_arg"
 # Cached Fachmann module list ([{index, value, label}]) from the last
@@ -500,5 +505,17 @@ MISSING_DATA_STRINGS: Final = ["--", "label ist null", "label ist null "]
 BOOLEAN_OFF_STRINGS: Final = ["off", "aus"]
 BOOLEAN_ON_STRINGS: Final = ["ein", "on"]
 TEMPERATURE_KEYWORDS: Final = ["temperatur", "temperature", "temp"]
-PERCENTAGE_KEYWORDS: Final = ["leistungsanforderung", "drehzahl", "power_requirement", "speed"]
-ENERGY_POWER_KEYWORDS: Final = ["energie", "energy", "wärmemenge", "warmemenge", "leistung", "power"]
+PERCENTAGE_KEYWORDS: Final = [
+    "leistungsanforderung",
+    "drehzahl",
+    "power_requirement",
+    "speed",
+]
+ENERGY_POWER_KEYWORDS: Final = [
+    "energie",
+    "energy",
+    "wärmemenge",
+    "warmemenge",
+    "leistung",
+    "power",
+]

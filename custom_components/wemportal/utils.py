@@ -44,14 +44,18 @@ def clamped_scan_interval(options, key, default, minimum):
     except (TypeError, ValueError):
         _LOGGER.warning(
             "Ignoring the unusable stored value %r for %s; using %s seconds.",
-            value, key, default,
+            value,
+            key,
+            default,
         )
         return default
     if value < minimum:
         _LOGGER.warning(
             "The stored %s of %s s is below the %s s minimum and has been "
             "raised to it. Re-save the options to make this permanent.",
-            key, value, minimum,
+            key,
+            value,
+            minimum,
         )
         return minimum
     return value
@@ -243,7 +247,9 @@ def fix_value_and_uom(val, uom):
 
     # special case: volume flow rate
     if isinstance(val, str) and val.endswith("m3/h"):
-        return float(val.replace("m3/h", "")), UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
+        return float(
+            val.replace("m3/h", "")
+        ), UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
 
     # special case: no unit of measurement
     if uom is None:
@@ -257,22 +263,23 @@ def fix_value_and_uom(val, uom):
             return val, None
 
     uom = {
-        "":         None,
-        "w":        UnitOfPower.WATT,
-        "kw (w)":   UnitOfPower.WATT,
-        "kw":       UnitOfPower.KILO_WATT,
-        "kwh":      UnitOfEnergy.KILO_WATT_HOUR,
-        "kw (w)h":  UnitOfEnergy.WATT_HOUR,
-        "h":        UnitOfTime.HOURS,
-        "hz":       UnitOfFrequency.HERTZ,
+        "": None,
+        "w": UnitOfPower.WATT,
+        "kw (w)": UnitOfPower.WATT,
+        "kw": UnitOfPower.KILO_WATT,
+        "kwh": UnitOfEnergy.KILO_WATT_HOUR,
+        "kw (w)h": UnitOfEnergy.WATT_HOUR,
+        "h": UnitOfTime.HOURS,
+        "hz": UnitOfFrequency.HERTZ,
         # The portal writes "BAR"; Home Assistant only accepts "bar" for the
         # pressure device class and logs a warning for anything else. The
         # device-class lookup is case-insensitive, but the UNIT that reaches
         # the entity has to be the canonical spelling too.
-        "bar":      UnitOfPressure.BAR,
-        "m3/h":     UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
+        "bar": UnitOfPressure.BAR,
+        "m3/h": UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR,
     }.get(uom.lower(), uom)
     return val, uom
+
 
 def uom_to_device_class(uom):
     """Return the device_class of this unit of measurement, if any."""
@@ -293,15 +300,15 @@ def uom_to_device_class(uom):
     if uom is None:
         return None
     mapping = {
-        UnitOfPressure.BAR:                         SensorDeviceClass.PRESSURE,
-        UnitOfTemperature.CELSIUS:                  SensorDeviceClass.TEMPERATURE,
-        UnitOfTemperature.KELVIN:                   SensorDeviceClass.TEMPERATURE,
-        UnitOfEnergy.KILO_WATT_HOUR:                SensorDeviceClass.ENERGY,
-        UnitOfEnergy.WATT_HOUR:                     SensorDeviceClass.ENERGY,
-        UnitOfPower.KILO_WATT:                      SensorDeviceClass.POWER,
-        UnitOfPower.WATT:                           SensorDeviceClass.POWER,
-        UnitOfTime.HOURS:                           SensorDeviceClass.DURATION,
-        UnitOfFrequency.HERTZ:                      SensorDeviceClass.FREQUENCY,
+        UnitOfPressure.BAR: SensorDeviceClass.PRESSURE,
+        UnitOfTemperature.CELSIUS: SensorDeviceClass.TEMPERATURE,
+        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE,
+        UnitOfEnergy.KILO_WATT_HOUR: SensorDeviceClass.ENERGY,
+        UnitOfEnergy.WATT_HOUR: SensorDeviceClass.ENERGY,
+        UnitOfPower.KILO_WATT: SensorDeviceClass.POWER,
+        UnitOfPower.WATT: SensorDeviceClass.POWER,
+        UnitOfTime.HOURS: SensorDeviceClass.DURATION,
+        UnitOfFrequency.HERTZ: SensorDeviceClass.FREQUENCY,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorDeviceClass.VOLUME_FLOW_RATE,
     }
     # Both sides normalised - the KEYS above are Home Assistant constants
@@ -328,23 +335,24 @@ def uom_to_icon(uom):
         "rpm": "mdi:fan",
     }.get(str(uom).strip().lower() if uom else "", "mdi:flash")
 
+
 def uom_to_state_class(uom):
     """Return the state class of this unit of measurement, if any."""
 
     # see: <https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes>
     return {
-        "":                                         SensorStateClass.MEASUREMENT,
-        "%":                                        SensorStateClass.MEASUREMENT,
-        UnitOfTemperature.CELSIUS:                  SensorStateClass.MEASUREMENT,
-        UnitOfTemperature.KELVIN:                   SensorStateClass.MEASUREMENT,
-        UnitOfEnergy.KILO_WATT_HOUR:                SensorStateClass.TOTAL_INCREASING,
-        UnitOfEnergy.WATT_HOUR:                     SensorStateClass.TOTAL_INCREASING,
-        UnitOfPower.KILO_WATT:                      SensorStateClass.MEASUREMENT,
-        UnitOfPower.WATT:                           SensorStateClass.MEASUREMENT,
-        UnitOfTime.HOURS:                           SensorStateClass.TOTAL_INCREASING,
-        UnitOfFrequency.HERTZ:                      SensorStateClass.MEASUREMENT,
+        "": SensorStateClass.MEASUREMENT,
+        "%": SensorStateClass.MEASUREMENT,
+        UnitOfTemperature.CELSIUS: SensorStateClass.MEASUREMENT,
+        UnitOfTemperature.KELVIN: SensorStateClass.MEASUREMENT,
+        UnitOfEnergy.KILO_WATT_HOUR: SensorStateClass.TOTAL_INCREASING,
+        UnitOfEnergy.WATT_HOUR: SensorStateClass.TOTAL_INCREASING,
+        UnitOfPower.KILO_WATT: SensorStateClass.MEASUREMENT,
+        UnitOfPower.WATT: SensorStateClass.MEASUREMENT,
+        UnitOfTime.HOURS: SensorStateClass.TOTAL_INCREASING,
+        UnitOfFrequency.HERTZ: SensorStateClass.MEASUREMENT,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorStateClass.MEASUREMENT,
-    }.get(uom) # return None if no state class is available
+    }.get(uom)  # return None if no state class is available
 
 
 # Request labels for which an unexpected maintenance marker has already been
@@ -382,7 +390,8 @@ def report_unexpected_maintenance_marker(notice, what) -> None:
         "%s, which is NOT treated as downtime. If the portal was working "
         "normally, please report this - it decides whether the maintenance "
         "check can be applied to every request. Notice text: %s",
-        what, notice,
+        what,
+        notice,
     )
 
 
@@ -529,4 +538,3 @@ def device_is_reachable(coordinator_data, device_id) -> bool:
     if not isinstance(status, dict):
         return True
     return status.get("value") not in UNREACHABLE_CONNECTION_STATES
-

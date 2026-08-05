@@ -116,12 +116,8 @@ def raise_if_not_writable(config_entry, what: str) -> "WemPortalData":
 
     data = getattr(config_entry, "runtime_data", None)
     if data is None:
-        raise HomeAssistantError(
-            f"{what}: this WEM Portal account is not loaded."
-        )
+        raise HomeAssistantError(f"{what}: this WEM Portal account is not loaded.")
     reason = data.why_not_current(config_entry)
     if reason is not None:
-        raise HomeAssistantError(
-            f"{what}: {reason}; the value was not changed."
-        )
+        raise HomeAssistantError(f"{what}: {reason}; the value was not changed.")
     return data

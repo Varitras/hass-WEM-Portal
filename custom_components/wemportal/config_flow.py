@@ -1,4 +1,5 @@
 """Config flow for wemportal integration."""
+
 from __future__ import annotations
 
 import logging
@@ -73,7 +74,9 @@ DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME): str,
         vol.Required(CONF_PASSWORD): PASSWORD_SELECTOR,
-        vol.Required(CONF_LANGUAGE, default=DEFAULT_CONF_LANGUAGE_VALUE): vol.In(["en", "de"]),
+        vol.Required(CONF_LANGUAGE, default=DEFAULT_CONF_LANGUAGE_VALUE): vol.In(
+            ["en", "de"]
+        ),
         vol.Optional(CONF_MODE, default=DEFAULT_MODE): vol.In(AVAILABLE_MODES),
     }
 )
@@ -129,6 +132,7 @@ async def validate_input(hass: HomeAssistant, data):
         await hass.async_add_executor_job(close_api_sessions, api)
 
     return data
+
 
 class RateLimited(exceptions.HomeAssistantError):
     """The portal is refusing this IP, not these credentials."""
@@ -187,12 +191,16 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 info = await validate_input(self.hass, user_input)
                 return self.async_create_entry(
-                    title=info[CONF_USERNAME], data=user_input, options={
+                    title=info[CONF_USERNAME],
+                    data=user_input,
+                    options={
                         CONF_SCAN_INTERVAL: 1800,
                         CONF_SCAN_INTERVAL_API: 300,
-                        CONF_LANGUAGE: user_input.get(CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE),
-                        CONF_MODE: user_input.get(CONF_MODE, DEFAULT_MODE)
-                        }
+                        CONF_LANGUAGE: user_input.get(
+                            CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE
+                        ),
+                        CONF_MODE: user_input.get(CONF_MODE, DEFAULT_MODE),
+                    },
                 )
 
             except AbortFlow:
@@ -348,14 +356,13 @@ class WemportalOptionsFlow(OptionsFlow):
         if marked:
             _LOGGER.info(
                 "Options: marked the parameter list of %d module(s) for a "
-                "re-read on the next update.", marked,
+                "re-read on the next update.",
+                marked,
             )
         else:
             # Nothing loaded, or nothing discovered yet - in both cases the
             # next cycle discovers anyway, so this is not an error.
-            _LOGGER.debug(
-                "Options: no cached parameter lists to mark for a re-read."
-            )
+            _LOGGER.debug("Options: no cached parameter lists to mark for a re-read.")
         return await self.async_step_configure()
 
     async def async_step_configure(self, user_input=None):
@@ -425,9 +432,7 @@ class WemportalOptionsFlow(OptionsFlow):
             id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
             raw = (user_input.get(id_key) or "").strip()
             user_input[id_key] = raw  # persist the stripped value
-            if raw and (
-                not re.fullmatch(r"[0-9A-Fa-f]+", raw) or len(raw) < min_len
-            ):
+            if raw and (not re.fullmatch(r"[0-9A-Fa-f]+", raw) or len(raw) < min_len):
                 errors[id_key] = "invalid_entityvalue"
         # The module menu index feeds an ASP.NET postback argument and a
         # ClientState JSON template verbatim - restrict it to digits so
@@ -445,7 +450,9 @@ class WemportalOptionsFlow(OptionsFlow):
         dupes = duplicate_entityvalues(slot_ids)
         if dupes:
             for i in range(1, EXPERT_SLOT_COUNT + 1):
-                if (user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip() in dupes:
+                if (
+                    user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or ""
+                ).strip() in dupes:
                     errors[CONF_EXPERT_SLOT_ID_TEMPLATE % i] = "duplicate_entityvalue"
         return errors
 
@@ -491,109 +498,100 @@ class WemportalOptionsFlow(OptionsFlow):
         # integration supports, and it is selected by isinstance, not
         # by an attribute, so it cannot be adopted conditionally
         # without a second code path.
-        self.hass.config_entries.async_update_entry(
-            self.config_entry, options=merged
-        )
-        self.hass.config_entries.async_schedule_reload(
-            self.config_entry.entry_id
-        )
+        self.hass.config_entries.async_update_entry(self.config_entry, options=merged)
+        self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
         return self.async_create_entry(title="", data=merged)
 
     def _configure_schema(self, opt, id_options):
         """The options form itself. `opt` reads a prefill value, `id_options`
         is the slot-id dropdown content."""
         return vol.Schema(
-        {
-            # Both scan intervals are clamped to a lower bound (like
-            # the expert poll interval below): a stray tiny value
-            # such as "1" second would poll the portal continuously
-            # and reliably trigger the IP-wide 403 rate limit.
-            vol.Optional(
-                CONF_SCAN_INTERVAL,
-                default=opt(CONF_SCAN_INTERVAL, 1800),
-            ): vol.All(
-                cv.positive_int,
-                vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
-            ),
-            vol.Optional(
-                CONF_SCAN_INTERVAL_API,
-                default=opt(CONF_SCAN_INTERVAL_API, 300
+            {
+                # Both scan intervals are clamped to a lower bound (like
+                # the expert poll interval below): a stray tiny value
+                # such as "1" second would poll the portal continuously
+                # and reliably trigger the IP-wide 403 rate limit.
+                vol.Optional(
+                    CONF_SCAN_INTERVAL,
+                    default=opt(CONF_SCAN_INTERVAL, 1800),
+                ): vol.All(
+                    cv.positive_int,
+                    vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
                 ),
-            ): vol.All(
-                cv.positive_int,
-                vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
-            ),
-            # Same closed choice as the initial setup form -
-            # previously a free string here allowed saving an
-            # unsupported language code.
-            vol.Optional(
-                CONF_LANGUAGE,
-                default=opt(CONF_LANGUAGE, "en"),
-            ): vol.In(["en", "de"]),
-
-            vol.Optional(
-                CONF_MODE, default=opt(CONF_MODE, DEFAULT_MODE)
-                ): vol.In(AVAILABLE_MODES),
-            # Expert write access (web) - off by default. Entities/
-            # service only exist while this is enabled.
-            vol.Optional(
-                CONF_EXPERT_WRITE,
-                default=opt(CONF_EXPERT_WRITE, False),
-            ): cv.boolean,
-            # Post a persistent notification after a SUCCESSFUL expert
-            # write. OFF by default (noisy when setting several
-            # values); failures always notify regardless.
-            vol.Optional(
-                CONF_EXPERT_NOTIFY_ON_SUCCESS,
-                default=opt(CONF_EXPERT_NOTIFY_ON_SUCCESS, False
+                vol.Optional(
+                    CONF_SCAN_INTERVAL_API,
+                    default=opt(CONF_SCAN_INTERVAL_API, 300),
+                ): vol.All(
+                    cv.positive_int,
+                    vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
                 ),
-            ): cv.boolean,
-            # Optional periodic read-back of the configured expert
-            # parameters - OFF by default (each read is a full
-            # Fachmann navigation; frequent polling risks a 403 IP
-            # block). The interval is in minutes and floored at
-            # MIN_EXPERT_POLL_INTERVAL_MINUTES.
-            vol.Optional(
-                CONF_EXPERT_AUTO_POLL,
-                default=opt(CONF_EXPERT_AUTO_POLL, False),
-            ): cv.boolean,
-            vol.Optional(
-                CONF_EXPERT_POLL_INTERVAL,
-                default=opt(CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+                # Same closed choice as the initial setup form -
+                # previously a free string here allowed saving an
+                # unsupported language code.
+                vol.Optional(
+                    CONF_LANGUAGE,
+                    default=opt(CONF_LANGUAGE, "en"),
+                ): vol.In(["en", "de"]),
+                vol.Optional(CONF_MODE, default=opt(CONF_MODE, DEFAULT_MODE)): vol.In(
+                    AVAILABLE_MODES
                 ),
-            ): vol.All(
-                cv.positive_int,
-                vol.Clamp(min=MIN_EXPERT_POLL_INTERVAL_MINUTES),
-            ),
-            # --- Advanced expert options (only if you know what you
-            # are doing) --------------------------------------------
-            # Both navigation steps below are skipped by default
-            # because they were proven unnecessary on the reference
-            # installation. Re-enable only for an unusual portal or
-            # module layout where reads/writes otherwise fail.
-            vol.Optional(
-                CONF_EXPERT_ENABLE_MODULE_NAV,
-                default=opt(CONF_EXPERT_ENABLE_MODULE_NAV, False
+                # Expert write access (web) - off by default. Entities/
+                # service only exist while this is enabled.
+                vol.Optional(
+                    CONF_EXPERT_WRITE,
+                    default=opt(CONF_EXPERT_WRITE, False),
+                ): cv.boolean,
+                # Post a persistent notification after a SUCCESSFUL expert
+                # write. OFF by default (noisy when setting several
+                # values); failures always notify regardless.
+                vol.Optional(
+                    CONF_EXPERT_NOTIFY_ON_SUCCESS,
+                    default=opt(CONF_EXPERT_NOTIFY_ON_SUCCESS, False),
+                ): cv.boolean,
+                # Optional periodic read-back of the configured expert
+                # parameters - OFF by default (each read is a full
+                # Fachmann navigation; frequent polling risks a 403 IP
+                # block). The interval is in minutes and floored at
+                # MIN_EXPERT_POLL_INTERVAL_MINUTES.
+                vol.Optional(
+                    CONF_EXPERT_AUTO_POLL,
+                    default=opt(CONF_EXPERT_AUTO_POLL, False),
+                ): cv.boolean,
+                vol.Optional(
+                    CONF_EXPERT_POLL_INTERVAL,
+                    default=opt(
+                        CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+                    ),
+                ): vol.All(
+                    cv.positive_int,
+                    vol.Clamp(min=MIN_EXPERT_POLL_INTERVAL_MINUTES),
                 ),
-            ): cv.boolean,
-            # Module menu index used ONLY when module select is
-            # enabled above. Empty default; "6" = heat pump on the
-            # reference install.
-            vol.Optional(
-                CONF_EXPERT_MODULE_ARG,
-                default=opt(CONF_EXPERT_MODULE_ARG, ""
-                ),
-            ): cv.string,
-            vol.Optional(
-                CONF_EXPERT_ENABLE_SECURITY_CODE,
-                default=opt(CONF_EXPERT_ENABLE_SECURITY_CODE, False
-                ),
-            ): cv.boolean,
-            # Ten generic expert-parameter slots (name + entityvalue
-            # hex ID). Added programmatically below so the block stays
-            # compact. Empty slots are ignored.
-            **self._expert_slot_schema(opt, id_options),
-        }
+                # --- Advanced expert options (only if you know what you
+                # are doing) --------------------------------------------
+                # Both navigation steps below are skipped by default
+                # because they were proven unnecessary on the reference
+                # installation. Re-enable only for an unusual portal or
+                # module layout where reads/writes otherwise fail.
+                vol.Optional(
+                    CONF_EXPERT_ENABLE_MODULE_NAV,
+                    default=opt(CONF_EXPERT_ENABLE_MODULE_NAV, False),
+                ): cv.boolean,
+                # Module menu index used ONLY when module select is
+                # enabled above. Empty default; "6" = heat pump on the
+                # reference install.
+                vol.Optional(
+                    CONF_EXPERT_MODULE_ARG,
+                    default=opt(CONF_EXPERT_MODULE_ARG, ""),
+                ): cv.string,
+                vol.Optional(
+                    CONF_EXPERT_ENABLE_SECURITY_CODE,
+                    default=opt(CONF_EXPERT_ENABLE_SECURITY_CODE, False),
+                ): cv.boolean,
+                # Ten generic expert-parameter slots (name + entityvalue
+                # hex ID). Added programmatically below so the block stays
+                # compact. Empty slots are ignored.
+                **self._expert_slot_schema(opt, id_options),
+            }
         )
 
     def _expert_slot_schema(self, opt, id_options):
@@ -674,9 +672,7 @@ class WemportalOptionsFlow(OptionsFlow):
         modules = self._known_modules()
         if user_input is not None and not user_input.get("refresh"):
             selected = user_input.get("modules", [])
-            self._selected_modules = [
-                m for m in modules if str(m["index"]) in selected
-            ]
+            self._selected_modules = [m for m in modules if str(m["index"]) in selected]
             return await self.async_step_run_discovery()
 
         # (Re)fetch the module list if missing or a refresh was requested.
@@ -759,4 +755,3 @@ class WemportalOptionsFlow(OptionsFlow):
                     )
                     self._discovery_error = "discovery_empty"
         return await self.async_step_configure()
-

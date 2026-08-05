@@ -35,7 +35,6 @@ from .utils import (
 # (it never changes, so per-row construction was pure waste).
 
 
-
 # The panel container the expert page is built from. Named once because two
 # things ask about it: the parser, and the report that explains an empty page.
 PANEL_XPATH = '//div[contains(@class, "RadPanelBar RadPanelBar_Default rpbSimpleData")]'
@@ -75,7 +74,10 @@ def _report_duplicate_row(key, panel, row_name) -> None:
         "so a value shown here may belong to the other row. This happens when "
         "one panel lists a name twice, or when two panels carry the same "
         "heading. Please report it at %s with the panel headings you see.",
-        key, panel, row_name, GITHUB_PROJECT_URL,
+        key,
+        panel,
+        row_name,
+        GITHUB_PROJECT_URL,
     )
 
 
@@ -116,7 +118,9 @@ class WemPortalScraper:
         """
         status = getattr(response, "status_code", 200)
         if status == 403:
-            raise ForbiddenError("WEM Portal web frontend returned 403 (rate limit/forbidden).")
+            raise ForbiddenError(
+                "WEM Portal web frontend returned 403 (rate limit/forbidden)."
+            )
         if status != 200:
             # Not `>= 400`: every request in this module asks for an HTML
             # page or posts a form to one, so 200 is the only answer that
@@ -178,7 +182,9 @@ class WemPortalScraper:
 
         # 4. POST to select 'Expert' tab
         r_expert = self.session.post(
-            WEB_MAIN_URL, data=form_data, allow_redirects=True,
+            WEB_MAIN_URL,
+            data=form_data,
+            allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
         self._check_response(r_expert, "expert page", check_maintenance=True)
@@ -216,7 +222,8 @@ class WemPortalScraper:
                 # Whatever goes wrong, the full login below still works.
                 _LOGGER.debug(
                     "Could not restore cached WEM Portal cookies, skipping "
-                    "session-reuse fast path: %s", exc
+                    "session-reuse fast path: %s",
+                    exc,
                 )
             else:
                 try:
@@ -234,7 +241,8 @@ class WemPortalScraper:
                     # retried are re-raised above. Everything left is a
                     # reuse failure, and the full login handles those.
                     _LOGGER.debug(
-                        "Session-reuse attempt failed, falling back to full login: %s", exc
+                        "Session-reuse attempt failed, falling back to full login: %s",
+                        exc,
                     )
                     reused_html = None
 
@@ -261,7 +269,9 @@ class WemPortalScraper:
                         "logging in fresh."
                     )
 
-                _LOGGER.debug("Cached WEM Portal session is no longer valid, logging in again.")
+                _LOGGER.debug(
+                    "Cached WEM Portal session is no longer valid, logging in again."
+                )
                 try:
                     self.session.cookies.clear()
                 except Exception as exc:  # pylint: disable=broad-except
@@ -271,7 +281,9 @@ class WemPortalScraper:
         # --- Full login sequence ---
         # 1. GET Login page
         try:
-            r1 = self.session.get(WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
+            r1 = self.session.get(
+                WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS
+            )
         except Exception as e:
             # A transport failure (timeout, connection reset, DNS) says
             # nothing about the credentials. Reported as AuthError it fed the
@@ -294,7 +306,9 @@ class WemPortalScraper:
         eventval_elem = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
 
         if not viewstate_elem or not eventval_elem:
-            raise AuthError("Authentication Error: Could not find VIEWSTATE or EVENTVALIDATION.")
+            raise AuthError(
+                "Authentication Error: Could not find VIEWSTATE or EVENTVALIDATION."
+            )
 
         viewstate = viewstate_elem[0]
         eventval = eventval_elem[0]
@@ -309,14 +323,21 @@ class WemPortalScraper:
         }
 
         r2 = self.session.post(
-            WEB_LOGIN_URL, data=login_data, allow_redirects=True,
+            WEB_LOGIN_URL,
+            data=login_data,
+            allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
         self._check_response(r2, "login POST")
 
         # Check if we were redirected back to login with an error (like AspxAutoDetectCookieSupport)
-        if "AspxAutoDetectCookieSupport" in r2.url or WEB_LOGIN_URL.lower() in r2.url.lower():
-            raise AuthError(f"Authentication Error: Login failed or cookies not detected. URL: {r2.url}")
+        if (
+            "AspxAutoDetectCookieSupport" in r2.url
+            or WEB_LOGIN_URL.lower() in r2.url.lower()
+        ):
+            raise AuthError(
+                f"Authentication Error: Login failed or cookies not detected. URL: {r2.url}"
+            )
 
         # Wait a moment
         time.sleep(2)
@@ -360,9 +381,11 @@ class WemPortalScraper:
             title = "<unparseable>"
         _LOGGER.log(
             level,
-            "No readable panels on %s: %d bytes, title %r, %d panel container(s). "
-            "%s",
-            source, len(text), title, containers,
+            "No readable panels on %s: %d bytes, title %r, %d panel container(s). %s",
+            source,
+            len(text),
+            title,
+            containers,
             "Zero containers means this was not the expert page; one or more "
             "means the page is there but its markup no longer matches.",
         )
@@ -381,14 +404,17 @@ class WemPortalScraper:
         tree = html.fromstring(html_content)
 
         for div in tree.xpath(PANEL_XPATH):
-            header_elems = div.xpath('.//th[contains(@class, "simpleDataHeaderTextCell")]/span/text()')
+            header_elems = div.xpath(
+                './/th[contains(@class, "simpleDataHeaderTextCell")]/span/text()'
+            )
             if not header_elems:
                 # No header -> can't build stable sensor names for this
                 # panel, skip it entirely.
                 continue
             header_raw = header_elems[0].strip()
             header = (
-                header_elems[0].replace("/#", "")
+                header_elems[0]
+                .replace("/#", "")
                 .replace("  ", "")
                 .replace(" - ", "_")
                 .replace("/*+/*", "_")
@@ -396,16 +422,24 @@ class WemPortalScraper:
                 .casefold()
             )
 
-            for td in div.xpath('.//div[contains(@class, "rpTemplate")]/table[contains(@class, "simpleDataTable")]/tbody/tr'):
+            for td in div.xpath(
+                './/div[contains(@class, "rpTemplate")]/table[contains(@class, "simpleDataTable")]/tbody/tr'
+            ):
                 try:
-                    name_elems = td.xpath('.//td[contains(@class, "simpleDataNameCell")]/span/text()')
-                    val_elems = td.xpath('.//td[contains(@class, "simpleDataValueCell") or contains(@class, "simpleDataValueEnumCell")]/span/text()')
+                    name_elems = td.xpath(
+                        './/td[contains(@class, "simpleDataNameCell")]/span/text()'
+                    )
+                    val_elems = td.xpath(
+                        './/td[contains(@class, "simpleDataValueCell") or contains(@class, "simpleDataValueEnumCell")]/span/text()'
+                    )
 
                     if name_elems and val_elems:
                         raw_name = name_elems[0].strip()
                         friendly_name = f"{header_raw} - {raw_name.lstrip('- ')}"
 
-                        name = name_elems[0].replace("  ", "").replace(" ", "_").casefold()
+                        name = (
+                            name_elems[0].replace("  ", "").replace(" ", "_").casefold()
+                        )
                         name = header + "-" + name
                         original_value = val_elems[0].strip()
                         value = original_value
@@ -429,9 +463,9 @@ class WemPortalScraper:
                         if not unit:
                             name_lower = name.lower()
                             if any(x in name_lower for x in TEMPERATURE_KEYWORDS):
-                                unit = '°C'
+                                unit = "°C"
                             elif any(x in name_lower for x in PERCENTAGE_KEYWORDS):
-                                unit = '%'
+                                unit = "%"
 
                         # Handle missing or boolean values (shared, language-independent
                         # logic - see utils.sanitize_value for details/rationale).
@@ -466,7 +500,8 @@ class WemPortalScraper:
             # sixteen times a day while the code quietly repaired it. After a
             # full login there is nothing left to try, so it stays a warning.
             self._report_empty_page(
-                html_content, source,
+                html_content,
+                source,
                 level=logging.WARNING if required else logging.DEBUG,
             )
             if not required:

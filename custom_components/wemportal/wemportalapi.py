@@ -2,7 +2,6 @@
 Weishaupt webscraping and API library
 """
 
-
 import copy
 import time
 import threading
@@ -151,16 +150,26 @@ def _report_missing_job_id(device_id):
         "read then returns whichever job the portal considers newest, which "
         "may be the previous measurement. Please report this together with "
         "your portal model - see %s",
-        device_id, GITHUB_PROJECT_URL,
+        device_id,
+        GITHUB_PROJECT_URL,
     )
 
 
 class WemPortalApi:
     """Wrapper class for Weishaupt WEM Portal"""
 
-    def __init__(self, username, password, config=None, existing_data=None,
-                 cached_modules=None, blocked_until=0.0, scraper_device_id=None,
-                 expert_blocked_until=0.0, scraper_backoff=None) -> None:
+    def __init__(
+        self,
+        username,
+        password,
+        config=None,
+        existing_data=None,
+        cached_modules=None,
+        blocked_until=0.0,
+        scraper_device_id=None,
+        expert_blocked_until=0.0,
+        scraper_backoff=None,
+    ) -> None:
         """Assemble the api object from three sources, kept apart because
         they have different lifetimes: the user's options, the state the
         coordinator persisted across a restart, and the state that always
@@ -171,8 +180,12 @@ class WemPortalApi:
         self.password = password
         self._init_from_config(config)
         self._init_from_storage(
-            existing_data, cached_modules, scraper_device_id,
-            blocked_until, expert_blocked_until, scraper_backoff,
+            existing_data,
+            cached_modules,
+            scraper_device_id,
+            blocked_until,
+            expert_blocked_until,
+            scraper_backoff,
         )
         self._init_runtime_state()
 
@@ -220,23 +233,31 @@ class WemPortalApi:
         # by an older release is otherwise used exactly as it was saved.
 
         scan_interval = clamped_scan_interval(
-            config, CONF_SCAN_INTERVAL,
-            DEFAULT_CONF_SCAN_INTERVAL_VALUE, MIN_SCAN_INTERVAL_SECONDS,
+            config,
+            CONF_SCAN_INTERVAL,
+            DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+            MIN_SCAN_INTERVAL_SECONDS,
         )
         scan_interval_api = clamped_scan_interval(
-            config, CONF_SCAN_INTERVAL_API,
-            DEFAULT_CONF_SCAN_INTERVAL_API_VALUE, MIN_SCAN_INTERVAL_API_SECONDS,
+            config,
+            CONF_SCAN_INTERVAL_API,
+            DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
+            MIN_SCAN_INTERVAL_API_SECONDS,
         )
-        self.update_interval = timedelta(
-            seconds=min(scan_interval, scan_interval_api)
-        )
+        self.update_interval = timedelta(seconds=min(scan_interval, scan_interval_api))
         self.scan_interval = timedelta(seconds=scan_interval)
         self.scan_interval_api = timedelta(seconds=scan_interval_api)
         self.language = config.get(CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE)
 
-    def _init_from_storage(self, existing_data, cached_modules,
-                           scraper_device_id, blocked_until,
-                           expert_blocked_until, scraper_backoff):
+    def _init_from_storage(
+        self,
+        existing_data,
+        cached_modules,
+        scraper_device_id,
+        blocked_until,
+        expert_blocked_until,
+        scraper_backoff,
+    ):
         """State the coordinator persisted, handed back after a restart.
 
         Every argument here exists because starting from zero was wrong:
@@ -329,7 +350,7 @@ class WemPortalApi:
             "User-Agent": "WeishauptWEMApp",
             "X-Api-Version": "3.1.3.0",
             "Accept": "*/*",
-            "Host": "www.wemportal.com"
+            "Host": "www.wemportal.com",
         }
         # DeviceType per device id, as reported by Device/Read. Only feeds
         # the model name shown in Home Assistant.
@@ -499,7 +520,8 @@ class WemPortalApi:
                     "is. Its sensors are filed under device %s. If they look "
                     "like they belong to another device, use `api` mode for "
                     "this account.",
-                    len(self.modules), self.scraper_device_id,
+                    len(self.modules),
+                    self.scraper_device_id,
                 )
         else:
             self.scraper_device_id = SCRAPER_FALLBACK_DEVICE_ID
@@ -621,7 +643,9 @@ class WemPortalApi:
                 # Get data by web scraping
                 if self._scraper_enabled(enabled_devices):
                     webscraping_data = self.fetch_webscraping_data()
-                    self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
+                    self._merge_webscraping_data(
+                        self.resolve_scraper_device_id(), webscraping_data
+                    )
                 else:
                     _LOGGER.debug("Skipping web scrape: its device is disabled.")
             elif self.mode == "api":
@@ -656,7 +680,9 @@ class WemPortalApi:
                     # Get data by web scraping
                     try:
                         webscraping_data = self.fetch_webscraping_data()
-                        self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
+                        self._merge_webscraping_data(
+                            self.resolve_scraper_device_id(), webscraping_data
+                        )
 
                         # Update last_scraping_update timestamp
                         self.last_scraping_update = datetime.now()
@@ -664,7 +690,10 @@ class WemPortalApi:
                         # Broad: the scrape is the optional half of
                         # `both` mode. No scraper failure may cost the
                         # API readings that follow.
-                        _LOGGER.warning("Web scraper failed this cycle. Falling back to API only. Error: %s", exc)
+                        _LOGGER.warning(
+                            "Web scraper failed this cycle. Falling back to API only. Error: %s",
+                            exc,
+                        )
                         # We intentionally do not raise, so the API can still fetch the bulk of the data
 
                 else:
@@ -694,7 +723,9 @@ class WemPortalApi:
                 # Re-raise known errors so we don't wrap them twice
                 raise
             # Wrap any unexpected python crashes to prevent HA from halting
-            raise WemPortalError("Unexpected error occurred while fetching data") from exc
+            raise WemPortalError(
+                "Unexpected error occurred while fetching data"
+            ) from exc
 
     def _warn_about_renamed_scraper_keys(self, scraped_keys):
         """Point out a relabelled row before the user has to guess.
@@ -727,7 +758,8 @@ class WemPortalApi:
                 "longer appear, while %s are new. Scraped sensors are keyed by "
                 "their portal labels, so the renamed ones become NEW entities "
                 "and their history stays with the old ones.",
-                ", ".join(sorted(gone)), ", ".join(sorted(added)),
+                ", ".join(sorted(gone)),
+                ", ".join(sorted(added)),
             )
         return gone
 
@@ -742,13 +774,18 @@ class WemPortalApi:
         for key, new_val in webscraping_data.items():
             if isinstance(new_val, dict):
                 if "friendlyName" in new_val:
-                    new_val["friendlyName"] = translate(self.language, new_val["friendlyName"])
+                    new_val["friendlyName"] = translate(
+                        self.language, new_val["friendlyName"]
+                    )
 
                 # Preserve the old unit if the current scrape is missing it (e.g. value is "--")
                 # This prevents Home Assistant from complaining about unit changes.
                 if new_val.get("unit") in (None, ""):
                     old_val = self.data[str(device_id)].get(key)
-                    if isinstance(old_val, dict) and old_val.get("unit") not in (None, ""):
+                    if isinstance(old_val, dict) and old_val.get("unit") not in (
+                        None,
+                        "",
+                    ):
                         new_val["unit"] = old_val.get("unit")
 
                 # The old value is deliberately NOT carried over when this
@@ -783,7 +820,8 @@ class WemPortalApi:
             if isinstance(entry, dict) and entry.get("value") is not None:
                 _LOGGER.debug(
                     "Scraped row %s is no longer on the page; its last value "
-                    "is not current any more.", key,
+                    "is not current any more.",
+                    key,
                 )
                 entry["value"] = None
 
@@ -864,7 +902,8 @@ class WemPortalApi:
         if not acquired:
             _LOGGER.debug(
                 "Closing the HTTP sessions while another operation still holds "
-                "the api lock; it waited %ss.", timeout,
+                "the api lock; it waited %ss.",
+                timeout,
             )
         try:
             self._close_sessions()
@@ -927,9 +966,7 @@ class WemPortalApi:
         # or after it was deliberately discarded (see _reset_scraper).
         if self._scraper is None:
             self._scraper = WemPortalScraper(
-                self.username,
-                self.password,
-                self.webscraping_cookie
+                self.username, self.password, self.webscraping_cookie
             )
         else:
             # Keep the scraper's cookie view in sync with ours (ours may
@@ -1060,13 +1097,15 @@ class WemPortalApi:
             _LOGGER.debug("API login successful.")
             self.valid_login = True
 
-        except ValueError as exc: # Catches JSONDecodeError if response is HTML
+        except ValueError as exc:  # Catches JSONDecodeError if response is HTML
             # Username (email) is PII and deliberately kept out of the log
             # entirely - people paste logs into issues/forums, and with one
             # account per config entry naming it adds nothing.
             _LOGGER.warning("API login failed. Received HTML instead of JSON.")
             self.valid_login = False
-            raise WemPortalError("API login failed: received HTML instead of JSON (Possible rate limit or WAF block)") from exc
+            raise WemPortalError(
+                "API login failed: received HTML instead of JSON (Possible rate limit or WAF block)"
+            ) from exc
         except reqs.exceptions.RequestException as exc:
             # Broader than just HTTPError: also covers ConnectionError,
             # Timeout, etc. - genuine network failures that aren't tied to
@@ -1103,7 +1142,6 @@ class WemPortalApi:
                     f"Authentication Error: Encountered an unknown authentication error. Received response code: {response.status_code}. Server returned internal status code: {response_status} and message: {response_message}"
                 ) from exc
 
-
     def web_login(self):
         """
         Logs into the WEM Portal web interface by mimicking browser behavior.
@@ -1129,7 +1167,8 @@ class WemPortalApi:
         # Step 1: Fetch the login page
         try:
             initial_response = session.get(
-                login_url, headers=headers,
+                login_url,
+                headers=headers,
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             )
             initial_response.raise_for_status()
@@ -1202,9 +1241,13 @@ class WemPortalApi:
                 pass
         return server_status, server_message
 
-
     def make_api_call(
-        self, url: str, headers=None, data=None, do_retry=True, delay=5,
+        self,
+        url: str,
+        headers=None,
+        data=None,
+        do_retry=True,
+        delay=5,
         retry_transport=False,
     ) -> reqs.Response:
         """One mobile-API request, with two kinds of retry sharing one attempt.
@@ -1249,16 +1292,38 @@ class WemPortalApi:
 
             try:
                 if not data:
-                    _LOGGER.debug("Sending GET request to %s with headers: %s", url, current_headers)
-                    response = self.session.get(url, headers=current_headers, timeout=API_REQUEST_TIMEOUT_SECONDS)
+                    _LOGGER.debug(
+                        "Sending GET request to %s with headers: %s",
+                        url,
+                        current_headers,
+                    )
+                    response = self.session.get(
+                        url,
+                        headers=current_headers,
+                        timeout=API_REQUEST_TIMEOUT_SECONDS,
+                    )
                 else:
-                    _LOGGER.debug("Sending POST request to %s with headers: %s and data: %s", url, current_headers, data)
-                    response = self.session.post(url, headers=current_headers, json=data, timeout=API_REQUEST_TIMEOUT_SECONDS)
+                    _LOGGER.debug(
+                        "Sending POST request to %s with headers: %s and data: %s",
+                        url,
+                        current_headers,
+                        data,
+                    )
+                    response = self.session.post(
+                        url,
+                        headers=current_headers,
+                        json=data,
+                        timeout=API_REQUEST_TIMEOUT_SECONDS,
+                    )
 
                 response.raise_for_status()
 
                 # Check for stealthy session expiration (HTML redirect)
-                if "Account/Login" in response.url or (hasattr(response, "redirect_url") and response.redirect_url and "Account/Login" in str(response.redirect_url)):
+                if "Account/Login" in response.url or (
+                    hasattr(response, "redirect_url")
+                    and response.redirect_url
+                    and "Account/Login" in str(response.redirect_url)
+                ):
                     raise ExpiredSessionError("Redirected to Account/Login")
 
                 _LOGGER.debug(response)
@@ -1267,7 +1332,8 @@ class WemPortalApi:
             except (reqs.exceptions.RequestException, ExpiredSessionError) as exc:
                 status_code = (
                     response.status_code
-                    if isinstance(exc, reqs.exceptions.RequestException) and response is not None
+                    if isinstance(exc, reqs.exceptions.RequestException)
+                    and response is not None
                     else None
                 )
 
@@ -1304,7 +1370,8 @@ class WemPortalApi:
                     # session that nothing is wrong with.
                     _LOGGER.info(
                         "Request to %s did not reach the portal (%s). Retrying once.",
-                        url, exc,
+                        url,
+                        exc,
                     )
                     time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)
                     continue
@@ -1314,7 +1381,9 @@ class WemPortalApi:
                 # fresh login - unlike a 403, this isn't a sign we're
                 # sending too many requests, just that the current session
                 # is no longer valid.
-                is_session_error = isinstance(exc, ExpiredSessionError) or status_code == 401
+                is_session_error = (
+                    isinstance(exc, ExpiredSessionError) or status_code == 401
+                )
 
                 if is_session_error and attempt < attempts - 1:
                     _LOGGER.info("Session expired for %s. Re-authenticating...", url)
@@ -1383,7 +1452,9 @@ class WemPortalApi:
             device_id_str = str(device["ID"])
             new_data[device_id_str] = {}
             new_modules[device_id_str] = {}
-            previously_known_device_modules = previously_known_modules.get(device_id_str, {})
+            previously_known_device_modules = previously_known_modules.get(
+                device_id_str, {}
+            )
             for module in device["Modules"]:
                 module_key = (module["Index"], module["Type"])
                 module_entry = {
@@ -1444,7 +1515,10 @@ class WemPortalApi:
             _LOGGER.warning(
                 "Could not re-read the parameters of device %s module %s/%s (%s). "
                 "Keeping the %d already known; trying again in about %d h.",
-                device_id, values["Index"], values["Type"], why,
+                device_id,
+                values["Index"],
+                values["Type"],
+                why,
                 len(values["parameters"]),
                 PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,
             )
@@ -1471,15 +1545,20 @@ class WemPortalApi:
                 "Device %s module %s/%s (%s) would not describe itself (%s). "
                 "Keeping it and asking again in about %d h - a module dropped "
                 "here is one Home Assistant cannot get back until a reload.",
-                device_id, values["Index"], values["Type"],
-                values.get("Name", "?"), why,
+                device_id,
+                values["Index"],
+                values["Type"],
+                values.get("Name", "?"),
+                why,
                 PARAMETER_REDISCOVERY_INTERVAL_SECONDS // 3600,
             )
         else:
             _LOGGER.debug(
                 "Device %s module %s/%s (%s) describes no parameters; nothing "
                 "to poll from it. Asking again in about %d h.",
-                device_id, values["Index"], values["Type"],
+                device_id,
+                values["Index"],
+                values["Type"],
                 values.get("Name", "?"),
                 PARAMETER_REDISCOVERY_INTERVAL_SECONDS // 3600,
             )
@@ -1499,7 +1578,9 @@ class WemPortalApi:
 
     def get_parameters(self):
         if self.modules is None:
-            _LOGGER.debug("get_parameters() called with no module data available yet; skipping.")
+            _LOGGER.debug(
+                "get_parameters() called with no module data available yet; skipping."
+            )
             return
         for device_id, device_data in self.data.items():
             if device_data.get("ConnectionStatus") != 0:
@@ -1525,13 +1606,19 @@ class WemPortalApi:
                         _LOGGER.debug(
                             "Parameters for device %s, index %s, and type %s are "
                             "cached and %.1f h old.",
-                            device_id, values["Index"], values["Type"], age / 3600,
+                            device_id,
+                            values["Index"],
+                            values["Type"],
+                            age / 3600,
                         )
                         continue
                     _LOGGER.debug(
                         "Re-reading parameters for device %s, index %s, type %s "
                         "(cached list is %.1f h old).",
-                        device_id, values["Index"], values["Type"], age / 3600,
+                        device_id,
+                        values["Index"],
+                        values["Type"],
+                        age / 3600,
                     )
                 data = {
                     "DeviceID": int(device_id),
@@ -1552,21 +1639,25 @@ class WemPortalApi:
                                 _LOGGER.error(
                                     "Rate limited (403) three times while fetching parameters "
                                     "for device %s. Aborting.",
-                                    device_id
+                                    device_id,
                                 )
                                 self._activate_cooldown()
-                                raise ForbiddenError("Rate limited during get_parameters") from exc
+                                raise ForbiddenError(
+                                    "Rate limited during get_parameters"
+                                ) from exc
 
                             _LOGGER.warning(
                                 "Rate limit warning (403) for device %s module %s. Strike %s of 3.",
                                 device_id,
                                 values["Index"],
-                                forbidden_count
+                                forbidden_count,
                             )
                             continue
                         elif status_code == 400:
                             self._note_undescribed_module(
-                                device_id, key, values,
+                                device_id,
+                                key,
+                                values,
                                 "the portal rejected the request",
                                 unsupported=True,
                             )
@@ -1578,13 +1669,17 @@ class WemPortalApi:
                         parameters[parameter["ParameterID"]] = parameter
                     if not parameters:
                         self._note_undescribed_module(
-                            device_id, key, values,
+                            device_id,
+                            key,
+                            values,
                             "it described no parameters",
                             unsupported=False,
                         )
                     else:
                         self.modules[device_id][key]["parameters"] = parameters
-                        self.modules[device_id][key]["parameters_fetched_at"] = time.time()
+                        self.modules[device_id][key]["parameters_fetched_at"] = (
+                            time.time()
+                        )
                 except (KeyError, ValueError):
                     # ValueError also covers a JSON-decode failure (e.g. an
                     # HTML error page returned instead of JSON) - without
@@ -1614,8 +1709,13 @@ class WemPortalApi:
         self._acquire_api_lock("parameter write")
         try:
             return self._change_value(
-                device_id, parameter_id, module_index, module_type,
-                numeric_value, login=login, together_with=together_with,
+                device_id,
+                parameter_id,
+                module_index,
+                module_type,
+                numeric_value,
+                login=login,
+                together_with=together_with,
             )
         finally:
             self._api_lock.release()
@@ -1668,9 +1768,7 @@ class WemPortalApi:
 
         try:
             response = self.make_api_call(
-                API_DATA_ACCESS_WRITE_URL,
-                data=data,
-                do_retry=True
+                API_DATA_ACCESS_WRITE_URL, data=data, do_retry=True
             )
         except Exception as exc:
             # Broad: every way a write can fail must reach the caller as
@@ -1714,7 +1812,9 @@ class WemPortalApi:
         body = getattr(response, "content", b"")[:500]
         _LOGGER.debug(
             "Write response for %s: HTTP %s, body %r",
-            parameter_id, getattr(response, "status_code", "?"), body,
+            parameter_id,
+            getattr(response, "status_code", "?"),
+            body,
         )
 
         try:
@@ -1725,7 +1825,8 @@ class WemPortalApi:
             # logging is exactly what is not enabled at that moment.
             _LOGGER.warning(
                 "Write for %s was not answered with a result. Portal said: %r",
-                parameter_id, body,
+                parameter_id,
+                body,
             )
             raise ParameterChangeError(
                 f"Portal answered the write for parameter {parameter_id} with "
@@ -1739,13 +1840,12 @@ class WemPortalApi:
             status, detail = ack.status, ack.message
             _LOGGER.warning(
                 "Portal rejected the write for %s. Full answer: %r",
-                parameter_id, body,
+                parameter_id,
+                body,
             )
             raise ParameterChangeError(
                 f"Portal rejected the write for parameter {parameter_id} "
-                f"(Status {status}"
-                + (f": {detail}" if detail else "")
-                + ")."
+                f"(Status {status}" + (f": {detail}" if detail else "") + ")."
             )
 
     # Refresh data and retrieve new data
@@ -1758,7 +1858,11 @@ class WemPortalApi:
         readability refactor - order, error handling and behaviour of the
         former inline blocks are unchanged.
         """
-        _LOGGER.debug("Fetching fresh api data. enabled_devices=%s, self.data.keys()=%s", enabled_devices, list(self.data.keys()))
+        _LOGGER.debug(
+            "Fetching fresh api data. enabled_devices=%s, self.data.keys()=%s",
+            enabled_devices,
+            list(self.data.keys()),
+        )
         # `is not None`, NOT truthiness: an EMPTY list means "every device is
         # disabled", and treating that as "no filter given" polled all of them -
         # the exact opposite of what the caller asked for.
@@ -1774,7 +1878,11 @@ class WemPortalApi:
             # the accesses below used the raw value - a latent KeyError for
             # any int id that only the broad per-device handlers would catch.
             device_id = str(device_id)
-            _LOGGER.debug("Processing device_id=%s. Is in self.data? %s", device_id, device_id in self.data)
+            _LOGGER.debug(
+                "Processing device_id=%s. Is in self.data? %s",
+                device_id,
+                device_id in self.data,
+            )
             if device_id not in self.data:
                 continue
             # Skip devices that only exist on the web-scraper side (e.g. the
@@ -1783,7 +1891,9 @@ class WemPortalApi:
             # to fetch and self.modules[device_id] would raise KeyError.
             # Their scraped sensors are handled entirely by the scraper path.
             if device_id not in self.modules:
-                _LOGGER.debug("Skipping device %s: no API modules (scraper-only).", device_id)
+                _LOGGER.debug(
+                    "Skipping device %s: no API modules (scraper-only).", device_id
+                )
                 continue
             if not self._fetch_device_status(device_id):
                 # Read fine, the device just is not online, so there is
@@ -1821,8 +1931,7 @@ class WemPortalApi:
             # Every reason, not a sample: Home Assistant shows this string and
             # nothing else, and a cap here would read as "that was all of it".
             raise WemPortalError(
-                "All API parameter fetches failed this cycle. "
-                + "; ".join(failures)
+                "All API parameter fetches failed this cycle. " + "; ".join(failures)
             )
 
     def _fetch_device_status(self, device_id: str) -> bool:
@@ -1865,7 +1974,7 @@ class WemPortalApi:
                 "ModuleIndex": -1,
                 "ModuleType": -1,
                 "platform": "sensor",
-                "icon": "mdi:network"
+                "icon": "mdi:network",
             }
 
             errors = status_response.get("Errors", [])
@@ -1882,7 +1991,7 @@ class WemPortalApi:
                 "ModuleIndex": -1,
                 "ModuleType": -1,
                 "platform": "sensor",
-                "icon": "mdi:alert"
+                "icon": "mdi:alert",
             }
 
             self.data[device_id][f"{device_id}-{DEVICE_STATUS_ERROR_MESSAGES}"] = {
@@ -1898,7 +2007,7 @@ class WemPortalApi:
                 "ModuleIndex": -1,
                 "ModuleType": -1,
                 "platform": "sensor",
-                "icon": "mdi:message-alert"
+                "icon": "mdi:message-alert",
             }
 
             previous = self._last_connection_status.get(device_id)
@@ -1988,7 +2097,9 @@ class WemPortalApi:
             # Don't re-index self.modules[device_id] here: if that key is the
             # one missing, the log call itself would raise a second KeyError
             # and escape this handler unhandled.
-            _LOGGER.debug("%s: missing module data for device %s", DATA_GATHERING_ERROR, device_id)
+            _LOGGER.debug(
+                "%s: missing module data for device %s", DATA_GATHERING_ERROR, device_id
+            )
             raise WemPortalError(DATA_GATHERING_ERROR) from exc
 
         if not data["Modules"]:
@@ -2025,9 +2136,7 @@ class WemPortalApi:
                     reason = "it has no modules"
                 else:
                     reason = "every module describes no parameters"
-                _LOGGER.debug(
-                    "Device %s has nothing to read: %s.", device_id, reason
-                )
+                _LOGGER.debug("Device %s has nothing to read: %s.", device_id, reason)
                 return None
 
             # Modules whose description has not arrived at all: discovery has
@@ -2073,14 +2182,16 @@ class WemPortalApi:
                 _LOGGER.warning(
                     "Device %s answered the refresh with something that is not "
                     "JSON; skipping the read rather than serving the previous "
-                    "measurement as current.", device_id,
+                    "measurement as current.",
+                    device_id,
                 )
                 return "the refresh answered with something that is not JSON"
             ticket = read_refresh_ticket(refresh_payload)
             if not ticket.accepted:
                 _LOGGER.warning(
-                    "Device %s %s; not reading the previous job's values as "
-                    "current.", device_id, ticket.reason,
+                    "Device %s %s; not reading the previous job's values as current.",
+                    device_id,
+                    ticket.reason,
                 )
                 return ticket.reason
             if ticket.job_id is None:
@@ -2120,7 +2231,8 @@ class WemPortalApi:
                 _LOGGER.warning(
                     "Device %s answered the value read without any modules; "
                     "treating the cycle as failed rather than keeping stale "
-                    "readings.", device_id,
+                    "readings.",
+                    device_id,
                 )
                 return "the value read came back without any modules"
             WemPortalDataMapper.process_api_values(
@@ -2166,9 +2278,10 @@ class WemPortalApi:
                         # copy - sat unused. It did not fail; it was never
                         # entered, which is why nothing about it appeared in
                         # any log.
-                        if (
-                            param_data.get("DataType") == WemDataType.PROGRAM
-                            or looks_like_schedule((row or {}).get("value"))
+                        if param_data.get(
+                            "DataType"
+                        ) == WemDataType.PROGRAM or looks_like_schedule(
+                            (row or {}).get("value")
                         ):
                             # Heating schedules rarely change (only via
                             # the WEM Portal app directly - this
@@ -2179,8 +2292,13 @@ class WemPortalApi:
                             # specific schedule recently enough.
                             cache_key = (device_id, param_id)
                             now = time.time()
-                            last_fetch = self._last_circuit_times_fetch.get(cache_key, 0)
-                            if now - last_fetch < CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS:
+                            last_fetch = self._last_circuit_times_fetch.get(
+                                cache_key, 0
+                            )
+                            if (
+                                now - last_fetch
+                                < CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
+                            ):
                                 continue
                             fetched = False
                             try:
@@ -2188,38 +2306,43 @@ class WemPortalApi:
                                     "DeviceID": int(device_id),
                                     "ModuleIndex": module_index,
                                     "ModuleType": module_type,
-                                    "ParameterID": param_id
+                                    "ParameterID": param_id,
                                 }
 
                                 job_resp = self.make_api_call(
                                     API_CIRCUIT_TIMES_REFRESH_URL,
                                     data=refresh_payload,
-                                    do_retry=True
+                                    do_retry=True,
                                 ).json()
 
                                 job_id = job_resp.get("JobID")
                                 if job_id is None:
                                     continue
 
-                                time.sleep(2)  # Give backend time to build the schedule payload
+                                time.sleep(
+                                    2
+                                )  # Give backend time to build the schedule payload
 
                                 read_payload = {
                                     "DeviceID": int(device_id),
                                     "JobID": job_id,
                                     "ModuleIndex": module_index,
                                     "ModuleType": module_type,
-                                    "ParameterID": param_id
+                                    "ParameterID": param_id,
                                 }
 
                                 schedule_resp = self.make_api_call(
                                     API_CIRCUIT_TIMES_READ_URL,
                                     data=read_payload,
-                                    do_retry=True
+                                    do_retry=True,
                                 ).json()
 
                                 if sensor_name not in self.data[device_id]:
-                                                            self.data[device_id][sensor_name] = {
-                                        "friendlyName": translate(self.language, friendly_name_mapper(param_id)),
+                                    self.data[device_id][sensor_name] = {
+                                        "friendlyName": translate(
+                                            self.language,
+                                            friendly_name_mapper(param_id),
+                                        ),
                                         "ParameterID": param_id,
                                         "unit": None,
                                         "value": "Active",
@@ -2231,8 +2354,12 @@ class WemPortalApi:
                                         "icon": "mdi:calendar-clock",
                                     }
 
-                                self.data[device_id][sensor_name]["CircuitTimesDay"] = schedule_resp.get("CircuitTimesDay", [])
-                                self.data[device_id][sensor_name]["PossibleValues"] = schedule_resp.get("PossibleValues", [])
+                                self.data[device_id][sensor_name]["CircuitTimesDay"] = (
+                                    schedule_resp.get("CircuitTimesDay", [])
+                                )
+                                self.data[device_id][sensor_name]["PossibleValues"] = (
+                                    schedule_resp.get("PossibleValues", [])
+                                )
                                 # The value is NOT touched. This fetch adds
                                 # detail to a row the value read already
                                 # filled; writing "Active" over it replaced a
@@ -2246,7 +2373,11 @@ class WemPortalApi:
                             except Exception as exc:
                                 # Broad: one heating program failing is
                                 # not a reason to skip the rest.
-                                _LOGGER.warning("Failed to fetch CircuitTimes for %s: %s", param_id, exc)
+                                _LOGGER.warning(
+                                    "Failed to fetch CircuitTimes for %s: %s",
+                                    param_id,
+                                    exc,
+                                )
                             finally:
                                 # Records the ATTEMPT, on every way out of the
                                 # block - including the `continue` above, which
@@ -2265,7 +2396,8 @@ class WemPortalApi:
                                 self._last_circuit_times_fetch[cache_key] = (
                                     now
                                     if fetched
-                                    else now - max(
+                                    else now
+                                    - max(
                                         0,
                                         CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
                                         - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
@@ -2308,7 +2440,7 @@ class WemPortalApi:
                 5: "Power Consumption Heating",
                 6: "Power Consumption Hot Water",
                 7: "Power Consumption Cooling",
-                8: "Total Power Consumption"
+                8: "Total Power Consumption",
             }
             group_name = fallback_names.get(group_id, f"Energy {group_id}")
         else:
@@ -2319,7 +2451,9 @@ class WemPortalApi:
                 group_name = translated_group
         return group_name
 
-    def _store_statistics_group(self, device_id, group_id, group_name, stats_resp) -> None:
+    def _store_statistics_group(
+        self, device_id, group_id, group_name, stats_resp
+    ) -> None:
         """Turn one group's read response into its energy sensor.
 
         Returns without writing wherever the group loop used to `continue`:
@@ -2335,7 +2469,9 @@ class WemPortalApi:
         current_value = latest_stat.get("Value")
         _LOGGER.debug(
             "Statistics group %s: using entry dated %s of %d",
-            group_id, latest_stat.get("Date", "?"), len(values),
+            group_id,
+            latest_stat.get("Date", "?"),
+            len(values),
         )
 
         sensor_name = f"Energy_{group_id}"
@@ -2355,7 +2491,8 @@ class WemPortalApi:
                 # total_increasing sensor.
                 _LOGGER.debug(
                     "Statistics group %s has no value yet; "
-                    "skipping instead of reporting 0.", group_id,
+                    "skipping instead of reporting 0.",
+                    group_id,
                 )
                 return
 
@@ -2372,7 +2509,7 @@ class WemPortalApi:
             "ModuleType": -1,
             "platform": "sensor",
             "device_class": "energy",
-            "state_class": "total_increasing"
+            "state_class": "total_increasing",
         }
 
     def _fetch_device_statistics(self, device_id: str) -> None:
@@ -2384,9 +2521,7 @@ class WemPortalApi:
         portal routinely lists groups it then refuses to read.
         """
         refresh_resp = self.make_api_call(
-            API_STATISTICS_REFRESH_URL,
-            data={"DeviceID": int(device_id)},
-            do_retry=True
+            API_STATISTICS_REFRESH_URL, data={"DeviceID": int(device_id)}, do_retry=True
         ).json()
 
         group_types = refresh_resp.get("GroupTypeDescriptions", [])
@@ -2401,7 +2536,7 @@ class WemPortalApi:
                 "ModuleType": 7,
                 "ModuleIndex": 0,
                 "GroupType": group_id,
-                "Type": 1
+                "Type": 1,
             }
 
             try:
@@ -2410,7 +2545,7 @@ class WemPortalApi:
                     API_STATISTICS_READ_URL,
                     headers=headers,
                     data=read_payload,
-                    do_retry=True
+                    do_retry=True,
                 ).json()
 
                 self._store_statistics_group(
@@ -2428,10 +2563,13 @@ class WemPortalApi:
                 if str(server_status) == str(WEM_INVALID_PARAMETER_STATUS):
                     _LOGGER.debug(
                         "Skipping statistics group %s: not valid for this module (status %s).",
-                        group_id, WEM_INVALID_PARAMETER_STATUS,
+                        group_id,
+                        WEM_INVALID_PARAMETER_STATUS,
                     )
                 else:
-                    _LOGGER.warning("Failed to fetch Statistics for group %s: %s", group_id, exc)
+                    _LOGGER.warning(
+                        "Failed to fetch Statistics for group %s: %s", group_id, exc
+                    )
 
     def get_statistics(self, enabled_devices=None):
         """Fetch historical statistics from the API, rate limited to once per hour.
@@ -2444,7 +2582,10 @@ class WemPortalApi:
         STATISTICS_RETRY_INTERVAL_SECONDS instead (see the end of this method).
         """
         now = time.time()
-        if self.last_statistics_fetch is not None and (now - self.last_statistics_fetch) < STATISTICS_REFRESH_INTERVAL_SECONDS:
+        if (
+            self.last_statistics_fetch is not None
+            and (now - self.last_statistics_fetch) < STATISTICS_REFRESH_INTERVAL_SECONDS
+        ):
             return
 
         self.last_statistics_fetch = now

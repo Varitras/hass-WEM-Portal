@@ -60,7 +60,7 @@ def test_the_newest_final_release_wins_over_newer_betas():
 
 
 def test_versions_are_compared_numerically_not_as_text():
-    """"0.13.9" must not outrank "0.13.348" - which it does as a string."""
+    """ "0.13.9" must not outrank "0.13.348" - which it does as a string."""
     pins = {
         "0.13.9": "homeassistant==2026.1.0",
         "0.13.348": "homeassistant==2026.7.4",
@@ -78,7 +78,9 @@ def test_nothing_usable_fails_loudly():
 def test_an_explicit_requirement_is_passed_through(capsys):
     """The pinned minimum-version entry must reach pip unchanged - and must
     not trigger a PyPI lookup."""
-    resolve_phcc.main(["resolve_phcc.py", "pytest-homeassistant-custom-component==0.13.190"])
+    resolve_phcc.main(
+        ["resolve_phcc.py", "pytest-homeassistant-custom-component==0.13.190"]
+    )
 
     assert capsys.readouterr().out.strip() == (
         "PHCC_SPEC=pytest-homeassistant-custom-component==0.13.190"

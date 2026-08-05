@@ -69,7 +69,9 @@ def _parse(scraper, html):
 
 
 def test_value_and_unit_are_split(scraper):
-    data = _parse(scraper, _page(_panel("Heat pump", [("Outside temperature", "12.5 °C")])))
+    data = _parse(
+        scraper, _page(_panel("Heat pump", [("Outside temperature", "12.5 °C")]))
+    )
 
     sensor = data["heat_pump-outside_temperature"]
     assert sensor["value"] == 12.5
@@ -82,7 +84,9 @@ def test_value_and_unit_are_split(scraper):
 def test_german_decimal_comma_becomes_a_float(scraper):
     """The portal writes "21,5" in German. Parsed as a string this would
     reach Home Assistant as a non-numeric state."""
-    data = _parse(scraper, _page(_panel("Heating circuit", [("Room temperature", "21,5 °C")])))
+    data = _parse(
+        scraper, _page(_panel("Heating circuit", [("Room temperature", "21,5 °C")]))
+    )
 
     assert data["heating_circuit-room_temperature"]["value"] == 21.5
 
@@ -113,9 +117,7 @@ def test_non_numeric_value_keeps_the_full_string_and_no_unit(scraper):
 def test_boolean_and_missing_values_are_sanitized(scraper):
     """Shared sanitize_value(): on/off become numbers, "--" becomes None -
     a missing reading must not surface as a fabricated 0."""
-    page = _page(
-        _panel("Pump", [("Ein", "Ein"), ("Aus", "Aus"), ("Missing", "--")])
-    )
+    page = _page(_panel("Pump", [("Ein", "Ein"), ("Aus", "Aus"), ("Missing", "--")]))
     data = _parse(scraper, page)
 
     assert data["pump-ein"]["value"] == 1.0
@@ -127,8 +129,13 @@ def test_enum_value_cells_are_parsed_too(scraper):
     """Enum values live in a differently-classed cell; both are selected."""
     data = _parse(
         scraper,
-        _page(_panel("Mode", [("Operating mode", "Automatik")],
-                     value_cell_class="simpleDataValueEnumCell")),
+        _page(
+            _panel(
+                "Mode",
+                [("Operating mode", "Automatik")],
+                value_cell_class="simpleDataValueEnumCell",
+            )
+        ),
     )
 
     assert data["mode-operating_mode"]["value"] == "Automatik"
@@ -298,7 +305,8 @@ def test_expired_cache_logs_in_again():
 
     jar = {
         "cookies": {"ASP.NET_SessionId": "abc"},
-        "saved_at": time.monotonic() - (expert_writer.EXPERT_SESSION_MAX_AGE_SECONDS + 10),
+        "saved_at": time.monotonic()
+        - (expert_writer.EXPERT_SESSION_MAX_AGE_SECONDS + 10),
     }
     client = expert_writer.WemPortalExpertClient(
         "user@example.org", "secret", cookie_jar=jar
@@ -449,7 +457,9 @@ def test_units_without_a_device_class_keep_a_useful_icon(scraper):
 
 
 class _ReuseResponse:
-    def __init__(self, text, status_code=200, url="https://www.wemportal.com/Web/Default.aspx"):
+    def __init__(
+        self, text, status_code=200, url="https://www.wemportal.com/Web/Default.aspx"
+    ):
         self.text = text
         self.status_code = status_code
         self.url = url
@@ -493,13 +503,17 @@ def test_an_error_page_is_not_accepted_as_the_expert_page():
     from custom_components.wemportal.exceptions import AuthError, ServerError
 
     scraper = _reuse_scraper(
-        _ReuseResponse("<html><body>Internal Server Error</body></html>", status_code=500)
+        _ReuseResponse(
+            "<html><body>Internal Server Error</body></html>", status_code=500
+        )
     )
 
     with pytest.raises(ServerError) as excinfo:
         scraper._load_expert_page()
 
-    assert not isinstance(excinfo.value, AuthError), "an outage is not a credential problem"
+    assert not isinstance(excinfo.value, AuthError), (
+        "an outage is not a credential problem"
+    )
 
 
 def test_maintenance_is_recognised_on_the_reuse_path_too():
@@ -592,9 +606,7 @@ def test_a_portal_answer_does_not_trigger_a_full_login(answer):
     with pytest.raises(type(errors[answer])):
         client._login()
 
-    assert logins == [], (
-        f"a {answer} answer was followed by a full login handshake"
-    )
+    assert logins == [], f"a {answer} answer was followed by a full login handshake"
 
 
 def _expert_page():
@@ -704,10 +716,15 @@ def _forget_reported_duplicates():
 def test_the_same_row_twice_in_one_panel_is_reported(scraper, caplog):
     import logging
 
-    page = _page(_panel("Heat pump", [
-        ("Outside temperature", "12.3 C"),
-        ("Outside temperature", "45.6 C"),
-    ]))
+    page = _page(
+        _panel(
+            "Heat pump",
+            [
+                ("Outside temperature", "12.3 C"),
+                ("Outside temperature", "45.6 C"),
+            ],
+        )
+    )
 
     with caplog.at_level(logging.WARNING):
         result = scraper.parse_expert_page(page)
@@ -741,10 +758,15 @@ def test_a_collision_is_reported_once_not_every_cycle(scraper, caplog):
     will not change buries everything else."""
     import logging
 
-    page = _page(_panel("Heat pump", [
-        ("Outside temperature", "12.3 C"),
-        ("Outside temperature", "45.6 C"),
-    ]))
+    page = _page(
+        _panel(
+            "Heat pump",
+            [
+                ("Outside temperature", "12.3 C"),
+                ("Outside temperature", "45.6 C"),
+            ],
+        )
+    )
 
     with caplog.at_level(logging.WARNING):
         scraper.parse_expert_page(page)
@@ -758,10 +780,12 @@ def test_rows_that_do_not_collide_say_nothing(scraper, caplog):
     import logging
 
     with caplog.at_level(logging.WARNING):
-        scraper.parse_expert_page(_page(
-            _panel("Heat pump", [("Outside temperature", "12.3 C")]),
-            _panel("Heating circuit", [("Outside temperature", "40.0 C")]),
-        ))
+        scraper.parse_expert_page(
+            _page(
+                _panel("Heat pump", [("Outside temperature", "12.3 C")]),
+                _panel("Heating circuit", [("Outside temperature", "40.0 C")]),
+            )
+        )
 
     assert "same sensor" not in caplog.text
 
@@ -783,9 +807,12 @@ def test_the_reuse_path_reports_its_empty_page_quietly(scraper, caplog):
     import logging
 
     with caplog.at_level(logging.DEBUG):
-        assert scraper.parse_expert_page(
-            "<html><title>Main</title></html>", required=False
-        ) is None
+        assert (
+            scraper.parse_expert_page(
+                "<html><title>Main</title></html>", required=False
+            )
+            is None
+        )
 
     reports = _empty_page_reports(caplog)
     assert reports, "the report is gone entirely"

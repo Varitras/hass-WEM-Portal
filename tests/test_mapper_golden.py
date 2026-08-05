@@ -96,8 +96,21 @@ BOUNDS = [
 ]
 
 
-def _case(label, data_type, writeable, value_label, numeric, string, unit,
-          language, mode, is_scraper_device, min_value, max_value, enum_values):
+def _case(
+    label,
+    data_type,
+    writeable,
+    value_label,
+    numeric,
+    string,
+    unit,
+    language,
+    mode,
+    is_scraper_device,
+    min_value,
+    max_value,
+    enum_values,
+):
     """One fully specified call, named so a diff points at the exact input."""
     parameter = {
         "ParameterID": "P1",
@@ -131,14 +144,24 @@ def _case(label, data_type, writeable, value_label, numeric, string, unit,
     api_data = {
         DEVICE: {
             "heat_pump-p1": {
-                "value": 11.0, "name": "heat_pump-p1", "unit": "°C",
-                "icon": "mdi:thermometer", "friendlyName": "Heat pump - P1",
-                "ParameterID": "heat_pump-p1", "platform": "sensor",
+                "value": 11.0,
+                "name": "heat_pump-p1",
+                "unit": "°C",
+                "icon": "mdi:thermometer",
+                "friendlyName": "Heat pump - P1",
+                "ParameterID": "heat_pump-p1",
+                "platform": "sensor",
             }
         }
     }
     WemPortalDataMapper.process_api_values(
-        DEVICE, values, modules, language, {}, mode, api_data,
+        DEVICE,
+        values,
+        modules,
+        language,
+        {},
+        mode,
+        api_data,
         DEVICE if is_scraper_device else "9999",
     )
     return label, api_data[DEVICE]
@@ -148,31 +171,48 @@ def build_snapshot():
     """The full matrix, in a stable order so diffs stay readable."""
     snapshot = {}
     for type_label, data_type in DATA_TYPES:
-      for bounds_label, min_value, max_value in BOUNDS:
-       for enum_label, enum_values in ENUM_SETS:
-        for writeable in (False, True):
-            for value_label, numeric, string, unit in VALUES:
-                for language in ("en", "de"):
-                    for mode in ("api", "both"):
-                        for is_scraper_device in (True, False):
-                            if mode == "api" and not is_scraper_device:
-                                # The scraper device is irrelevant outside
-                                # `both`; skipping keeps the matrix honest
-                                # rather than padded with duplicates.
-                                continue
-                            label = "|".join([
-                                type_label, bounds_label, enum_label,
-                                "rw" if writeable else "ro",
-                                value_label, language, mode,
-                                "scraperdev" if is_scraper_device else "otherdev",
-                            ])
-                            key, result = _case(
-                                label, data_type, writeable, value_label,
-                                numeric, string, unit, language, mode,
-                                is_scraper_device, min_value, max_value,
-                                enum_values,
-                            )
-                            snapshot[key] = result
+        for bounds_label, min_value, max_value in BOUNDS:
+            for enum_label, enum_values in ENUM_SETS:
+                for writeable in (False, True):
+                    for value_label, numeric, string, unit in VALUES:
+                        for language in ("en", "de"):
+                            for mode in ("api", "both"):
+                                for is_scraper_device in (True, False):
+                                    if mode == "api" and not is_scraper_device:
+                                        # The scraper device is irrelevant outside
+                                        # `both`; skipping keeps the matrix honest
+                                        # rather than padded with duplicates.
+                                        continue
+                                    label = "|".join(
+                                        [
+                                            type_label,
+                                            bounds_label,
+                                            enum_label,
+                                            "rw" if writeable else "ro",
+                                            value_label,
+                                            language,
+                                            mode,
+                                            "scraperdev"
+                                            if is_scraper_device
+                                            else "otherdev",
+                                        ]
+                                    )
+                                    key, result = _case(
+                                        label,
+                                        data_type,
+                                        writeable,
+                                        value_label,
+                                        numeric,
+                                        string,
+                                        unit,
+                                        language,
+                                        mode,
+                                        is_scraper_device,
+                                        min_value,
+                                        max_value,
+                                        enum_values,
+                                    )
+                                    snapshot[key] = result
     return snapshot
 
 
@@ -245,8 +285,12 @@ EXTRA_GOLDEN = Path(__file__).parent / "fixtures" / "mapper_golden_extra.json"
 
 def _scraped_row(param_id, **overrides):
     row = {
-        "value": 11.0, "name": param_id, "unit": "°C", "icon": "mdi:thermometer",
-        "friendlyName": "Heat pump - Outside", "ParameterID": param_id,
+        "value": 11.0,
+        "name": param_id,
+        "unit": "°C",
+        "icon": "mdi:thermometer",
+        "friendlyName": "Heat pump - Outside",
+        "ParameterID": param_id,
         "platform": "sensor",
     }
     row.update(overrides)
@@ -255,15 +299,25 @@ def _scraped_row(param_id, **overrides):
 
 def _param(param_id, **overrides):
     parameter = {
-        "ParameterID": param_id, "IsWriteable": False, "DataType": None,
-        "MinValue": 10, "MaxValue": 30, "EnumValues": ENUMS,
+        "ParameterID": param_id,
+        "IsWriteable": False,
+        "DataType": None,
+        "MinValue": 10,
+        "MaxValue": 30,
+        "EnumValues": ENUMS,
     }
     parameter.update(overrides)
     return parameter
 
 
-def _extra_case(parameters, existing, scraping_mapper, mode="both",
-                language="en", is_scraper_device=True):
+def _extra_case(
+    parameters,
+    existing,
+    scraping_mapper,
+    mode="both",
+    language="en",
+    is_scraper_device=True,
+):
     """One call with full control over what the matrix holds fixed."""
     modules = {
         DEVICE: {
@@ -293,7 +347,13 @@ def _extra_case(parameters, existing, scraping_mapper, mode="both",
     api_data = {DEVICE: dict(existing)}
     mapper_state = {k: list(v) for k, v in scraping_mapper.items()}
     WemPortalDataMapper.process_api_values(
-        DEVICE, values, modules, language, mapper_state, mode, api_data,
+        DEVICE,
+        values,
+        modules,
+        language,
+        mapper_state,
+        mode,
+        api_data,
         DEVICE if is_scraper_device else "9999",
     )
     # Both are recorded. scraping_mapper is mutated in place and carried
@@ -316,7 +376,9 @@ def build_extra_snapshot():
     # Cached, but pointing at a row that no longer exists: the mapper has to
     # create it rather than fail (the else branch of the write loop).
     snapshot["cached_mapping_missing_row"] = _extra_case(
-        [_param("Outside")], {}, {"Outside": ["heat_pump-gone"]},
+        [_param("Outside")],
+        {},
+        {"Outside": ["heat_pump-gone"]},
     )
     # A cached mapping onto SEVERAL rows, so the write loop runs twice.
     snapshot["cached_mapping_two_targets"] = _extra_case(
@@ -332,18 +394,25 @@ def build_extra_snapshot():
     # IndexError guard is load-bearing rather than defensive noise - the
     # writes phase 1 makes itself look exactly like this.
     snapshot["row_without_a_dash"] = _extra_case(
-        [_param("Outside")], {"Outside": _scraped_row("Outside")}, {},
+        [_param("Outside")],
+        {"Outside": _scraped_row("Outside")},
+        {},
     )
     # A non-dict entry in the device dict, reaching the isinstance skip.
     snapshot["non_dict_entry"] = _extra_case(
-        [_param("Outside")], {"ConnectionStatus": 0}, {},
+        [_param("Outside")],
+        {"ConnectionStatus": 0},
+        {},
     )
     # Rows that match nothing, so the scan runs to the end and the fallback
     # assigns the key itself.
     snapshot["no_row_matches"] = _extra_case(
         [_param("Outside")],
-        {"heat_pump-unrelated": _scraped_row(
-            "heat_pump-unrelated", friendlyName="Heat pump - Pressure")},
+        {
+            "heat_pump-unrelated": _scraped_row(
+                "heat_pump-unrelated", friendlyName="Heat pump - Pressure"
+            )
+        },
         {},
     )
 
@@ -351,8 +420,7 @@ def build_extra_snapshot():
     # entry then becomes a scan candidate for the read-only one.
     snapshot["two_parameters"] = _extra_case(
         [
-            _param("Setpoint", IsWriteable=True,
-                   DataType=WemDataType.NUMBER_STEP_ONE),
+            _param("Setpoint", IsWriteable=True, DataType=WemDataType.NUMBER_STEP_ONE),
             _param("Outside"),
         ],
         {"heat_pump-outside": _scraped_row("heat_pump-outside")},
@@ -361,12 +429,16 @@ def build_extra_snapshot():
 
     # No EnumValues at all - the only way a writeable value reaches the plain
     # sanitize path in _describe_value.
-    for label, data_type in (("switch", WemDataType.SWITCH),
-                             ("select", WemDataType.SELECT),
-                             ("number", WemDataType.NUMBER_STEP_ONE)):
+    for label, data_type in (
+        ("switch", WemDataType.SWITCH),
+        ("select", WemDataType.SELECT),
+        ("number", WemDataType.NUMBER_STEP_ONE),
+    ):
         snapshot[f"no_enum_values_{label}"] = _extra_case(
             [_param("P", IsWriteable=True, DataType=data_type, EnumValues=[])],
-            {}, {}, mode="api",
+            {},
+            {},
+            mode="api",
         )
 
     # A scraped row carrying explicit None fields: the difference between
@@ -374,9 +446,16 @@ def build_extra_snapshot():
     # the stored value is falsy but present.
     snapshot["falsy_scraped_fields"] = _extra_case(
         [_param("Outside")],
-        {"heat_pump-outside": _scraped_row(
-            "heat_pump-outside", value=None, unit=None, icon=None, name=None,
-            friendlyName=None)},
+        {
+            "heat_pump-outside": _scraped_row(
+                "heat_pump-outside",
+                value=None,
+                unit=None,
+                icon=None,
+                name=None,
+                friendlyName=None,
+            )
+        },
         {"Outside": ["heat_pump-outside"]},
     )
     return snapshot

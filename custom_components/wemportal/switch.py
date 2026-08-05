@@ -73,7 +73,12 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
         self._attr_is_on = None if val is None else val in WEM_SWITCH_ON_VALUES
         self._attr_device_class = SwitchDeviceClass.SWITCH
 
-        _LOGGER.debug('Init switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
+        _LOGGER.debug(
+            'Init switch: %s: "%s" [%s]',
+            self._attr_name,
+            self._attr_is_on,
+            self._attr_unit,
+        )
 
     async def async_turn_on(self, **kwargs) -> None:
         await self.async_write_parameter(1.0)
@@ -99,7 +104,12 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
                 None if temp_val is None else temp_val in WEM_SWITCH_ON_VALUES
             )
 
-            _LOGGER.debug('Update switch: %s: "%s" [%s]', self._attr_name, self._attr_is_on, self._attr_unit)
+            _LOGGER.debug(
+                'Update switch: %s: "%s" [%s]',
+                self._attr_name,
+                self._attr_is_on,
+                self._attr_unit,
+            )
 
         except KeyError:
             self._attr_is_on = None

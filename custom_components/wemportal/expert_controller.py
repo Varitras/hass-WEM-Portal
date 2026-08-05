@@ -139,7 +139,8 @@ class ExpertController:
         _LOGGER.info(
             "Expert auto-poll enabled: reading configured parameters about "
             "every %d min (with up to +%d%% random jitter).",
-            self._interval_min, int(JITTER_FRACTION * 100),
+            self._interval_min,
+            int(JITTER_FRACTION * 100),
         )
         # Initial read shortly after startup; it reschedules itself
         # afterwards. Tracked so stop() can cancel it mid-run.
@@ -179,7 +180,8 @@ class ExpertController:
         self._unsub = async_call_later(self._hass, delay, self.poll)
         _LOGGER.debug(
             "Expert auto-poll: next read in %.1f min (base %d min + jitter).",
-            delay / 60, self._interval_min,
+            delay / 60,
+            self._interval_min,
         )
 
     async def poll(self, _now=None) -> None:
@@ -271,7 +273,8 @@ class ExpertController:
                 "Expert auto-poll: all %d configured parameter(s) failed to "
                 "read this cycle. Treating that as one failed batch rather "
                 "than %d bad ids; not counting it against them.",
-                len(failed), len(failed),
+                len(failed),
+                len(failed),
             )
 
         for entity in self.entities:
@@ -323,7 +326,8 @@ class ExpertController:
             )
         self._hass.async_create_task(
             self._hass.services.async_call(
-                "persistent_notification", "create",
+                "persistent_notification",
+                "create",
                 {
                     "title": "WEM Portal expert auto-poll",
                     "message": reason,

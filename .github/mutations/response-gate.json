@@ -44,7 +44,7 @@
   {
     "label": "recovery must not be skipped entirely",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "                    await self.hass.async_add_executor_job(\n                        self.api.reset_transport\n                    )",
+    "old": "                    await self.hass.async_add_executor_job(self.api.reset_transport)",
     "new": "                    pass",
     "tests": "recovery_resets_the_connection"
   },
@@ -163,8 +163,8 @@
   {
     "label": "stats: never inventing a zero must be frozen",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                    \"skipping instead of reporting 0.\", group_id,\n                )\n                return",
-    "new": "                    \"skipping instead of reporting 0.\", group_id,\n                )\n                current_value = 0.0",
+    "old": "                    \"skipping instead of reporting 0.\",\n                    group_id,\n                )\n                return",
+    "new": "                    \"skipping instead of reporting 0.\",\n                    group_id,\n                )\n                current_value = 0.0",
     "tests": "statistics_output_is_unchanged"
   },
   {
@@ -387,7 +387,7 @@
   {
     "label": "recovery: it must not run on the event loop",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "                    await self.hass.async_add_executor_job(\n                        self.api.reset_transport\n                    )",
+    "old": "                    await self.hass.async_add_executor_job(self.api.reset_transport)",
     "new": "                    self.api.reset_transport()",
     "tests": "recovery_runs_off_the_event_loop"
   },
@@ -590,7 +590,7 @@
   {
     "label": "teardown: leaving a session open when the lock is busy must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if not acquired:\n            _LOGGER.debug(\n                \"Closing the HTTP sessions while another operation still holds \"\n                \"the api lock; it waited %ss.\", timeout,\n            )",
+    "old": "        if not acquired:\n            _LOGGER.debug(\n                \"Closing the HTTP sessions while another operation still holds \"\n                \"the api lock; it waited %ss.\",\n                timeout,\n            )",
     "new": "        if not acquired:\n            return",
     "tests": "sessions_are_closed_even_if_the_lock_never_comes_free"
   },
@@ -604,15 +604,15 @@
   {
     "label": "schedules: recording the attempt only on success must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                                _LOGGER.warning(\"Failed to fetch CircuitTimes for %s: %s\", param_id, exc)\n                            finally:",
-    "new": "                                _LOGGER.warning(\"Failed to fetch CircuitTimes for %s: %s\", param_id, exc)\n                            else:",
+    "old": "                                    \"Failed to fetch CircuitTimes for %s: %s\",\n                                    param_id,\n                                    exc,\n                                )\n                            finally:",
+    "new": "                                    \"Failed to fetch CircuitTimes for %s: %s\",\n                                    param_id,\n                                    exc,\n                                )\n                            else:",
     "tests": "failing_schedule_is_not_refetched_on_every_cycle or refresh_without_a_job_id_also_counts"
   },
   {
     "label": "schedules: not shortening the wait after a failure must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                                    else now - max(\n                                        0,\n                                        CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS\n                                        - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,\n                                    )",
-    "new": "                                    else now - CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS",
+    "old": "                                    - max(\n                                        0,\n                                        CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS\n                                        - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,\n                                    )",
+    "new": "                                    - 0",
     "tests": "failed_schedule_is_tried_again_after_the_retry_interval"
   },
   {
@@ -646,8 +646,8 @@
   {
     "label": "date: an inexact write encoding must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "    return datetime(\n        value.year, value.month, value.day, tzinfo=timezone.utc\n    ).timestamp()",
-    "new": "    return datetime(\n        value.year, value.month, value.day, tzinfo=timezone.utc\n    ).timestamp() + 3600",
+    "old": "    return datetime(value.year, value.month, value.day, tzinfo=timezone.utc).timestamp()",
+    "new": "    return (\n        datetime(value.year, value.month, value.day, tzinfo=timezone.utc).timestamp()\n        + 3600\n    )",
     "tests": "writing_uses_the_encoding_the_portal_sent or setting_a_day_writes_the_portal_encoding"
   },
   {
@@ -856,7 +856,7 @@
   {
     "label": "empty page: an unexplained failure must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            self._report_empty_page(\n                html_content, source,\n                level=logging.WARNING if required else logging.DEBUG,\n            )",
+    "old": "            self._report_empty_page(\n                html_content,\n                source,\n                level=logging.WARNING if required else logging.DEBUG,\n            )",
     "new": "            pass",
     "tests": "report_separates_a_wrong_page_from_changed_markup"
   },
@@ -933,15 +933,15 @@
   {
     "label": "cycle: a failure that does not say why must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                \"All API parameter fetches failed this cycle. \"\n                + \"; \".join(failures)",
+    "old": "                \"All API parameter fetches failed this cycle. \" + \"; \".join(failures)",
     "new": "                \"All API parameter fetches failed this cycle.\"",
     "tests": "a_failed_cycle_says_why_it_failed"
   },
   {
     "label": "cycle: naming only the first failing device must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                + \"; \".join(failures)",
-    "new": "                + \"; \".join(failures[:1])",
+    "old": "\"All API parameter fetches failed this cycle. \" + \"; \".join(failures)",
+    "new": "\"All API parameter fetches failed this cycle. \" + \"; \".join(failures[:1])",
     "tests": "every_failing_device_is_named_not_just_the_first"
   },
   {
@@ -975,7 +975,7 @@
   {
     "label": "pair: taking a companion from another module must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "            if (row.get(\"ModuleIndex\"), row.get(\"ModuleType\")) != (\n                self._module_index, self._module_type\n            ):\n                continue",
+    "old": "            if (row.get(\"ModuleIndex\"), row.get(\"ModuleType\")) != (\n                self._module_index,\n                self._module_type,\n            ):\n                continue",
     "new": "            if False:\n                continue",
     "tests": "a_date_belonging_to_another_module_is_not_dragged_in"
   },
@@ -1094,15 +1094,15 @@
   {
     "label": "programme: keying on the declared type alone must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                            param_data.get(\"DataType\") == WemDataType.PROGRAM\n                            or looks_like_schedule((row or {}).get(\"value\"))",
-    "new": "                            param_data.get(\"DataType\") == WemDataType.PROGRAM",
+    "old": "                        if param_data.get(\n                            \"DataType\"\n                        ) == WemDataType.PROGRAM or looks_like_schedule(\n                            (row or {}).get(\"value\")\n                        ):",
+    "new": "                        if param_data.get(\"DataType\") == WemDataType.PROGRAM:",
     "tests": "a_programme_the_portal_types_as_a_switch_is_still_fetched"
   },
   {
     "label": "programme: fetching a schedule for a plain switch must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                            or looks_like_schedule((row or {}).get(\"value\"))",
-    "new": "                            or True",
+    "old": "                        ) == WemDataType.PROGRAM or looks_like_schedule(\n                            (row or {}).get(\"value\")\n                        ):",
+    "new": "                        ) == WemDataType.PROGRAM or True:",
     "tests": "a_plain_switch_is_not_mistaken_for_a_programme"
   },
   {
@@ -1115,8 +1115,8 @@
   {
     "label": "programme: overwriting the week with a placeholder must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\"PossibleValues\", [])",
-    "new": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\"PossibleValues\", [])\n                                self.data[device_id][sensor_name][\"value\"] = \"Active\"",
+    "old": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = (\n                                    schedule_resp.get(\"PossibleValues\", [])\n                                )",
+    "new": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = (\n                                    schedule_resp.get(\"PossibleValues\", [])\n                                )\n                                self.data[device_id][sensor_name][\"value\"] = \"Active\"",
     "tests": "the_fetch_adds_to_the_programme_instead_of_replacing_it"
   },
   {
@@ -1360,8 +1360,8 @@
   {
     "label": "vocabulary: dropping the unknown word from the report must be noticed",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        value, name, GITHUB_PROJECT_URL,",
-    "new": "        \"a value\", name, GITHUB_PROJECT_URL,",
+    "old": "        value,\n        name,\n        GITHUB_PROJECT_URL,",
+    "new": "        \"a value\",\n        name,\n        GITHUB_PROJECT_URL,",
     "tests": "an_unreadable_word_is_reported_once_not_every_cycle"
   },
   {

@@ -1,4 +1,5 @@
-""" WemPortal integration coordinator """
+"""WemPortal integration coordinator"""
+
 from __future__ import annotations
 import asyncio
 from time import monotonic
@@ -77,7 +78,9 @@ def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store:
     once (see WemPortalApi.resolve_scraper_device_id) survives restarts and
     never silently changes on a later mode switch.
     """
-    return Store(hass, SCRAPER_DEVICE_STORAGE_VERSION, f"{DOMAIN}_{entry_id}_scraper_device")
+    return Store(
+        hass, SCRAPER_DEVICE_STORAGE_VERSION, f"{DOMAIN}_{entry_id}_scraper_device"
+    )
 
 
 class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
@@ -112,7 +115,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # cannot live on the coordinator alone.
         self.num_auth_failed = _AUTH_FAILURES.get(config_entry.entry_id, 0)
         self._modules_store = get_modules_store(hass, config_entry.entry_id)
-        self._scraper_device_store = get_scraper_device_store(hass, config_entry.entry_id)
+        self._scraper_device_store = get_scraper_device_store(
+            hass, config_entry.entry_id
+        )
         # Remember the last-persisted scraper device id so we only write the
         # store when it actually changes (it's decided once and then stable).
         self._saved_scraper_device_id = None
@@ -120,7 +125,6 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # is not rewritten on every successful cycle (~288 writes a day at a
         # five-minute interval, for data that changes almost never).
         self._saved_modules_snapshot = None
-
 
     async def _async_save_scraper_device_id(self) -> None:
         """Persist the stable scraper device id once it has been decided.
@@ -176,7 +180,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 DEFAULT_CONF_SCAN_INTERVAL_API_VALUE * (self.num_failed - 2),
                 MAX_BACKOFF_SECONDS,
             )
-            if self.last_try is not None and monotonic() - self.last_try < required_wait:
+            if (
+                self.last_try is not None
+                and monotonic() - self.last_try < required_wait
+            ):
                 raise UpdateFailed("Waiting for more time to pass before retrying")
 
         device_registry = dr.async_get(self.hass)
@@ -187,7 +194,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             # used a bare (DOMAIN, device_id), which never matched, so a
             # disabled device kept being polled.
             device_entry = device_registry.async_get_device(
-                identifiers={device_identifier(self.config_entry.entry_id, str(device_id))}
+                identifiers={
+                    device_identifier(self.config_entry.entry_id, str(device_id))
+                }
             )
             if device_entry is not None and device_entry.disabled_by is not None:
                 _LOGGER.debug("Skipping disabled device %s", device_id)
@@ -221,7 +230,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 "Fetching WEM Portal data timed out after %ds. Note the "
                 "underlying request keeps running in its worker thread - "
                 "Python cannot cancel it - so the next operation may briefly "
-                "wait for it.", DEFAULT_TIMEOUT,
+                "wait for it.",
+                DEFAULT_TIMEOUT,
             )
             raise UpdateFailed(
                 f"Timed out fetching data from wemportal after {DEFAULT_TIMEOUT}s"
@@ -245,7 +255,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         around it without moving the error handling one level in."""
         async with asyncio.timeout(DEFAULT_TIMEOUT):
             try:
-                x = await self.hass.async_add_executor_job(self.api.fetch_data, device_filter)
+                x = await self.hass.async_add_executor_job(
+                    self.api.fetch_data, device_filter
+                )
                 self.num_failed = 0
                 self._reset_auth_failures()
                 await self._async_save_modules_cache()
@@ -274,12 +286,17 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 if self.num_auth_failed >= AUTH_ERROR_ESCALATION_THRESHOLD:
                     _LOGGER.error(
                         "Authentication failed %d times in a row, raising ConfigEntryAuthFailed: %s",
-                        self.num_auth_failed, exc,
+                        self.num_auth_failed,
+                        exc,
                     )
-                    raise ConfigEntryAuthFailed("WEM Portal authentication failed. Check your credentials.") from exc
+                    raise ConfigEntryAuthFailed(
+                        "WEM Portal authentication failed. Check your credentials."
+                    ) from exc
                 _LOGGER.warning(
                     "Authentication error (%d/%d before reauth is required), will retry: %s",
-                    self.num_auth_failed, AUTH_ERROR_ESCALATION_THRESHOLD, exc,
+                    self.num_auth_failed,
+                    AUTH_ERROR_ESCALATION_THRESHOLD,
+                    exc,
                 )
                 raise UpdateFailed(f"Authentication error, will retry: {exc}") from exc
             except ApiBusyError as exc:
@@ -306,10 +323,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     # shared api lock, and waiting for a threading lock on
                     # the event loop would stall everything Home Assistant
                     # does for as long as the write it waits for runs.
-                    await self.hass.async_add_executor_job(
-                        self.api.reset_transport
-                    )
-                raise UpdateFailed(f"Error fetching data from wemportal: {exc}") from exc
+                    await self.hass.async_add_executor_job(self.api.reset_transport)
+                raise UpdateFailed(
+                    f"Error fetching data from wemportal: {exc}"
+                ) from exc
             except Exception as exc:  # pylint: disable=broad-except
                 # Catch-all safety net: covers cases that don't come from
                 # fetch_data() itself (which already wraps its own
@@ -323,6 +340,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 self.num_failed += 1
                 self._reset_auth_failures()
                 _LOGGER.warning("Unexpected error updating WEM Portal data: %s", exc)
-                raise UpdateFailed(f"Unexpected error fetching data from wemportal: {exc}") from exc
+                raise UpdateFailed(
+                    f"Unexpected error fetching data from wemportal: {exc}"
+                ) from exc
             finally:
                 self.last_try = monotonic()

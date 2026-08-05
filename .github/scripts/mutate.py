@@ -83,7 +83,10 @@ def collect_test_locations() -> dict:
     """
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "-q", "-m", "", "--collect-only"],
-        cwd=REPO, capture_output=True, text=True, timeout=TEST_TIMEOUT_SECONDS,
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=TEST_TIMEOUT_SECONDS,
     )
     if result.returncode != PYTEST_ALL_PASSED:
         raise SystemExit(
@@ -127,8 +130,18 @@ def run_tests(selector: str, paths=None) -> bool:
         result = subprocess.run(
             # -x: the question is whether at least one selected test notices,
             # not how many do.
-            [sys.executable, "-m", "pytest", *targets, "-q", "-m", "", "-x",
-             "-k", selector],
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                *targets,
+                "-q",
+                "-m",
+                "",
+                "-x",
+                "-k",
+                selector,
+            ],
             cwd=REPO,
             capture_output=True,
             text=True,

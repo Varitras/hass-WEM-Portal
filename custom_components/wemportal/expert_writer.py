@@ -169,7 +169,10 @@ def _is_valid_entityvalue(entityvalue) -> bool:
     to skip such values instead of firing a pointless portal request.
     """
     ev = (entityvalue or "").strip()
-    return bool(re.fullmatch(r"[0-9A-Fa-f]+", ev)) and len(ev) >= MIN_EXPERT_ENTITYVALUE_LENGTH
+    return (
+        bool(re.fullmatch(r"[0-9A-Fa-f]+", ev))
+        and len(ev) >= MIN_EXPERT_ENTITYVALUE_LENGTH
+    )
 
 
 # Matches the edit-icon onclick that opens the parameter dialog. lxml returns
@@ -261,8 +264,8 @@ class ExpertParameterState:
     """Parsed state of one expert parameter's edit form."""
 
     def __init__(self, current, options, hidden_fields):
-        self.current = current            # currently selected value (float)
-        self.options = options            # all allowed values (list of float)
+        self.current = current  # currently selected value (float)
+        self.options = options  # all allowed values (list of float)
         self.min_value = min(options) if options else None
         self.max_value = max(options) if options else None
         # Hidden ASP.NET fields (VIEWSTATE etc.), kept for a later write step.
@@ -276,10 +279,18 @@ class WemPortalExpertClient:
     fully independent of the polling scraper/API paths.
     """
 
-    def __init__(self, username, password, cooldown_check=None,
-                 cooldown_activate=None, module_arg=None,
-                 enable_module_nav=None, enable_security_code=None,
-                 cookie_jar=None, abort_check=None):
+    def __init__(
+        self,
+        username,
+        password,
+        cooldown_check=None,
+        cooldown_activate=None,
+        module_arg=None,
+        enable_module_nav=None,
+        enable_security_code=None,
+        cookie_jar=None,
+        abort_check=None,
+    ):
         self.username = username
         self.password = password
         # Shared, in-memory cookie cache for session reuse across operations
@@ -314,11 +325,13 @@ class WemPortalExpertClient:
         # re-enable either step for an unusual portal/module layout. Stored
         # as "do the step?" for readability (inverse of the SKIP_ constants).
         self._do_module_nav = (
-            (not EXPERT_SKIP_MODULE_NAV) if enable_module_nav is None
+            (not EXPERT_SKIP_MODULE_NAV)
+            if enable_module_nav is None
             else bool(enable_module_nav)
         )
         self._do_security_code = (
-            (not EXPERT_SKIP_SECURITY_CODE) if enable_security_code is None
+            (not EXPERT_SKIP_SECURITY_CODE)
+            if enable_security_code is None
             else bool(enable_security_code)
         )
         self.session = None
@@ -398,7 +411,8 @@ class WemPortalExpertClient:
                 "Expert path: the portal rejected a request with 403. "
                 "Request: %s. Note that this does not necessarily mean a rate "
                 "limit - it can equally mean the portal did not accept this "
-                "particular request.", where,
+                "particular request.",
+                where,
             )
             # Backs off the EXPERT path only (see activate_expert_cooldown in
             # wemportalapi.py); sensor polling keeps running.
@@ -438,7 +452,8 @@ class WemPortalExpertClient:
         if age > EXPERT_SESSION_MAX_AGE_SECONDS:
             _LOGGER.debug(
                 "Expert session cache is %.0fs old (max %ds), logging in fresh.",
-                age, EXPERT_SESSION_MAX_AGE_SECONDS,
+                age,
+                EXPERT_SESSION_MAX_AGE_SECONDS,
             )
             return False
 
@@ -510,12 +525,17 @@ class WemPortalExpertClient:
             "ctl00$content$btnLogin": "Anmelden",
         }
         r2 = self.session.post(
-            WEB_LOGIN_URL, data=login_data, allow_redirects=True,
+            WEB_LOGIN_URL,
+            data=login_data,
+            allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
         self._check_response(r2, "login POST")
         # Redirect back to login page means the login did not succeed.
-        if "AspxAutoDetectCookieSupport" in r2.url or WEB_LOGIN_URL.lower() in r2.url.lower():
+        if (
+            "AspxAutoDetectCookieSupport" in r2.url
+            or WEB_LOGIN_URL.lower() in r2.url.lower()
+        ):
             raise AuthError("Expert client: login failed.")
 
         self._establish_context()
@@ -546,7 +566,8 @@ class WemPortalExpertClient:
         """
         # Step 1: main page (also captures the base VIEWSTATE we need).
         r_main = self.session.get(
-            WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            WEB_MAIN_URL,
+            timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers={"Accept": WEB_ACCEPT_NAV, "Accept-Language": WEB_ACCEPT_LANGUAGE},
         )
         self._check_response(r_main, "main page", check_maintenance=True)
@@ -555,7 +576,8 @@ class WemPortalExpertClient:
         current_html = r_main.text
         _LOGGER.debug(
             "Expert navigation step 1 (main page): %d bytes, pagestate=%s",
-            len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
+            len(current_html),
+            self._has_viewstate(self._hidden_fields(current_html)),
         )
 
         # Step 2: switch to the Fachmann submenu. Classic full postback
@@ -567,8 +589,10 @@ class WemPortalExpertClient:
         # the reload returns the plain user level and every later step
         # operates on a non-Fachmann page (confirmed via HAR).
         current_html = self._postback(
-            WEB_MAIN_URL, current_html,
-            event_target=EXPERT_SUBMENU_TARGET, event_argument=EXPERT_SUBMENU_ARG,
+            WEB_MAIN_URL,
+            current_html,
+            event_target=EXPERT_SUBMENU_TARGET,
+            event_argument=EXPERT_SUBMENU_ARG,
             async_postback=False,
             extra_fields={
                 EXPERT_SUBMENU_CLIENTSTATE_FIELD: EXPERT_SUBMENU_CLIENTSTATE_VALUE,
@@ -598,8 +622,10 @@ class WemPortalExpertClient:
             # generic poll loop, keeps the added server load minimal.
             self._check_cooldown()
             current_html = self._postback(
-                WEB_MAIN_URL, current_html,
-                event_target=EXPERT_TIMER_TARGET, event_argument="",
+                WEB_MAIN_URL,
+                current_html,
+                event_target=EXPERT_TIMER_TARGET,
+                event_argument="",
             )
             self._submit_security_code()
             # The real browser does NOT reload the main page here (confirmed
@@ -618,7 +644,8 @@ class WemPortalExpertClient:
             # the earlier submenu reload, since the timer postback is what the
             # real callback's state matches in the capture.
             current_html = self._postback(
-                WEB_MAIN_URL, current_html,
+                WEB_MAIN_URL,
+                current_html,
                 event_target=EXPERT_RAM_MASTER_TARGET,
                 event_argument=EXPERT_RAM_MASTER_UNLOCK_ARGUMENT,
                 extra_fields={
@@ -631,7 +658,8 @@ class WemPortalExpertClient:
             _LOGGER.debug(
                 "Expert navigation step 2 (Fachmann unlock) done via "
                 "RAMMasterPage callback: %d bytes, pagestate=%s",
-                len(current_html), self._has_viewstate(self._hidden_fields(current_html)),
+                len(current_html),
+                self._has_viewstate(self._hidden_fields(current_html)),
             )
         else:
             _LOGGER.debug(
@@ -666,12 +694,15 @@ class WemPortalExpertClient:
         # the parameter dialog empty afterwards.
         icon_menu_state = EXPERT_MODULE_ICONMENU_STATE_TEMPLATE % self._module_arg
         current_html = self._postback(
-            WEB_MAIN_URL, current_html,
+            WEB_MAIN_URL,
+            current_html,
             event_target=EXPERT_MODULE_MENU_TARGET,
             event_argument=self._module_arg,
             extra_fields={EXPERT_MODULE_ICONMENU_STATE_FIELD: icon_menu_state},
         )
-        _LOGGER.debug("Expert navigation step 3 (module select, arg=%s) done.", self._module_arg)
+        _LOGGER.debug(
+            "Expert navigation step 3 (module select, arg=%s) done.", self._module_arg
+        )
 
         # After the module select the live values may still be trickling in.
         # Instead of firing a fixed batch of timer postbacks up front (which
@@ -695,8 +726,10 @@ class WemPortalExpertClient:
             return
         self._check_cooldown()
         self._nav_html = self._postback(
-            WEB_MAIN_URL, self._nav_html,
-            event_target=EXPERT_TIMER_TARGET, event_argument="",
+            WEB_MAIN_URL,
+            self._nav_html,
+            event_target=EXPERT_TIMER_TARGET,
+            event_argument="",
         )
         _LOGGER.debug("Expert navigation: on-demand live-value timer poll done.")
 
@@ -712,7 +745,8 @@ class WemPortalExpertClient:
         # get its VIEWSTATE, then post the code via the dialog's save button.
         dialog_url = f"{WEB_CODE_EXPERTS_URL}?rwndrnd={random.random()}"
         r = self.session.get(
-            dialog_url, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            dialog_url,
+            timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers={
                 "Referer": WEB_MAIN_URL,
                 "Accept": WEB_ACCEPT_NAV,
@@ -724,7 +758,8 @@ class WemPortalExpertClient:
         _LOGGER.debug(
             "Expert navigation: security-code dialog fetched, %d hidden fields, "
             "pagestate=%s, __VIEWSTATE len=%d, __EVENTVALIDATION len=%d",
-            len(fields), self._has_viewstate(fields),
+            len(fields),
+            self._has_viewstate(fields),
             len(fields.get("__VIEWSTATE", "")),
             len(fields.get("__EVENTVALIDATION", "")),
         )
@@ -747,15 +782,24 @@ class WemPortalExpertClient:
             "Accept-Language": WEB_ACCEPT_LANGUAGE,
         }
         if self._export_hook is not None:
-            self._export_hook("security_code", dialog_url, dict(fields), dict(sec_headers), self.session)
+            self._export_hook(
+                "security_code",
+                dialog_url,
+                dict(fields),
+                dict(sec_headers),
+                self.session,
+            )
         r2 = self.session.post(
-            dialog_url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            dialog_url,
+            data=fields,
+            timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers=sec_headers,
         )
         self._check_response(r2, "security-code POST")
         _LOGGER.debug(
             "Expert navigation: security-code POST -> %d bytes, delta=%s",
-            len(r2.text), "|hiddenField|" in r2.text,
+            len(r2.text),
+            "|hiddenField|" in r2.text,
         )
 
     # --- ASP.NET postback helpers ------------------------------------
@@ -803,8 +847,15 @@ class WemPortalExpertClient:
             _LOGGER.debug("Could not parse hidden fields from response: %s", exc)
         return fields
 
-    def _postback(self, url, current_html, event_target, event_argument="",
-                  async_postback=True, extra_fields=None):
+    def _postback(
+        self,
+        url,
+        current_html,
+        event_target,
+        event_argument="",
+        async_postback=True,
+        extra_fields=None,
+    ):
         """Perform one ASP.NET postback, carrying over the current page's
         hidden fields, and return the resulting page HTML for the next step.
 
@@ -828,7 +879,8 @@ class WemPortalExpertClient:
             _LOGGER.debug(
                 "Expert navigation: no page state field to carry into postback %s "
                 "(previous response had %d hidden fields).",
-                event_target, len(fields),
+                event_target,
+                len(fields),
             )
         fields["__EVENTTARGET"] = event_target
         fields["__EVENTARGUMENT"] = event_argument
@@ -873,25 +925,34 @@ class WemPortalExpertClient:
                 "Accept-Language": WEB_ACCEPT_LANGUAGE,
             }
         if self._export_hook is not None:
-            self._export_hook(event_target, url, dict(fields), dict(headers), self.session)
+            self._export_hook(
+                event_target, url, dict(fields), dict(headers), self.session
+            )
         if async_postback:
             resp = self.session.post(
-                url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+                url,
+                data=fields,
+                timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
                 headers=headers,
             )
         else:
             # Full postback ending in a 302 -> follow it to the reloaded
             # page, whose HTML carries the fresh state for the next step.
             resp = self.session.post(
-                url, data=fields, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-                allow_redirects=True, headers=headers,
+                url,
+                data=fields,
+                timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+                allow_redirects=True,
+                headers=headers,
             )
         self._check_response(resp, "navigation postback")
         if WEB_LOGIN_URL.lower() in resp.url.lower():
             raise AuthError("Expert client: session expired during navigation.")
         _LOGGER.debug(
             "Expert navigation: postback %s (async=%s) -> %d bytes, delta=%s, pagestate=%s",
-            event_target, async_postback, len(resp.text),
+            event_target,
+            async_postback,
+            len(resp.text),
             "|hiddenField|" in resp.text,
             self._has_viewstate(self._hidden_fields(resp.text)),
         )
@@ -1013,7 +1074,9 @@ class WemPortalExpertClient:
                     raise
                 except Exception as exc:  # pylint: disable=broad-except
                     _LOGGER.warning(
-                        "Expert auto-poll: reading %s failed: %s", short_ev(entityvalue), exc
+                        "Expert auto-poll: reading %s failed: %s",
+                        short_ev(entityvalue),
+                        exc,
                     )
                     result[entityvalue] = None
         finally:
@@ -1057,7 +1120,8 @@ class WemPortalExpertClient:
                 except Exception as exc:  # pylint: disable=broad-except
                     _LOGGER.warning(
                         "Expert discovery: module %s failed: %s",
-                        module.get("label"), exc,
+                        module.get("label"),
+                        exc,
                     )
                     continue
                 for param in parse_parameter_list(html_text):
@@ -1086,7 +1150,8 @@ class WemPortalExpertClient:
         index = str(module.get("index"))
         icon_menu_state = EXPERT_MODULE_ICONMENU_STATE_TEMPLATE % index
         self._nav_html = self._postback(
-            WEB_MAIN_URL, self._nav_html,
+            WEB_MAIN_URL,
+            self._nav_html,
             event_target=EXPERT_MODULE_MENU_TARGET,
             event_argument=index,
             extra_fields={EXPERT_MODULE_ICONMENU_STATE_FIELD: icon_menu_state},
@@ -1096,13 +1161,15 @@ class WemPortalExpertClient:
             _LOGGER.debug(
                 "Expert discovery: module %s -> %d parameter(s) from the "
                 "postback response; no extra request needed.",
-                module.get("label"), delta_rows,
+                module.get("label"),
+                delta_rows,
             )
             return self._nav_html
 
         self._check_cooldown()
         resp = self.session.get(
-            WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            WEB_MAIN_URL,
+            timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers={
                 "Referer": WEB_MAIN_URL,
                 "Accept": WEB_ACCEPT_NAV,
@@ -1117,8 +1184,10 @@ class WemPortalExpertClient:
             "Expert discovery: module %s -> postback response had no editable "
             "rows (%d bytes); GET Default.aspx yielded %d parameter(s) "
             "(%d bytes).",
-            module.get("label"), len(self._nav_html or ""),
-            len(parse_parameter_list(resp.text)), len(resp.text),
+            module.get("label"),
+            len(self._nav_html or ""),
+            len(parse_parameter_list(resp.text)),
+            len(resp.text),
         )
         return resp.text
 
@@ -1174,8 +1243,11 @@ class WemPortalExpertClient:
             self._check_abort()
             resp = self.session.post(
                 EXPERT_PARAMETER_URL,
-                params={"entityvalue": entityvalue, "readdata": "True",
-                        "rwndrnd": str(random.random())},
+                params={
+                    "entityvalue": entityvalue,
+                    "readdata": "True",
+                    "rwndrnd": str(random.random()),
+                },
                 data=post_data,
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
                 headers={
@@ -1200,7 +1272,9 @@ class WemPortalExpertClient:
                     f"expected {value_f}. The portal may have rejected the value."
                 )
             _LOGGER.info(
-                "Expert parameter %s written and verified: %s", short_ev(entityvalue), value_f
+                "Expert parameter %s written and verified: %s",
+                short_ev(entityvalue),
+                value_f,
             )
             return verify
         finally:
@@ -1222,7 +1296,9 @@ class WemPortalExpertClient:
                 "(must be a long hex string; check the configured ID)"
             )
 
-    def _fetch_form(self, entityvalue: str, max_attempts: int = None) -> ExpertParameterState:
+    def _fetch_form(
+        self, entityvalue: str, max_attempts: int = None
+    ) -> ExpertParameterState:
         """GET + parse the edit form on the already logged-in session.
 
         Demand-driven live-value loading: after selecting the module the
@@ -1248,8 +1324,11 @@ class WemPortalExpertClient:
             self._check_cooldown()
             resp = self.session.get(
                 EXPERT_PARAMETER_URL,
-                params={"entityvalue": entityvalue, "readdata": "True",
-                        "rwndrnd": str(random.random())},
+                params={
+                    "entityvalue": entityvalue,
+                    "readdata": "True",
+                    "rwndrnd": str(random.random()),
+                },
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
                 headers={
                     "Referer": WEB_MAIN_URL,
@@ -1259,7 +1338,9 @@ class WemPortalExpertClient:
             )
             self._check_response(resp, "parameter dialog")
             if WEB_LOGIN_URL.lower() in resp.url.lower():
-                raise AuthError("Expert client: redirected to login when fetching the form.")
+                raise AuthError(
+                    "Expert client: redirected to login when fetching the form."
+                )
             # Remember the exact URL this form was served at, so a
             # following write POST can reference it as Referer (confirmed
             # via HAR: the write's Referer is the same URL - including
@@ -1269,7 +1350,10 @@ class WemPortalExpertClient:
                 state = self.parse_parameter_form(resp.text)
                 _LOGGER.debug(
                     "Expert parameter %s: current=%s range=%s..%s (attempt %d)",
-                    short_ev(entityvalue), state.current, state.min_value, state.max_value,
+                    short_ev(entityvalue),
+                    state.current,
+                    state.min_value,
+                    state.max_value,
                     attempt + 1,
                 )
                 return state
@@ -1281,7 +1365,10 @@ class WemPortalExpertClient:
                 last_error = exc
                 _LOGGER.debug(
                     "Expert parameter %s not ready on attempt %d/%d: %s",
-                    short_ev(entityvalue), attempt + 1, max_attempts, exc,
+                    short_ev(entityvalue),
+                    attempt + 1,
+                    max_attempts,
+                    exc,
                 )
                 if attempt < max_attempts - 1:
                     self._poll_live_values_once()
@@ -1373,7 +1460,9 @@ try:
             # the installation-specific raw id shouldn't leak into files
             # people share for debugging. number.py migrates entities from
             # the old raw-id format on setup, preserving entity_id/history.
-            self._attr_unique_id = f"{config_entry.entry_id}:expert:{ev_digest(entityvalue)}"
+            self._attr_unique_id = (
+                f"{config_entry.entry_id}:expert:{ev_digest(entityvalue)}"
+            )
             self._attr_native_value = None
             # Guards against starting a second write while one is still
             # running in the background (the write takes roughly 5-15s).
@@ -1497,6 +1586,7 @@ try:
         async def _async_write_in_background(self, value: float) -> None:
             """Perform the actual (slow) write off the service-call path."""
             from .expert_options import expert_client_options
+
             client_opts = expert_client_options(self._config_entry.options)
 
             def _do_write():
@@ -1557,7 +1647,9 @@ try:
                 self._attr_native_max_value = state.max_value
             self.async_write_ha_state()
             _LOGGER.info(
-                "Expert parameter %s set and verified: %s", self._attr_name, state.current
+                "Expert parameter %s set and verified: %s",
+                self._attr_name,
+                state.current,
             )
             self._notify(f"{self._attr_name} set to {state.current}.", success=True)
 

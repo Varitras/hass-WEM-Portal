@@ -94,8 +94,9 @@ def test_value_path_retries_a_request_that_never_arrived():
     session = FlakySession(failures=1)
     api = _api(session)
 
-    response = api.make_api_call("https://example.invalid/read", data={"x": 1},
-                                 retry_transport=True)
+    response = api.make_api_call(
+        "https://example.invalid/read", data={"x": 1}, retry_transport=True
+    )
 
     assert response is session.final
     assert session.attempts == 2, "the failed attempt was not retried"
@@ -109,8 +110,9 @@ def test_the_retry_does_not_re_authenticate():
     """
     api = _api(FlakySession(failures=1))
 
-    api.make_api_call("https://example.invalid/read", data={"x": 1},
-                      retry_transport=True)
+    api.make_api_call(
+        "https://example.invalid/read", data={"x": 1}, retry_transport=True
+    )
 
     assert api.logins == []
 
@@ -127,8 +129,12 @@ def test_transport_retry_does_not_need_the_session_retry():
     session = FlakySession(failures=1)
     api = _api(session)
 
-    api.make_api_call("https://example.invalid/read", data={"x": 1},
-                      do_retry=False, retry_transport=True)
+    api.make_api_call(
+        "https://example.invalid/read",
+        data={"x": 1},
+        do_retry=False,
+        retry_transport=True,
+    )
 
     assert session.attempts == 2
     assert api.logins == []
@@ -139,8 +145,9 @@ def test_a_second_failure_gives_up_instead_of_looping():
     api = _api(session)
 
     with pytest.raises(exceptions.WemPortalError):
-        api.make_api_call("https://example.invalid/read", data={"x": 1},
-                          retry_transport=True)
+        api.make_api_call(
+            "https://example.invalid/read", data={"x": 1}, retry_transport=True
+        )
 
     assert session.attempts == 2, "one retry, not a loop"
 
@@ -155,8 +162,7 @@ def test_requests_outside_the_value_path_are_not_retried():
     api = _api(session)
 
     with pytest.raises(exceptions.WemPortalError):
-        api.make_api_call("https://example.invalid/stats", data={"x": 1},
-                          do_retry=True)
+        api.make_api_call("https://example.invalid/stats", data={"x": 1}, do_retry=True)
 
     assert session.attempts == 1
 
@@ -165,8 +171,7 @@ def test_transport_failure_does_not_claim_a_server_answer():
     api = _api(FlakySession(failures=99))
 
     with pytest.raises(exceptions.WemPortalError) as excinfo:
-        api.make_api_call("https://example.invalid/read", data={"x": 1},
-                          do_retry=False)
+        api.make_api_call("https://example.invalid/read", data={"x": 1}, do_retry=False)
 
     message = str(excinfo.value)
     assert "Server returned status code" not in message, (
@@ -185,8 +190,7 @@ def test_a_real_server_error_still_reports_the_server():
     api = _api(session)
 
     with pytest.raises(exceptions.WemPortalError) as excinfo:
-        api.make_api_call("https://example.invalid/read", data={"x": 1},
-                          do_retry=False)
+        api.make_api_call("https://example.invalid/read", data={"x": 1}, do_retry=False)
 
     assert "Server returned status code: 9" in str(excinfo.value)
     assert excinfo.value.server_status == 9
@@ -202,8 +206,7 @@ def test_expired_session_still_re_authenticates_and_retries():
     api = _api(session)
 
     with pytest.raises(exceptions.WemPortalError):
-        api.make_api_call("https://example.invalid/read", data={"x": 1},
-                          do_retry=True)
+        api.make_api_call("https://example.invalid/read", data={"x": 1}, do_retry=True)
 
     assert api.logins == [1], "the expired-session retry stopped re-authenticating"
     assert session.attempts == 2

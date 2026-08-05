@@ -1,4 +1,4 @@
-""" Exceptions for the wemportal component."""
+"""Exceptions for the wemportal component."""
 
 from homeassistant.exceptions import HomeAssistantError
 

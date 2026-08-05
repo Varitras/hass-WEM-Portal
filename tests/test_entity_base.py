@@ -34,10 +34,17 @@ ALLOWED_OVERRIDES = {"sensor"}
 def _entity(cls, reachable=True, **overrides):
     """One entity of `cls`, built without Home Assistant."""
     row = {
-        "value": 1.0, "unit": "°C", "friendlyName": "Pump",
-        "ParameterID": "P1", "ModuleIndex": 0, "ModuleType": 1,
-        "min_value": 0.0, "max_value": 100.0, "step": 1,
-        "options": ["0", "1"], "optionsNames": ["Aus", "Ein"],
+        "value": 1.0,
+        "unit": "°C",
+        "friendlyName": "Pump",
+        "ParameterID": "P1",
+        "ModuleIndex": 0,
+        "ModuleType": 1,
+        "min_value": 0.0,
+        "max_value": 100.0,
+        "step": 1,
+        "options": ["0", "1"],
+        "optionsNames": ["Aus", "Ein"],
     }
     row.update(overrides)
     # The status row is what device_is_reachable() reads; "offline" is one of

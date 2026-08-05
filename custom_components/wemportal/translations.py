@@ -1,5 +1,6 @@
 """Translations for WEM Portal."""
 
+
 def friendly_name_mapper(value: str) -> str:
     friendly_name_dict = {
         "pp_beginn": "party_beginn",
@@ -109,7 +110,9 @@ def translate(language: str, value: str) -> str:
 
     if language in vocab:
         # Sort replacements by length descending so longer compound words match first
-        replacements = sorted(vocab[language].items(), key=lambda x: len(x[0]), reverse=True)
+        replacements = sorted(
+            vocab[language].items(), key=lambda x: len(x[0]), reverse=True
+        )
 
         # Use placeholders to prevent cascading translation bugs
         placeholders = {}

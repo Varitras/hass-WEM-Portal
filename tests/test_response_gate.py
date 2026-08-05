@@ -264,23 +264,23 @@ def test_the_gate_is_where_the_status_is_actually_handled(module):
 # DIFFERENT response, and it would have said yes to one in a branch that never
 # runs for this request.
 
-GUARDED = '''
+GUARDED = """
 class C:
     def f(self):
         r = self.session.get("u")
         self._check_response(r, "page")
-'''
+"""
 
-OTHER_RESPONSE = '''
+OTHER_RESPONSE = """
 class C:
     def f(self):
         first = self.session.get("u")
         self._check_response(first, "page")
         second = self.session.post("u")
         return second
-'''
+"""
 
-GATE_IN_ANOTHER_BRANCH = '''
+GATE_IN_ANOTHER_BRANCH = """
 class C:
     def f(self, flag):
         if flag:
@@ -289,34 +289,34 @@ class C:
         else:
             fresh = self.session.get("u")
         return fresh
-'''
+"""
 
-DISCARDED = '''
+DISCARDED = """
 class C:
     def f(self):
         self.session.post("u")
         self._check_response(None, "page")
-'''
+"""
 
-RETURNED = '''
+RETURNED = """
 class C:
     def f(self):
         return self.session.get("u").text
-'''
+"""
 
 # The two shapes that look identical to a scan which only asks "is this name
 # ever handed to the gate": one is a real gap, the other is correct code that
 # exists in expert_writer._postback today.
-REUSED_NAME = '''
+REUSED_NAME = """
 class C:
     def f(self):
         resp = self.session.get("u")
         self._check_response(resp, "page")
         resp = self.session.post("u")
         return resp.text
-'''
+"""
 
-EITHER_BRANCH = '''
+EITHER_BRANCH = """
 class C:
     def f(self, flag):
         if flag:
@@ -325,7 +325,7 @@ class C:
             resp = self.session.post("u", allow_redirects=True)
         self._check_response(resp, "navigation postback")
         return resp.text
-'''
+"""
 
 
 def test_the_scan_accepts_a_request_whose_own_response_is_checked():

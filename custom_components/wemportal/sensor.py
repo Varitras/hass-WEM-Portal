@@ -14,7 +14,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import MAX_LENGTH_STATE_STATE, EntityCategory
 
 from .const import _LOGGER, GITHUB_PROJECT_URL
-from .utils import (device_is_reachable, device_model, fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
+from .utils import (
+    device_is_reachable,
+    device_model,
+    fix_value_and_uom,
+    uom_to_device_class,
+    uom_to_state_class,
+    build_device_info,
+)
 from .entity import WemPortalEntity
 
 
@@ -103,7 +110,9 @@ def _report_unreadable_value(name, value) -> None:
         'Cannot read %r as a number for "%s", so it shows as unknown. If the '
         "WEM Portal shows something meaningful there, please report that word "
         "at %s - it is probably a state this integration does not know yet.",
-        value, name, GITHUB_PROJECT_URL,
+        value,
+        name,
+        GITHUB_PROJECT_URL,
     )
 
 
@@ -379,7 +388,9 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         if isinstance(val, str):
             val = val.strip()
             if val == "":
-                _LOGGER.debug('Empty value for "%s" this cycle -> unknown', self._attr_name)
+                _LOGGER.debug(
+                    'Empty value for "%s" this cycle -> unknown', self._attr_name
+                )
                 return None
             if val.startswith("{"):
                 summary = _schedule_summary(self._current_row())
@@ -425,7 +436,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             'Init sensor: %s: "%s" [%s]',
             self._attr_name,
             self._attr_native_value,
-            self._attr_native_unit_of_measurement
+            self._attr_native_unit_of_measurement,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -440,8 +451,13 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         await super().async_added_to_hass()
         if self._attr_native_unit_of_measurement in (None, ""):
             last_sensor_data = await self.async_get_last_sensor_data()
-            if last_sensor_data is not None and last_sensor_data.native_unit_of_measurement:
-                self._attr_native_unit_of_measurement = last_sensor_data.native_unit_of_measurement
+            if (
+                last_sensor_data is not None
+                and last_sensor_data.native_unit_of_measurement
+            ):
+                self._attr_native_unit_of_measurement = (
+                    last_sensor_data.native_unit_of_measurement
+                )
                 _LOGGER.debug(
                     "Restored unit %s for %s from previous session",
                     self._attr_native_unit_of_measurement,
@@ -452,10 +468,15 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
     def device_info(self) -> DeviceInfo:
         """Get device information."""
         sw_version = None
-        if hasattr(self.coordinator.api, "api_version") and self.coordinator.api.api_version:
+        if (
+            hasattr(self.coordinator.api, "api_version")
+            and self.coordinator.api.api_version
+        ):
             sw_version = self.coordinator.api.api_version
         return build_device_info(
-            self._config_entry.entry_id, self._device_id, sw_version=sw_version,
+            self._config_entry.entry_id,
+            self._device_id,
+            sw_version=sw_version,
             model=device_model(self.coordinator.api, self._device_id),
         )
 
@@ -477,9 +498,10 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         """Handle updated data from the coordinator."""
 
         try:
-
             entity_data = self.coordinator.data[self._device_id][self._data_key]
-            val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
+            val, uom = fix_value_and_uom(
+                entity_data.get("value"), entity_data.get("unit")
+            )
             self._attr_native_value = self._validated_native_value(val, uom)
 
             # set uom if it references a valid non-trivial unit of measurement
@@ -490,7 +512,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 'Update sensor: %s: "%s" [%s]',
                 self._attr_name,
                 self._attr_native_value,
-                self._attr_native_unit_of_measurement
+                self._attr_native_unit_of_measurement,
             )
 
         except KeyError:
@@ -503,7 +525,10 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
     @property
     def entity_category(self):
         """Return the entity category."""
-        if any(x in self._attr_unique_id for x in ["ConnectionStatus", "HasErrors", "ErrorMessages"]):
+        if any(
+            x in self._attr_unique_id
+            for x in ["ConnectionStatus", "HasErrors", "ErrorMessages"]
+        ):
             return EntityCategory.DIAGNOSTIC
         return None
 
@@ -539,7 +564,9 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             # is where the dropped ones are.
             if "Errors" in entity_data:
                 attr["Errors"] = entity_data["Errors"]
-            if isinstance(entity_data.get("value"), str) and entity_data["value"].startswith("{"):
+            if isinstance(entity_data.get("value"), str) and entity_data[
+                "value"
+            ].startswith("{"):
                 attr["Raw_JSON"] = entity_data["value"]
                 schedule = _readable_schedule(entity_data)
                 if schedule:

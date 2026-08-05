@@ -5,6 +5,7 @@ Author: erikkastelec
 https://github.com/erikkastelec/hass-WEM-Portal
 
 """
+
 from datetime import timedelta
 
 import homeassistant.helpers.config_validation as cv
@@ -41,6 +42,7 @@ from .models import WemPortalConfigEntry, WemPortalData
 from .utils import clamped_scan_interval, deserialize_modules, close_api_sessions
 from homeassistant.helpers import device_registry, entity_registry
 from homeassistant.helpers.service import async_register_admin_service
+
 
 def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):
     """Return unique ID for WEM Portal."""
@@ -85,13 +87,17 @@ def _migrate_device_unique_ids(er, config_entry, device_id, data) -> bool:
         if friendly_name:
             possible_old_ids.append(friendly_name)
             possible_old_ids.append(f"{device_id}-{friendly_name}")
-            possible_old_ids.append(get_wemportal_unique_id(config_entry.entry_id, device_id, friendly_name))
+            possible_old_ids.append(
+                get_wemportal_unique_id(config_entry.entry_id, device_id, friendly_name)
+            )
 
         parameter_id = values.get("ParameterID")
         if parameter_id:
             possible_old_ids.append(parameter_id)
             possible_old_ids.append(f"{device_id}-{parameter_id}")
-            possible_old_ids.append(get_wemportal_unique_id(config_entry.entry_id, device_id, parameter_id))
+            possible_old_ids.append(
+                get_wemportal_unique_id(config_entry.entry_id, device_id, parameter_id)
+            )
 
         # Try to find an entity under any of these old ids
         for old_id in possible_old_ids:
@@ -122,7 +128,9 @@ def _migrate_device_unique_ids(er, config_entry, device_id, data) -> bool:
     return change
 
 
-def _remove_entities_from_a_previous_platform(er, config_entry, device_id, data) -> None:
+def _remove_entities_from_a_previous_platform(
+    er, config_entry, device_id, data
+) -> None:
     """Drop registry entries this integration no longer provides.
 
     A parameter can change platform between releases when we learn what it
@@ -149,7 +157,9 @@ def _remove_entities_from_a_previous_platform(er, config_entry, device_id, data)
                 continue
             _LOGGER.info(
                 "%s is a %s now, not a %s - removing the entity it left behind.",
-                stale, current, platform,
+                stale,
+                current,
+                platform,
             )
             er.async_remove(stale)
 
@@ -169,7 +179,9 @@ async def migrate_unique_ids(
     # others' old unique_ids (and their history) were previously left behind.
     change = False
     for device_id in coordinator.data:
-        if _migrate_device_unique_ids(er, config_entry, device_id, coordinator.data[device_id]):
+        if _migrate_device_unique_ids(
+            er, config_entry, device_id, coordinator.data[device_id]
+        ):
             change = True
         # After the id migration, not before: that step may still move an old
         # entry onto the current unique_id, and removing it first would throw
@@ -193,12 +205,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     # which only sees values entered now - an interval stored by an older
     # release keeps its old, possibly far too small value forever.
     scan_interval = clamped_scan_interval(
-        entry.options, CONF_SCAN_INTERVAL,
-        DEFAULT_CONF_SCAN_INTERVAL_VALUE, MIN_SCAN_INTERVAL_SECONDS,
+        entry.options,
+        CONF_SCAN_INTERVAL,
+        DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+        MIN_SCAN_INTERVAL_SECONDS,
     )
     scan_interval_api = clamped_scan_interval(
-        entry.options, CONF_SCAN_INTERVAL_API,
-        DEFAULT_CONF_SCAN_INTERVAL_API_VALUE, MIN_SCAN_INTERVAL_API_SECONDS,
+        entry.options,
+        CONF_SCAN_INTERVAL_API,
+        DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
+        MIN_SCAN_INTERVAL_API_SECONDS,
     )
     if entry.options.get(CONF_MODE) == "web":
         update_interval = scan_interval
@@ -217,7 +233,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     ]
     device_ids = [device.name for device in devices]
     if not device_ids:
-        _LOGGER.warning("No devices found for %s. Starting first time initialization.", DOMAIN)
+        _LOGGER.warning(
+            "No devices found for %s. Starting first time initialization.", DOMAIN
+        )
     else:
         _LOGGER.info("Found devices for %s: %s", DOMAIN, device_ids)
 
@@ -229,7 +247,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     try:
         modules_store = get_modules_store(hass, entry.entry_id)
         cached_modules_raw = await modules_store.async_load()
-        cached_modules = deserialize_modules(cached_modules_raw) if cached_modules_raw else None
+        cached_modules = (
+            deserialize_modules(cached_modules_raw) if cached_modules_raw else None
+        )
     except Exception as exc:  # pylint: disable=broad-except
         # A corrupted/unreadable cache file must never prevent the
         # integration from starting - worst case, we just lose the
@@ -237,7 +257,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # a full discovery, exactly like a first-ever install.
         _LOGGER.warning(
             "Could not load cached WEM Portal module data, falling back to full "
-            "discovery for this restart: %s", exc
+            "discovery for this restart: %s",
+            exc,
         )
     if cached_modules:
         _LOGGER.info(
@@ -255,7 +276,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     # so nobody loses history at upgrade.
     scraper_device_id = None
     try:
-        scraper_device_id = await get_scraper_device_store(hass, entry.entry_id).async_load()
+        scraper_device_id = await get_scraper_device_store(
+            hass, entry.entry_id
+        ).async_load()
     except Exception as exc:  # pylint: disable=broad-except
         _LOGGER.debug("Could not load stored scraper device id: %s", exc)
 
@@ -311,18 +334,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         )
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # Deliberately NO update listener. Home Assistant deprecated combining one
-    # with a reloading flow method in 2026.6 and rejects it from 2026.12, and
-    # its check is literally `if entry.update_listeners`. Of the sanctioned
-    # ways out, this is the one that holds in every case: the flows reload
-    # explicitly.
-    #
-    # Relying on the listener instead looked equivalent and was not. It only
-    # fires when the entry actually CHANGED, so re-authenticating with the
-    # same password reloaded nothing while the flow still reported success -
-    # and it is registered here, at the end of a successful setup, so a reauth
-    # that fixes a failed setup had no listener to fire at all. That is the
-    # case reauth exists for.
+        # Deliberately NO update listener. Home Assistant deprecated combining one
+        # with a reloading flow method in 2026.6 and rejects it from 2026.12, and
+        # its check is literally `if entry.update_listeners`. Of the sanctioned
+        # ways out, this is the one that holds in every case: the flows reload
+        # explicitly.
+        #
+        # Relying on the listener instead looked equivalent and was not. It only
+        # fires when the entry actually CHANGED, so re-authenticating with the
+        # same password reloaded nothing while the flow still reported success -
+        # and it is registered here, at the end of a successful setup, so a reauth
+        # that fixes a failed setup had no listener to fire at all. That is the
+        # case reauth exists for.
 
         # Expert write access (web): register the service only while the
         # option is enabled. Everything lives in expert_writer.py - the
@@ -429,7 +452,9 @@ def _resolve_expert_entry(hass: HomeAssistant):
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api) -> None:
+def _async_register_expert_service(
+    hass: HomeAssistant, entry: ConfigEntry, api
+) -> None:
     """Register wemportal.set_expert_parameter (idempotent).
 
     The handler does NOT close over `entry`/`api`; it resolves the target
@@ -498,6 +523,7 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             write belongs to is gone, whatever its id says.
             """
             from .expert_writer import ExpertOperationAborted
+
             reason = data.why_not_current(target_entry)
             if reason is not None:
                 raise ExpertOperationAborted(
@@ -508,6 +534,7 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
             # Own short-lived session per write; honors the shared 403
             # cooldown (check) and ENGAGES it on a 403 (activate).
             from .expert_options import expert_client_options
+
             _raise_if_unloaded()
             client = WemPortalExpertClient(
                 target_entry.data.get(CONF_USERNAME),
@@ -546,11 +573,15 @@ def _async_register_expert_service(hass: HomeAssistant, entry: ConfigEntry, api)
                 lock.release()
         _LOGGER.info(
             "Expert parameter %s set to %s (allowed range %s..%s)",
-            ev_short, state.current, state.min_value, state.max_value,
+            ev_short,
+            state.current,
+            state.min_value,
+            state.max_value,
         )
         if target_entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
             await hass.services.async_call(
-                "persistent_notification", "create",
+                "persistent_notification",
+                "create",
                 {
                     "title": "WEM Portal expert write",
                     "message": f"{ev_short} set to {state.current}.",
@@ -605,7 +636,9 @@ def _backfill_account_unique_id(hass: HomeAssistant, entry: ConfigEntry) -> None
 
     wanted = account_unique_id(entry.data.get(CONF_USERNAME))
     if not wanted:
-        _LOGGER.debug("No username on entry %s; leaving it without an id.", entry.entry_id)
+        _LOGGER.debug(
+            "No username on entry %s; leaving it without an id.", entry.entry_id
+        )
         return
     taken = {
         other.unique_id

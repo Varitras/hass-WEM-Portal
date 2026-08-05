@@ -51,9 +51,7 @@ def date_to_epoch(value: date) -> float:
     local midnight would shift every write by the UTC offset and, east of
     Greenwich, land the previous day.
     """
-    return datetime(
-        value.year, value.month, value.day, tzinfo=timezone.utc
-    ).timestamp()
+    return datetime(value.year, value.month, value.day, tzinfo=timezone.utc).timestamp()
 
 
 async def async_setup_entry(
@@ -97,9 +95,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
 
         self._attr_native_value = epoch_to_date(entity_data.get("value"))
 
-        _LOGGER.debug(
-            "Init date: %s: %s", self._attr_name, self._attr_native_value
-        )
+        _LOGGER.debug("Init date: %s: %s", self._attr_name, self._attr_native_value)
 
     def _companion_dates(self) -> dict:
         """The other date parameters of this module, at their current value.
@@ -125,7 +121,8 @@ class WemPortalDate(WemPortalEntity, DateEntity):
             if row.get("platform") != "date":
                 continue
             if (row.get("ModuleIndex"), row.get("ModuleType")) != (
-                self._module_index, self._module_type
+                self._module_index,
+                self._module_type,
             ):
                 continue
             try:

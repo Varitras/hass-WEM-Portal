@@ -64,5 +64,7 @@ def expert_client_options(options):
     return {
         "module_arg": module_arg,
         "enable_module_nav": bool(options.get(CONF_EXPERT_ENABLE_MODULE_NAV, False)),
-        "enable_security_code": bool(options.get(CONF_EXPERT_ENABLE_SECURITY_CODE, False)),
+        "enable_security_code": bool(
+            options.get(CONF_EXPERT_ENABLE_SECURITY_CODE, False)
+        ),
     }

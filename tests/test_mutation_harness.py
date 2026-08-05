@@ -115,13 +115,22 @@ def test_the_file_is_restored_even_when_the_run_explodes(tmp_path, monkeypatch):
         mutate, "collect_test_locations", lambda: {"anything": {"tests/x.py"}}
     )
     monkeypatch.setattr(
-        mutate, "run_tests",
+        mutate,
+        "run_tests",
         lambda selector, paths=None: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     plan = tmp_path / "plan.json"
     plan.write_text(
-        json.dumps([{"path": "module.py", "old": "value = 1", "new": "value = 2",
-                     "tests": "anything"}]),
+        json.dumps(
+            [
+                {
+                    "path": "module.py",
+                    "old": "value = 1",
+                    "new": "value = 2",
+                    "tests": "anything",
+                }
+            ]
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr("sys.argv", ["mutate.py", str(plan)])
@@ -271,9 +280,7 @@ tests/test_gamma.py::TestGroup::test_three
 
 
 def _locations(monkeypatch):
-    monkeypatch.setattr(
-        mutate.subprocess, "run", lambda *a, **k: _Result(0, COLLECTED)
-    )
+    monkeypatch.setattr(mutate.subprocess, "run", lambda *a, **k: _Result(0, COLLECTED))
     return mutate.collect_test_locations()
 
 
@@ -310,9 +317,7 @@ def test_the_selector_resolves_the_way_pytest_would(monkeypatch):
 def test_a_failed_collection_stops_the_run(monkeypatch):
     """Without the map every mutation would silently fall back to the whole
     suite, or worse, to nothing."""
-    monkeypatch.setattr(
-        mutate.subprocess, "run", lambda *a, **k: _Result(2, "boom")
-    )
+    monkeypatch.setattr(mutate.subprocess, "run", lambda *a, **k: _Result(2, "boom"))
 
     with pytest.raises(SystemExit) as excinfo:
         mutate.collect_test_locations()
@@ -361,8 +366,16 @@ def test_a_dead_selector_stops_before_anything_is_mutated(tmp_path, monkeypatch)
     )
     plan = tmp_path / "plan.json"
     plan.write_text(
-        json.dumps([{"path": "module.py", "old": "value = 1", "new": "value = 2",
-                     "tests": "nothing_matches_this"}]),
+        json.dumps(
+            [
+                {
+                    "path": "module.py",
+                    "old": "value = 1",
+                    "new": "value = 2",
+                    "tests": "nothing_matches_this",
+                }
+            ]
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr("sys.argv", ["mutate.py", str(plan)])

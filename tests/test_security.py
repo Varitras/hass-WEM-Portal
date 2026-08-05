@@ -84,7 +84,10 @@ def test_login_error_message_excludes_response_body(monkeypatch, caplog):
     api = WemPortalApi("user@example.org", "secret")
     monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: FakeSession(response))
 
-    with caplog.at_level(logging.WARNING), pytest.raises(exceptions.AuthError) as excinfo:
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(exceptions.AuthError) as excinfo,
+    ):
         api.api_login()
 
     message = str(excinfo.value)
@@ -234,7 +237,8 @@ def test_no_module_imports_the_expert_client_at_module_level():
             elif isinstance(node, ast.Import):
                 offenders += [
                     f"{module.name}:{node.lineno}"
-                    for alias in node.names if "expert_writer" in alias.name
+                    for alias in node.names
+                    if "expert_writer" in alias.name
                 ]
 
     assert not offenders, (
@@ -260,8 +264,18 @@ def test_the_documented_slot_count_is_the_enforced_one():
 
     from custom_components.wemportal.const import EXPERT_SLOT_COUNT
 
-    spelled = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
-               6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+    spelled = {
+        1: "one",
+        2: "two",
+        3: "three",
+        4: "four",
+        5: "five",
+        6: "six",
+        7: "seven",
+        8: "eight",
+        9: "nine",
+        10: "ten",
+    }
     word = spelled.get(EXPERT_SLOT_COUNT)
     assert word, (
         f"EXPERT_SLOT_COUNT is {EXPERT_SLOT_COUNT} and this test only knows "
@@ -275,8 +289,9 @@ def test_the_documented_slot_count_is_the_enforced_one():
     )
 
     strings = json.loads(
-        (root / "custom_components" / "wemportal" / "strings.json")
-        .read_text(encoding="utf-8")
+        (root / "custom_components" / "wemportal" / "strings.json").read_text(
+            encoding="utf-8"
+        )
     )
     description = strings["services"]["set_expert_parameter"]["description"]
     assert f"one of the {word} expert slots" in description, (
@@ -292,8 +307,9 @@ def test_the_service_description_states_the_single_account_limit():
 
     root = Path(__file__).resolve().parents[1]
     strings = json.loads(
-        (root / "custom_components" / "wemportal" / "strings.json")
-        .read_text(encoding="utf-8")
+        (root / "custom_components" / "wemportal" / "strings.json").read_text(
+            encoding="utf-8"
+        )
     )
     description = strings["services"]["set_expert_parameter"]["description"]
 

@@ -46,16 +46,16 @@ def _uid(key):
 
 
 def _run(registry, data):
-    _remove_entities_from_a_previous_platform(
-        registry, FakeConfigEntry(), DEVICE, data
-    )
+    _remove_entities_from_a_previous_platform(registry, FakeConfigEntry(), DEVICE, data)
 
 
 def test_the_entity_left_behind_by_a_platform_change_is_removed():
-    registry = FakeRegistry({
-        ("switch", _uid("Heat pump-U_Beginn")): "switch.heat_pump_holiday_begin",
-        ("date", _uid("Heat pump-U_Beginn")): "date.heat_pump_holiday_begin",
-    })
+    registry = FakeRegistry(
+        {
+            ("switch", _uid("Heat pump-U_Beginn")): "switch.heat_pump_holiday_begin",
+            ("date", _uid("Heat pump-U_Beginn")): "date.heat_pump_holiday_begin",
+        }
+    )
 
     _run(registry, {"Heat pump-U_Beginn": {"platform": "date"}})
 
@@ -63,9 +63,11 @@ def test_the_entity_left_behind_by_a_platform_change_is_removed():
 
 
 def test_the_entity_that_is_currently_correct_is_never_removed():
-    registry = FakeRegistry({
-        ("date", _uid("Heat pump-U_Beginn")): "date.heat_pump_holiday_begin",
-    })
+    registry = FakeRegistry(
+        {
+            ("date", _uid("Heat pump-U_Beginn")): "date.heat_pump_holiday_begin",
+        }
+    )
 
     _run(registry, {"Heat pump-U_Beginn": {"platform": "date"}})
 
@@ -73,9 +75,11 @@ def test_the_entity_that_is_currently_correct_is_never_removed():
 
 
 def test_an_unchanged_platform_removes_nothing():
-    registry = FakeRegistry({
-        ("switch", _uid("Heat pump-Pump")): "switch.heat_pump_pump",
-    })
+    registry = FakeRegistry(
+        {
+            ("switch", _uid("Heat pump-Pump")): "switch.heat_pump_pump",
+        }
+    )
 
     _run(registry, {"Heat pump-Pump": {"platform": "switch"}})
 
@@ -94,12 +98,16 @@ def test_only_our_own_unique_ids_are_touched():
     Another config entry's copy of the same parameter is the same mistake one
     step further out.
     """
-    registry = FakeRegistry({
-        ("switch", "Heat pump-U_Beginn"): "switch.registered_under_the_bare_key",
-        ("switch", "some-other-integrations-id"): "switch.someone_elses",
-        ("switch", get_wemportal_unique_id("entry-2", DEVICE, "Heat pump-U_Beginn")):
-            "switch.other_entry",
-    })
+    registry = FakeRegistry(
+        {
+            ("switch", "Heat pump-U_Beginn"): "switch.registered_under_the_bare_key",
+            ("switch", "some-other-integrations-id"): "switch.someone_elses",
+            (
+                "switch",
+                get_wemportal_unique_id("entry-2", DEVICE, "Heat pump-U_Beginn"),
+            ): "switch.other_entry",
+        }
+    )
 
     _run(registry, {"Heat pump-U_Beginn": {"platform": "date"}})
 
@@ -127,9 +135,11 @@ def test_a_plain_counter_in_the_data_is_skipped():
 def test_a_value_without_a_platform_counts_as_a_sensor():
     """The default the platforms themselves use, so a sensor is not mistaken
     for a leftover and deleted."""
-    registry = FakeRegistry({
-        ("sensor", _uid("Heat pump-Outside")): "sensor.heat_pump_outside",
-    })
+    registry = FakeRegistry(
+        {
+            ("sensor", _uid("Heat pump-Outside")): "sensor.heat_pump_outside",
+        }
+    )
 
     _run(registry, {"Heat pump-Outside": {"friendlyName": "Outside"}})
 

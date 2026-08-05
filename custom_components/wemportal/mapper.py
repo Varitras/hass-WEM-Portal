@@ -27,7 +27,7 @@ def get_min_max(param_id: str, data_type: int, min_val, max_val) -> tuple[float,
 
 def _tokenize(text):
     """The words of a name, punctuation removed, for comparing two names."""
-    return set(re.sub(r'[^a-zA-Z0-9äöüß]', ' ', text.lower()).split())
+    return set(re.sub(r"[^a-zA-Z0-9äöüß]", " ", text.lower()).split())
 
 
 def _friendly_name(language: str, param_id: str, module_name: str) -> str:
@@ -47,7 +47,9 @@ def _friendly_name(language: str, param_id: str, module_name: str) -> str:
     return f"{translated_module_name} {translated_name}"
 
 
-def _describe_value(param_id, module, device_module, parameter, value, language) -> tuple[str, dict]:
+def _describe_value(
+    param_id, module, device_module, parameter, value, language
+) -> tuple[str, dict]:
     """Flatten one portal value into the description the rest of the mapper
     works with. Raises on malformed portal data just like the inline code it
     replaces - the caller's guard turns that into a skipped value."""
@@ -171,7 +173,7 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
         sensor["ParameterID"],
         data_type,
         parameter.get("MinValue"),
-        parameter.get("MaxValue")
+        parameter.get("MaxValue"),
     )
 
     if data_type in (WemDataType.NUMBER_STEP_HALF, WemDataType.NUMBER_STEP_ONE):
@@ -250,7 +252,9 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> d
             try:
                 param_id = value["ParameterID"]
             except (KeyError, TypeError) as exc:
-                _LOGGER.warning("Skipping malformed value entry in API response: %s", exc)
+                _LOGGER.warning(
+                    "Skipping malformed value entry in API response: %s", exc
+                )
                 continue
             if param_id not in device_module["parameters"]:
                 continue
@@ -285,7 +289,9 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> d
     return parsed_sensors
 
 
-def _merge_into_scraped(device_id, key, sensor, language, scraping_mapper, api_data) -> None:
+def _merge_into_scraped(
+    device_id, key, sensor, language, scraping_mapper, api_data
+) -> None:
     """Feed an API reading into the scraped entity that shows the same value,
     so both sources keep one entity instead of two that drift apart."""
     param_id = sensor["ParameterID"]
@@ -296,7 +302,9 @@ def _merge_into_scraped(device_id, key, sensor, language, scraping_mapper, api_d
             scraped_entity_id = scraped_data.get("ParameterID", "")
             try:
                 scraped_part = scraped_entity_id.split("-")[1]
-                translated_scraped = translate(language, friendly_name_mapper(scraped_part))
+                translated_scraped = translate(
+                    language, friendly_name_mapper(scraped_part)
+                )
 
                 sensor_words = _tokenize(sensor["friendlyName"])
                 scraped_words = _tokenize(translated_scraped)
@@ -318,15 +326,11 @@ def _merge_into_scraped(device_id, key, sensor, language, scraping_mapper, api_d
         api_value = sensor.get("value")
         previous = api_data[device_id].get(scraped_entity, {})
         sensor_dict = {
-            "value": (
-                previous.get("value") if api_value is None else api_value
-            ),
+            "value": (previous.get("value") if api_value is None else api_value),
             "name": previous.get("name"),
             "unit": previous.get("unit", sensor.get("unit")),
             "icon": previous.get("icon", uom_to_icon(sensor.get("unit"))),
-            "friendlyName": previous.get(
-                "friendlyName", sensor.get("friendlyName")
-            ),
+            "friendlyName": previous.get("friendlyName", sensor.get("friendlyName")),
             "ParameterID": scraped_entity,
             "platform": "sensor",
         }
@@ -353,7 +357,9 @@ def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
     }
 
 
-def _clear_unanswered(device_id, values_json, modules_dict, parsed_sensors, api_data) -> None:
+def _clear_unanswered(
+    device_id, values_json, modules_dict, parsed_sensors, api_data
+) -> None:
     """Stop presenting a reading the portal did not send this cycle.
 
     api_data is only rebuilt by get_devices(), which runs once per session,
@@ -408,7 +414,10 @@ def _clear_unanswered(device_id, values_json, modules_dict, parsed_sensors, api_
             _LOGGER.debug(
                 "Device %s module %s/%s: the portal sent no value for %s; "
                 "their last reading is not current any more.",
-                device_id, module_key[0], module_key[1], ", ".join(sorted(cleared)),
+                device_id,
+                module_key[0],
+                module_key[1],
+                ", ".join(sorted(cleared)),
             )
 
 

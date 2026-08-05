@@ -106,7 +106,8 @@ class WemPortalEntity(CoordinatorEntity):
     def device_info(self) -> DeviceInfo:
         """Get device information."""
         return build_device_info(
-            self._config_entry.entry_id, self._device_id,
+            self._config_entry.entry_id,
+            self._device_id,
             model=device_model(self.coordinator.api, self._device_id),
         )
 

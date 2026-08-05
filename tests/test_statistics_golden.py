@@ -122,95 +122,133 @@ def build_snapshot():
     # A described group and an unnamed one, so both name paths are recorded:
     # the translation with its "Energy" suffix rule, and the numeric fallback
     # map for a group the portal did not name.
-    snapshot["named_and_unnamed_groups"] = _run({
-        API_STATISTICS_REFRESH_URL: [
-            _refresh({"GroupType": 1, "Description": "Heizung"},
-                     {"GroupType": 4, "Description": ""}),
-        ],
-        API_STATISTICS_READ_URL: [
-            _read([_entry(12.5)]),
-            _read([_entry(99.0)]),
-        ],
-    })
+    snapshot["named_and_unnamed_groups"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh(
+                    {"GroupType": 1, "Description": "Heizung"},
+                    {"GroupType": 4, "Description": ""},
+                ),
+            ],
+            API_STATISTICS_READ_URL: [
+                _read([_entry(12.5)]),
+                _read([_entry(99.0)]),
+            ],
+        }
+    )
 
     # A group type outside the fallback map falls back to "Energy <id>".
-    snapshot["unknown_group_id"] = _run({
-        API_STATISTICS_REFRESH_URL: [_refresh({"GroupType": 42, "Description": ""})],
-        API_STATISTICS_READ_URL: [_read([_entry(1.0)])],
-    })
+    snapshot["unknown_group_id"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh({"GroupType": 42, "Description": ""})
+            ],
+            API_STATISTICS_READ_URL: [_read([_entry(1.0)])],
+        }
+    )
 
     # The newest entry is chosen by its Date, not by list position.
-    snapshot["latest_by_date_not_position"] = _run({
-        API_STATISTICS_REFRESH_URL: [_refresh({"GroupType": 1, "Description": "Heizung"})],
-        API_STATISTICS_READ_URL: [
-            _read([
-                _entry(30.0, "2026-04-27T00:00:00"),
-                _entry(10.0, "2026-04-25T00:00:00"),
-            ]),
-        ],
-    })
+    snapshot["latest_by_date_not_position"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh({"GroupType": 1, "Description": "Heizung"})
+            ],
+            API_STATISTICS_READ_URL: [
+                _read(
+                    [
+                        _entry(30.0, "2026-04-27T00:00:00"),
+                        _entry(10.0, "2026-04-25T00:00:00"),
+                    ]
+                ),
+            ],
+        }
+    )
 
     # No values at all: nothing is written, and the group is simply skipped.
-    snapshot["empty_values"] = _run({
-        API_STATISTICS_REFRESH_URL: [_refresh({"GroupType": 1, "Description": "Heizung"})],
-        API_STATISTICS_READ_URL: [_read([])],
-    })
+    snapshot["empty_values"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh({"GroupType": 1, "Description": "Heizung"})
+            ],
+            API_STATISTICS_READ_URL: [_read([])],
+        }
+    )
 
     # A missing reading keeps the previous value rather than reporting 0 -
     # the Energy Dashboard reads a drop to zero on a total_increasing sensor
     # as a meter reset.
     snapshot["missing_value_keeps_the_previous"] = _run(
         {
-            API_STATISTICS_REFRESH_URL: [_refresh({"GroupType": 1, "Description": "Heizung"})],
+            API_STATISTICS_REFRESH_URL: [
+                _refresh({"GroupType": 1, "Description": "Heizung"})
+            ],
             API_STATISTICS_READ_URL: [_read([_entry(None)])],
         },
         existing={DEVICE: {f"{DEVICE}-Energy_1": {"value": 77.0}}},
     )
     # And with no previous value it is skipped entirely rather than invented.
-    snapshot["missing_value_without_history_is_skipped"] = _run({
-        API_STATISTICS_REFRESH_URL: [_refresh({"GroupType": 1, "Description": "Heizung"})],
-        API_STATISTICS_READ_URL: [_read([_entry(None)])],
-    })
+    snapshot["missing_value_without_history_is_skipped"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh({"GroupType": 1, "Description": "Heizung"})
+            ],
+            API_STATISTICS_READ_URL: [_read([_entry(None)])],
+        }
+    )
 
     # No Unit in the response: kWh is the documented default.
-    snapshot["unit_defaults_to_kwh"] = _run({
-        API_STATISTICS_REFRESH_URL: [_refresh({"GroupType": 1, "Description": "Heizung"})],
-        API_STATISTICS_READ_URL: [_read([_entry(5.0)], unit=None)],
-    })
+    snapshot["unit_defaults_to_kwh"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh({"GroupType": 1, "Description": "Heizung"})
+            ],
+            API_STATISTICS_READ_URL: [_read([_entry(5.0)], unit=None)],
+        }
+    )
 
     # Status 3001 means "this group does not apply to this module". It is
     # routine, and it must NOT stop the groups that follow - if it did, the
     # cycle would report no success at all and back-date to the short retry,
     # quadrupling the traffic.
-    snapshot["routine_rejection_does_not_stop_the_rest"] = _run({
-        API_STATISTICS_REFRESH_URL: [
-            _refresh({"GroupType": 1, "Description": "Heizung"},
-                     {"GroupType": 2, "Description": "Warmwasser"}),
-        ],
-        API_STATISTICS_READ_URL: [
-            _Rejected("not valid for this module", WEM_INVALID_PARAMETER_STATUS),
-            _read([_entry(8.0)]),
-        ],
-    })
+    snapshot["routine_rejection_does_not_stop_the_rest"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh(
+                    {"GroupType": 1, "Description": "Heizung"},
+                    {"GroupType": 2, "Description": "Warmwasser"},
+                ),
+            ],
+            API_STATISTICS_READ_URL: [
+                _Rejected("not valid for this module", WEM_INVALID_PARAMETER_STATUS),
+                _read([_entry(8.0)]),
+            ],
+        }
+    )
 
     # Any other per-group error is reported but likewise does not abort the
     # device.
-    snapshot["other_group_error_does_not_stop_the_rest"] = _run({
-        API_STATISTICS_REFRESH_URL: [
-            _refresh({"GroupType": 1, "Description": "Heizung"},
-                     {"GroupType": 2, "Description": "Warmwasser"}),
-        ],
-        API_STATISTICS_READ_URL: [
-            _Rejected("boom", 500),
-            _read([_entry(8.0)]),
-        ],
-    })
+    snapshot["other_group_error_does_not_stop_the_rest"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh(
+                    {"GroupType": 1, "Description": "Heizung"},
+                    {"GroupType": 2, "Description": "Warmwasser"},
+                ),
+            ],
+            API_STATISTICS_READ_URL: [
+                _Rejected("boom", 500),
+                _read([_entry(8.0)]),
+            ],
+        }
+    )
 
     # A failing refresh takes the whole device down, and with no device
     # succeeding the cycle asks to be retried early.
-    snapshot["refresh_failure_shortens_the_retry"] = _run({
-        API_STATISTICS_REFRESH_URL: [_Rejected("portal unavailable", 500)],
-    })
+    snapshot["refresh_failure_shortens_the_retry"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [_Rejected("portal unavailable", 500)],
+        }
+    )
 
     # Two devices, one broken: a partial success must NOT shorten the retry.
     snapshot["partial_success_keeps_the_full_interval"] = _run(
@@ -239,12 +277,14 @@ def build_snapshot():
 
     # A description that already says "energy" must not be given a second
     # "Energy" suffix.
-    snapshot["name_already_contains_energy"] = _run({
-        API_STATISTICS_REFRESH_URL: [
-            _refresh({"GroupType": 1, "Description": "Heating Energy"}),
-        ],
-        API_STATISTICS_READ_URL: [_read([_entry(4.0)])],
-    })
+    snapshot["name_already_contains_energy"] = _run(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh({"GroupType": 1, "Description": "Heating Energy"}),
+            ],
+            API_STATISTICS_READ_URL: [_read([_entry(4.0)])],
+        }
+    )
     return snapshot
 
 
@@ -285,12 +325,16 @@ def test_one_read_per_group_and_one_refresh_per_device():
 def test_a_routine_rejection_still_counts_the_device_as_succeeded():
     """Otherwise the cycle back-dates to the 15-minute retry and the portal
     sees four times the traffic for a condition that is entirely normal."""
-    api, _ = _api({
-        API_STATISTICS_REFRESH_URL: [_refresh({"GroupType": 1, "Description": "x"})],
-        API_STATISTICS_READ_URL: [
-            _Rejected("not valid", WEM_INVALID_PARAMETER_STATUS)
-        ],
-    })
+    api, _ = _api(
+        {
+            API_STATISTICS_REFRESH_URL: [
+                _refresh({"GroupType": 1, "Description": "x"})
+            ],
+            API_STATISTICS_READ_URL: [
+                _Rejected("not valid", WEM_INVALID_PARAMETER_STATUS)
+            ],
+        }
+    )
     before = time.time()
     api.last_statistics_fetch = 0.0
 
@@ -299,9 +343,8 @@ def test_a_routine_rejection_still_counts_the_device_as_succeeded():
     # Not back-dated: the timestamp is "just now", not an hour minus the
     # retry interval.
     assert api.last_statistics_fetch >= before
-    assert (
-        api.last_statistics_fetch
-        > before - (STATISTICS_REFRESH_INTERVAL_SECONDS - STATISTICS_RETRY_INTERVAL_SECONDS)
+    assert api.last_statistics_fetch > before - (
+        STATISTICS_REFRESH_INTERVAL_SECONDS - STATISTICS_RETRY_INTERVAL_SECONDS
     )
 
 

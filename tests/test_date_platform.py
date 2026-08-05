@@ -79,13 +79,24 @@ class _Entry:
 
 
 def _entity(value=BEGIN_EPOCH):
-    data = {"1234": {"Heat pump-U_Beginn": {
-        "friendlyName": "Holiday begin", "ParameterID": "U_Beginn",
-        "value": value, "unit": None, "platform": "date",
-        "ModuleIndex": 0, "ModuleType": 1,
-    }}}
+    data = {
+        "1234": {
+            "Heat pump-U_Beginn": {
+                "friendlyName": "Holiday begin",
+                "ParameterID": "U_Beginn",
+                "value": value,
+                "unit": None,
+                "platform": "date",
+                "ModuleIndex": 0,
+                "ModuleType": 1,
+            }
+        }
+    }
     entity = WemPortalDate(
-        _Coordinator(data), _Entry(), "1234", "Heat pump-U_Beginn",
+        _Coordinator(data),
+        _Entry(),
+        "1234",
+        "Heat pump-U_Beginn",
         data["1234"]["Heat pump-U_Beginn"],
     )
     entity.async_write_ha_state = lambda: None
@@ -95,9 +106,13 @@ def _entity(value=BEGIN_EPOCH):
 def _with_companion(data, value=END_EPOCH, module=(0, 1), platform="date"):
     """A second parameter on the device, next to the one under test."""
     data["1234"]["Heat pump-U_Ende"] = {
-        "friendlyName": "Holiday end", "ParameterID": "U_Ende",
-        "value": value, "unit": None, "platform": platform,
-        "ModuleIndex": module[0], "ModuleType": module[1],
+        "friendlyName": "Holiday end",
+        "ParameterID": "U_Ende",
+        "value": value,
+        "unit": None,
+        "platform": platform,
+        "ModuleIndex": module[0],
+        "ModuleType": module[1],
     }
     return data
 
@@ -262,24 +277,34 @@ async def test_the_next_write_sees_what_the_last_one_wrote():
     await entity.async_set_value(date(2026, 8, 6))
 
     sibling = WemPortalDate(
-        entity.coordinator, entity._config_entry, "1234", "Heat pump-U_Ende",
+        entity.coordinator,
+        entity._config_entry,
+        "1234",
+        "Heat pump-U_Ende",
         data["1234"]["Heat pump-U_Ende"],
     )
-    assert sibling._companion_dates() == {
-        "U_Beginn": date_to_epoch(date(2026, 8, 6))
-    }
+    assert sibling._companion_dates() == {"U_Beginn": date_to_epoch(date(2026, 8, 6))}
 
 
 def test_only_date_rows_become_date_entities():
     added = []
-    data = {"1234": {
-        "Heat pump-U_Beginn": {"platform": "date", "value": BEGIN_EPOCH,
-                               "friendlyName": "Holiday begin",
-                               "ParameterID": "U_Beginn"},
-        "Heat pump-Pump": {"platform": "switch", "value": 1.0,
-                           "friendlyName": "Pump", "ParameterID": "Pump"},
-        "ConnectionStatus": 0,
-    }}
+    data = {
+        "1234": {
+            "Heat pump-U_Beginn": {
+                "platform": "date",
+                "value": BEGIN_EPOCH,
+                "friendlyName": "Holiday begin",
+                "ParameterID": "U_Beginn",
+            },
+            "Heat pump-Pump": {
+                "platform": "switch",
+                "value": 1.0,
+                "friendlyName": "Pump",
+                "ParameterID": "Pump",
+            },
+            "ConnectionStatus": 0,
+        }
+    }
     entry = _Entry()
     entry.runtime_data = types.SimpleNamespace(coordinator=_Coordinator(data))
 

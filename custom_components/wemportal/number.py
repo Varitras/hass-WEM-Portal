@@ -50,6 +50,7 @@ async def async_setup_entry(
     # tests/test_security.py.
     if config_entry.options.get(CONF_EXPERT_WRITE, False):
         from .expert_writer import create_expert_number_entities
+
         expert_entities = create_expert_number_entities(config_entry)
         if expert_entities:
             _async_migrate_expert_unique_ids(hass, config_entry, expert_entities)
@@ -81,11 +82,15 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
         if registry.async_get_entity_id("number", DOMAIN, entity.unique_id) is not None:
             # A digest-format entity already exists; leave both untouched
             # rather than colliding (should not happen in practice).
-            _LOGGER.debug("Skipping expert unique_id migration for %s: target exists.", entity_id)
+            _LOGGER.debug(
+                "Skipping expert unique_id migration for %s: target exists.", entity_id
+            )
             continue
         try:
             registry.async_update_entity(entity_id, new_unique_id=entity.unique_id)
-            _LOGGER.info("Migrated expert entity %s to digest-based unique_id.", entity_id)
+            _LOGGER.info(
+                "Migrated expert entity %s to digest-based unique_id.", entity_id
+            )
         except ValueError as exc:
             _LOGGER.warning("Could not migrate expert entity %s: %s", entity_id, exc)
 
@@ -105,13 +110,19 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         through uncaught whenever the per-cycle unit was empty).
         """
         if val is None:
-            _LOGGER.warning('Invalid number value for "%s": %r -> set to None', self._attr_name, val)
+            _LOGGER.warning(
+                'Invalid number value for "%s": %r -> set to None', self._attr_name, val
+            )
             return None
 
         if isinstance(val, str):
             val = val.strip()
             if val == "":
-                _LOGGER.warning('Invalid number value for "%s": %r -> set to None', self._attr_name, val)
+                _LOGGER.warning(
+                    'Invalid number value for "%s": %r -> set to None',
+                    self._attr_name,
+                    val,
+                )
                 return None
 
         try:
@@ -120,7 +131,11 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
             # through as a str just because it parses.
             return float(val)
         except (TypeError, ValueError):
-            _LOGGER.warning('Invalid numeric number value for "%s": %r -> set to None', self._attr_name, val)
+            _LOGGER.warning(
+                'Invalid numeric number value for "%s": %r -> set to None',
+                self._attr_name,
+                val,
+            )
             return None
 
     def __init__(
@@ -146,7 +161,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
             'Init number: %s: "%s" [%s]',
             self._attr_name,
             self._attr_native_value,
-            self._attr_native_unit_of_measurement
+            self._attr_native_unit_of_measurement,
         )
 
     async def async_set_native_value(self, value: float) -> None:
@@ -161,7 +176,9 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
 
         try:
             entity_data = self.coordinator.data[self._device_id][self._data_key]
-            val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
+            val, uom = fix_value_and_uom(
+                entity_data.get("value"), entity_data.get("unit")
+            )
 
             self._attr_native_value = self._validated_native_value(val)
 
@@ -173,7 +190,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
                 'Update number: %s: "%s" [%s]',
                 self._attr_name,
                 self._attr_native_value,
-                self._attr_native_unit_of_measurement
+                self._attr_native_unit_of_measurement,
             )
 
         except KeyError:

@@ -105,7 +105,9 @@ def _mock_portal(monkeypatch):
     monkeypatch.setattr(
         expert_writer.WemPortalExpertClient, "write_parameter", _no_network
     )
-    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "list_modules", _no_network)
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "list_modules", _no_network
+    )
     monkeypatch.setattr(expert_writer.WemPortalExpertClient, "discover", _no_network)
 
 
@@ -231,7 +233,10 @@ async def test_unique_ids_are_migrated_for_every_device(hass, monkeypatch):
         assert migrated is not None, f"device {device_id} was not migrated"
         # Same registry entry, only re-keyed: that is what preserves history.
         assert migrated == old_entity_ids[device_id]
-        assert er.async_get_entity_id("sensor", DOMAIN, f"{device_id}-Outside temperature") is None
+        assert (
+            er.async_get_entity_id("sensor", DOMAIN, f"{device_id}-Outside temperature")
+            is None
+        )
 
 
 async def test_migration_is_skipped_when_no_data_arrived(hass, monkeypatch):
@@ -301,7 +306,8 @@ async def test_the_expert_module_is_only_loaded_when_it_is_enabled(hass, monkeyp
     """
     calls = []
     monkeypatch.setattr(
-        expert_writer, "create_expert_number_entities",
+        expert_writer,
+        "create_expert_number_entities",
         lambda entry: calls.append(entry) or [],
     )
 
@@ -324,9 +330,7 @@ async def test_expert_service_raises_on_write_failure(hass, monkeypatch):
     def boom(self, *_a, **_k):
         raise ParameterWriteError("portal said no")
 
-    monkeypatch.setattr(
-        expert_writer.WemPortalExpertClient, "write_parameter", boom
-    )
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", boom)
 
     with pytest.raises(HomeAssistantError):
         await hass.services.async_call(
@@ -592,9 +596,7 @@ async def test_options_flow_discovery_fills_slot_dropdown(hass, monkeypatch):
     # slot id fields, labelled "group / name (value)".
     schema = result["data_schema"].schema
     slot_key = next(
-        key
-        for key in schema
-        if str(key) == CONF_EXPERT_SLOT_ID_TEMPLATE % 1
+        key for key in schema if str(key) == CONF_EXPERT_SLOT_ID_TEMPLATE % 1
     )
     options = schema[slot_key].config["options"]
     assert {"value": EV_B, "label": "Heating / Power limit (30 %)"} in options
@@ -833,9 +835,7 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
     before = len(scheduled)
     await poll(None)
 
-    assert len(scheduled) == before, (
-        "an unloaded entry re-armed the auto-poll timer"
-    )
+    assert len(scheduled) == before, "an unloaded entry re-armed the auto-poll timer"
 
 
 async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
@@ -857,11 +857,13 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
     # imports async_call_later at module level, so the name it calls is
     # the one bound here.
     monkeypatch.setattr(
-        expert_controller, "async_call_later",
+        expert_controller,
+        "async_call_later",
         lambda _hass, _delay, action: scheduled.append(action) or (lambda: None),
     )
     monkeypatch.setattr(
-        expert_writer.WemPortalExpertClient, "read_many",
+        expert_writer.WemPortalExpertClient,
+        "read_many",
         lambda self, ids: read_many(ids),
     )
 
@@ -876,14 +878,17 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
 
     entry = await _setup(
         hass,
-        _entry(hass, {
-            CONF_EXPERT_WRITE: True,
-            CONF_EXPERT_AUTO_POLL: True,
-            **{
-                CONF_EXPERT_SLOT_ID_TEMPLATE % (slot + 1): ev
-                for slot, ev in enumerate(entityvalues or [EV_A])
+        _entry(
+            hass,
+            {
+                CONF_EXPERT_WRITE: True,
+                CONF_EXPERT_AUTO_POLL: True,
+                **{
+                    CONF_EXPERT_SLOT_ID_TEMPLATE % (slot + 1): ev
+                    for slot, ev in enumerate(entityvalues or [EV_A])
+                },
             },
-        }),
+        ),
     )
     await hass.async_block_till_done()
     # Setup fires an initial poll of its own. Reset to a known point so the
@@ -908,6 +913,7 @@ async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypa
     parameter would raise "Check the configured entityvalue ID". Wrong, and
     alarming on a heating system.
     """
+
     def always_fails(_ids):
         raise RuntimeError("portal unavailable")
 
@@ -926,11 +932,15 @@ async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypa
     assert notifications == [], "an outage produced a 'check your ID' notice"
 
 
-async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(hass, monkeypatch):
+async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
+    hass, monkeypatch
+):
     """The case the counting DOES exist for: the batch works, one id never
     comes back. After three of those the user hears about it - once."""
     entry, scheduled, notifications = await _auto_poll_entry(
-        hass, monkeypatch, lambda ids: {},
+        hass,
+        monkeypatch,
+        lambda ids: {},
     )
     poll = scheduled[-1]
 
@@ -954,8 +964,15 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
     state = {"fail": True}
 
     def sometimes(_ids):
-        return {} if state["fail"] else {EV_A: types.SimpleNamespace(
-            current=21.0, min_value=0.0, max_value=100.0)}
+        return (
+            {}
+            if state["fail"]
+            else {
+                EV_A: types.SimpleNamespace(
+                    current=21.0, min_value=0.0, max_value=100.0
+                )
+            }
+        )
 
     entry, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, sometimes)
     poll = scheduled[-1]
@@ -976,12 +993,11 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
 async def test_a_failed_poll_still_arms_the_next_one(hass, monkeypatch):
     """A transient error must not end the chain - that would silently stop
     the feature until the next restart."""
+
     def always_fails(_ids):
         raise RuntimeError("portal unavailable")
 
-    _entry_obj, scheduled, _ = await _auto_poll_entry(
-        hass, monkeypatch, always_fails
-    )
+    _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, always_fails)
     before = len(scheduled)
 
     await scheduled[-1](None)
@@ -996,9 +1012,11 @@ async def test_a_poll_does_not_touch_the_portal_while_a_write_runs(hass, monkeyp
     reads = []
 
     entry, scheduled, _ = await _auto_poll_entry(
-        hass, monkeypatch, lambda ids: reads.append(ids) or {},
+        hass,
+        monkeypatch,
+        lambda ids: reads.append(ids) or {},
     )
-    reads.clear()   # the initial poll already ran during setup
+    reads.clear()  # the initial poll already ran during setup
     for entity in entry.runtime_data.expert.entities:
         entity._write_in_progress = True
 
@@ -1008,15 +1026,19 @@ async def test_a_poll_does_not_touch_the_portal_while_a_write_runs(hass, monkeyp
     assert reads == [], "the auto-poll read while a write was in flight"
 
 
-async def test_a_poll_skips_when_another_expert_operation_holds_the_lock(hass, monkeypatch):
+async def test_a_poll_skips_when_another_expert_operation_holds_the_lock(
+    hass, monkeypatch
+):
     """One portal session per account. Skipping also must not release a lock
     this cycle never acquired."""
     reads = []
 
     entry, scheduled, _ = await _auto_poll_entry(
-        hass, monkeypatch, lambda ids: reads.append(ids) or {},
+        hass,
+        monkeypatch,
+        lambda ids: reads.append(ids) or {},
     )
-    reads.clear()   # the initial poll already ran during setup
+    reads.clear()  # the initial poll already ran during setup
     lock = entry.runtime_data.expert.lock
     assert lock.acquire(blocking=False), "lock was already held"
 
@@ -1061,11 +1083,14 @@ async def test_clearing_a_slot_id_actually_clears_it(hass):
     """
     entry = await _setup(
         hass,
-        _entry(hass, {
-            CONF_EXPERT_WRITE: True,
-            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
-            CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot one",
-        }),
+        _entry(
+            hass,
+            {
+                CONF_EXPERT_WRITE: True,
+                CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+                CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot one",
+            },
+        ),
     )
 
     await _submit_options(hass, entry, {}, omit=[CONF_EXPERT_SLOT_ID_TEMPLATE % 1])
@@ -1098,7 +1123,9 @@ async def test_an_invalid_slot_id_is_rejected_and_nothing_is_stored(hass):
     )
 
     assert result["type"] is FlowResultType.FORM
-    assert result["errors"].get(CONF_EXPERT_SLOT_ID_TEMPLATE % 1) == "invalid_entityvalue"
+    assert (
+        result["errors"].get(CONF_EXPERT_SLOT_ID_TEMPLATE % 1) == "invalid_entityvalue"
+    )
     assert entry.options == before, "a rejected form still changed the options"
 
 
@@ -1109,7 +1136,9 @@ async def test_a_rejected_form_shows_what_the_user_typed(hass):
     entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
 
     result = await _submit_options(
-        hass, entry, {
+        hass,
+        entry,
+        {
             CONF_EXPERT_SLOT_ID_TEMPLATE % 1: "abc",
             CONF_EXPERT_SLOT_NAME_TEMPLATE % 2: "typed but not saved",
         },
@@ -1303,15 +1332,21 @@ async def test_entities_of_an_offline_device_go_unavailable(hass, monkeypatch):
     two_devices = {
         "1234": {
             "1234-ConnectionStatus": {
-                "value": "online", "unit": None, "platform": "sensor",
-                "friendlyName": "Connection Status", "ParameterID": "ConnectionStatus",
+                "value": "online",
+                "unit": None,
+                "platform": "sensor",
+                "friendlyName": "Connection Status",
+                "ParameterID": "ConnectionStatus",
             },
             "Outside temperature": _sensor(),
         },
         "5678": {
             "5678-ConnectionStatus": {
-                "value": "offline", "unit": None, "platform": "sensor",
-                "friendlyName": "Connection Status", "ParameterID": "ConnectionStatus",
+                "value": "offline",
+                "unit": None,
+                "platform": "sensor",
+                "friendlyName": "Connection Status",
+                "ParameterID": "ConnectionStatus",
             },
             "Outside temperature": _sensor(),
         },
@@ -1322,7 +1357,8 @@ async def test_entities_of_an_offline_device_go_unavailable(hass, monkeypatch):
 
     def _state(entity_id_part, device):
         return next(
-            s for s in hass.states.async_all("sensor")
+            s
+            for s in hass.states.async_all("sensor")
             if entity_id_part in s.entity_id and device in s.entity_id
         )
 
@@ -1442,8 +1478,13 @@ async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):
     monkeypatch.setattr(WemPortalApi, "fetch_data", flaky)
 
     # Two auth failures, then something entirely unrelated.
-    failures.extend([AuthError("login page"), AuthError("login page"),
-                     WemPortalError("portal unreachable")])
+    failures.extend(
+        [
+            AuthError("login page"),
+            AuthError("login page"),
+            WemPortalError("portal unreachable"),
+        ]
+    )
     # UpdateFailed, not a bare Exception: catching anything would pass just as
     # happily on a TypeError from a mistyped test double.
     for _ in range(3):
@@ -1592,7 +1633,9 @@ async def test_saving_options_reloads_the_entry(hass, monkeypatch):
     assert coordinator.update_interval == timedelta(seconds=600)
 
 
-async def test_recovery_resets_the_connection_and_keeps_everything_else(hass, monkeypatch):
+async def test_recovery_resets_the_connection_and_keeps_everything_else(
+    hass, monkeypatch
+):
     """After repeated errors the integration recovers by dropping its HTTP
     state - not by rebuilding the api object.
 
@@ -1641,7 +1684,8 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(hass, mo
     api._scraper = _ClosingScraper()
 
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data",
+        WemPortalApi,
+        "fetch_data",
         lambda self, *a, **k: (_ for _ in ()).throw(WemPortalError("portal broken")),
     )
 
@@ -1763,26 +1807,33 @@ def test_the_tripwire_watches_the_channel_the_report_arrives_on():
     import logging
 
     record = logging.LogRecord(
-        "homeassistant.helpers.frame", logging.WARNING, __file__, 0,
+        "homeassistant.helpers.frame",
+        logging.WARNING,
+        __file__,
+        0,
         "Detected that custom integration 'wemportal' accesses via_device, "
         "which is deprecated and will stop working in HA Core 2027.8",
-        None, None,
+        None,
+        None,
     )
 
     assert _deprecation_reports([record])
 
     def _record(message):
-        return logging.LogRecord("x", logging.WARNING, __file__, 0, message,
-                                 None, None)
+        return logging.LogRecord("x", logging.WARNING, __file__, 0, message, None, None)
 
     assert not _deprecation_reports([_record("something else")])
     # The false positive this collector produced on its first run: asyncio's
     # slow-task warning quotes a path through config_entries.py, and
     # "config_entries" is one of the names being watched for.
-    assert not _deprecation_reports([_record(
-        "Executing <Task finished ... defined at "
-        ".../homeassistant/config_entries.py:951> took 0.2 seconds"
-    )])
+    assert not _deprecation_reports(
+        [
+            _record(
+                "Executing <Task finished ... defined at "
+                ".../homeassistant/config_entries.py:951> took 0.2 seconds"
+            )
+        ]
+    )
 
 
 async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatch):
@@ -1799,7 +1850,8 @@ async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatc
     from custom_components.wemportal.expert_controller import ExpertController
 
     monkeypatch.setattr(
-        ExpertController, "setup_auto_poll",
+        ExpertController,
+        "setup_auto_poll",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("poll setup broke")),
     )
 
@@ -1867,11 +1919,13 @@ async def test_the_recovery_runs_off_the_event_loop(hass, monkeypatch):
     loop_thread = threading.get_ident()
     seen = []
     monkeypatch.setattr(
-        WemPortalApi, "reset_transport",
+        WemPortalApi,
+        "reset_transport",
         lambda self: seen.append(threading.get_ident()),
     )
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data",
+        WemPortalApi,
+        "fetch_data",
         lambda self, *a, **k: (_ for _ in ()).throw(WemPortalError("portal broken")),
     )
 
@@ -1897,9 +1951,7 @@ async def test_a_failed_platform_setup_does_not_leak_the_store(hass, monkeypatch
     async def boom(*_a, **_k):
         raise RuntimeError("platform setup exploded")
 
-    monkeypatch.setattr(
-        hass.config_entries, "async_forward_entry_setups", boom
-    )
+    monkeypatch.setattr(hass.config_entries, "async_forward_entry_setups", boom)
 
     # Home Assistant catches the failure and marks the entry as errored
     # rather than propagating, which is exactly why the cleanup has to happen
@@ -1921,18 +1973,23 @@ async def test_a_write_is_abandoned_when_its_entry_is_reloaded(hass, monkeypatch
 
     entry = await _setup(
         hass,
-        _entry(hass, options={
-            CONF_EXPERT_WRITE: True,
-            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
-            CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot",
-        }),
+        _entry(
+            hass,
+            options={
+                CONF_EXPERT_WRITE: True,
+                CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+                CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot",
+            },
+        ),
     )
+
     def reload_midway(self, *_a, **_k):
         # The reload happens WHILE the write runs, which is the whole point:
         # the store the handler captured is replaced by an equivalent one
         # under the same id. Swapping it before the call would simply hand
         # the handler the new store and prove nothing.
         import dataclasses
+
         entry.runtime_data = dataclasses.replace(entry.runtime_data)
         self._abort_check()
         raise AssertionError("the write continued after the reload")
@@ -1943,7 +2000,8 @@ async def test_a_write_is_abandoned_when_its_entry_is_reloaded(hass, monkeypatch
 
     with pytest.raises(HomeAssistantError) as excinfo:
         await hass.services.async_call(
-            DOMAIN, SERVICE_SET_EXPERT_PARAMETER,
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
             {"entityvalue": EV_A, "value": 21.0},
             blocking=True,
         )
@@ -1958,11 +2016,14 @@ async def test_a_write_is_abandoned_while_the_entry_is_unloading(hass, monkeypat
 
     entry = await _setup(
         hass,
-        _entry(hass, options={
-            CONF_EXPERT_WRITE: True,
-            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
-            CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot",
-        }),
+        _entry(
+            hass,
+            options={
+                CONF_EXPERT_WRITE: True,
+                CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+                CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot",
+            },
+        ),
     )
     # Exactly what async_unload_entry sets before unloading the platforms.
     entry.runtime_data.unloading = True
@@ -1970,13 +2031,12 @@ async def test_a_write_is_abandoned_while_the_entry_is_unloading(hass, monkeypat
     def never(self, *_a, **_k):
         raise AssertionError("the write continued during the unload")
 
-    monkeypatch.setattr(
-        expert_writer.WemPortalExpertClient, "write_parameter", never
-    )
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", never)
 
     with pytest.raises(HomeAssistantError) as excinfo:
         await hass.services.async_call(
-            DOMAIN, SERVICE_SET_EXPERT_PARAMETER,
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
             {"entityvalue": EV_A, "value": 21.0},
             blocking=True,
         )
@@ -2064,7 +2124,8 @@ async def test_a_setup_that_fails_after_forwarding_takes_the_platforms_back_down
     from custom_components.wemportal.expert_controller import ExpertController
 
     monkeypatch.setattr(
-        ExpertController, "setup_auto_poll",
+        ExpertController,
+        "setup_auto_poll",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("poll setup broke")),
     )
 
@@ -2092,7 +2153,9 @@ async def test_one_bad_batch_is_not_blamed_on_every_configured_id(hass, monkeypa
     a persistent notification per parameter, on a portal hiccup.
     """
     entry, scheduled, notifications = await _auto_poll_entry(
-        hass, monkeypatch, lambda ids: {ev: None for ev in ids},
+        hass,
+        monkeypatch,
+        lambda ids: {ev: None for ev in ids},
         entityvalues=[EV_A, EV_B],
     )
     poll = scheduled[-1]
@@ -2116,7 +2179,9 @@ async def test_a_single_configured_id_is_still_reported(hass, monkeypatch):
     as refusing a read that named no JobID.
     """
     entry, scheduled, notifications = await _auto_poll_entry(
-        hass, monkeypatch, lambda ids: {ev: None for ev in ids},
+        hass,
+        monkeypatch,
+        lambda ids: {ev: None for ev in ids},
     )
     poll = scheduled[-1]
 
@@ -2144,8 +2209,13 @@ async def test_the_rescan_option_marks_the_cached_lists_as_due(hass):
     api = entry.runtime_data.api
     api.modules = {
         "1234": {
-            (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
-                     "parameters": {"P": {}}, "parameters_fetched_at": 9999.0},
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heat pump",
+                "parameters": {"P": {}},
+                "parameters_fetched_at": 9999.0,
+            },
             (0, 7): {"Index": 0, "Type": 7, "Name": "Boiler"},
         }
     }
@@ -2169,8 +2239,15 @@ async def test_the_rescan_option_makes_no_portal_requests(hass):
     entry = await _setup(hass, _entry(hass))
     api = entry.runtime_data.api
     api.modules = {
-        "1234": {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
-                          "parameters": {"P": {}}, "parameters_fetched_at": 1.0}}
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heat pump",
+                "parameters": {"P": {}},
+                "parameters_fetched_at": 1.0,
+            }
+        }
     }
     calls = []
     api.make_api_call = lambda url, **_k: calls.append(url)
