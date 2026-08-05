@@ -1,0 +1,17 @@
+# Records what Ruff is already doing here, so a later version cannot quietly
+# decide otherwise and reflow the whole tree unasked.
+#
+# Deliberately no [lint] section. The default rule selection (pyflakes plus a
+# handful of pycodestyle errors) is what this repository has been checked
+# against all along, and widening it would land on inherited upstream code
+# rather than on anything written here - a separate decision, not a side
+# effect of writing a config file.
+
+# The floor the integration supports, not the newest it runs on: hacs.json
+# declares Home Assistant 2024.12, which requires Python 3.12. Without this,
+# Ruff assumes 3.10 and analyses against a language version nobody here runs.
+target-version = "py312"
+
+# Ruff's own default, written down because the formatting in the tree depends
+# on it.
+line-length = 88
