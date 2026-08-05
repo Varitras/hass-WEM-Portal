@@ -1576,6 +1576,7 @@ class WemPortalApi:
         module_type,
         numeric_value,
         login=True,
+        together_with=None,
     ):
         """Change a value under the shared API lock, so a write can't
         interleave with a poll cycle on the same session/state."""
@@ -1583,7 +1584,7 @@ class WemPortalApi:
         try:
             return self._change_value(
                 device_id, parameter_id, module_index, module_type,
-                numeric_value, login=login,
+                numeric_value, login=login, together_with=together_with,
             )
         finally:
             self._api_lock.release()
@@ -1596,22 +1597,39 @@ class WemPortalApi:
         module_type,
         numeric_value,
         login=True,
+        together_with=None,
     ):
-        """POST request to API to change a specific value"""
+        """POST request to API to change a specific value.
+
+        `together_with` maps further parameter ids of the SAME module to the
+        values they are to carry, and they go out in one request with the one
+        being changed. The portal's own payload is a list of parameters per
+        module, so this is the shape it already expects - what it is for is
+        a parameter that is only half of something. Holiday begin and end are
+        the measured case: written one at a time, each write comes back as
+        Status -1, while an ordinary setpoint on the same account and the
+        same endpoint is accepted and answered with a JobID.
+
+        The parameter being changed always wins, so a companion that repeats
+        it cannot overwrite the new value with the old one.
+        """
         _LOGGER.debug("Changing value for %s", parameter_id)
 
+        parameters = [
+            {"ParameterID": companion_id, "NumericValue": float(companion_value)}
+            for companion_id, companion_value in (together_with or {}).items()
+            if companion_id != parameter_id
+        ]
+        parameters.append(
+            {"ParameterID": parameter_id, "NumericValue": float(numeric_value)}
+        )
         data = {
             "DeviceID": int(device_id),
             "Modules": [
                 {
                     "ModuleIndex": int(module_index),
                     "ModuleType": int(module_type),
-                    "Parameters": [
-                        {
-                            "ParameterID": parameter_id,
-                            "NumericValue": float(numeric_value),
-                        }
-                    ],
+                    "Parameters": parameters,
                 }
             ],
         }

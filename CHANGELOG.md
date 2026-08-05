@@ -247,6 +247,15 @@ to ask the user for new credentials.
 - **The scrape backoff survives the internal recovery.** Rebuilding the API
   connection after repeated errors discarded the backoff those very errors
   had just earned.
+- **Holiday begin and end are written together.** The portal marks both
+  writeable and reads them back correctly, but written one at a time each
+  write comes back with an internal error and no job id - while an ordinary
+  setpoint on the same account and the same endpoint is accepted. A holiday
+  is a range, and the portal appears to want the whole of it, so a write now
+  carries the module's other date parameters along at their current value in
+  the same request. Whether that is enough is measured, not assumed: if the
+  portal refuses the pair as well, the parameters are read-only in practice
+  and will be presented as such.
 - **A failed update says what failed.** When every device's parameter fetch
   failed, Home Assistant was handed "all API parameter fetches failed this
   cycle; see the warnings above" - and it shows that message and nothing

@@ -92,6 +92,28 @@ def _entity(value=BEGIN_EPOCH):
     return entity, data
 
 
+def _with_companion(data, value=END_EPOCH, module=(0, 1), platform="date"):
+    """A second parameter on the device, next to the one under test."""
+    data["1234"]["Heat pump-U_Ende"] = {
+        "friendlyName": "Holiday end", "ParameterID": "U_Ende",
+        "value": value, "unit": None, "platform": platform,
+        "ModuleIndex": module[0], "ModuleType": module[1],
+    }
+    return data
+
+
+def _recorder(entity):
+    """Capture what the entity hands to the write path."""
+    seen = {}
+
+    async def record(value, together_with=None):
+        seen["value"] = value
+        seen["together_with"] = together_with
+
+    entity.async_write_parameter = record
+    return seen
+
+
 def test_the_entity_shows_the_day_the_portal_sent():
     entity, _ = _entity()
     assert entity.native_value == date(2026, 8, 3)
@@ -110,15 +132,11 @@ async def test_setting_a_day_writes_the_portal_encoding():
     and not the number of days.
     """
     entity, _ = _entity()
-    written = []
-    async def record(value):
-        written.append(value)
-
-    entity.async_write_parameter = record
+    seen = _recorder(entity)
 
     await entity.async_set_value(date(2026, 8, 4))
 
-    assert written == [END_EPOCH]
+    assert seen["value"] == END_EPOCH
     assert entity.native_value == date(2026, 8, 4)
 
 
@@ -127,7 +145,7 @@ async def test_a_write_is_not_reported_before_the_portal_took_it():
     claim a holiday the heating system never got."""
     entity, _ = _entity()
 
-    async def refuse(_value):
+    async def refuse(_value, together_with=None):
         raise RuntimeError("portal said no")
 
     entity.async_write_parameter = refuse
@@ -155,6 +173,60 @@ def test_a_disappearing_parameter_clears_the_day_instead_of_keeping_it():
     entity._handle_coordinator_update()
 
     assert entity.native_value is None
+
+
+# --- a holiday is a range, so it travels as one ------------------------
+#
+# Measured, not assumed: begin and end are marked writeable and read back
+# fine, but written one at a time each write comes back Status -1 with no
+# JobID - while an ordinary setpoint on the same account and the same
+# endpoint is accepted and answered with one. So the write carries the
+# module's other dates along at their current value.
+
+
+async def test_the_other_date_of_the_module_travels_with_the_write():
+    entity, data = _entity()
+    _with_companion(data)
+    seen = _recorder(entity)
+
+    await entity.async_set_value(date(2026, 8, 4))
+
+    assert seen["together_with"] == {"U_Ende": END_EPOCH}
+
+
+async def test_a_companion_without_a_readable_value_is_left_out():
+    """Sending a guess would put a date on the heating system that nobody
+    asked for - worse than writing the one parameter on its own."""
+    entity, data = _entity()
+    _with_companion(data, value="")
+    seen = _recorder(entity)
+
+    await entity.async_set_value(date(2026, 8, 4))
+
+    assert seen["together_with"] == {}
+
+
+async def test_a_date_belonging_to_another_module_is_not_dragged_in():
+    """The portal addresses parameters per module; a date from a different
+    one is a different setting on a different circuit."""
+    entity, data = _entity()
+    _with_companion(data, module=(1, 2))
+    seen = _recorder(entity)
+
+    await entity.async_set_value(date(2026, 8, 4))
+
+    assert seen["together_with"] == {}
+
+
+async def test_only_dates_are_taken_along():
+    """A switch of the same module is not part of the range."""
+    entity, data = _entity()
+    _with_companion(data, platform="switch")
+    seen = _recorder(entity)
+
+    await entity.async_set_value(date(2026, 8, 4))
+
+    assert seen["together_with"] == {}
 
 
 def test_only_date_rows_become_date_entities():

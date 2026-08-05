@@ -101,9 +101,46 @@ class WemPortalDate(WemPortalEntity, DateEntity):
             "Init date: %s: %s", self._attr_name, self._attr_native_value
         )
 
+    def _companion_dates(self) -> dict:
+        """The other date parameters of this module, at their current value.
+
+        A holiday is a range, and the portal appears to want the whole of it:
+        begin and end are marked writeable and read back fine, but written one
+        at a time each answer is Status -1 with no JobID, while an ordinary
+        setpoint on the same account and the same endpoint is accepted. So the
+        write carries the module's other dates along, unchanged.
+
+        Found through the coordinator rather than by naming the two parameters
+        literally: their ids are the portal's, and a rule that reads "the date
+        parameters of this module" does not have to be revisited when an
+        installation calls them something else.
+        """
+        companions = {}
+        device = self.coordinator.data.get(self._device_id, {})
+        for key, row in device.items():
+            # Some rows are plain counters, not parameters - skip anything
+            # that is not one, rather than assuming the shape.
+            if not isinstance(row, dict) or key == self._data_key:
+                continue
+            if row.get("platform") != "date":
+                continue
+            if (row.get("ModuleIndex"), row.get("ModuleType")) != (
+                self._module_index, self._module_type
+            ):
+                continue
+            try:
+                companions[row.get("ParameterID", key)] = float(row.get("value"))
+            except (TypeError, ValueError):
+                # No readable value to repeat. Sending a guess would set a
+                # date on the heating system that nobody asked for.
+                continue
+        return companions
+
     async def async_set_value(self, value: date) -> None:
         """Write a new day to the portal."""
-        await self.async_write_parameter(date_to_epoch(value))
+        await self.async_write_parameter(
+            date_to_epoch(value), together_with=self._companion_dates()
+        )
         self._attr_native_value = value
         self.async_write_ha_state()
 

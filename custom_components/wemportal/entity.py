@@ -1,5 +1,7 @@
 """Shared base class for the WEM Portal entity platforms."""
 
+from functools import partial
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -53,22 +55,29 @@ class WemPortalEntity(CoordinatorEntity):
         self._module_index = entity_data.get("ModuleIndex")
         self._module_type = entity_data.get("ModuleType")
 
-    async def async_write_parameter(self, value) -> None:
+    async def async_write_parameter(self, value, together_with=None) -> None:
         """The one way an entity changes a value on the portal.
 
         Number, Select and Switch each had their own copy of this call, and
         none of them asked whether the entry was still there - so a click
         that landed while the entry was unloading started a write into a
         session that was about to be closed.
+
+        `together_with` names further parameters of the same module to send in
+        the same request. Only the date platform uses it, for a parameter the
+        portal will not accept on its own - see WemPortalApi._change_value.
         """
         raise_if_not_writable(self._config_entry, self._attr_name)
         await self.hass.async_add_executor_job(
-            self.coordinator.api.change_value,
-            self._device_id,
-            self._parameter_id,
-            self._module_index,
-            self._module_type,
-            value,
+            partial(
+                self.coordinator.api.change_value,
+                self._device_id,
+                self._parameter_id,
+                self._module_index,
+                self._module_type,
+                value,
+                together_with=together_with,
+            )
         )
 
     @property

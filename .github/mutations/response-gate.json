@@ -660,8 +660,8 @@
   {
     "label": "date: showing a day the portal never took must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "        await self.async_write_parameter(date_to_epoch(value))\n        self._attr_native_value = value",
-    "new": "        self._attr_native_value = value\n        await self.async_write_parameter(date_to_epoch(value))",
+    "old": "        await self.async_write_parameter(\n            date_to_epoch(value), together_with=self._companion_dates()\n        )\n        self._attr_native_value = value",
+    "new": "        self._attr_native_value = value\n        await self.async_write_parameter(\n            date_to_epoch(value), together_with=self._companion_dates()\n        )\n",
     "tests": "write_is_not_reported_before_the_portal_took_it"
   },
   {
@@ -1006,5 +1006,47 @@
     "old": "        if failures and not successes:",
     "new": "        if failures:",
     "tests": "one_device_that_worked_still_keeps_the_cycle_green"
+  },
+  {
+    "label": "pair: writing a holiday date on its own must be noticed",
+    "path": "custom_components/wemportal/date.py",
+    "old": "            date_to_epoch(value), together_with=self._companion_dates()",
+    "new": "            date_to_epoch(value), together_with=None",
+    "tests": "the_other_date_of_the_module_travels_with_the_write"
+  },
+  {
+    "label": "pair: taking a companion from another module must be noticed",
+    "path": "custom_components/wemportal/date.py",
+    "old": "            if (row.get(\"ModuleIndex\"), row.get(\"ModuleType\")) != (\n                self._module_index, self._module_type\n            ):\n                continue",
+    "new": "            if False:\n                continue",
+    "tests": "a_date_belonging_to_another_module_is_not_dragged_in"
+  },
+  {
+    "label": "pair: taking a non-date along must be noticed",
+    "path": "custom_components/wemportal/date.py",
+    "old": "            if row.get(\"platform\") != \"date\":\n                continue",
+    "new": "            if False:\n                continue",
+    "tests": "only_dates_are_taken_along"
+  },
+  {
+    "label": "pair: inventing a value for an unreadable companion must be noticed",
+    "path": "custom_components/wemportal/date.py",
+    "old": "                companions[row.get(\"ParameterID\", key)] = float(row.get(\"value\"))\n            except (TypeError, ValueError):",
+    "new": "                companions[row.get(\"ParameterID\", key)] = float(row.get(\"value\") or 0)\n            except (TypeError, ValueError):",
+    "tests": "a_companion_without_a_readable_value_is_left_out"
+  },
+  {
+    "label": "pair: writing the companion over the new value must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if companion_id != parameter_id",
+    "new": "            if True",
+    "tests": "the_parameter_being_changed_wins_over_a_companion"
+  },
+  {
+    "label": "pair: dropping the companions from the payload must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            for companion_id, companion_value in (together_with or {}).items()",
+    "new": "            for companion_id, companion_value in {}.items()",
+    "tests": "companion_parameters_travel_in_the_same_request"
   }
 ]

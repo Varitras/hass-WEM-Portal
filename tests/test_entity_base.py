@@ -145,8 +145,12 @@ def _writeable(cls, unloading=False, calls=None):
     from custom_components.wemportal.models import WemPortalData
 
     entity = _entity(cls)
+    # Records keyword arguments too: the write goes through functools.partial
+    # now, because the date platform sends companion parameters by name.
     api = types.SimpleNamespace(
-        change_value=lambda *args: (calls if calls is not None else []).append(args)
+        change_value=lambda *args, **kwargs: (
+            calls if calls is not None else []
+        ).append((args, kwargs))
     )
     data = WemPortalData(api=api, coordinator=None)
     data.unloading = unloading
@@ -196,7 +200,7 @@ async def test_the_write_reaches_the_api_with_the_parameter_address(name):
 
     await entity.async_write_parameter(21.0)
 
-    assert calls == [("1234", "P1", 0, 1, 21.0)]
+    assert calls == [(("1234", "P1", 0, 1, 21.0), {"together_with": None})]
 
 
 def test_a_reloaded_entry_invalidates_an_operation_holding_the_old_state():

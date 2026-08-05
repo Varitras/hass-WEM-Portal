@@ -2682,3 +2682,74 @@ def test_a_refused_write_says_what_the_portal_answered():
     assert "Unbekannter Fehler" in message, (
         "the portal's own answer was dropped from the error the user sees"
     )
+
+
+def _write_recorder(api):
+    """Capture the payloads a write puts on the wire."""
+    sent = []
+
+    def make_api_call(url, data=None, **_kwargs):
+        sent.append(data)
+        return FakeResponse({"Status": 0, "JobID": 1})
+
+    api.session = object()
+    api.make_api_call = make_api_call
+    return sent
+
+
+def test_companion_parameters_travel_in_the_same_request():
+    """A holiday is a range, and the portal refuses one half of it.
+
+    Written one date at a time, each write comes back Status -1 with no
+    JobID, while an ordinary setpoint on the same account and the same
+    endpoint is accepted. The portal's payload is a list of parameters per
+    module, so the pair fits in one request - which is what the app is
+    assumed to send.
+    """
+    api = _api()
+    sent = _write_recorder(api)
+
+    api.change_value(
+        "1234", "U_Ende", 1, 2, 1785974400.0, login=False,
+        together_with={"U_Beginn": 1785715200.0},
+    )
+
+    assert len(sent) == 1, "the pair went out as two separate writes"
+    module = sent[0]["Modules"][0]
+    assert (module["ModuleIndex"], module["ModuleType"]) == (1, 2)
+    assert {
+        p["ParameterID"]: p["NumericValue"] for p in module["Parameters"]
+    } == {"U_Beginn": 1785715200.0, "U_Ende": 1785974400.0}
+
+
+def test_the_parameter_being_changed_wins_over_a_companion():
+    """The companions carry CURRENT values. One of them repeating the
+    parameter under change would otherwise write the old value back over the
+    new one, and the entity would show a day the portal never took."""
+    api = _api()
+    sent = _write_recorder(api)
+
+    api.change_value(
+        "1234", "U_Ende", 1, 2, 1785974400.0, login=False,
+        together_with={"U_Ende": 1785801600.0},
+    )
+
+    parameters = sent[0]["Modules"][0]["Parameters"]
+    assert [p["NumericValue"] for p in parameters] == [1785974400.0]
+
+
+def test_a_write_without_companions_is_unchanged():
+    """Number, Select and Switch send nothing along, and their payload must
+    look exactly as it did."""
+    api = _api()
+    sent = _write_recorder(api)
+
+    api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+
+    assert sent[0] == {
+        "DeviceID": 1234,
+        "Modules": [{
+            "ModuleIndex": 0, "ModuleType": 1,
+            "Parameters": [{"ParameterID": "P1", "NumericValue": 21.0}],
+        }],
+    }
