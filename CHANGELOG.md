@@ -71,10 +71,17 @@ to ask the user for new credentials.
   parsing the raw string in a template. The state is the week itself now,
   with consecutive days that match collapsed into one range, and a `Schedule`
   attribute lists every day with the windows it actually uses. Where the
-  portal marks a window with a letter, the attribute carries it: what those
-  letters mean is not documented anywhere, so they are passed through rather
-  than interpreted. A week too long for a Home Assistant state falls back to
-  the bare word, and the attribute still holds every window.
+  portal marks a window with a letter, the attribute carries it. A week too
+  long for a Home Assistant state falls back to the bare word, and the
+  attribute still holds every window.
+
+  For the hot water programme the letters are named as well - `H = Normal`,
+  `L = Absenk` - taken from the portal's own view of that programme, which
+  labels the window carrying H "Normal" and the stretches around it "Absenk".
+  The raw letter stays next to the name, and any other programme keeps the
+  bare letter: the heating programme has three levels rather than two, so
+  these names demonstrably cannot be its, and an opaque letter is better than
+  a confident wrong word.
 
 ### Fixed
 - **Planned maintenance is recognised on the web path as well.** It was only

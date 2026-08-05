@@ -2742,6 +2742,81 @@ def test_the_state_is_the_week_and_not_the_word():
     assert _schedule_sensor(_week_payload()).native_value == "MO-SO 00:00-24:00"
 
 
+# --- what a window's letter means, and only where that is known ---------
+#
+# Read off the portal's own view of one installation's hot water programme:
+# it lists the window carrying H as "Normal" and the stretches around it as
+# "Absenk", and that programme has exactly two levels. The heating programme
+# has three, so the same two letters cannot cover it - which is why the table
+# is per zone and why anything it does not know keeps the bare letter.
+
+
+def _ww_payload(window="15:00-18:00", letters="HLL", zone="WW"):
+    """The hot water programme as a real installation sends it."""
+    payload = {}
+    for day in DAYS:
+        payload[f"{day}-1"] = window
+        payload[f"{day}-2"] = "00:00-00:00"
+        payload[f"{day}-3"] = "00:00-00:00"
+    for day in DAYS:
+        payload[day] = letters
+    payload.update({
+        "zone": zone, "type": "Functionlist", "TransferId": "00000000",
+        "mode": "cycletime", "cmd": "load", "status": "ok",
+    })
+    return json.dumps(payload)
+
+
+def test_a_hot_water_window_says_which_level_it_runs():
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    assert _readable_schedule(_ww_payload())["MO"] == ["15:00-18:00 (H = Normal)"]
+
+
+def test_the_letter_stays_next_to_the_level_it_was_read_as():
+    """The name comes from reading one installation. If that reading is ever
+    wrong somewhere, what it was read from has to still be on screen."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    assert "H" in _readable_schedule(_ww_payload())["MO"][0]
+
+
+def test_a_reduced_hot_water_window_is_named_too():
+    """L has only ever been seen on an unused slot, and those are dropped
+    before the table is consulted - so this may be unreachable in practice.
+    The meaning is known either way, and a bare letter we could have named
+    would be the worse of the two mistakes."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    schedule = _readable_schedule(_ww_payload(letters="LHH"))
+
+    assert schedule["MO"] == ["15:00-18:00 (L = Absenk)"]
+
+
+def test_a_zone_the_table_does_not_know_keeps_the_bare_letter():
+    """The heating programme has three levels, so these two names cannot be
+    its. An opaque "H" is honest; a confidently wrong "Normal" is not."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    assert _readable_schedule(_ww_payload(zone="1"))["MO"] == ["15:00-18:00 (H)"]
+
+
+def test_a_letter_the_table_does_not_know_keeps_itself():
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    assert _readable_schedule(_ww_payload(letters="KLL"))["MO"] == [
+        "15:00-18:00 (K)"
+    ]
+
+
+def test_the_state_carries_the_times_and_not_the_levels():
+    """A state has 255 characters to hold a week in; the attribute has room
+    for the rest."""
+    from custom_components.wemportal.sensor import _schedule_summary
+
+    assert _schedule_summary(_ww_payload()) == "MO-SO 15:00-18:00"
+
+
 def test_a_week_too_long_for_a_state_falls_back_to_the_word():
     """Home Assistant refuses a state over 255 characters, and a refused
     state is no reading at all. Seven days that all differ, three windows

@@ -4,6 +4,7 @@ Sensor platform for wemportal component
 
 import json
 import re
+from typing import NamedTuple
 
 from homeassistant.components.sensor import RestoreSensor
 from homeassistant.config_entries import ConfigEntry
@@ -64,9 +65,41 @@ _WINDOW_KEY = re.compile(r"^(?P<day>.+)-(?P<slot>\d+)$")
 # How the portal spells a slot that is not in use.
 _UNUSED_WINDOW = "00:00-00:00"
 
+# What a window's letter means, per zone. Read off the portal's own view of
+# one installation's hot water programme: it lists the window carrying H as
+# "Normal" and the stretches around it as "Absenk", and that programme has
+# exactly two levels. The words are the portal's, not ours.
+#
+# Per ZONE, and deliberately not global. The heating programme has three
+# levels - Absenk, normal, comfort - so its letters cannot be these two, and
+# whether H even means the same thing there is not established. A zone the
+# table does not know, or a letter it does not know, keeps the bare letter:
+# an opaque "H" is honest, a confidently wrong "Normal" is not.
+#
+# L has so far only ever been seen on an UNUSED slot, and those are dropped
+# before this table is consulted - so its entry may well be unreachable. It
+# is kept because the meaning is known: if a portal ever does put it on a
+# used window, showing a bare letter we could have named would be the worse
+# of the two mistakes.
+_WINDOW_LEVELS = {
+    "WW": {"H": "Normal", "L": "Absenk"},
+}
 
-def _parse_schedule(raw):
-    """A weekly programme as day -> [(window, mark), ...], or None.
+
+class Schedule(NamedTuple):
+    """A parsed weekly programme.
+
+    `zone` says WHICH programme this is - "WW" for hot water, a circuit
+    number for heating - and is what keeps the level names above from being
+    applied to a programme they were never read off.
+    """
+
+    zone: str | None
+    days: dict
+
+
+def _parse_schedule(raw) -> Schedule | None:
+    """A weekly programme as day -> [(window, letter), ...], or None.
 
     Days come back in the order the portal sent them, which is also the order
     of the week - so nothing here has to know what a week looks like, or
@@ -111,17 +144,37 @@ def _parse_schedule(raw):
             periods.append((period, letter))
         if periods:
             schedule[day] = periods
-    return schedule or None
+    if not schedule:
+        return None
+    return Schedule(marks.get("zone"), schedule)
+
+
+def _window_marker(zone, letter) -> str:
+    """How a window's letter is presented, named where we know the name.
+
+    The letter is kept either way. It is what the portal actually sent, and
+    the level names come from reading one installation's hot water programme
+    - so if that reading is ever wrong somewhere, what it was read from is
+    still on screen next to it.
+    """
+    if not letter:
+        return ""
+    level = _WINDOW_LEVELS.get(zone, {}).get(letter)
+    return f"{letter} = {level}" if level else letter
 
 
 def _readable_schedule(raw):
-    """The attribute: every day with its windows, marks included."""
+    """The attribute: every day with its windows and their levels."""
     schedule = _parse_schedule(raw)
     if schedule is None:
         return None
     return {
-        day: [f"{period} ({mark})" if mark else period for period, mark in periods]
-        for day, periods in schedule.items()
+        day: [
+            f"{period} ({marker})" if (marker := _window_marker(schedule.zone, letter))
+            else period
+            for period, letter in periods
+        ]
+        for day, periods in schedule.days.items()
     }
 
 
@@ -133,17 +186,18 @@ def _schedule_summary(raw):
     nowhere else. Consecutive days with the same windows are collapsed, so
     the common case reads "MO-SO 00:00-24:00" instead of seven repetitions.
 
-    The marks are deliberately left out here. They are one cryptic letter
-    whose meaning is not established, and a state has to survive a week of
-    three windows a day inside Home Assistant's length limit.
+    The levels are deliberately left out here. A state has to survive a week
+    of three windows a day inside Home Assistant's length limit, and the
+    times are what a glance at a card is for - the attribute carries the
+    rest.
     """
     schedule = _parse_schedule(raw)
     if schedule is None:
         return None
 
     groups = []
-    for day, periods in schedule.items():
-        times = ", ".join(period for period, _mark in periods)
+    for day, periods in schedule.days.items():
+        times = ", ".join(period for period, _letter in periods)
         if groups and groups[-1][2] == times:
             groups[-1][1] = day
         else:

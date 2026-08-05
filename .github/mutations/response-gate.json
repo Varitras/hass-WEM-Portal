@@ -1181,5 +1181,40 @@
     "old": "    async_release_holiday_service(hass, config_entry)\n\n    return True",
     "new": "    return True",
     "tests": "the_holiday_service_follows_the_loaded_entries"
+  },
+  {
+    "label": "levels: leaving a known level unnamed must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    level = _WINDOW_LEVELS.get(zone, {}).get(letter)",
+    "new": "    level = None",
+    "tests": "a_hot_water_window_says_which_level_it_runs"
+  },
+  {
+    "label": "levels: naming a level in a zone the table never saw must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    level = _WINDOW_LEVELS.get(zone, {}).get(letter)",
+    "new": "    level = next(iter(_WINDOW_LEVELS.values()), {}).get(letter)",
+    "tests": "a_zone_the_table_does_not_know_keeps_the_bare_letter"
+  },
+  {
+    "label": "levels: dropping the raw letter must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    return f\"{letter} = {level}\" if level else letter",
+    "new": "    return level if level else letter",
+    "tests": "the_letter_stays_next_to_the_level_it_was_read_as"
+  },
+  {
+    "label": "levels: putting a level name into the state must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        times = \", \".join(period for period, _letter in periods)",
+    "new": "        times = \", \".join(\n            f\"{period} {_window_marker(schedule.zone, _letter)}\".strip()\n            for period, _letter in periods\n        )",
+    "tests": "the_state_carries_the_times_and_not_the_levels"
+  },
+  {
+    "label": "levels: reading the zone off the wrong field must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    return Schedule(marks.get(\"zone\"), schedule)",
+    "new": "    return Schedule(marks.get(\"type\"), schedule)",
+    "tests": "a_hot_water_window_says_which_level_it_runs"
   }
 ]
