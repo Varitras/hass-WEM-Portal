@@ -1718,7 +1718,7 @@ class WemPortalApi:
         )
         _LOGGER.debug("Computed target_devices=%s", target_devices)
         successes = 0
-        failures = 0
+        failures: list[str] = []
         for device_id in target_devices:
             # Normalize once: self.data is keyed by str, but callers may
             # pass ints. Previously the membership check used str() while
@@ -1751,10 +1751,13 @@ class WemPortalApi:
                 # up to six hours, so the device coming back would be noticed
                 # late.
                 continue
-            if self._fetch_parameter_values(device_id):
+            # `is None`, never a truth test: the reason for a FAILURE is what
+            # comes back, so a truthy answer is the bad one.
+            failure = self._fetch_parameter_values(device_id)
+            if failure is None:
                 successes += 1
             else:
-                failures += 1
+                failures.append(f"device {device_id}: {failure}")
             self._fetch_circuit_times(device_id)
 
         # Fetch Energy Statistics (rate limited internally)
@@ -1766,8 +1769,11 @@ class WemPortalApi:
         # values as a successful update. A partial success (at least one
         # device refreshed) is still treated as success.
         if failures and not successes:
+            # Every reason, not a sample: Home Assistant shows this string and
+            # nothing else, and a cap here would read as "that was all of it".
             raise WemPortalError(
-                "All API parameter fetches failed this cycle; see the warnings above."
+                "All API parameter fetches failed this cycle. "
+                + "; ".join(failures)
             )
 
     def _fetch_device_status(self, device_id: str) -> bool:
@@ -1865,12 +1871,23 @@ class WemPortalApi:
             _LOGGER.warning("Failed to fetch Device Status: %s", exc)
         return True
 
-    def _fetch_parameter_values(self, device_id: str) -> bool:
+    def _fetch_parameter_values(self, device_id: str) -> str | None:
         """Refresh and read all known parameter values for one device.
 
-        Returns True if the values were refreshed, False if the fetch failed
-        (logged). get_data() counts these so a cycle in which every device
-        failed is reported as a failed update instead of a successful one.
+        Returns None when the values were refreshed, and otherwise the reason
+        they were not. get_data() collects those so a cycle in which every
+        device failed is reported as a failed update instead of a successful
+        one - and can say why.
+
+        NOTE the polarity, because it is the reverse of what it looks like:
+        None is the GOOD answer and a non-empty string the bad one, so
+        `if self._fetch_parameter_values(...)` reads exactly backwards. Every
+        caller compares against None explicitly. It used to return a plain
+        bool, and the reason - the one thing anybody wants when an update
+        fails - was written to a warning and then dropped, leaving Home
+        Assistant to report "all API parameter fetches failed this cycle" and
+        nothing else. Correlating that with the warning above it by timestamp
+        was work the caller could do for the user.
         """
         try:
             data = {
@@ -1916,7 +1933,7 @@ class WemPortalApi:
                 _LOGGER.debug(
                     "Device %s has no modules; nothing to read.", device_id
                 )
-                return True
+                return None
 
             # Modules, but not one with parameters: discovery has not
             # produced any yet. That IS a failed refresh - no values were
@@ -1930,7 +1947,7 @@ class WemPortalApi:
                 "the portal rejects a read with an empty module list.",
                 device_id,
             )
-            return False
+            return "it has modules but no known parameters yet"
 
         try:
             # Deliberately NO retry_transport here, unlike the two reads
@@ -1963,14 +1980,14 @@ class WemPortalApi:
                     "JSON; skipping the read rather than serving the previous "
                     "measurement as current.", device_id,
                 )
-                return False
+                return "the refresh answered with something that is not JSON"
             ticket = read_refresh_ticket(refresh_payload)
             if not ticket.accepted:
                 _LOGGER.warning(
                     "Device %s %s; not reading the previous job's values as "
                     "current.", device_id, ticket.reason,
                 )
-                return False
+                return ticket.reason
             if ticket.job_id is None:
                 # Reported, not enforced - on purpose, and this is the whole
                 # reasoning:
@@ -2010,7 +2027,7 @@ class WemPortalApi:
                     "treating the cycle as failed rather than keeping stale "
                     "readings.", device_id,
                 )
-                return False
+                return "the value read came back without any modules"
             WemPortalDataMapper.process_api_values(
                 device_id=device_id,
                 values_json=values,
@@ -2026,13 +2043,14 @@ class WemPortalApi:
                     self.resolve_scraper_device_id() if self.mode == "both" else None
                 ),
             )
-            return True
+            return None
         except Exception as exc:
             # Broad: one device's parameter read failing must not take
-            # the other devices' readings with it. False tells the
-            # caller this device did not succeed.
+            # the other devices' readings with it. The reason goes to the
+            # caller as well as into this warning - it is what Home Assistant
+            # ends up showing the user when the whole cycle fails.
             _LOGGER.warning("Failed to fetch parameter data... %s", exc)
-            return False
+            return str(exc)
 
     def _fetch_circuit_times(self, device_id: str) -> None:
         """Fetch heating schedules (DataType == 6), throttled per schedule."""

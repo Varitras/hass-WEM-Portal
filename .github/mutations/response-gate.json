@@ -793,8 +793,8 @@
   {
     "label": "empty read: counting a skipped device as refreshed must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                device_id,\n            )\n            return False\n",
-    "new": "                device_id,\n            )\n            return True\n",
+    "old": "                device_id,\n            )\n            return \"it has modules but no known parameters yet\"",
+    "new": "                device_id,\n            )\n            return None",
     "tests": "device_with_no_parameters_is_not_asked_for_values"
   },
   {
@@ -971,5 +971,40 @@
     "old": "                level=logging.WARNING if required else logging.DEBUG,",
     "new": "                level=logging.DEBUG,",
     "tests": "the_full_login_path_still_warns_about_an_empty_page"
+  },
+  {
+    "label": "cycle: a failure that does not say why must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                \"All API parameter fetches failed this cycle. \"\n                + \"; \".join(failures)",
+    "new": "                \"All API parameter fetches failed this cycle.\"",
+    "tests": "a_failed_cycle_says_why_it_failed"
+  },
+  {
+    "label": "cycle: naming only the first failing device must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                + \"; \".join(failures)",
+    "new": "                + \"; \".join(failures[:1])",
+    "tests": "every_failing_device_is_named_not_just_the_first"
+  },
+  {
+    "label": "cycle: reading the failure reason as a truth value must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            failure = self._fetch_parameter_values(device_id)\n            if failure is None:",
+    "new": "            failure = self._fetch_parameter_values(device_id)\n            if failure:",
+    "tests": "a_failed_cycle_says_why_it_failed"
+  },
+  {
+    "label": "cycle: losing the real reason behind a constant must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            _LOGGER.warning(\"Failed to fetch parameter data... %s\", exc)\n            return str(exc)",
+    "new": "            _LOGGER.warning(\"Failed to fetch parameter data... %s\", exc)\n            return \"the fetch failed\"",
+    "tests": "a_failed_cycle_says_why_it_failed"
+  },
+  {
+    "label": "cycle: failing the cycle over one bad device must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if failures and not successes:",
+    "new": "        if failures:",
+    "tests": "one_device_that_worked_still_keeps_the_cycle_green"
   }
 ]

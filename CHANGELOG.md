@@ -247,6 +247,13 @@ to ask the user for new credentials.
 - **The scrape backoff survives the internal recovery.** Rebuilding the API
   connection after repeated errors discarded the backoff those very errors
   had just earned.
+- **A failed update says what failed.** When every device's parameter fetch
+  failed, Home Assistant was handed "all API parameter fetches failed this
+  cycle; see the warnings above" - and it shows that message and nothing
+  else, so the actual reason (a request that timed out, a refused refresh, a
+  read that came back empty) had to be picked out of the log and matched up
+  by timestamp. The reason now travels with the failure and names the device
+  it belongs to; with several devices failing, every one of them is listed.
 
 ### Changed
 - **The minimum supported Home Assistant version is 2024.12.0.** The options

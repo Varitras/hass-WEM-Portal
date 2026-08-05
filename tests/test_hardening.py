@@ -874,6 +874,95 @@ def test_the_offline_warning_is_logged_once_per_change(caplog):
     ), "recovery went unmentioned"
 
 
+# --- a failed cycle has to say why ------------------------------------
+#
+# Note the polarity of _fetch_parameter_values throughout these tests: it
+# answers None when the values were refreshed and the REASON when they were
+# not, so `is None` is the success case.
+
+
+def _pollable_module():
+    return {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump",
+                     "parameters": {"P1": {"ParameterID": "P1"}}}}
+
+
+def _api_with_one_pollable_device():
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": _pollable_module()}
+    api.get_statistics = lambda *a, **k: None
+    api._fetch_circuit_times = lambda *a, **k: None
+    return api
+
+
+def test_a_failed_cycle_says_why_it_failed():
+    """The reason used to stop at a warning and go no further.
+
+    Home Assistant shows the raised message and nothing else, so "all API
+    parameter fetches failed this cycle; see the warnings above" asked the
+    user to correlate two log lines by timestamp - for something the code
+    was holding in a variable at the time.
+    """
+    api = _api_with_one_pollable_device()
+
+    def make_api_call(url, **_k):
+        raise exceptions.WemPortalError("Read timed out. (read timeout=12)")
+
+    api.make_api_call = make_api_call
+
+    with pytest.raises(exceptions.WemPortalError) as excinfo:
+        api.get_data(enabled_devices=["1234"])
+
+    message = str(excinfo.value)
+    assert "Read timed out" in message, "the cycle failed without saying why"
+    assert "1234" in message, "which device failed is not named"
+
+
+def test_every_failing_device_is_named_not_just_the_first():
+    """A cap would read as "that was all of it" to whoever reads the log."""
+    api = _api_with_one_pollable_device()
+    api.data["5678"] = {}
+    api.modules["5678"] = _pollable_module()
+
+    def make_api_call(url, data=None, **_k):
+        raise exceptions.WemPortalError(f"device {data['DeviceID']} is unhappy")
+
+    api.make_api_call = make_api_call
+
+    with pytest.raises(exceptions.WemPortalError) as excinfo:
+        api.get_data(enabled_devices=["1234", "5678"])
+
+    message = str(excinfo.value)
+    assert "1234" in message and "5678" in message, message
+
+
+def test_one_device_that_worked_still_keeps_the_cycle_green():
+    """Unchanged by the new message, and the reason the check is
+    `failures and not successes` rather than `failures`."""
+    api = _api_with_one_pollable_device()
+    api.data["5678"] = {}
+    api.modules["5678"] = _pollable_module()
+
+    # One answer that satisfies the status read, the refresh and the value
+    # read alike - which of the three is being served does not matter here.
+    healthy = {
+        "ConnectionStatus": 0,
+        "Errors": [],
+        "Status": 0,
+        "JobID": 1,
+        "Modules": [{"ModuleIndex": 0, "ModuleType": 1, "Values": []}],
+    }
+
+    def make_api_call(url, data=None, **_k):
+        if data.get("DeviceID") == 5678:
+            raise exceptions.WemPortalError("this one is unhappy")
+        return FakeResponse(healthy)
+
+    api.make_api_call = make_api_call
+
+    api.get_data(enabled_devices=["1234", "5678"])
+
+
 def _switch(value):
     """A switch entity built from one reading, without Home Assistant."""
     import types
@@ -1143,7 +1232,7 @@ def test_an_empty_value_read_is_not_a_refreshed_device():
     api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
     api.make_api_call = lambda *a, **k: FakeResponse({"Modules": []})
 
-    assert api._fetch_parameter_values("1234") is False
+    assert api._fetch_parameter_values("1234") is not None
 
 
 def test_a_device_without_modules_is_not_turned_into_a_failure():
@@ -1154,7 +1243,7 @@ def test_a_device_without_modules_is_not_turned_into_a_failure():
     api.modules = {"1234": {}}
     api.make_api_call = lambda *a, **k: FakeResponse({"Modules": []})
 
-    assert api._fetch_parameter_values("1234") is True
+    assert api._fetch_parameter_values("1234") is None
 
 
 class _BodyResponse(FakeResponse):
@@ -1306,7 +1395,7 @@ def test_a_rejected_refresh_is_not_read_as_a_fresh_measurement():
 
     api.make_api_call = make_api_call
 
-    assert api._fetch_parameter_values("1234") is False
+    assert api._fetch_parameter_values("1234") is not None
     assert len(urls) == 1, "the read must not happen after a refused refresh"
 
 
@@ -1319,7 +1408,7 @@ def test_a_refresh_without_a_status_field_still_works():
         {"Modules": [{"ModuleIndex": 0, "ModuleType": 1, "Values": []}]}
     )
 
-    assert api._fetch_parameter_values("1234") is True
+    assert api._fetch_parameter_values("1234") is None
 
 
 def test_a_fresh_api_without_carried_state_starts_clean():
@@ -1419,7 +1508,7 @@ def test_an_unreadable_refresh_answer_does_not_serve_the_previous_job():
 
     api.make_api_call = make_api_call
 
-    assert api._fetch_parameter_values("1234") is False
+    assert api._fetch_parameter_values("1234") is not None
     assert len(urls) == 1, "the read ran anyway"
 
 
@@ -1838,7 +1927,7 @@ def test_a_refresh_answering_false_is_a_refusal():
         {"Status": False} if "Refresh" in url else {"Modules": []}
     )
 
-    assert api._fetch_parameter_values("1234") is False
+    assert api._fetch_parameter_values("1234") is not None
 
 
 def test_a_missing_job_id_is_reported_once_per_device(caplog):
@@ -1862,8 +1951,8 @@ def test_a_missing_job_id_is_reported_once_per_device(caplog):
     )
 
     with caplog.at_level(logging.WARNING):
-        assert api._fetch_parameter_values("1234") is True
-        assert api._fetch_parameter_values("1234") is True
+        assert api._fetch_parameter_values("1234") is None
+        assert api._fetch_parameter_values("1234") is None
 
     hits = [r for r in caplog.records if "without a JobID" in r.getMessage()]
     assert len(hits) == 1, f"expected exactly one report, got {len(hits)}"
@@ -2271,11 +2360,14 @@ def test_a_device_with_no_parameters_is_not_asked_for_values(caplog):
     api.make_api_call = lambda url, **_k: calls.append(url) or FakeResponse({})
 
     with caplog.at_level(logging.WARNING):
-        refreshed = api._fetch_parameter_values("1234")
+        failure = api._fetch_parameter_values("1234")
 
     assert calls == [], "a read with an empty module list was sent anyway"
-    assert refreshed is False, (
+    assert failure is not None, (
         "a device whose discovery produced nothing was counted as refreshed"
+    )
+    assert "no known parameters" in failure, (
+        "the reason reaching the caller does not say what went wrong"
     )
     assert "no known parameters" in caplog.text
 
@@ -2293,7 +2385,7 @@ def test_a_device_with_no_modules_at_all_is_not_a_failure():
     calls = []
     api.make_api_call = lambda url, **_k: calls.append(url) or FakeResponse({})
 
-    assert api._fetch_parameter_values("1234") is True
+    assert api._fetch_parameter_values("1234") is None
     assert calls == [], "a read with an empty module list was sent anyway"
 
 
@@ -2321,7 +2413,7 @@ def test_a_device_with_parameters_is_still_read():
 
     api.make_api_call = make_api_call
 
-    assert api._fetch_parameter_values("1234") is True
+    assert api._fetch_parameter_values("1234") is None
     assert wemportalapi.API_REFRESH_URL in calls
 
 
