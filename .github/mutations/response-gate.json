@@ -1097,5 +1097,19 @@
     "old": "                if summary and len(summary) <= MAX_LENGTH_STATE_STATE:",
     "new": "                if summary:",
     "tests": "a_week_too_long_for_a_state_falls_back_to_the_word"
+  },
+  {
+    "label": "write-back: leaving the coordinator's copy stale must be noticed",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        self._record_written_value(value)",
+    "new": "        pass",
+    "tests": "a_write_brings_the_coordinators_copy_up_to_date or the_next_write_sees_what_the_last_one_wrote"
+  },
+  {
+    "label": "write-back: recording a value the portal refused must be noticed",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        raise_if_not_writable(self._config_entry, self._attr_name)\n        await self.hass.async_add_executor_job(",
+    "new": "        raise_if_not_writable(self._config_entry, self._attr_name)\n        self._record_written_value(value)\n        await self.hass.async_add_executor_job(",
+    "tests": "a_refused_write_leaves_the_coordinators_copy_alone"
   }
 ]

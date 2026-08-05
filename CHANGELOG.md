@@ -266,6 +266,14 @@ to ask the user for new credentials.
   the same request. Whether that is enough is measured, not assumed: if the
   portal refuses the pair as well, the parameters are read-only in practice
   and will be presented as such.
+- **A second write no longer sends the first one back.** Each platform
+  updated its own displayed value after a write, but not the coordinator's
+  copy - which stays as the last poll left it, minutes ago. The date platform
+  reads that copy to build the companion values it sends with a write, so two
+  writes inside one poll interval put a superseded value on the wire and
+  asked the portal to undo the first. The coordinator's copy is brought up to
+  date as soon as the portal accepts a write, and left alone when it refuses
+  one.
 - **A failed update says what failed.** When every device's parameter fetch
   failed, Home Assistant was handed "all API parameter fetches failed this
   cycle; see the warnings above" - and it shows that message and nothing

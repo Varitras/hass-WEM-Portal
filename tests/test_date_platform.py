@@ -229,6 +229,47 @@ async def test_only_dates_are_taken_along():
     assert seen["together_with"] == {}
 
 
+def _wired(entity):
+    """Give the entity a write path the portal accepts, and record nothing.
+
+    The point of these two tests is the state left BEHIND by a write, not
+    what went out - so the api simply says yes.
+    """
+    from custom_components.wemportal.models import WemPortalData
+
+    api = types.SimpleNamespace(change_value=lambda *_a, **_k: None)
+    entity._config_entry.runtime_data = WemPortalData(api=api, coordinator=None)
+    entity.coordinator.api = api
+
+    async def _executor(func, *args):
+        return func(*args)
+
+    entity.hass = types.SimpleNamespace(async_add_executor_job=_executor)
+    return entity
+
+
+async def test_the_next_write_sees_what_the_last_one_wrote():
+    """The companions come from the coordinator, and the next poll is
+    minutes away. Measured on a live installation: two writes four seconds
+    apart, and the second carried a begin date two days out of date - the
+    one the first write had just replaced. The portal was being asked to
+    undo what it had just been told.
+    """
+    entity, data = _entity()
+    _with_companion(data)
+    _wired(entity)
+
+    await entity.async_set_value(date(2026, 8, 6))
+
+    sibling = WemPortalDate(
+        entity.coordinator, entity._config_entry, "1234", "Heat pump-U_Ende",
+        data["1234"]["Heat pump-U_Ende"],
+    )
+    assert sibling._companion_dates() == {
+        "U_Beginn": date_to_epoch(date(2026, 8, 6))
+    }
+
+
 def test_only_date_rows_become_date_entities():
     added = []
     data = {"1234": {

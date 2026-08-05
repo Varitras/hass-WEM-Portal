@@ -203,6 +203,36 @@ async def test_the_write_reaches_the_api_with_the_parameter_address(name):
     assert calls == [(("1234", "P1", 0, 1, 21.0), {"together_with": None})]
 
 
+@pytest.mark.parametrize("name", sorted(WRITEABLE))
+async def test_a_write_brings_the_coordinators_copy_up_to_date(name):
+    """The row keeps the value from the last poll, minutes ago - and the
+    date platform reads it to build the companions of the NEXT write. Two
+    writes inside one poll interval put a superseded value on the wire."""
+    entity = _writeable(WRITEABLE[name])
+
+    await entity.async_write_parameter(42.0)
+
+    assert entity.coordinator.data["1234"]["Pump"]["value"] == 42.0
+
+
+@pytest.mark.parametrize("name", sorted(WRITEABLE))
+async def test_a_refused_write_leaves_the_coordinators_copy_alone(name):
+    """Recording a value the heating system never took would make the
+    integration certain of the wrong thing - and hand it to the next write
+    as a companion."""
+    entity = _writeable(WRITEABLE[name])
+
+    def refuse(*_args, **_kwargs):
+        raise RuntimeError("portal said no")
+
+    entity.coordinator.api.change_value = refuse
+
+    with pytest.raises(RuntimeError):
+        await entity.async_write_parameter(42.0)
+
+    assert entity.coordinator.data["1234"]["Pump"]["value"] == 1.0
+
+
 def test_a_reloaded_entry_invalidates_an_operation_holding_the_old_state():
     """The half the unloading flag cannot answer.
 
