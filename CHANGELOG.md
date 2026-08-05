@@ -52,6 +52,16 @@ to ask the user for new credentials.
 - **Config entries carry a normalised account id.** Adding the same account
   twice with different capitalisation created a second entry polling the same
   installation. Existing entries are given the id on their next start.
+- **A weekly programme is readable.** Heating and hot water programmes arrive
+  as a JSON object with three fixed windows per day, and the sensor's state
+  was the single word "Programmed" - the times could only be got at by
+  parsing the raw string in a template. The state is the week itself now,
+  with consecutive days that match collapsed into one range, and a `Schedule`
+  attribute lists every day with the windows it actually uses. Where the
+  portal marks a window with a letter, the attribute carries it: what those
+  letters mean is not documented anywhere, so they are passed through rather
+  than interpreted. A week too long for a Home Assistant state falls back to
+  the bare word, and the attribute still holds every window.
 
 ### Fixed
 - **Planned maintenance is recognised on the web path as well.** It was only

@@ -3,6 +3,7 @@ Sensor platform for wemportal component
 """
 
 import json
+import re
 
 from homeassistant.components.sensor import RestoreSensor
 from homeassistant.config_entries import ConfigEntry
@@ -10,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.const import EntityCategory
+from homeassistant.const import MAX_LENGTH_STATE_STATE, EntityCategory
 
 from .const import _LOGGER
 from .utils import (device_is_reachable, device_model, fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
@@ -44,17 +45,36 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-def _readable_schedule(raw):
-    """A weekly programme as day -> list of periods, or None.
+# One of these payloads carries THREE kinds of key, and only the first is a
+# time window:
+#
+#   "MO-1": "00:00-24:00"     the n-th window of a day
+#   "MO":   "HLL"             one letter per window, in the same order
+#   "zone", "type", "mode", "cmd", "status", "TransferId"
+#                             how the programme was transferred - not the
+#                             programme
+#
+# Splitting every key on "-" and keeping the first part put all three in one
+# basket: the letters were rendered as a period of Monday, and the transfer
+# fields became weekdays of their own. What the letters MEAN is not
+# established - only that they line up with the windows by position - so
+# they are passed through and not interpreted.
+_WINDOW_KEY = re.compile(r"^(?P<day>.+)-(?P<slot>\d+)$")
 
-    The portal sends these as a JSON object with three fixed slots per day -
-    {"MO-1": "15:00-18:00", "MO-2": "00:00-00:00", ...} - and the state of
-    the sensor is only the word "Programmed", so the times were reachable
-    solely as that raw string. Grouped per day and with the unused slots
-    dropped, a template can say what is actually programmed.
+# How the portal spells a slot that is not in use.
+_UNUSED_WINDOW = "00:00-00:00"
 
-    Returns None when the value is not a schedule after all. Attributes are
-    decoration: getting one wrong must never cost the reading itself.
+
+def _parse_schedule(raw):
+    """A weekly programme as day -> [(window, mark), ...], or None.
+
+    Days come back in the order the portal sent them, which is also the order
+    of the week - so nothing here has to know what a week looks like, or
+    which language the day abbreviations are in.
+
+    Returns None when the value is not a schedule after all. What is built
+    from this is decoration around a reading: getting it wrong must never
+    cost the reading itself.
     """
     try:
         parsed = json.loads(raw)
@@ -63,17 +83,75 @@ def _readable_schedule(raw):
     if not isinstance(parsed, dict):
         return None
 
+    windows = {}
+    marks = {}
+    for key, value in parsed.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        match = _WINDOW_KEY.match(key)
+        if match:
+            windows.setdefault(match["day"], {})[int(match["slot"])] = value
+        else:
+            marks[key] = value
+
     schedule = {}
-    for slot, period in parsed.items():
-        if not isinstance(slot, str) or not isinstance(period, str):
-            continue
-        day = slot.split("-")[0]
-        # "00:00-00:00" is how the portal spells an unused slot. Keeping them
-        # would bury the two or three periods that are actually set.
-        if period.strip() in ("", "00:00-00:00"):
-            continue
-        schedule.setdefault(day, []).append(period)
+    for day, slots in windows.items():
+        # Looked up only for days that actually HAVE windows, which is what
+        # keeps "zone" and "status" from becoming days of the week.
+        letters = marks.get(day, "")
+        periods = []
+        for slot in sorted(slots):
+            period = slots[slot].strip()
+            if period in ("", _UNUSED_WINDOW):
+                continue
+            # By position, and only where there is one to take: a payload
+            # whose letters do not line up must not silently borrow the
+            # wrong one.
+            letter = letters[slot - 1] if 0 < slot <= len(letters) else ""
+            periods.append((period, letter))
+        if periods:
+            schedule[day] = periods
     return schedule or None
+
+
+def _readable_schedule(raw):
+    """The attribute: every day with its windows, marks included."""
+    schedule = _parse_schedule(raw)
+    if schedule is None:
+        return None
+    return {
+        day: [f"{period} ({mark})" if mark else period for period, mark in periods]
+        for day, periods in schedule.items()
+    }
+
+
+def _schedule_summary(raw):
+    """The state: the whole week on one line, or None.
+
+    "Programmed" was the entire state of these sensors, which says only that
+    the parameter exists - the times were reachable through an attribute and
+    nowhere else. Consecutive days with the same windows are collapsed, so
+    the common case reads "MO-SO 00:00-24:00" instead of seven repetitions.
+
+    The marks are deliberately left out here. They are one cryptic letter
+    whose meaning is not established, and a state has to survive a week of
+    three windows a day inside Home Assistant's length limit.
+    """
+    schedule = _parse_schedule(raw)
+    if schedule is None:
+        return None
+
+    groups = []
+    for day, periods in schedule.items():
+        times = ", ".join(period for period, _mark in periods)
+        if groups and groups[-1][2] == times:
+            groups[-1][1] = day
+        else:
+            groups.append([day, day, times])
+    return "; ".join(
+        f"{first} {times}" if first == last else f"{first}-{last} {times}"
+        for first, last, times in groups
+    )
 
 
 class WemPortalSensor(WemPortalEntity, RestoreSensor):
@@ -124,6 +202,15 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 _LOGGER.debug('Empty value for "%s" this cycle -> unknown', self._attr_name)
                 return None
             if val.startswith("{"):
+                summary = _schedule_summary(val)
+                # Home Assistant refuses a state longer than this, and a
+                # refused state is no reading at all. Seven days that differ
+                # from one another, three windows each, can get there. The
+                # bare word is worse than the summary and better than
+                # nothing - and the Schedule attribute keeps every window
+                # either way.
+                if summary and len(summary) <= MAX_LENGTH_STATE_STATE:
+                    return summary
                 return "Programmed"
 
         if is_numeric_sensor:

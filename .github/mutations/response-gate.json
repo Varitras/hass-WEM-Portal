@@ -917,20 +917,6 @@
     "tests": "stale_definitions_are_read_on_a_later_cycle"
   },
   {
-    "label": "schedule: leaving the programme unreadable must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "        schedule.setdefault(day, []).append(period)",
-    "new": "        pass",
-    "tests": "weekly_programme_is_grouped_by_day"
-  },
-  {
-    "label": "schedule: keeping the unused slots must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "        if period.strip() in (\"\", \"00:00-00:00\"):",
-    "new": "        if False:",
-    "tests": "weekly_programme_is_grouped_by_day or unused_slot_is_left_out"
-  },
-  {
     "label": "schedule: letting a non-programme through must be noticed",
     "path": "custom_components/wemportal/sensor.py",
     "old": "    if not isinstance(parsed, dict):\n        return None",
@@ -1048,5 +1034,68 @@
     "old": "            for companion_id, companion_value in (together_with or {}).items()",
     "new": "            for companion_id, companion_value in {}.items()",
     "tests": "companion_parameters_travel_in_the_same_request"
+  },
+  {
+    "label": "schedule: leaving the programme unreadable must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            periods.append((period, letter))",
+    "new": "            pass",
+    "tests": "weekly_programme_is_grouped_by_day"
+  },
+  {
+    "label": "schedule: keeping the unused slots must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            if period in (\"\", _UNUSED_WINDOW):\n                continue",
+    "new": "            if False:\n                continue",
+    "tests": "weekly_programme_is_grouped_by_day or unused_slot_is_left_out"
+  },
+  {
+    "label": "schedule: taking the transfer fields for weekdays must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        match = _WINDOW_KEY.match(key)\n        if match:",
+    "new": "        match = _WINDOW_KEY.match(key) or _WINDOW_KEY.match(key + \"-1\")\n        if match:",
+    "tests": "the_transfer_fields_do_not_become_weekdays"
+  },
+  {
+    "label": "schedule: reading a letter off the surviving windows must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            letter = letters[slot - 1] if 0 < slot <= len(letters) else \"\"",
+    "new": "            letter = letters[len(periods)] if len(periods) < len(letters) else \"\"",
+    "tests": "a_letter_belongs_to_the_window_it_numbers"
+  },
+  {
+    "label": "schedule: inventing a letter that is not there must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            letter = letters[slot - 1] if 0 < slot <= len(letters) else \"\"",
+    "new": "            letter = letters[slot - 1] if 0 < slot <= len(letters) else letters[-1:]",
+    "tests": "a_letter_that_is_not_there_is_not_invented"
+  },
+  {
+    "label": "schedule: repeating identical days instead of collapsing must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if groups and groups[-1][2] == times:",
+    "new": "        if False:",
+    "tests": "the_summary_collapses_days_that_are_the_same"
+  },
+  {
+    "label": "schedule: collapsing days that differ must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if groups and groups[-1][2] == times:",
+    "new": "        if groups:",
+    "tests": "the_summary_keeps_days_that_differ_apart"
+  },
+  {
+    "label": "schedule: falling back to the bare word must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "                if summary and len(summary) <= MAX_LENGTH_STATE_STATE:\n                    return summary",
+    "new": "                if False:\n                    return summary",
+    "tests": "the_state_is_the_week_and_not_the_word"
+  },
+  {
+    "label": "schedule: a state longer than Home Assistant accepts must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "                if summary and len(summary) <= MAX_LENGTH_STATE_STATE:",
+    "new": "                if summary:",
+    "tests": "a_week_too_long_for_a_state_falls_back_to_the_word"
   }
 ]

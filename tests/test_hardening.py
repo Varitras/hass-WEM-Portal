@@ -2624,9 +2624,50 @@ def test_missing_definitions_are_read_at_once():
 # --- a weekly programme has to be readable, not just present -----------
 
 
+DAYS = ["MO", "DI", "MI", "DO", "FR", "SA", "SO"]
+
+
+def _week_payload():
+    """The shape a real installation sends, transfer id replaced.
+
+    Written in the portal's own order - every window first, then the letters,
+    then the transfer fields - because that order is what the first version
+    of the parser tripped over.
+    """
+    payload = {}
+    for day in DAYS:
+        payload[f"{day}-1"] = "00:00-24:00"
+        payload[f"{day}-2"] = "00:00-00:00"
+        payload[f"{day}-3"] = "00:00-00:00"
+    for day in DAYS:
+        payload[day] = "HLL"
+    payload.update({
+        "zone": "1", "type": "Functionlist", "TransferId": "00000000",
+        "mode": "cycletime", "cmd": "load", "status": "ok",
+    })
+    return json.dumps(payload)
+
+
+def _schedule_sensor(raw):
+    """A sensor built from one programme reading, without Home Assistant."""
+    import types
+
+    from custom_components.wemportal.sensor import WemPortalSensor
+
+    row = {"value": raw, "unit": None, "friendlyName": "Heating programme",
+           "ParameterID": "Programm", "ModuleIndex": 0, "ModuleType": 1}
+    coordinator = types.SimpleNamespace(
+        data={"1234": {"Programm": row}},
+        api=types.SimpleNamespace(api_version="2.0", modules={}),
+        last_update_success=True,
+        async_add_listener=lambda *_a, **_k: None,
+    )
+    return WemPortalSensor(
+        coordinator, types.SimpleNamespace(entry_id="e1"), "1234", "Programm", row
+    )
+
+
 def test_a_weekly_programme_is_grouped_by_day():
-    """The sensor's state is only the word "Programmed", so the times were
-    reachable solely as the raw JSON string."""
     from custom_components.wemportal.sensor import _readable_schedule
 
     raw = (
@@ -2638,6 +2679,89 @@ def test_a_weekly_programme_is_grouped_by_day():
         "MO": ["15:00-18:00"],
         "DI": ["06:00-07:00", "17:00-19:00"],
     }
+
+
+def test_the_transfer_fields_do_not_become_weekdays():
+    """The defect the first version shipped with.
+
+    Grouping on key.split("-")[0] put three unrelated kinds of key in one
+    basket: the per-window letters were rendered as a period of Monday, and
+    zone, type, mode, cmd, status and the transfer id each became a day of
+    the week of their own.
+    """
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    schedule = _readable_schedule(_week_payload())
+
+    assert list(schedule) == DAYS
+    assert schedule["MO"] == ["00:00-24:00 (H)"]
+
+
+def test_a_letter_belongs_to_the_window_it_numbers():
+    """By slot number, not by position among the windows that survived.
+
+    Reading them off the filtered list would hand the second slot's letter
+    to a day whose FIRST slot is the unused one - a plausible-looking value
+    that is simply the wrong one.
+    """
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    raw = (
+        '{"MO-1":"00:00-00:00","MO-2":"17:00-19:00","MO-3":"00:00-00:00",'
+        '"MO":"LHL"}'
+    )
+
+    assert _readable_schedule(raw) == {"MO": ["17:00-19:00 (H)"]}
+
+
+def test_a_letter_that_is_not_there_is_not_invented():
+    """A payload whose letters do not line up must not borrow one."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    raw = '{"MO-1":"06:00-07:00","MO-2":"17:00-19:00","MO":"H"}'
+
+    assert _readable_schedule(raw) == {"MO": ["06:00-07:00 (H)", "17:00-19:00"]}
+
+
+def test_the_summary_collapses_days_that_are_the_same():
+    from custom_components.wemportal.sensor import _schedule_summary
+
+    assert _schedule_summary(_week_payload()) == "MO-SO 00:00-24:00"
+
+
+def test_the_summary_keeps_days_that_differ_apart():
+    from custom_components.wemportal.sensor import _schedule_summary
+
+    raw = '{"MO-1":"06:00-07:00","DI-1":"08:00-09:00","MI-1":"08:00-09:00"}'
+
+    assert _schedule_summary(raw) == "MO 06:00-07:00; DI-MI 08:00-09:00"
+
+
+def test_the_state_is_the_week_and_not_the_word():
+    """The whole point: "Programmed" said only that the parameter exists."""
+    assert _schedule_sensor(_week_payload()).native_value == "MO-SO 00:00-24:00"
+
+
+def test_a_week_too_long_for_a_state_falls_back_to_the_word():
+    """Home Assistant refuses a state over 255 characters, and a refused
+    state is no reading at all. Seven days that all differ, three windows
+    each, get there."""
+    from homeassistant.const import MAX_LENGTH_STATE_STATE
+
+    from custom_components.wemportal.sensor import _schedule_summary
+
+    payload = {}
+    for index, day in enumerate(DAYS):
+        for slot in (1, 2, 3):
+            hour = index * 3 + slot
+            payload[f"{day}-{slot}"] = f"{hour:02d}:00-{hour:02d}:30"
+    raw = json.dumps(payload)
+
+    # Asserted, not assumed: if the summary ever gets shorter than the limit
+    # this test would quietly stop exercising the fallback at all.
+    assert len(_schedule_summary(raw)) > MAX_LENGTH_STATE_STATE
+
+    assert _schedule_sensor(raw).native_value == "Programmed"
 
 
 def test_an_unused_slot_is_left_out():
