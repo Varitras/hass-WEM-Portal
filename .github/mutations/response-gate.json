@@ -798,13 +798,6 @@
     "tests": "device_with_no_parameters_is_not_asked_for_values"
   },
   {
-    "label": "empty read: failing a device that is simply empty must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if not self.modules.get(device_id):",
-    "new": "            if False:",
-    "tests": "device_with_no_modules_at_all_is_not_a_failure"
-  },
-  {
     "label": "rediscovery: caching the parameter list forever must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "                    if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:",
@@ -824,13 +817,6 @@
     "old": "        if values.get(\"parameters\"):",
     "new": "        if False:",
     "tests": "failed_re_read_keeps_the_parameters_it_had"
-  },
-  {
-    "label": "rediscovery: keeping a module the portal rejects must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        delete_candidates.append((values[\"Index\"], values[\"Type\"]))",
-    "new": "        pass",
-    "tests": "module_the_portal_rejects_is_still_dropped"
   },
   {
     "label": "rediscovery: retrying a refused module at once must be noticed",
@@ -887,13 +873,6 @@
     "old": "            if not required:\n                return None",
     "new": "            return None",
     "tests": "fresh_login_that_finds_nothing_still_fails"
-  },
-  {
-    "label": "rediscovery: deleting a module that is merely empty must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if not unsupported:",
-    "new": "        if False:",
-    "tests": "module_described_as_empty_is_kept_and_not_asked_again"
   },
   {
     "label": "rediscovery: asking an empty module again every cycle must be noticed",
@@ -1258,5 +1237,33 @@
     "old": "            names[entry.get(\"Value\")] = text",
     "new": "            names[entry.get(\"Text\")] = text",
     "tests": "the_levels_are_named_in_the_portals_own_words"
+  },
+  {
+    "label": "rediscovery: deleting a module the portal rejects must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        values[\"parameters\"] = {}\n        values[\"parameters_fetched_at\"] = time.time()",
+    "new": "        if unsupported:\n            del self.modules[device_id][key]\n            return\n        values[\"parameters\"] = {}\n        values[\"parameters_fetched_at\"] = time.time()",
+    "tests": "a_module_the_portal_rejects_is_kept_and_asked_again"
+  },
+  {
+    "label": "rediscovery: retrying a rejected module at once must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        values[\"parameters\"] = {}\n        values[\"parameters_fetched_at\"] = time.time()",
+    "new": "        values[\"parameters\"] = {}",
+    "tests": "a_rejected_module_is_not_asked_again_on_the_next_cycle"
+  },
+  {
+    "label": "rediscovery: failing a cycle for a device with nothing to poll must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if all(\"parameters\" in module for module in device_modules.values()):",
+    "new": "            if False:",
+    "tests": "a_device_whose_every_module_was_rejected_is_not_a_failed_cycle or device_with_no_modules_at_all_is_not_a_failure"
+  },
+  {
+    "label": "rediscovery: passing off an undescribed module as nothing to poll must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if all(\"parameters\" in module for module in device_modules.values()):",
+    "new": "            if True:",
+    "tests": "a_module_still_awaiting_its_description_does_fail_the_cycle"
   }
 ]

@@ -288,6 +288,18 @@ to ask the user for new credentials.
   the same request. Whether that is enough is measured, not assumed: if the
   portal refuses the pair as well, the parameters are read-only in practice
   and will be presented as such.
+- **A heating circuit the portal refuses to describe is no longer lost for
+  the session.** A module whose parameter description came back rejected was
+  deleted from the cache, and only the once-per-session device read could
+  bring it back - so it stayed missing until the integration was reloaded.
+  Whether an installation showed one heating circuit or two came down to what
+  the portal happened to answer in the second Home Assistant started, which
+  is exactly how the reports describe it: sometimes the first only,
+  sometimes both. The module is kept with an empty parameter list and a
+  timestamp now, so it is asked again on the normal daily interval and
+  nothing is ever permanently thrown away. A module that has been described
+  as empty is still not polled, so this costs one description request per day
+  and nothing per cycle.
 - **The heating-schedule fetch runs again.** It only ever looked at
   parameters the portal declares as DataType 6. A current portal types every
   weekly programme as DataType 2 - the same type as an ordinary switch - with

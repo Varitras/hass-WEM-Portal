@@ -1394,9 +1394,8 @@ class WemPortalApi:
         self.modules = new_modules
         self.data = new_data
 
-    def _keep_or_drop_module(self, device_id, key, values, delete_candidates,
-                            why, unsupported):
-        """A module the portal would not describe: keep what we have, or drop it.
+    def _note_undescribed_module(self, device_id, key, values, why, unsupported):
+        """A module the portal would not describe. Nothing is ever thrown away.
 
         This is what makes a re-scan purely ADDITIVE, and it is the condition
         the whole TTL rests on. Discovery used to run once per session, so
@@ -1406,8 +1405,24 @@ class WemPortalApi:
         working - straight into "device has no parameters", the state the
         empty-read guard exists for.
 
-        So a module that already HAS parameters keeps them and is simply not
-        asked again for a while. Only one that never had any is dropped.
+        A module that already HAS parameters keeps them and is simply not
+        asked again for a while.
+
+        One that never had any is recorded with an empty list and a
+        timestamp - it used to be deleted outright, and that is upstream
+        issue #126: a heating circuit whose very first description answered
+        400 was gone from the cache, and only get_devices() could bring it
+        back. That runs once per session, so the circuit stayed missing
+        until a reload. Whether an installation showed one circuit or two
+        came down to what the portal happened to answer in the second the
+        integration started - "sometimes only the first and sometimes both",
+        as the thread puts it.
+
+        The cost of keeping it is one description request per genuinely
+        unsupported module per day. The cost of deleting it was a heating
+        circuit nobody could get back. `unsupported` now only decides how
+        loudly this is said: a rejected request is worth a warning, an empty
+        description is not.
         """
         if values.get("parameters"):
             _LOGGER.warning(
@@ -1424,18 +1439,27 @@ class WemPortalApi:
             )
             return
 
-        if not unsupported:
-            # An empty description is a normal answer, not a fault: some
-            # modules simply have nothing to poll. Deleting one meant it came
-            # back through Device/Read on the next start, was asked again,
-            # described as empty again and dropped again - one wasted request
-            # and one WARNING per session, for ever, about a module that is
-            # merely empty.
-            #
-            # Kept with an empty list and a timestamp instead, so the normal
-            # interval applies and it is asked once a day like everything
-            # else. If it ever does gain parameters, that is exactly when
-            # they are found.
+        # An empty description is a normal answer, not a fault: some modules
+        # simply have nothing to poll. A rejected request might be the same
+        # thing said less politely, or a portal having a bad minute - from
+        # here the two are indistinguishable, which is exactly why neither
+        # may be treated as final.
+        #
+        # Both are recorded with an empty list and a timestamp, so the normal
+        # interval applies and the module is asked once a day like everything
+        # else. If it ever does gain parameters, that is when they are found.
+        # An empty list is falsy, so nothing is asked of it in the meantime -
+        # the value read skips modules without parameters.
+        if unsupported:
+            _LOGGER.warning(
+                "Device %s module %s/%s (%s) would not describe itself (%s). "
+                "Keeping it and asking again in about %d h - a module dropped "
+                "here is one Home Assistant cannot get back until a reload.",
+                device_id, values["Index"], values["Type"],
+                values.get("Name", "?"), why,
+                PARAMETER_REDISCOVERY_INTERVAL_SECONDS // 3600,
+            )
+        else:
             _LOGGER.debug(
                 "Device %s module %s/%s (%s) describes no parameters; nothing "
                 "to poll from it. Asking again in about %d h.",
@@ -1443,16 +1467,8 @@ class WemPortalApi:
                 values.get("Name", "?"),
                 PARAMETER_REDISCOVERY_INTERVAL_SECONDS // 3600,
             )
-            values["parameters"] = {}
-            values["parameters_fetched_at"] = time.time()
-            return
-
-        _LOGGER.warning(
-            "Module index %s type %s is unsupported by WEM Portal (%s). "
-            "Deleting from cache.",
-            values["Index"], values["Type"], why,
-        )
-        delete_candidates.append((values["Index"], values["Type"]))
+        values["parameters"] = {}
+        values["parameters_fetched_at"] = time.time()
 
     def _parameters_are_stale(self, module) -> bool:
         """Whether this module's parameter list is due for a re-read.
@@ -1475,7 +1491,6 @@ class WemPortalApi:
             _LOGGER.debug("Fetching api parameters data for device %s", device_id)
             _LOGGER.debug(self.data)
             _LOGGER.debug(self.modules[device_id])
-            delete_candidates = []
             forbidden_count = 0
             for key, values in self.modules[device_id].items():
                 # Cached AND still young enough to trust. Without the age
@@ -1534,8 +1549,8 @@ class WemPortalApi:
                             )
                             continue
                         elif status_code == 400:
-                            self._keep_or_drop_module(
-                                device_id, key, values, delete_candidates,
+                            self._note_undescribed_module(
+                                device_id, key, values,
                                 "the portal rejected the request",
                                 unsupported=True,
                             )
@@ -1546,8 +1561,8 @@ class WemPortalApi:
                     for parameter in response.json()["Parameters"]:
                         parameters[parameter["ParameterID"]] = parameter
                     if not parameters:
-                        self._keep_or_drop_module(
-                            device_id, key, values, delete_candidates,
+                        self._note_undescribed_module(
+                            device_id, key, values,
                             "it described no parameters",
                             unsupported=False,
                         )
@@ -1567,8 +1582,6 @@ class WemPortalApi:
                         GITHUB_PROJECT_URL,
                     )
                     continue
-            for key in delete_candidates:
-                del self.modules[device_id][key]
 
     def change_value(
         self,
@@ -1946,17 +1959,32 @@ class WemPortalApi:
             # them alike was the first version of this guard: it made a
             # device that genuinely has nothing to poll fail every cycle,
             # which three existing tests object to for good reason.
-            if not self.modules.get(device_id):
-                # No modules at all. There is nothing to poll and nothing
-                # wrong - failing the cycle for it would drag every other
-                # device into a backoff over a device that is simply empty.
+            device_modules = self.modules.get(device_id) or {}
+            # Nothing to poll, and nothing wrong: no modules at all, or every
+            # module described and every description empty. One branch,
+            # because `all()` of nothing is true - and because failing the
+            # cycle for either would drag every other device into a backoff
+            # over a device that simply has nothing to say.
+            #
+            # The second half is what a module the portal refuses to describe
+            # now looks like: kept with an empty list rather than deleted
+            # (see _note_undescribed_module). Deleting it used to empty the
+            # module dict, so an installation whose every module was rejected
+            # landed in the first half and counted as a quiet success.
+            # Keeping them WITHOUT this branch would have turned that into a
+            # cycle that fails for ever - backoff, recovery, eventually a
+            # re-authentication prompt. One bug traded for a worse one.
+            if all("parameters" in module for module in device_modules.values()):
                 _LOGGER.debug(
-                    "Device %s has no modules; nothing to read.", device_id
+                    "Device %s has nothing to read: %s.",
+                    device_id,
+                    "it has no modules" if not device_modules
+                    else "every module describes no parameters",
                 )
                 return None
 
-            # Modules, but not one with parameters: discovery has not
-            # produced any yet. That IS a failed refresh - no values were
+            # Modules whose description has not arrived at all: discovery has
+            # not produced any yet. That IS a failed refresh - no values were
             # read - and saying so is what keeps the cycle honest. Discovery
             # runs again next cycle for any module without parameters, so it
             # can still recover on its own.

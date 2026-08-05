@@ -2603,21 +2603,76 @@ def test_a_module_described_as_empty_is_kept_and_not_asked_again():
     assert len(calls) == 1, "the empty module was asked again on the next cycle"
 
 
-def test_a_module_the_portal_rejects_is_still_dropped():
-    """The other half: a 400 means the portal does not accept the module at
-    all, which is not the same as describing it as empty."""
+def _rejected_description():
+    """A 400 from EventType/Read, as the portal delivers it."""
     import requests as real_requests
 
     rejected = exceptions.WemPortalError("bad request")
     response = FakeResponse({}, status_code=400)
     rejected.__cause__ = real_requests.exceptions.HTTPError(response=response)
+    return rejected
 
-    api, _calls = _discovery_api([rejected])
+
+def test_a_module_the_portal_rejects_is_kept_and_asked_again():
+    """Upstream #126: a heating circuit whose first description answered 400
+    was deleted from the cache, and only get_devices() could bring it back -
+    which runs once per session. Whether an installation showed one circuit
+    or two therefore came down to what the portal answered in the second the
+    integration started."""
+    api, _calls = _discovery_api([_rejected_description()])
     del api.modules["1234"][(0, 1)]["parameters"]
 
     api.get_parameters()
 
-    assert (0, 1) not in api.modules["1234"]
+    assert (0, 1) in api.modules["1234"], "the module was thrown away"
+    assert api.modules["1234"][(0, 1)]["parameters"] == {}
+
+
+def test_a_rejected_module_is_not_asked_again_on_the_next_cycle():
+    """Kept, not re-asked: it carries a timestamp like everything else, so
+    the daily interval applies. Retrying at once would spend two requests a
+    cycle on a module the portal has just refused."""
+    api, calls = _discovery_api([_rejected_description()])
+    del api.modules["1234"][(0, 1)]["parameters"]
+
+    api.get_parameters()
+    api.get_parameters()
+
+    assert len(calls) == 1, "the rejected module was asked again immediately"
+
+
+def test_a_device_whose_every_module_was_rejected_is_not_a_failed_cycle():
+    """The trap in keeping them, and the reason this needed a second change.
+
+    A rejected module used to be deleted, so an installation whose every
+    module the portal refuses ended up with an empty module dict - "nothing
+    to poll", a quiet success. Keeping them instead lands in the "modules but
+    no parameters" branch, which reports a FAILED refresh. With one device
+    that fails the whole cycle, every cycle, for ever: backoff, recovery,
+    eventually a re-authentication prompt. That would have been a worse bug
+    than the one being fixed.
+    """
+    api, _calls = _discovery_api([_rejected_description()])
+    del api.modules["1234"][(0, 1)]["parameters"]
+    api.get_parameters()
+
+    reads = []
+    api.make_api_call = lambda url, **_k: reads.append(url) or FakeResponse({})
+
+    assert api._fetch_parameter_values("1234") is None, (
+        "a device with nothing to poll was reported as a failed refresh"
+    )
+    assert reads == [], "a module with no known parameters was read anyway"
+
+
+def test_a_module_still_awaiting_its_description_does_fail_the_cycle():
+    """The other side of that line: a module that has never been described -
+    as opposed to described as empty - means discovery has not run yet, and
+    reporting the cycle as successful would present nothing as everything."""
+    api, _calls = _discovery_api([{"Parameters": []}])
+    del api.modules["1234"][(0, 1)]["parameters"]
+
+    assert api._fetch_parameter_values("1234") is not None
 
 
 def test_get_devices_carries_the_parameter_timestamp_too():
