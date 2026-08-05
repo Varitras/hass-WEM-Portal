@@ -1363,5 +1363,26 @@
     "old": "        value, name, GITHUB_PROJECT_URL,",
     "new": "        \"a value\", name, GITHUB_PROJECT_URL,",
     "tests": "an_unreadable_word_is_reported_once_not_every_cycle"
+  },
+  {
+    "label": "blocked ip: reporting a refusal as a connection problem must be noticed",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "    except ForbiddenError as exc:\n        # Caught BEFORE the broad handler below",
+    "new": "    except AbortFlow as exc:\n        # Caught BEFORE the broad handler below",
+    "tests": "a_blocked_ip_is_not_reported_as_a_connection_problem"
+  },
+  {
+    "label": "blocked ip: swallowing every failure as a refusal must be noticed",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "        raise RateLimited from exc\n    except Exception as exc:",
+    "new": "        raise RateLimited from exc\n    except BaseException as exc:\n        raise RateLimited from exc\n    except Exception as exc:",
+    "tests": "an_ordinary_failure_is_still_a_connection_problem"
+  },
+  {
+    "label": "blocked ip: leaving the re-authentication step behind must be noticed",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                except RateLimited:\n                    errors[\"base\"] = \"rate_limited\"",
+    "new": "                except RateLimited:\n                    errors[\"base\"] = \"cannot_connect\"",
+    "tests": "both_flows_have_a_message_for_a_blocked_ip"
   }
 ]

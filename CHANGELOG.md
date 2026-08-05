@@ -288,6 +288,15 @@ to ask the user for new credentials.
   the same request. Whether that is enough is measured, not assumed: if the
   portal refuses the pair as well, the parameters are read-only in practice
   and will be presented as such.
+- **A blocked IP is named as one during setup and re-authentication.** When
+  the portal refuses requests from a network - which it does past its request
+  limit, per IP, for twelve hours - the setup flow reported "Failed to
+  connect". That reads like a network fault and invites an immediate retry,
+  against the very IP being refused, so every attempt made the situation last
+  longer. It is exactly what leads to deleting and re-adding the integration
+  to "fix" a blockade. Both flows now say what is actually happening and that
+  the credentials are not the problem. The options flow has said this
+  properly for a while; these two had not.
 - **A reading the integration cannot interpret is reported once, not every
   cycle.** The portal occasionally sends a word this integration does not
   know - a pump speed reading "Stop" on an installation whose portal writes

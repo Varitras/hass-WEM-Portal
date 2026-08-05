@@ -22,7 +22,8 @@
       "cannot_connect": "Verbindung fehlgeschlagen",
       "invalid_auth": "Ungültige Anmeldedaten",
       "unknown": "Unerwarteter Fehler",
-      "wrong_account": "Der Benutzername stimmt nicht mit diesem Konto überein. Die Neuanmeldung behält dasselbe Konto; nur das Passwort kann geändert werden."
+      "wrong_account": "Der Benutzername stimmt nicht mit diesem Konto überein. Die Neuanmeldung behält dasselbe Konto; nur das Passwort kann geändert werden.",
+      "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz gerade ab - das tut es nach zu vielen Anfragen in kurzer Zeit. Hier hilft nur warten: Die Sperre löst sich von selbst, und jeder weitere Versuch verlängert sie. An Benutzername und Passwort liegt es nicht."
     },
     "abort": {
       "already_configured": "Konto ist bereits konfiguriert",

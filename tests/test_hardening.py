@@ -809,6 +809,75 @@ def test_web_mode_validation_does_not_accept_a_config_that_cannot_poll(monkeypat
     assert tried == ["api"], "a failed API login must not fall back to web"
 
 
+# --- a blocked IP is not a connection problem ---------------------------
+
+
+def _validate_with(monkeypatch, error):
+    """Run the config-flow validation against a login that raises `error`."""
+    import asyncio
+
+    from custom_components.wemportal import config_flow
+    from custom_components.wemportal.const import CONF_MODE
+
+    def api_login(self):
+        raise error
+
+    monkeypatch.setattr(WemPortalApi, "api_login", api_login)
+
+    class _Hass:
+        @staticmethod
+        async def async_add_executor_job(func, *args):
+            return func(*args)
+
+    data = {"username": "user@example.org", "password": "secret", CONF_MODE: "api"}
+    return asyncio.run(config_flow.validate_input(_Hass(), data))
+
+
+def test_a_blocked_ip_is_not_reported_as_a_connection_problem(monkeypatch):
+    """Upstream #138. "Failed to connect" reads like a network fault and
+    invites an immediate retry - against an IP the portal is refusing right
+    now, and refuses per IP for twelve hours past its request limit. Every
+    retry makes the situation it describes last longer, which is how people
+    end up deleting and re-adding the integration to "fix" a blockade."""
+    from custom_components.wemportal import config_flow
+
+    with pytest.raises(config_flow.RateLimited):
+        _validate_with(monkeypatch, exceptions.ForbiddenError("403"))
+
+
+def test_an_ordinary_failure_is_still_a_connection_problem(monkeypatch):
+    """The broad handler stays for everything that is not a refusal."""
+    from custom_components.wemportal import config_flow
+
+    with pytest.raises(config_flow.CannotConnect):
+        _validate_with(monkeypatch, OSError("network down"))
+
+
+def test_wrong_credentials_are_still_wrong_credentials(monkeypatch):
+    from custom_components.wemportal import config_flow
+
+    with pytest.raises(config_flow.InvalidAuth):
+        _validate_with(monkeypatch, exceptions.AuthError("bad password"))
+
+
+def test_both_flows_have_a_message_for_a_blocked_ip():
+    """The step catches it; without the translation the user gets a raw key."""
+    import json
+    import pathlib
+
+    from custom_components.wemportal import config_flow
+
+    source = pathlib.Path(config_flow.__file__).read_text(encoding="utf-8")
+    assert source.count('errors["base"] = "rate_limited"') == 2, (
+        "the setup step and the re-authentication step must both say it"
+    )
+
+    root = pathlib.Path(config_flow.__file__).parent
+    for name in ("strings.json", "translations/en.json", "translations/de.json"):
+        doc = json.loads((root / name).read_text(encoding="utf-8"))
+        assert doc["config"]["error"].get("rate_limited"), name
+
+
 def _offline_api(status):
     """An api whose single device reports `status` on every call."""
     api = _api()

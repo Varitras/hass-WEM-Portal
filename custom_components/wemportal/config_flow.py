@@ -108,6 +108,16 @@ async def validate_input(hass: HomeAssistant, data):
             await hass.async_add_executor_job(api.web_login)
     except AuthError as exc:
         raise InvalidAuth from exc
+    except ForbiddenError as exc:
+        # Caught BEFORE the broad handler below, which would report it as
+        # "cannot connect". That reads like a network problem and invites an
+        # immediate retry - against an IP the portal is refusing right now,
+        # and refuses per IP for twelve hours past its request limit. Every
+        # retry makes the situation it describes last longer. The options
+        # flow has said this properly for a while; the setup flow, which is
+        # where somebody lands after deleting and re-adding the integration
+        # to "fix" the blockade, did not.
+        raise RateLimited from exc
     except Exception as exc:
         # Broad on purpose: this runs during the config flow, where any
         # failure that is not an auth rejection has to reach the user as
@@ -119,6 +129,10 @@ async def validate_input(hass: HomeAssistant, data):
         await hass.async_add_executor_job(close_api_sessions, api)
 
     return data
+
+class RateLimited(exceptions.HomeAssistantError):
+    """The portal is refusing this IP, not these credentials."""
+
 
 class CannotConnect(exceptions.HomeAssistantError):
     """Error to indicate we cannot connect."""
@@ -188,6 +202,8 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 # bare "unknown" instead of "already_configured" /
                 # "already_in_progress".
                 raise
+            except RateLimited:
+                errors["base"] = "rate_limited"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
@@ -241,6 +257,8 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     await validate_input(
                         self.hass, {**new_data, CONF_MODE: effective_mode}
                     )
+                except RateLimited:
+                    errors["base"] = "rate_limited"
                 except CannotConnect:
                     errors["base"] = "cannot_connect"
                 except InvalidAuth:

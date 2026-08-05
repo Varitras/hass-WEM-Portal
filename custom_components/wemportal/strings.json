@@ -20,7 +20,8 @@
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
       "unknown": "Unexpected error",
-      "wrong_account": "The username does not match this account. Re-authentication keeps the same account; only the password can be changed."
+      "wrong_account": "The username does not match this account. Re-authentication keeps the same account; only the password can be changed.",
+      "rate_limited": "The WEM Portal is refusing requests from this network right now, which it does after too many in a short time. Waiting is the only fix: it clears by itself, and every retry makes it last longer. Your username and password are not the problem."
     },
     "abort": {
       "already_configured": "Account is already configured",
