@@ -226,6 +226,22 @@ def _stretches(circuit_times):
     return stretches
 
 
+def _stretch_text(start, end, level, names) -> str:
+    """One stretch of a day, named where the portal named its level."""
+    span = f"{_clock(start)}-{_clock(end)}"
+    level_name = names.get(level)
+    if level_name:
+        return f"{span} {level_name}"
+    return span
+
+
+def _window_text(period, letter) -> str:
+    """One programmed window, with the letter the portal put on it."""
+    if letter:
+        return f"{period} ({letter})"
+    return period
+
+
 def _schedule_from_circuit_times(row):
     """The whole week from what the DEVICE reported, or None.
 
@@ -249,9 +265,7 @@ def _schedule_from_circuit_times(row):
         if label is None:
             continue
         entries = [
-            f"{_clock(start)}-{_clock(end)} {names[level]}"
-            if level in names
-            else f"{_clock(start)}-{_clock(end)}"
+            _stretch_text(start, end, level, names)
             for start, end, level in _stretches(day.get("CircuitTimes"))
         ]
         if entries:
@@ -272,7 +286,7 @@ def _schedule_from_json(raw):
     if schedule is None:
         return None
     return {
-        day: [f"{period} ({letter})" if letter else period for period, letter in periods]
+        day: [_window_text(period, letter) for period, letter in periods]
         for day, periods in schedule.items()
     }
 

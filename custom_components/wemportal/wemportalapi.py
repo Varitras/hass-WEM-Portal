@@ -80,6 +80,21 @@ from .utils import (
 )
 
 
+# The three rows a device status read owns. Named once because they are
+# written in one place and forgotten in another when the read fails: a
+# fourth row added to only one of the two lists would go on being published
+# as current long after nobody could read it. They happen to be named after
+# the portal fields they carry, which is why the literals look familiar.
+DEVICE_STATUS_CONNECTION = "ConnectionStatus"
+DEVICE_STATUS_HAS_ERRORS = "HasErrors"
+DEVICE_STATUS_ERROR_MESSAGES = "ErrorMessages"
+DEVICE_STATUS_ROWS = (
+    DEVICE_STATUS_CONNECTION,
+    DEVICE_STATUS_HAS_ERRORS,
+    DEVICE_STATUS_ERROR_MESSAGES,
+)
+
+
 # Devices whose refresh answered without a JobID, so the warning below is
 # raised once per device instead of on every cycle.
 _MISSING_JOB_ID_REPORTED = set()
@@ -1840,9 +1855,9 @@ class WemPortalApi:
             # reload fixed it.
             self.data[device_id]["ConnectionStatus"] = raw_status
 
-            self.data[device_id][f"{device_id}-ConnectionStatus"] = {
+            self.data[device_id][f"{device_id}-{DEVICE_STATUS_CONNECTION}"] = {
                 "friendlyName": "Connection Status",
-                "ParameterID": "ConnectionStatus",
+                "ParameterID": DEVICE_STATUS_CONNECTION,
                 "unit": None,
                 "value": conn_status,
                 "IsWriteable": False,
@@ -1855,11 +1870,11 @@ class WemPortalApi:
 
             errors = status_response.get("Errors", [])
             has_errors = "Yes" if errors else "No"
-            error_msg, error_detail = error_state_and_detail(errors)
+            error_message, error_detail = error_state_and_detail(errors)
 
-            self.data[device_id][f"{device_id}-HasErrors"] = {
+            self.data[device_id][f"{device_id}-{DEVICE_STATUS_HAS_ERRORS}"] = {
                 "friendlyName": "Has Errors",
-                "ParameterID": "HasErrors",
+                "ParameterID": DEVICE_STATUS_HAS_ERRORS,
                 "unit": None,
                 "value": has_errors,
                 "IsWriteable": False,
@@ -1870,11 +1885,11 @@ class WemPortalApi:
                 "icon": "mdi:alert"
             }
 
-            self.data[device_id][f"{device_id}-ErrorMessages"] = {
+            self.data[device_id][f"{device_id}-{DEVICE_STATUS_ERROR_MESSAGES}"] = {
                 "friendlyName": "Error Messages",
-                "ParameterID": "ErrorMessages",
+                "ParameterID": DEVICE_STATUS_ERROR_MESSAGES,
                 "unit": None,
-                "value": error_msg,
+                "value": error_message,
                 # Every fault, whatever the state could hold. The state is
                 # capped by Home Assistant; this is not.
                 "Errors": error_detail,
@@ -1930,8 +1945,8 @@ class WemPortalApi:
         device_data = self.data.get(device_id)
         if not isinstance(device_data, dict):
             return
-        for suffix in ("ConnectionStatus", "HasErrors", "ErrorMessages"):
-            row = device_data.get(f"{device_id}-{suffix}")
+        for row_name in DEVICE_STATUS_ROWS:
+            row = device_data.get(f"{device_id}-{row_name}")
             if isinstance(row, dict):
                 row["value"] = None
 
@@ -2006,11 +2021,12 @@ class WemPortalApi:
             # cycle that fails for ever - backoff, recovery, eventually a
             # re-authentication prompt. One bug traded for a worse one.
             if all("parameters" in module for module in device_modules.values()):
+                if not device_modules:
+                    reason = "it has no modules"
+                else:
+                    reason = "every module describes no parameters"
                 _LOGGER.debug(
-                    "Device %s has nothing to read: %s.",
-                    device_id,
-                    "it has no modules" if not device_modules
-                    else "every module describes no parameters",
+                    "Device %s has nothing to read: %s.", device_id, reason
                 )
                 return None
 

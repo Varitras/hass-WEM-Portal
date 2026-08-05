@@ -1276,15 +1276,15 @@
   {
     "label": "status: clearing the gate discovery reads must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        for suffix in (\"ConnectionStatus\", \"HasErrors\", \"ErrorMessages\"):",
-    "new": "        device_data[\"ConnectionStatus\"] = None\n        for suffix in (\"ConnectionStatus\", \"HasErrors\", \"ErrorMessages\"):",
+    "old": "        for row_name in DEVICE_STATUS_ROWS:",
+    "new": "        device_data[\"ConnectionStatus\"] = None\n        for row_name in DEVICE_STATUS_ROWS:",
     "tests": "a_failed_status_read_does_not_stop_parameter_discovery"
   },
   {
     "label": "status: forgetting only the connection and not the fault must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        for suffix in (\"ConnectionStatus\", \"HasErrors\", \"ErrorMessages\"):",
-    "new": "        for suffix in (\"ConnectionStatus\",):",
+    "old": "        for row_name in DEVICE_STATUS_ROWS:",
+    "new": "        for row_name in (DEVICE_STATUS_CONNECTION,):",
     "tests": "a_status_that_could_not_be_read_stops_claiming_no_fault"
   },
   {
