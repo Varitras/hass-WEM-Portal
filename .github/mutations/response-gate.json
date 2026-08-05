@@ -1286,5 +1286,40 @@
     "old": "        for suffix in (\"ConnectionStatus\", \"HasErrors\", \"ErrorMessages\"):",
     "new": "        for suffix in (\"ConnectionStatus\",):",
     "tests": "a_status_that_could_not_be_read_stops_claiming_no_fault"
+  },
+  {
+    "label": "faults: cutting the list without saying so must be noticed",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        return \", \".join(kept) + _MORE.format(len(messages) - len(kept)), messages",
+    "new": "        return \", \".join(kept), messages",
+    "tests": "a_fault_list_too_long_for_a_state_says_how_many_it_dropped"
+  },
+  {
+    "label": "faults: a state Home Assistant would refuse must be noticed",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        if len(candidate) > MAX_LENGTH_STATE_STATE:\n            break",
+    "new": "        if False:\n            break",
+    "tests": "a_fault_list_too_long_for_a_state_says_how_many_it_dropped"
+  },
+  {
+    "label": "faults: one over-long fault must still produce a usable state",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    room = MAX_LENGTH_STATE_STATE - len(marker) - len(\"...\")",
+    "new": "    room = MAX_LENGTH_STATE_STATE",
+    "tests": "one_fault_too_long_on_its_own_is_cut_and_says_so"
+  },
+  {
+    "label": "faults: losing the full list from the attribute must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                \"Errors\": error_detail,",
+    "new": "                \"Errors\": [],",
+    "tests": "the_full_fault_list_reaches_the_attribute"
+  },
+  {
+    "label": "faults: dropping the attribute on the way to the entity must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            if \"Errors\" in entity_data:\n                attr[\"Errors\"] = entity_data[\"Errors\"]",
+    "new": "            if False:\n                attr[\"Errors\"] = entity_data[\"Errors\"]",
+    "tests": "the_error_attribute_reaches_the_entity"
   }
 ]

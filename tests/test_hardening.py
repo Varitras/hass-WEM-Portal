@@ -833,6 +833,78 @@ def _api_with_a_read_status():
     return api
 
 
+def test_a_single_fault_reads_as_itself():
+    from custom_components.wemportal.utils import error_state_and_detail
+
+    assert error_state_and_detail(["E12 Sensor defect"]) == (
+        "E12 Sensor defect", ["E12 Sensor defect"]
+    )
+    assert error_state_and_detail([]) == ("None", [])
+
+
+def test_a_fault_list_too_long_for_a_state_says_how_many_it_dropped():
+    """Slicing the joined text at 255 characters and saying nothing is how a
+    second active fault disappears while the first still reads like the whole
+    story."""
+    from homeassistant.const import MAX_LENGTH_STATE_STATE
+
+    from custom_components.wemportal.utils import error_state_and_detail
+
+    faults = [f"E{index:02d} something is wrong with a component" for index in range(12)]
+
+    state, detail = error_state_and_detail(faults)
+
+    assert len(state) <= MAX_LENGTH_STATE_STATE
+    assert state.endswith(" more)"), state
+    assert detail == faults, "the attribute lost faults the state could not hold"
+    # The count has to be the real one, not a placeholder.
+    kept = state.split(" (+")[0].split(", ")
+    assert f"(+{len(faults) - len(kept)} more)" in state
+
+
+def test_one_fault_too_long_on_its_own_is_cut_and_says_so():
+    """Better a marked cut than no state at all - Home Assistant refuses an
+    over-long state outright."""
+    from homeassistant.const import MAX_LENGTH_STATE_STATE
+
+    from custom_components.wemportal.utils import error_state_and_detail
+
+    faults = ["E01 " + "x" * 400, "E02 second"]
+
+    state, detail = error_state_and_detail(faults)
+
+    assert len(state) <= MAX_LENGTH_STATE_STATE
+    assert "..." in state and "(+1 more)" in state
+    assert detail == faults
+
+
+def test_the_full_fault_list_reaches_the_attribute():
+    api = _api_with_a_read_status()
+    api.make_api_call = lambda *a, **k: FakeResponse(
+        {"ConnectionStatus": 0, "Errors": ["E12 one", "E13 two"],
+         "GroupTypeDescriptions": []}
+    )
+
+    api._fetch_device_status("1234")
+
+    row = api.data["1234"]["1234-ErrorMessages"]
+    assert row["value"] == "E12 one, E13 two"
+    assert row["Errors"] == ["E12 one", "E13 two"]
+
+
+def test_the_error_attribute_reaches_the_entity():
+    """The full list is only worth carrying if it gets past the row."""
+    entity = _sensor_from_row("1234-ErrorMessages", {
+        "value": "E12 one (+3 more)", "unit": None,
+        "friendlyName": "Error Messages", "ParameterID": "ErrorMessages",
+        "Errors": ["E12 one", "E13 two", "E14 three", "E15 four"],
+    })
+
+    assert entity.extra_state_attributes["Errors"] == [
+        "E12 one", "E13 two", "E14 three", "E15 four"
+    ]
+
+
 def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
     """The one direction a fault sensor must never fail in.
 
@@ -2859,23 +2931,31 @@ def _week_payload():
     return json.dumps(payload)
 
 
-def _schedule_sensor(raw):
-    """A sensor built from one programme reading, without Home Assistant."""
+def _sensor_from_row(key, row):
+    """One sensor entity built from one coordinator row, without Home
+    Assistant. The row IS the object the coordinator holds, so whatever the
+    entity reads back out of it, it reads the way production does."""
     import types
 
     from custom_components.wemportal.sensor import WemPortalSensor
 
-    row = {"value": raw, "unit": None, "friendlyName": "Heating programme",
-           "ParameterID": "Programm", "ModuleIndex": 0, "ModuleType": 1}
     coordinator = types.SimpleNamespace(
-        data={"1234": {"Programm": row}},
+        data={"1234": {key: row}},
         api=types.SimpleNamespace(api_version="2.0", modules={}),
         last_update_success=True,
         async_add_listener=lambda *_a, **_k: None,
     )
     return WemPortalSensor(
-        coordinator, types.SimpleNamespace(entry_id="e1"), "1234", "Programm", row
+        coordinator, types.SimpleNamespace(entry_id="e1"), "1234", key, row
     )
+
+
+def _schedule_sensor(raw):
+    """A sensor built from one programme reading."""
+    return _sensor_from_row("Programm", {
+        "value": raw, "unit": None, "friendlyName": "Heating programme",
+        "ParameterID": "Programm", "ModuleIndex": 0, "ModuleType": 1,
+    })
 
 
 def test_a_weekly_programme_is_grouped_by_day():

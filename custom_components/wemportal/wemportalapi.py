@@ -73,6 +73,7 @@ from .mobile_protocol import (
 )
 from .utils import (
     clamped_scan_interval,
+    error_state_and_detail,
     latest_statistics_entry,
     looks_like_schedule,
     maintenance_notice,
@@ -1854,7 +1855,7 @@ class WemPortalApi:
 
             errors = status_response.get("Errors", [])
             has_errors = "Yes" if errors else "No"
-            error_msg = ", ".join([str(e) for e in errors]) if errors else "None"
+            error_msg, error_detail = error_state_and_detail(errors)
 
             self.data[device_id][f"{device_id}-HasErrors"] = {
                 "friendlyName": "Has Errors",
@@ -1873,7 +1874,10 @@ class WemPortalApi:
                 "friendlyName": "Error Messages",
                 "ParameterID": "ErrorMessages",
                 "unit": None,
-                "value": error_msg[:255],
+                "value": error_msg,
+                # Every fault, whatever the state could hold. The state is
+                # capped by Home Assistant; this is not.
+                "Errors": error_detail,
                 "IsWriteable": False,
                 "DataType": -1,
                 "ModuleIndex": -1,

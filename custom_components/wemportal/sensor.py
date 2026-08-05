@@ -484,6 +484,11 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 attr["CircuitTimesDay"] = entity_data["CircuitTimesDay"]
             if "PossibleValues" in entity_data:
                 attr["PossibleValues"] = entity_data["PossibleValues"]
+            # Every active fault, whatever the state had room for. The state
+            # is capped by Home Assistant and says how many it dropped; this
+            # is where the dropped ones are.
+            if "Errors" in entity_data:
+                attr["Errors"] = entity_data["Errors"]
             if isinstance(entity_data.get("value"), str) and entity_data["value"].startswith("{"):
                 attr["Raw_JSON"] = entity_data["value"]
                 schedule = _readable_schedule(entity_data)

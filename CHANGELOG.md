@@ -288,6 +288,13 @@ to ask the user for new credentials.
   the same request. Whether that is enough is measured, not assumed: if the
   portal refuses the pair as well, the parameters are read-only in practice
   and will be presented as such.
+- **The fault message no longer drops what it cannot show.** Several active
+  faults were joined into one string and sliced at 255 characters, silently -
+  so the second fault disappeared while the first still read like the whole
+  story. Home Assistant does refuse a longer state, so the state still has to
+  fit, but it now keeps whole messages and says how many it left out, and an
+  `Errors` attribute carries every one of them regardless. A single message
+  too long on its own is cut and marked rather than dropped.
 - **A status nobody could read is no longer published as the current one.**
   The connection-status, has-errors and error-message sensors are written
   only by a successful device-status read. When one failed they went on

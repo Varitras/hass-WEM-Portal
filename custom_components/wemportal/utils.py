@@ -2,6 +2,7 @@
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
+    MAX_LENGTH_STATE_STATE,
     UnitOfPressure,
     UnitOfEnergy,
     UnitOfPower,
@@ -440,6 +441,49 @@ def latest_statistics_entry(values):
     # ISO-8601 ("2026-04-27T00:00:00") sorts correctly as text, so no date
     # parsing - and thus no locale or format surprises - is needed.
     return max(dated, key=lambda v: str(v["Date"]))
+
+
+_MORE = " (+{} more)"
+
+
+def error_state_and_detail(errors) -> tuple[str, list]:
+    """The fault sensor's state, and the full list for its attribute.
+
+    Home Assistant refuses a state longer than it allows, so this has to fit.
+    It used to fit by slicing the joined text at 255 characters and saying
+    nothing - which is how a second active fault disappears without trace,
+    while the first one still reads like the whole story.
+
+    So the complete list always travels in the attribute, and when the state
+    cannot hold everything it says how many are missing. Whole messages are
+    kept where possible; a single message too long on its own is cut and
+    marked, because a cut that announces itself is still worth more than no
+    state at all.
+    """
+    messages = [text for text in (str(e).strip() for e in errors or []) if text]
+    if not messages:
+        return "None", []
+
+    joined = ", ".join(messages)
+    if len(joined) <= MAX_LENGTH_STATE_STATE:
+        return joined, messages
+
+    kept: list[str] = []
+    for message in messages:
+        dropped = len(messages) - len(kept) - 1
+        candidate = ", ".join([*kept, message])
+        if dropped:
+            candidate += _MORE.format(dropped)
+        if len(candidate) > MAX_LENGTH_STATE_STATE:
+            break
+        kept.append(message)
+
+    if kept:
+        return ", ".join(kept) + _MORE.format(len(messages) - len(kept)), messages
+
+    marker = _MORE.format(len(messages) - 1)
+    room = MAX_LENGTH_STATE_STATE - len(marker) - len("...")
+    return messages[0][:room] + "..." + marker, messages
 
 
 def looks_like_schedule(value) -> bool:
