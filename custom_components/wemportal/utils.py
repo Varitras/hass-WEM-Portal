@@ -442,6 +442,23 @@ def latest_statistics_entry(values):
     return max(dated, key=lambda v: str(v["Date"]))
 
 
+def looks_like_schedule(value) -> bool:
+    """Whether a reading is one of the portal's weekly programmes.
+
+    The portal types these two ways. Some installations declare DataType 6,
+    which is what the heating-schedule fetch was written for. Others declare
+    DataType 2 - the same type as an ordinary switch - and put a JSON object
+    in the value instead. Measured on a 3.1.3.0 portal, where every one of
+    them arrives as 2, so keying on the declared type alone meant the fetch
+    never ran there at all.
+
+    Asking what the value IS catches both, and it is the same question the
+    sensor platform already asks to decide a reading is a programme rather
+    than a number.
+    """
+    return isinstance(value, str) and value.strip().startswith("{")
+
+
 # Connection states that mean the device is definitively not reachable, as
 # opposed to momentarily busy. Kept deliberately narrow: `busy` (8) is
 # transient and `unknown` covers a status we failed to read, and treating

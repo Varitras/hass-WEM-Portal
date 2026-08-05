@@ -1216,5 +1216,33 @@
     "old": "    return Schedule(marks.get(\"zone\"), schedule)",
     "new": "    return Schedule(marks.get(\"type\"), schedule)",
     "tests": "a_hot_water_window_says_which_level_it_runs"
+  },
+  {
+    "label": "programme: keying on the declared type alone must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                            param_data.get(\"DataType\") == WemDataType.PROGRAM\n                            or looks_like_schedule((row or {}).get(\"value\"))",
+    "new": "                            param_data.get(\"DataType\") == WemDataType.PROGRAM",
+    "tests": "a_programme_the_portal_types_as_a_switch_is_still_fetched"
+  },
+  {
+    "label": "programme: fetching a schedule for a plain switch must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                            or looks_like_schedule((row or {}).get(\"value\"))",
+    "new": "                            or True",
+    "tests": "a_plain_switch_is_not_mistaken_for_a_programme"
+  },
+  {
+    "label": "programme: a value that is not an object is not a schedule",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return isinstance(value, str) and value.strip().startswith(\"{\")",
+    "new": "    return value is not None",
+    "tests": "a_plain_switch_is_not_mistaken_for_a_programme"
+  },
+  {
+    "label": "programme: overwriting the week with a placeholder must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\"PossibleValues\", [])",
+    "new": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\"PossibleValues\", [])\n                                self.data[device_id][sensor_name][\"value\"] = \"Active\"",
+    "tests": "the_fetch_adds_to_the_programme_instead_of_replacing_it"
   }
 ]

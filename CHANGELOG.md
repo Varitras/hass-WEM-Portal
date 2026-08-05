@@ -286,6 +286,22 @@ to ask the user for new credentials.
   the same request. Whether that is enough is measured, not assumed: if the
   portal refuses the pair as well, the parameters are read-only in practice
   and will be presented as such.
+- **The heating-schedule fetch runs again.** It only ever looked at
+  parameters the portal declares as DataType 6. A current portal types every
+  weekly programme as DataType 2 - the same type as an ordinary switch - with
+  a JSON object in the value, so on those installations the fetch never ran
+  at all. Not failing, never entered, which is why no log ever mentioned it.
+  A programme is now recognised by what its value is, and a plain switch is
+  still left alone. This is the only path that asks the device for its
+  schedule rather than reading the portal's stored copy, so the
+  `CircuitTimesDay` and `PossibleValues` attributes it provides come back
+  with it.
+- **The schedule fetch no longer replaces the programme it enriches.** It
+  wrote the fixed word "Active" into the same row the value read fills, so on
+  an installation where both paths run, a readable week was replaced by a
+  placeholder once an hour until the next cycle put it back. It only adds its
+  own attributes now; a row that no value read ever delivered still gets the
+  placeholder, because there the fetch is the only source there is.
 - **A second write no longer sends the first one back.** Each platform
   updated its own displayed value after a write, but not the coordinator's
   copy - which stays as the last poll left it, minutes ago. The date platform

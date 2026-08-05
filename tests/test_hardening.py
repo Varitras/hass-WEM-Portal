@@ -2168,16 +2168,30 @@ def test_close_api_sessions_calls_the_api_rather_than_reaching_inside():
 # --- a heating schedule that fails must not be re-fetched every cycle ---
 
 
-def _circuit_times_api(responses):
-    """An api with one schedule parameter, answering from `responses`."""
+SCHEDULE_ROW = "Heating circuit 1-Heizprogramm1"
+
+
+def _circuit_times_api(responses, data_type=6, value=None):
+    """An api with one schedule parameter, answering from `responses`.
+
+    `data_type` and `value` are what the portal declared and what the value
+    read already put in the row - the two things that decide whether this
+    parameter counts as a programme at all.
+    """
     api = _api()
-    api.data = {"1234": {}}
+    rows = {}
+    if value is not None:
+        rows[SCHEDULE_ROW] = {
+            "value": value, "unit": None, "friendlyName": "Heating programme",
+            "ParameterID": "Heizprogramm1", "platform": "sensor",
+        }
+    api.data = {"1234": rows}
     api.modules = {
         "1234": {
             (0, 1): {
                 "Index": 0, "Type": 1, "Name": "Heating circuit 1",
                 "parameters": {"Heizprogramm1": {"ParameterID": "Heizprogramm1",
-                                                 "DataType": 6}},
+                                                 "DataType": data_type}},
             }
         }
     }
@@ -2252,6 +2266,71 @@ def test_a_successful_schedule_keeps_the_full_interval():
     stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
 
     assert time.time() - stamp < 5, "a successful fetch was back-dated like a failure"
+
+
+# --- the fetch has to recognise a programme the portal types as a switch
+
+
+def test_a_programme_the_portal_types_as_a_switch_is_still_fetched():
+    """DataType 6 is one of two ways the portal types a programme.
+
+    On a 3.1.3.0 portal every one of them arrives as DataType 2 with a JSON
+    object in the value, so keying on the declared type alone meant this
+    fetch - the only path that asks the DEVICE for its schedule instead of
+    reading the portal's stored copy - never ran at all. It did not fail; it
+    was never entered, which is why no log ever mentioned it.
+    """
+    api, calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}],
+        data_type=2, value='{"MO-1":"00:00-24:00"}',
+    )
+
+    api._fetch_circuit_times("1234")
+
+    assert calls, "a programme typed as a switch was never asked about"
+
+
+def test_a_plain_switch_is_not_mistaken_for_a_programme():
+    """The other half: DataType 2 is the ordinary switch type, and asking the
+    portal for the weekly schedule of a pump relay would waste two requests
+    per switch per hour against an account it blocks past 10,000."""
+    api, calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": []}], data_type=2, value=1.0,
+    )
+
+    api._fetch_circuit_times("1234")
+
+    assert calls == [], "a plain switch was fetched as if it had a schedule"
+
+
+def test_the_fetch_adds_to_the_programme_instead_of_replacing_it():
+    """It used to write the fixed word "Active" into the same row the value
+    read fills, so a readable week was replaced by a placeholder once an
+    hour until the next cycle put it back."""
+    schedule = '{"MO-1":"00:00-24:00"}'
+    api, _calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": [{"day": "MO"}], "PossibleValues": ["H"]}],
+        data_type=2, value=schedule,
+    )
+
+    api._fetch_circuit_times("1234")
+
+    row = api.data["1234"][SCHEDULE_ROW]
+    assert row["value"] == schedule, "the programme was replaced by a placeholder"
+    assert row["CircuitTimesDay"] == [{"day": "MO"}]
+    assert row["PossibleValues"] == ["H"]
+
+
+def test_a_row_only_this_fetch_knows_about_still_gets_a_placeholder():
+    """Where the value read never delivered the programme, this fetch is the
+    only source there is - and a row needs some state to show."""
+    api, _calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}],
+    )
+
+    api._fetch_circuit_times("1234")
+
+    assert api.data["1234"][SCHEDULE_ROW]["value"] == "Active"
 
 
 # --- a scraped reading that is gone must not be shown as current -------

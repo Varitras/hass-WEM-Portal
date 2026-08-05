@@ -25,6 +25,7 @@ from .exceptions import (
 
 from .const import (
     _LOGGER,
+    WemDataType,
     API_DATA_ACCESS_READ_URL,
     API_DATA_ACCESS_WRITE_URL,
     API_DEVICE_READ_URL,
@@ -73,6 +74,7 @@ from .mobile_protocol import (
 from .utils import (
     clamped_scan_interval,
     latest_statistics_entry,
+    looks_like_schedule,
     maintenance_notice,
 )
 
@@ -2078,7 +2080,21 @@ class WemPortalApi:
                 module_type = module.get("Type")
                 if "parameters" in module:
                     for param_id, param_data in module["parameters"].items():
-                        if param_data.get("DataType") == 6:  # WemDataType.PROGRAM
+                        sensor_name = f"{module['Name']}-{param_id}"
+                        row = self.data.get(device_id, {}).get(sensor_name)
+                        # Two ways the portal types a programme, and keying on
+                        # the declared one alone meant this whole block never
+                        # ran on a 3.1.3.0 portal: there every programme is
+                        # DataType 2 with a JSON object in the value, and the
+                        # fetch - the only path that asks the DEVICE for its
+                        # schedule rather than reading the portal's stored
+                        # copy - sat unused. It did not fail; it was never
+                        # entered, which is why nothing about it appeared in
+                        # any log.
+                        if (
+                            param_data.get("DataType") == WemDataType.PROGRAM
+                            or looks_like_schedule((row or {}).get("value"))
+                        ):
                             # Heating schedules rarely change (only via
                             # the WEM Portal app directly - this
                             # integration only ever shows them
@@ -2126,7 +2142,6 @@ class WemPortalApi:
                                     do_retry=True
                                 ).json()
 
-                                sensor_name = f"{module['Name']}-{param_id}"
                                 if sensor_name not in self.data[device_id]:
                                                             self.data[device_id][sensor_name] = {
                                         "friendlyName": translate(self.language, friendly_name_mapper(param_id)),
@@ -2143,7 +2158,14 @@ class WemPortalApi:
 
                                 self.data[device_id][sensor_name]["CircuitTimesDay"] = schedule_resp.get("CircuitTimesDay", [])
                                 self.data[device_id][sensor_name]["PossibleValues"] = schedule_resp.get("PossibleValues", [])
-                                self.data[device_id][sensor_name]["value"] = "Active"
+                                # The value is NOT touched. This fetch adds
+                                # detail to a row the value read already
+                                # filled; writing "Active" over it replaced a
+                                # readable week with a placeholder once an
+                                # hour, until the next cycle put the programme
+                                # back. Only a row that did not exist gets the
+                                # placeholder, above - there the fetch is the
+                                # only source there is.
                                 fetched = True
 
                             except Exception as exc:
