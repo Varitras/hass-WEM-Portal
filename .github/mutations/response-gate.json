@@ -429,8 +429,8 @@
   {
     "label": "setup failure: the expert service must not be left behind",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "        _async_release_expert_service(hass, entry)\n        raise",
-    "new": "        raise",
+    "old": "        _async_release_expert_service(hass, entry)\n        from .holiday import async_release_holiday_service",
+    "new": "        from .holiday import async_release_holiday_service",
     "tests": "setup_that_fails_late_leaves_no_service"
   },
   {
@@ -1111,5 +1111,75 @@
     "old": "        raise_if_not_writable(self._config_entry, self._attr_name)\n        await self.hass.async_add_executor_job(",
     "new": "        raise_if_not_writable(self._config_entry, self._attr_name)\n        self._record_written_value(value)\n        await self.hass.async_add_executor_job(",
     "tests": "a_refused_write_leaves_the_coordinators_copy_alone"
+  },
+  {
+    "label": "holiday: leaving the service behind after a failed setup must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        async_release_holiday_service(hass, entry)\n        raise",
+    "new": "        raise",
+    "tests": "setup_that_fails_late_leaves_no_service"
+  },
+  {
+    "label": "holiday: writing only the begin must be noticed",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "            together_with={end.row.get(\"ParameterID\", end.data_key): end_epoch},",
+    "new": "            together_with=None,",
+    "tests": "both_dates_travel_in_one_request"
+  },
+  {
+    "label": "holiday: leaving the end out of the coordinator must be noticed",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    end.row[\"value\"] = end_epoch",
+    "new": "    pass",
+    "tests": "the_written_range_reaches_the_coordinator"
+  },
+  {
+    "label": "holiday: recording a range the portal refused must be noticed",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    await hass.async_add_executor_job(\n        partial(",
+    "new": "    begin.row[\"value\"] = begin_epoch\n    end.row[\"value\"] = end_epoch\n    await hass.async_add_executor_job(\n        partial(",
+    "tests": "a_refused_write_changes_nothing"
+  },
+  {
+    "label": "holiday: accepting a backwards range must be noticed",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if begin_day > end_day:",
+    "new": "    if False:",
+    "tests": "a_range_that_ends_before_it_starts_is_refused"
+  },
+  {
+    "label": "holiday: refusing a one-day holiday must be noticed",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if begin_day > end_day:",
+    "new": "    if begin_day >= end_day:",
+    "tests": "a_single_day_holiday_is_allowed"
+  },
+  {
+    "label": "holiday: writing across two modules must be noticed",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if begin.device_id != end.device_id or begin.address != end.address:",
+    "new": "    if False:",
+    "tests": "two_dates_of_different_modules_are_refused"
+  },
+  {
+    "label": "holiday: skipping the unload gate must be noticed",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    data = raise_if_not_writable(entry, f\"Setting the holiday of {entity_id}\")",
+    "new": "    data = entry.runtime_data",
+    "tests": "a_write_into_an_unloading_entry_is_refused"
+  },
+  {
+    "label": "holiday: never registering the service must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        async_register_holiday_service(hass)",
+    "new": "        pass",
+    "tests": "the_holiday_service_follows_the_loaded_entries"
+  },
+  {
+    "label": "holiday: leaving the service behind on unload must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    async_release_holiday_service(hass, config_entry)\n\n    return True",
+    "new": "    return True",
+    "tests": "the_holiday_service_follows_the_loaded_entries"
   }
 ]

@@ -111,6 +111,28 @@
           "description": "Neuer Wert. Muss einer der vom Gerät angebotenen Optionen entsprechen."
         }
       }
+    },
+    "set_holiday": {
+      "name": "Urlaub setzen",
+      "description": "Schreibt Beginn und Ende eines Urlaubs in einer Anfrage. Home Assistant setzt immer nur eine Entität, das Portal nimmt diese beiden Parameter aber nur gemeinsam an - und nur, wenn der Zeitraum in sich stimmig ist. Ein Schreibvorgang mit nur einem der beiden wird abgelehnt, und ein Paar, dessen Beginn nach dem Ende liegt, wird als erfolgreich gemeldet und trotzdem nicht gespeichert. Wer die beiden Datums-Entitäten nacheinander setzt, beschreibt also zwischendurch einen halben Zeitraum, den das Portal verwerfen darf - genau das vermeidet dieser Dienst. Beide Entitäten müssen zum selben Modul gehören, und ein Zeitraum, der vor seinem Beginn endet, wird abgelehnt statt als Einstellung gemeldet, die nie stattgefunden hat.",
+      "fields": {
+        "begin_entity": {
+          "name": "Entität für den Beginn",
+          "description": "Die Datums-Entität mit dem ersten Urlaubstag."
+        },
+        "begin": {
+          "name": "Beginn",
+          "description": "Erster Urlaubstag."
+        },
+        "end_entity": {
+          "name": "Entität für das Ende",
+          "description": "Die Datums-Entität mit dem letzten Urlaubstag. Muss zum selben Modul gehören wie die Entität für den Beginn - das Portal adressiert Parameter je Modul."
+        },
+        "end": {
+          "name": "Ende",
+          "description": "Letzter Urlaubstag. Darf nicht vor dem Beginn liegen."
+        }
+      }
     }
   }
 }

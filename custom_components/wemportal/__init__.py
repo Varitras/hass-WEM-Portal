@@ -327,6 +327,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # Expert write access (web): register the service only while the
         # option is enabled. Everything lives in expert_writer.py - the
         # polling paths (scraper/API/coordinator) are untouched.
+        # Needs no option: it writes through the same mobile API the number,
+        # select and switch entities already use. Registered BEFORE the
+        # expert block, which is the part of this setup that can still fail -
+        # so whatever fails below leaves a service registered that the
+        # failure path has to take back, and the test for that covers both.
+        #
+        # Function-local like every other import of a sibling module here:
+        # this file is where those modules get get_wemportal_unique_id from,
+        # so importing them at the top would close the circle before that
+        # name exists.
+        from .holiday import async_register_holiday_service
+
+        async_register_holiday_service(hass)
+
         if entry.options.get(CONF_EXPERT_WRITE, False):
             _async_register_expert_service(hass, entry, api)
             entry.runtime_data.expert.setup_auto_poll(hass, entry)
@@ -367,6 +381,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # entry to serve it. Runs after runtime_data is gone, so this entry
         # already counts as not loaded.
         _async_release_expert_service(hass, entry)
+        from .holiday import async_release_holiday_service
+
+        async_release_holiday_service(hass, entry)
         raise
 
     return True
@@ -641,5 +658,8 @@ async def async_unload_entry(
     # has expert write enabled - previously unloading ANY entry removed
     # it globally, killing the service for other accounts.
     _async_release_expert_service(hass, config_entry)
+    from .holiday import async_release_holiday_service
+
+    async_release_holiday_service(hass, config_entry)
 
     return True

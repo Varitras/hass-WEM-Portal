@@ -52,6 +52,19 @@ to ask the user for new credentials.
 - **Config entries carry a normalised account id.** Adding the same account
   twice with different capitalisation created a second entry polling the same
   installation. Existing entries are given the id on their next start.
+- **A service sets a holiday as one range: `wemportal.set_holiday`.** Home
+  Assistant sets one entity at a time, and a holiday is not one value. The
+  portal takes begin and end only together, and only when the range they
+  describe makes sense - a write carrying one of them alone is refused, and a
+  pair whose begin falls after its end is reported as successful and stores
+  nothing. So whichever of the two date entities is set first describes half a
+  range the portal may discard, and which half that is depends on the order
+  the user happens to click in. The service takes both dates and both entities
+  and puts them on the wire in one request. Both must belong to the same
+  module, and a range that ends before it starts is refused rather than
+  reported as a setting that never happened. Like the expert service, it
+  requires an administrator: a service call is not covered by the per-user
+  entity permissions Home Assistant applies to the entities themselves.
 - **A weekly programme is readable.** Heating and hot water programmes arrive
   as a JSON object with three fixed windows per day, and the sensor's state
   was the single word "Programmed" - the times could only be got at by

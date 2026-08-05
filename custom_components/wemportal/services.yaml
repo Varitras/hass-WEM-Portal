@@ -30,3 +30,38 @@ set_expert_parameter:
         number:
           mode: box
           step: any
+set_holiday:
+  fields:
+    begin_entity:
+      name: Begin entity
+      description: The date entity holding the first day of the holiday.
+      required: true
+      example: date.heating_circuit_1_holiday_begin
+      selector:
+        entity:
+          integration: wemportal
+          domain: date
+    begin:
+      name: Begin
+      description: First day of the holiday.
+      required: true
+      selector:
+        date:
+    end_entity:
+      name: End entity
+      description: >-
+        The date entity holding the last day of the holiday. Must belong to
+        the same module as the begin entity - the portal addresses parameters
+        per module.
+      required: true
+      example: date.heating_circuit_1_holiday_end
+      selector:
+        entity:
+          integration: wemportal
+          domain: date
+    end:
+      name: End
+      description: Last day of the holiday. Must not be before the begin.
+      required: true
+      selector:
+        date:

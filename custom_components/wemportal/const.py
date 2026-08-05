@@ -275,6 +275,7 @@ DEFAULT_EXPERT_POLL_INTERVAL_MINUTES: Final = 60
 # can't hammer the portal.
 MIN_EXPERT_POLL_INTERVAL_MINUTES: Final = 15
 SERVICE_SET_EXPERT_PARAMETER: Final = "set_expert_parameter"
+SERVICE_SET_HOLIDAY: Final = "set_holiday"
 
 # --- Expert web navigation (Fachmann level) -----------------------------
 # The Fachmann parameters (e.g. Leistungsbegrenzung) live behind a second

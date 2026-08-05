@@ -109,6 +109,28 @@
           "description": "New value. Must be one of the options the device offers."
         }
       }
+    },
+    "set_holiday": {
+      "name": "Set holiday",
+      "description": "Writes the beginning and the end of a holiday in one request. Home Assistant sets one entity at a time, and the portal takes these two parameters only together and only when the range they describe makes sense - a write carrying one of them alone is refused, and a pair whose begin falls after its end is reported as successful and stores nothing. So whichever of the two date entities is set first describes half a range that the portal may discard, which is what this service avoids. Both entities must belong to the same module, and the service refuses a range that ends before it starts rather than reporting a setting that never happened.",
+      "fields": {
+        "begin_entity": {
+          "name": "Begin entity",
+          "description": "The date entity holding the first day of the holiday."
+        },
+        "begin": {
+          "name": "Begin",
+          "description": "First day of the holiday."
+        },
+        "end_entity": {
+          "name": "End entity",
+          "description": "The date entity holding the last day of the holiday. Must belong to the same module as the begin entity - the portal addresses parameters per module."
+        },
+        "end": {
+          "name": "End",
+          "description": "Last day of the holiday. Must not be before the begin."
+        }
+      }
     }
   }
 }

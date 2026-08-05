@@ -276,6 +276,20 @@ async def test_expert_service_registered_only_while_enabled(hass):
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
 
 
+async def test_the_holiday_service_follows_the_loaded_entries(hass):
+    """It needs no option - it writes through the same mobile API the number,
+    select and switch entities already use - but it must still disappear when
+    nothing is loaded to serve it."""
+    from custom_components.wemportal.const import SERVICE_SET_HOLIDAY
+
+    entry = await _setup(hass, _entry(hass))
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert not hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY)
+
+
 async def test_the_expert_module_is_only_loaded_when_it_is_enabled(hass, monkeypatch):
     """The expert module pulls curl_cffi and lxml at import time (~140 ms,
     measured), on the event loop, during platform setup.
@@ -1805,8 +1819,13 @@ async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatc
     assert coordinators, "no coordinator was built, so this proves nothing"
     coordinator = coordinators[-1]
 
+    from custom_components.wemportal.const import SERVICE_SET_HOLIDAY
+
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER), (
         "a failed setup left its expert service registered"
+    )
+    assert not hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY), (
+        "a failed setup left its holiday service registered"
     )
 
     # And nothing may keep polling for it. Home Assistant does not unload an
