@@ -1342,5 +1342,26 @@
     "old": "                        if name in output:",
     "new": "                        if True:",
     "tests": "rows_that_do_not_collide_say_nothing"
+  },
+  {
+    "label": "vocabulary: warning about the same word every cycle must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    if key in _UNREADABLE_REPORTED:\n        return\n    _UNREADABLE_REPORTED.add(key)",
+    "new": "    _UNREADABLE_REPORTED.add(key)",
+    "tests": "an_unreadable_word_is_reported_once_not_every_cycle"
+  },
+  {
+    "label": "vocabulary: silencing the sensor instead of the word must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    key = (name, repr(value))",
+    "new": "    key = (name,)",
+    "tests": "a_different_unreadable_word_is_reported_on_its_own"
+  },
+  {
+    "label": "vocabulary: dropping the unknown word from the report must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        value, name, GITHUB_PROJECT_URL,",
+    "new": "        \"a value\", name, GITHUB_PROJECT_URL,",
+    "tests": "an_unreadable_word_is_reported_once_not_every_cycle"
   }
 ]

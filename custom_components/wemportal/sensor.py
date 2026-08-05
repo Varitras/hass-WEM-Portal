@@ -13,7 +13,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import MAX_LENGTH_STATE_STATE, EntityCategory
 
-from .const import _LOGGER
+from .const import _LOGGER, GITHUB_PROJECT_URL
 from .utils import (device_is_reachable, device_model, fix_value_and_uom, uom_to_device_class, uom_to_state_class, build_device_info)
 from .entity import WemPortalEntity
 
@@ -69,6 +69,42 @@ _UNUSED_WINDOW = "00:00-00:00"
 # means no weekday table lives here and nothing has to know which language the
 # portal speaks.
 _DAY_ORDER = (1, 2, 3, 4, 5, 6, 0)
+
+# Readings already reported as unreadable, so the same word is not warned
+# about on every cycle. Module level for the same reason as
+# utils._MARKER_REPORTED: entities are rebuilt on a reload, the portal's
+# vocabulary is not.
+_UNREADABLE_REPORTED: set = set()
+
+
+def _report_unreadable_value(name, value) -> None:
+    """Say once that a reading could not be made into a number.
+
+    The portal sometimes sends a word this integration does not know - a pump
+    speed reading "Stop" is the one in upstream issue #146, on an
+    installation whose portal writes "Aus" and "off" everywhere else. That is
+    a legitimate answer, not a fault, and it arrives on every single cycle
+    for as long as the condition lasts. Warning each time filled the log with
+    a line that never changes and never resolves, which is how a real problem
+    goes unnoticed.
+
+    Once per sensor and value instead - and the one line is worth reading:
+    it names the word and asks for it, so adding it to the vocabulary later
+    rests on a report rather than on a guess about somebody else's heat pump.
+
+    The value is keyed by its repr, because what arrives here is whatever the
+    portal sent and need not be hashable.
+    """
+    key = (name, repr(value))
+    if key in _UNREADABLE_REPORTED:
+        return
+    _UNREADABLE_REPORTED.add(key)
+    _LOGGER.warning(
+        'Cannot read %r as a number for "%s", so it shows as unknown. If the '
+        "WEM Portal shows something meaningful there, please report that word "
+        "at %s - it is probably a state this integration does not know yet.",
+        value, name, GITHUB_PROJECT_URL,
+    )
 
 
 def _parse_schedule(raw):
@@ -347,7 +383,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             try:
                 float(val)
             except (TypeError, ValueError):
-                _LOGGER.warning('Invalid numeric sensor value for "%s": %r -> set to None', self._attr_name, val)
+                _report_unreadable_value(self._attr_name, val)
                 return None
 
         return val

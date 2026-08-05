@@ -2958,6 +2958,75 @@ def _schedule_sensor(raw):
     })
 
 
+# --- a word the portal knows and this integration does not --------------
+
+
+@pytest.fixture
+def _forget_unreadable_reports():
+    from custom_components.wemportal import sensor as sensor_module
+
+    sensor_module._UNREADABLE_REPORTED.clear()
+    yield
+    sensor_module._UNREADABLE_REPORTED.clear()
+
+
+def _numeric_sensor(value):
+    """A sensor that must hold a number - it carries a unit."""
+    return _sensor_from_row("Pump", {
+        "value": value, "unit": "%", "friendlyName": "Pump speed",
+        "ParameterID": "Drehzahl", "ModuleIndex": 0, "ModuleType": 1,
+    })
+
+
+def test_a_word_that_is_not_a_number_shows_as_unknown(_forget_unreadable_reports):
+    """Upstream #146: a pump speed reading "Stop" on a portal that writes
+    "Aus" everywhere else. Not a fault - a state we do not know."""
+    assert _numeric_sensor("Stop").native_value is None
+
+
+def test_an_unreadable_word_is_reported_once_not_every_cycle(
+    _forget_unreadable_reports, caplog
+):
+    """It arrives on every cycle for as long as the condition lasts, and a
+    warning each time buries everything else in the log."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            _numeric_sensor("Stop")
+
+    hits = [r for r in caplog.records if "as a number" in r.getMessage()]
+    assert len(hits) == 1, f"reported {len(hits)} times"
+    assert "Stop" in hits[0].getMessage(), "the unknown word was not named"
+
+
+def test_a_different_unreadable_word_is_reported_on_its_own(
+    _forget_unreadable_reports, caplog
+):
+    """Silencing the sensor rather than the word would hide the second state
+    this installation turns out to have."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        _numeric_sensor("Stop")
+        _numeric_sensor("Blockiert")
+
+    hits = [r for r in caplog.records if "as a number" in r.getMessage()]
+    assert len(hits) == 2
+
+
+def test_a_word_this_integration_does_know_is_not_reported(
+    _forget_unreadable_reports, caplog
+):
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        entity = _numeric_sensor(0.0)
+
+    assert entity.native_value == 0.0
+    assert "as a number" not in caplog.text
+
+
 def test_a_weekly_programme_is_grouped_by_day():
     from custom_components.wemportal.sensor import _readable_schedule
 

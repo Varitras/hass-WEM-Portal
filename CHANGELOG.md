@@ -288,6 +288,16 @@ to ask the user for new credentials.
   the same request. Whether that is enough is measured, not assumed: if the
   portal refuses the pair as well, the parameters are read-only in practice
   and will be presented as such.
+- **A reading the integration cannot interpret is reported once, not every
+  cycle.** The portal occasionally sends a word this integration does not
+  know - a pump speed reading "Stop" on an installation whose portal writes
+  "Aus" and "off" everywhere else. That is a legitimate answer, not a fault,
+  and it arrives on every cycle for as long as the condition lasts, so the
+  warning repeated indefinitely and buried everything else. It is said once
+  per sensor and value now, names the word, and asks for it to be reported -
+  so it can be added to the vocabulary on evidence rather than on a guess
+  about somebody else's heat pump. The sensor still shows unknown rather than
+  a fabricated number.
 - **Two scraped rows that produce one sensor are reported.** The parser
   assigns into its output by key, which overwrites without a word, so one
   reading ends up showing another's value - a plausible number from the wrong
