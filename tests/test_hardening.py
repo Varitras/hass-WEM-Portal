@@ -2706,6 +2706,17 @@ def test_missing_definitions_are_read_at_once():
 DAYS = ["MO", "DI", "MI", "DO", "FR", "SA", "SO"]
 
 
+def _row(raw, **extra):
+    """One coordinator row carrying a programme, as the mapper builds it.
+
+    The schedule helpers take the ROW, not the raw value: the device's own
+    view of the same programme arrives beside it, and it is the better of the
+    two sources.
+    """
+    return {"value": raw, "unit": None, "friendlyName": "Programme",
+            "ParameterID": "Programm", "platform": "sensor", **extra}
+
+
 def _week_payload():
     """The shape a real installation sends, transfer id replaced.
 
@@ -2754,7 +2765,7 @@ def test_a_weekly_programme_is_grouped_by_day():
         '"DI-1":"06:00-07:00","DI-2":"17:00-19:00","DI-3":"00:00-00:00"}'
     )
 
-    assert _readable_schedule(raw) == {
+    assert _readable_schedule(_row(raw)) == {
         "MO": ["15:00-18:00"],
         "DI": ["06:00-07:00", "17:00-19:00"],
     }
@@ -2770,7 +2781,7 @@ def test_the_transfer_fields_do_not_become_weekdays():
     """
     from custom_components.wemportal.sensor import _readable_schedule
 
-    schedule = _readable_schedule(_week_payload())
+    schedule = _readable_schedule(_row(_week_payload()))
 
     assert list(schedule) == DAYS
     assert schedule["MO"] == ["00:00-24:00 (H)"]
@@ -2790,7 +2801,7 @@ def test_a_letter_belongs_to_the_window_it_numbers():
         '"MO":"LHL"}'
     )
 
-    assert _readable_schedule(raw) == {"MO": ["17:00-19:00 (H)"]}
+    assert _readable_schedule(_row(raw)) == {"MO": ["17:00-19:00 (H)"]}
 
 
 def test_a_letter_that_is_not_there_is_not_invented():
@@ -2799,13 +2810,13 @@ def test_a_letter_that_is_not_there_is_not_invented():
 
     raw = '{"MO-1":"06:00-07:00","MO-2":"17:00-19:00","MO":"H"}'
 
-    assert _readable_schedule(raw) == {"MO": ["06:00-07:00 (H)", "17:00-19:00"]}
+    assert _readable_schedule(_row(raw)) == {"MO": ["06:00-07:00 (H)", "17:00-19:00"]}
 
 
 def test_the_summary_collapses_days_that_are_the_same():
     from custom_components.wemportal.sensor import _schedule_summary
 
-    assert _schedule_summary(_week_payload()) == "MO-SO 00:00-24:00"
+    assert _schedule_summary(_row(_week_payload())) == "MO-SO 00:00-24:00 (H)"
 
 
 def test_the_summary_keeps_days_that_differ_apart():
@@ -2813,87 +2824,140 @@ def test_the_summary_keeps_days_that_differ_apart():
 
     raw = '{"MO-1":"06:00-07:00","DI-1":"08:00-09:00","MI-1":"08:00-09:00"}'
 
-    assert _schedule_summary(raw) == "MO 06:00-07:00; DI-MI 08:00-09:00"
+    assert _schedule_summary(_row(raw)) == "MO 06:00-07:00; DI-MI 08:00-09:00"
 
 
 def test_the_state_is_the_week_and_not_the_word():
     """The whole point: "Programmed" said only that the parameter exists."""
-    assert _schedule_sensor(_week_payload()).native_value == "MO-SO 00:00-24:00"
+    assert _schedule_sensor(_week_payload()).native_value == "MO-SO 00:00-24:00 (H)"
 
 
-# --- what a window's letter means, and only where that is known ---------
+# --- the device's own view of a programme, which is the complete one -----
 #
-# Read off the portal's own view of one installation's hot water programme:
-# it lists the window carrying H as "Normal" and the stretches around it as
-# "Absenk", and that programme has exactly two levels. The heating programme
-# has three, so the same two letters cannot cover it - which is why the table
-# is per zone and why anything it does not know keeps the bare letter.
+# Measured on a live installation. CircuitTimes carries a list of stretches
+# per day: MinutesSinceMidnight is the END of a stretch, Value its level, and
+# PossibleValues names the levels in the portal's own words. The heating
+# programme came back as 360/610/810/1440 carrying 3/2/1/3 - exactly the four
+# cycles the portal lists, including the reduced stretch from ten past ten
+# until half one, which has NO window in the JSON at all.
 
 
-def _ww_payload(window="15:00-18:00", letters="HLL", zone="WW"):
-    """The hot water programme as a real installation sends it."""
+HEATING_LEVELS = [
+    {"Value": 1, "Text": "Absenk"},
+    {"Value": 2, "Text": "Normal"},
+    {"Value": 3, "Text": "Komfort"},
+]
+
+
+def _measured_monday():
+    """The heating programme of a real installation: Monday split four ways,
+    the rest of the week comfort throughout."""
     payload = {}
+    windows = {"MO": ["00:00-06:00", "06:00-10:10", "13:30-24:00"]}
     for day in DAYS:
-        payload[f"{day}-1"] = window
-        payload[f"{day}-2"] = "00:00-00:00"
-        payload[f"{day}-3"] = "00:00-00:00"
+        for slot in (1, 2, 3):
+            payload[f"{day}-{slot}"] = (
+                windows.get(day, ["00:00-24:00"])[slot - 1]
+                if slot <= len(windows.get(day, ["00:00-24:00"]))
+                else "00:00-00:00"
+            )
     for day in DAYS:
-        payload[day] = letters
-    payload.update({
-        "zone": zone, "type": "Functionlist", "TransferId": "00000000",
-        "mode": "cycletime", "cmd": "load", "status": "ok",
-    })
-    return json.dumps(payload)
+        payload[day] = "HLH" if day == "MO" else "HLL"
+    payload.update({"zone": "1", "type": "Functionlist", "mode": "cycletime"})
+
+    circuit_times = [{
+        "Day": 1, "BlockNumber": 1, "CircuitTimes": [
+            {"MinutesSinceMidnight": 360, "Value": 3},
+            {"MinutesSinceMidnight": 610, "Value": 2},
+            {"MinutesSinceMidnight": 810, "Value": 1},
+            {"MinutesSinceMidnight": 1440, "Value": 3},
+        ],
+    }]
+    for number in (2, 3, 4, 5, 6, 0):
+        circuit_times.append({
+            "Day": number, "BlockNumber": 2,
+            "CircuitTimes": [{"MinutesSinceMidnight": 1440, "Value": 3}],
+        })
+    return _row(json.dumps(payload),
+                CircuitTimesDay=circuit_times, PossibleValues=HEATING_LEVELS)
 
 
-def test_a_hot_water_window_says_which_level_it_runs():
+def test_the_reduced_stretch_the_json_does_not_carry_is_shown():
+    """The whole reason this source is preferred: between the second and the
+    third window the programme is reduced for three hours, and the JSON says
+    nothing at all about them."""
     from custom_components.wemportal.sensor import _readable_schedule
 
-    assert _readable_schedule(_ww_payload())["MO"] == ["15:00-18:00 (H = Normal)"]
-
-
-def test_the_letter_stays_next_to_the_level_it_was_read_as():
-    """The name comes from reading one installation. If that reading is ever
-    wrong somewhere, what it was read from has to still be on screen."""
-    from custom_components.wemportal.sensor import _readable_schedule
-
-    assert "H" in _readable_schedule(_ww_payload())["MO"][0]
-
-
-def test_a_reduced_hot_water_window_is_named_too():
-    """L has only ever been seen on an unused slot, and those are dropped
-    before the table is consulted - so this may be unreachable in practice.
-    The meaning is known either way, and a bare letter we could have named
-    would be the worse of the two mistakes."""
-    from custom_components.wemportal.sensor import _readable_schedule
-
-    schedule = _readable_schedule(_ww_payload(letters="LHH"))
-
-    assert schedule["MO"] == ["15:00-18:00 (L = Absenk)"]
-
-
-def test_a_zone_the_table_does_not_know_keeps_the_bare_letter():
-    """The heating programme has three levels, so these two names cannot be
-    its. An opaque "H" is honest; a confidently wrong "Normal" is not."""
-    from custom_components.wemportal.sensor import _readable_schedule
-
-    assert _readable_schedule(_ww_payload(zone="1"))["MO"] == ["15:00-18:00 (H)"]
-
-
-def test_a_letter_the_table_does_not_know_keeps_itself():
-    from custom_components.wemportal.sensor import _readable_schedule
-
-    assert _readable_schedule(_ww_payload(letters="KLL"))["MO"] == [
-        "15:00-18:00 (K)"
+    assert _readable_schedule(_measured_monday())["MO"] == [
+        "00:00-06:00 Komfort",
+        "06:00-10:10 Normal",
+        "10:10-13:30 Absenk",
+        "13:30-24:00 Komfort",
     ]
 
 
-def test_the_state_carries_the_times_and_not_the_levels():
-    """A state has 255 characters to hold a week in; the attribute has room
-    for the rest."""
+def test_the_levels_are_named_in_the_portals_own_words():
+    """PossibleValues ships with the programme, so the names are the portal's
+    rather than a table in this repository guessing at letters."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    row = _measured_monday()
+    row["PossibleValues"] = [{"Value": 3, "Text": "Fest"}]
+
+    assert _readable_schedule(row)["DI"] == ["00:00-24:00 Fest"]
+
+
+def test_a_level_the_portal_did_not_name_keeps_its_times():
+    """A stretch is worth showing even when its level has no word."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    row = _measured_monday()
+    row["PossibleValues"] = []
+
+    assert _readable_schedule(row)["DI"] == ["00:00-24:00"]
+
+
+def test_the_days_are_labelled_the_way_the_portal_labels_them():
+    """1..6 is Monday to Saturday and 0 is Sunday, and the names come from
+    the JSON rather than from a weekday table in here - which is what keeps
+    this working whatever language the portal speaks."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    assert list(_readable_schedule(_measured_monday())) == DAYS
+
+
+def test_the_state_carries_the_whole_week():
     from custom_components.wemportal.sensor import _schedule_summary
 
-    assert _schedule_summary(_ww_payload()) == "MO-SO 15:00-18:00"
+    assert _schedule_summary(_measured_monday()) == (
+        "MO 00:00-06:00 Komfort, 06:00-10:10 Normal, "
+        "10:10-13:30 Absenk, 13:30-24:00 Komfort; "
+        "DI-SO 00:00-24:00 Komfort"
+    )
+
+
+def test_without_the_device_view_the_json_still_answers():
+    """The hour after a restart, before the schedule fetch has run. Less
+    detail - no reduced stretches, bare letters - but a reading."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    row = _measured_monday()
+    del row["CircuitTimesDay"]
+
+    assert _readable_schedule(row)["MO"] == [
+        "00:00-06:00 (H)", "06:00-10:10 (L)", "13:30-24:00 (H)"
+    ]
+
+
+def test_a_week_that_does_not_line_up_falls_back_instead_of_mislabelling():
+    """Filing a day's programme under the wrong heading is worse than showing
+    the poorer view, so anything but a full seven days hands over."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    row = _measured_monday()
+    row["value"] = '{"MO-1":"00:00-24:00","MO":"H"}'
+
+    assert _readable_schedule(row) == {"MO": ["00:00-24:00 (H)"]}
 
 
 def test_a_week_too_long_for_a_state_falls_back_to_the_word():
@@ -2913,7 +2977,7 @@ def test_a_week_too_long_for_a_state_falls_back_to_the_word():
 
     # Asserted, not assumed: if the summary ever gets shorter than the limit
     # this test would quietly stop exercising the fallback at all.
-    assert len(_schedule_summary(raw)) > MAX_LENGTH_STATE_STATE
+    assert len(_schedule_summary(_row(raw))) > MAX_LENGTH_STATE_STATE
 
     assert _schedule_sensor(raw).native_value == "Programmed"
 
@@ -2923,7 +2987,7 @@ def test_an_unused_slot_is_left_out():
     two or three periods that are actually set."""
     from custom_components.wemportal.sensor import _readable_schedule
 
-    assert _readable_schedule('{"MO-1":"00:00-00:00","MO-2":"00:00-00:00"}') is None
+    assert _readable_schedule(_row('{"MO-1":"00:00-00:00","MO-2":"00:00-00:00"}')) is None
 
 
 @pytest.mark.parametrize("raw", ["not json", "[1,2]", '"text"', "{}", ""])
@@ -2932,7 +2996,7 @@ def test_something_that_is_not_a_programme_adds_no_attribute(raw):
     reading itself."""
     from custom_components.wemportal.sensor import _readable_schedule
 
-    assert _readable_schedule(raw) is None
+    assert _readable_schedule(_row(raw)) is None
 
 
 def test_a_refused_write_says_what_the_portal_answered():

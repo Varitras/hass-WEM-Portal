@@ -917,13 +917,6 @@
     "tests": "stale_definitions_are_read_on_a_later_cycle"
   },
   {
-    "label": "schedule: letting a non-programme through must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "    if not isinstance(parsed, dict):\n        return None",
-    "new": "    if False:\n        return None",
-    "tests": "something_that_is_not_a_programme_adds_no_attribute"
-  },
-  {
     "label": "write error: dropping the portal's own answer must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "                f\"Error changing parameter {parameter_id}: {exc}\"",
@@ -1036,69 +1029,6 @@
     "tests": "companion_parameters_travel_in_the_same_request"
   },
   {
-    "label": "schedule: leaving the programme unreadable must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "            periods.append((period, letter))",
-    "new": "            pass",
-    "tests": "weekly_programme_is_grouped_by_day"
-  },
-  {
-    "label": "schedule: keeping the unused slots must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "            if period in (\"\", _UNUSED_WINDOW):\n                continue",
-    "new": "            if False:\n                continue",
-    "tests": "weekly_programme_is_grouped_by_day or unused_slot_is_left_out"
-  },
-  {
-    "label": "schedule: taking the transfer fields for weekdays must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "        match = _WINDOW_KEY.match(key)\n        if match:",
-    "new": "        match = _WINDOW_KEY.match(key) or _WINDOW_KEY.match(key + \"-1\")\n        if match:",
-    "tests": "the_transfer_fields_do_not_become_weekdays"
-  },
-  {
-    "label": "schedule: reading a letter off the surviving windows must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "            letter = letters[slot - 1] if 0 < slot <= len(letters) else \"\"",
-    "new": "            letter = letters[len(periods)] if len(periods) < len(letters) else \"\"",
-    "tests": "a_letter_belongs_to_the_window_it_numbers"
-  },
-  {
-    "label": "schedule: inventing a letter that is not there must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "            letter = letters[slot - 1] if 0 < slot <= len(letters) else \"\"",
-    "new": "            letter = letters[slot - 1] if 0 < slot <= len(letters) else letters[-1:]",
-    "tests": "a_letter_that_is_not_there_is_not_invented"
-  },
-  {
-    "label": "schedule: repeating identical days instead of collapsing must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "        if groups and groups[-1][2] == times:",
-    "new": "        if False:",
-    "tests": "the_summary_collapses_days_that_are_the_same"
-  },
-  {
-    "label": "schedule: collapsing days that differ must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "        if groups and groups[-1][2] == times:",
-    "new": "        if groups:",
-    "tests": "the_summary_keeps_days_that_differ_apart"
-  },
-  {
-    "label": "schedule: falling back to the bare word must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "                if summary and len(summary) <= MAX_LENGTH_STATE_STATE:\n                    return summary",
-    "new": "                if False:\n                    return summary",
-    "tests": "the_state_is_the_week_and_not_the_word"
-  },
-  {
-    "label": "schedule: a state longer than Home Assistant accepts must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "                if summary and len(summary) <= MAX_LENGTH_STATE_STATE:",
-    "new": "                if summary:",
-    "tests": "a_week_too_long_for_a_state_falls_back_to_the_word"
-  },
-  {
     "label": "write-back: leaving the coordinator's copy stale must be noticed",
     "path": "custom_components/wemportal/entity.py",
     "old": "        self._record_written_value(value)",
@@ -1183,41 +1113,6 @@
     "tests": "the_holiday_service_follows_the_loaded_entries"
   },
   {
-    "label": "levels: leaving a known level unnamed must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "    level = _WINDOW_LEVELS.get(zone, {}).get(letter)",
-    "new": "    level = None",
-    "tests": "a_hot_water_window_says_which_level_it_runs"
-  },
-  {
-    "label": "levels: naming a level in a zone the table never saw must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "    level = _WINDOW_LEVELS.get(zone, {}).get(letter)",
-    "new": "    level = next(iter(_WINDOW_LEVELS.values()), {}).get(letter)",
-    "tests": "a_zone_the_table_does_not_know_keeps_the_bare_letter"
-  },
-  {
-    "label": "levels: dropping the raw letter must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "    return f\"{letter} = {level}\" if level else letter",
-    "new": "    return level if level else letter",
-    "tests": "the_letter_stays_next_to_the_level_it_was_read_as"
-  },
-  {
-    "label": "levels: putting a level name into the state must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "        times = \", \".join(period for period, _letter in periods)",
-    "new": "        times = \", \".join(\n            f\"{period} {_window_marker(schedule.zone, _letter)}\".strip()\n            for period, _letter in periods\n        )",
-    "tests": "the_state_carries_the_times_and_not_the_levels"
-  },
-  {
-    "label": "levels: reading the zone off the wrong field must be noticed",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "    return Schedule(marks.get(\"zone\"), schedule)",
-    "new": "    return Schedule(marks.get(\"type\"), schedule)",
-    "tests": "a_hot_water_window_says_which_level_it_runs"
-  },
-  {
     "label": "programme: keying on the declared type alone must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "                            param_data.get(\"DataType\") == WemDataType.PROGRAM\n                            or looks_like_schedule((row or {}).get(\"value\"))",
@@ -1244,5 +1139,124 @@
     "old": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\"PossibleValues\", [])",
     "new": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\"PossibleValues\", [])\n                                self.data[device_id][sensor_name][\"value\"] = \"Active\"",
     "tests": "the_fetch_adds_to_the_programme_instead_of_replacing_it"
+  },
+  {
+    "label": "schedule: letting a non-programme through must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    if not isinstance(parsed, dict):\n        return None\n\n    windows = {}",
+    "new": "    if False:\n        return None\n\n    windows = {}",
+    "tests": "something_that_is_not_a_programme_adds_no_attribute"
+  },
+  {
+    "label": "schedule: leaving the programme unreadable must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            periods.append((period, letter))",
+    "new": "            pass",
+    "tests": "weekly_programme_is_grouped_by_day"
+  },
+  {
+    "label": "schedule: keeping the unused slots must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            if period in (\"\", _UNUSED_WINDOW):\n                continue",
+    "new": "            if False:\n                continue",
+    "tests": "weekly_programme_is_grouped_by_day or unused_slot_is_left_out"
+  },
+  {
+    "label": "schedule: taking the transfer fields for weekdays must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        match = _WINDOW_KEY.match(key)\n        if match:\n            windows.setdefault",
+    "new": "        match = _WINDOW_KEY.match(key) or _WINDOW_KEY.match(key + \"-1\")\n        if match:\n            windows.setdefault",
+    "tests": "the_transfer_fields_do_not_become_weekdays"
+  },
+  {
+    "label": "schedule: reading a letter off the surviving windows must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            letter = letters[slot - 1] if 0 < slot <= len(letters) else \"\"",
+    "new": "            letter = letters[len(periods)] if len(periods) < len(letters) else \"\"",
+    "tests": "a_letter_belongs_to_the_window_it_numbers"
+  },
+  {
+    "label": "schedule: inventing a letter that is not there must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            letter = letters[slot - 1] if 0 < slot <= len(letters) else \"\"",
+    "new": "            letter = letters[slot - 1] if 0 < slot <= len(letters) else letters[-1:]",
+    "tests": "a_letter_that_is_not_there_is_not_invented"
+  },
+  {
+    "label": "schedule: repeating identical days instead of collapsing must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if groups and groups[-1][2] == text:",
+    "new": "        if False:",
+    "tests": "the_summary_collapses_days_that_are_the_same"
+  },
+  {
+    "label": "schedule: collapsing days that differ must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if groups and groups[-1][2] == text:",
+    "new": "        if groups:",
+    "tests": "the_summary_keeps_days_that_differ_apart"
+  },
+  {
+    "label": "schedule: falling back to the bare word must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "                if summary and len(summary) <= MAX_LENGTH_STATE_STATE:\n                    return summary",
+    "new": "                if False:\n                    return summary",
+    "tests": "the_state_is_the_week_and_not_the_word"
+  },
+  {
+    "label": "schedule: a state longer than Home Assistant accepts must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "                if summary and len(summary) <= MAX_LENGTH_STATE_STATE:",
+    "new": "                if summary:",
+    "tests": "a_week_too_long_for_a_state_falls_back_to_the_word"
+  },
+  {
+    "label": "device view: ignoring what the device reported must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    return _schedule_from_circuit_times(row) or _schedule_from_json(row.get(\"value\"))",
+    "new": "    return _schedule_from_json(row.get(\"value\"))",
+    "tests": "the_reduced_stretch_the_json_does_not_carry_is_shown"
+  },
+  {
+    "label": "device view: dropping the fallback must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    return _schedule_from_circuit_times(row) or _schedule_from_json(row.get(\"value\"))",
+    "new": "    return _schedule_from_circuit_times(row)",
+    "tests": "without_the_device_view_the_json_still_answers"
+  },
+  {
+    "label": "device view: reading a stretch as a start instead of an end must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        stretches.append((start, int(end), entry.get(\"Value\")))\n        start = int(end)",
+    "new": "        stretches.append((start, int(end), entry.get(\"Value\")))",
+    "tests": "the_reduced_stretch_the_json_does_not_carry_is_shown"
+  },
+  {
+    "label": "device view: a wrong clock format must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    return f\"{minutes // 60:02d}:{minutes % 60:02d}\"",
+    "new": "    return f\"{minutes // 60:02d}:{minutes % 100:02d}\"",
+    "tests": "the_state_carries_the_whole_week"
+  },
+  {
+    "label": "device view: mislabelling a week that does not line up must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    if len(days) != len(_DAY_ORDER):\n        return None",
+    "new": "    if False:\n        return None",
+    "tests": "a_week_that_does_not_line_up_falls_back_instead_of_mislabelling"
+  },
+  {
+    "label": "device view: the portal's day numbering must stay the recorded one",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "_DAY_ORDER = (1, 2, 3, 4, 5, 6, 0)",
+    "new": "_DAY_ORDER = (0, 1, 2, 3, 4, 5, 6)",
+    "tests": "the_days_are_labelled_the_way_the_portal_labels_them"
+  },
+  {
+    "label": "device view: keying the level names off the wrong field must be noticed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            names[entry.get(\"Value\")] = text",
+    "new": "            names[entry.get(\"Text\")] = text",
+    "tests": "the_levels_are_named_in_the_portals_own_words"
   }
 ]

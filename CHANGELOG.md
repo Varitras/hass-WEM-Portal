@@ -75,13 +75,15 @@ to ask the user for new credentials.
   long for a Home Assistant state falls back to the bare word, and the
   attribute still holds every window.
 
-  For the hot water programme the letters are named as well - `H = Normal`,
-  `L = Absenk` - taken from the portal's own view of that programme, which
-  labels the window carrying H "Normal" and the stretches around it "Absenk".
-  The raw letter stays next to the name, and any other programme keeps the
-  bare letter: the heating programme has three levels rather than two, so
-  these names demonstrably cannot be its, and an opaque letter is better than
-  a confident wrong word.
+  Where the device's own view of the programme is available it is used
+  instead, and it is the complete one. The value read delivers the programmed
+  windows and nothing else, so the stretches between them - the base level,
+  which is most of a normal day - simply do not appear. The schedule fetch
+  returns every stretch, and the level names with it, in the portal's own
+  words: a Monday reads `00:00-06:00 Komfort, 06:00-10:10 Normal,
+  10:10-13:30 Absenk, 13:30-24:00 Komfort` rather than three windows with a
+  three-hour hole in the middle. Nothing about the levels is interpreted
+  here; the portal ships their names alongside the programme.
 
 ### Fixed
 - **Planned maintenance is recognised on the web path as well.** It was only

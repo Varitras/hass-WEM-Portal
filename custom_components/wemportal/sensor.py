@@ -4,7 +4,6 @@ Sensor platform for wemportal component
 
 import json
 import re
-from typing import NamedTuple
 
 from homeassistant.components.sensor import RestoreSensor
 from homeassistant.config_entries import ConfigEntry
@@ -65,40 +64,14 @@ _WINDOW_KEY = re.compile(r"^(?P<day>.+)-(?P<slot>\d+)$")
 # How the portal spells a slot that is not in use.
 _UNUSED_WINDOW = "00:00-00:00"
 
-# What a window's letter means, per zone. Read off the portal's own view of
-# one installation's hot water programme: it lists the window carrying H as
-# "Normal" and the stretches around it as "Absenk", and that programme has
-# exactly two levels. The words are the portal's, not ours.
-#
-# Per ZONE, and deliberately not global. The heating programme has three
-# levels - Absenk, normal, comfort - so its letters cannot be these two, and
-# whether H even means the same thing there is not established. A zone the
-# table does not know, or a letter it does not know, keeps the bare letter:
-# an opaque "H" is honest, a confidently wrong "Normal" is not.
-#
-# L has so far only ever been seen on an UNUSED slot, and those are dropped
-# before this table is consulted - so its entry may well be unreachable. It
-# is kept because the meaning is known: if a portal ever does put it on a
-# used window, showing a bare letter we could have named would be the worse
-# of the two mistakes.
-_WINDOW_LEVELS = {
-    "WW": {"H": "Normal", "L": "Absenk"},
-}
+# The portal numbers the days 1..6 for Monday..Saturday and 0 for Sunday, and
+# the JSON lists them in exactly that order. Taking the day NAMES from there
+# means no weekday table lives here and nothing has to know which language the
+# portal speaks.
+_DAY_ORDER = (1, 2, 3, 4, 5, 6, 0)
 
 
-class Schedule(NamedTuple):
-    """A parsed weekly programme.
-
-    `zone` says WHICH programme this is - "WW" for hot water, a circuit
-    number for heating - and is what keeps the level names above from being
-    applied to a programme they were never read off.
-    """
-
-    zone: str | None
-    days: dict
-
-
-def _parse_schedule(raw) -> Schedule | None:
+def _parse_schedule(raw):
     """A weekly programme as day -> [(window, letter), ...], or None.
 
     Days come back in the order the portal sent them, which is also the order
@@ -144,72 +117,175 @@ def _parse_schedule(raw) -> Schedule | None:
             periods.append((period, letter))
         if periods:
             schedule[day] = periods
-    if not schedule:
-        return None
-    return Schedule(marks.get("zone"), schedule)
+    return schedule or None
 
 
-def _window_marker(zone, letter) -> str:
-    """How a window's letter is presented, named where we know the name.
+def _day_labels(raw):
+    """Day number -> the name the portal gives that day, or None.
 
-    The letter is kept either way. It is what the portal actually sent, and
-    the level names come from reading one installation's hot water programme
-    - so if that reading is ever wrong somewhere, what it was read from is
-    still on screen next to it.
+    Built from the window keys in the order they arrive, which is the order
+    of the week. Refuses anything that is not exactly seven days: a wrong
+    label would file a whole day's programme under the wrong heading, and
+    falling back to the JSON view is the better failure.
     """
-    if not letter:
-        return ""
-    level = _WINDOW_LEVELS.get(zone, {}).get(letter)
-    return f"{letter} = {level}" if level else letter
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    days = []
+    for key in parsed:
+        if not isinstance(key, str):
+            continue
+        match = _WINDOW_KEY.match(key)
+        if match and match["day"] not in days:
+            days.append(match["day"])
+    if len(days) != len(_DAY_ORDER):
+        return None
+    return dict(zip(_DAY_ORDER, days))
 
 
-def _readable_schedule(raw):
-    """The attribute: every day with its windows and their levels."""
+def _level_names(possible_values) -> dict:
+    """Level number -> the portal's own word for it.
+
+    The portal ships this alongside the programme, which is what makes the
+    names right rather than guessed - and right in the portal's language
+    rather than in one this file would have had to pick.
+    """
+    names = {}
+    for entry in possible_values or []:
+        if not isinstance(entry, dict):
+            continue
+        text = str(entry.get("Text", "")).strip()
+        if text:
+            names[entry.get("Value")] = text
+    return names
+
+
+def _clock(minutes: int) -> str:
+    """Minutes since midnight as the portal writes a time. 1440 is 24:00."""
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _stretches(circuit_times):
+    """A day as (start, end, level), reading each entry as an END.
+
+    Measured against the portal's own view of the same programme:
+    360/610/810/1440 carrying 3/2/1/3 is exactly the four cycles it lists -
+    00:00-06:00 comfort, 06:00-10:10 normal, 10:10-13:30 reduced, then
+    comfort again. The reduced stretch has no window in the JSON at all,
+    which is the whole reason this source is worth preferring.
+    """
+    stretches = []
+    start = 0
+    for entry in circuit_times or []:
+        if not isinstance(entry, dict):
+            continue
+        end = entry.get("MinutesSinceMidnight")
+        if not isinstance(end, (int, float)) or isinstance(end, bool) or end <= start:
+            continue
+        stretches.append((start, int(end), entry.get("Value")))
+        start = int(end)
+    return stretches
+
+
+def _schedule_from_circuit_times(row):
+    """The whole week from what the DEVICE reported, or None.
+
+    None whenever anything is missing or does not line up - the JSON view is
+    a complete answer in its own right, so degrading to it costs detail and
+    nothing else.
+    """
+    days = row.get("CircuitTimesDay")
+    if not isinstance(days, list) or not days:
+        return None
+    labels = _day_labels(row.get("value"))
+    if labels is None:
+        return None
+
+    names = _level_names(row.get("PossibleValues"))
+    schedule = {}
+    for day in days:
+        if not isinstance(day, dict):
+            continue
+        label = labels.get(day.get("Day"))
+        if label is None:
+            continue
+        entries = [
+            f"{_clock(start)}-{_clock(end)} {names[level]}"
+            if level in names
+            else f"{_clock(start)}-{_clock(end)}"
+            for start, end, level in _stretches(day.get("CircuitTimes"))
+        ]
+        if entries:
+            schedule[label] = entries
+    return schedule or None
+
+
+def _schedule_from_json(raw):
+    """The week as the value read delivers it: windows only, bare letters.
+
+    Incomplete by construction - the base level is a GAP here, not an entry,
+    so a day that is reduced from ten past ten until half one shows nothing
+    for those three hours. What the letters mean is not readable from this
+    side either. It is the fallback for the hour after a restart, before the
+    schedule fetch has run.
+    """
     schedule = _parse_schedule(raw)
     if schedule is None:
         return None
     return {
-        day: [
-            f"{period} ({marker})" if (marker := _window_marker(schedule.zone, letter))
-            else period
-            for period, letter in periods
-        ]
-        for day, periods in schedule.days.items()
+        day: [f"{period} ({letter})" if letter else period for period, letter in periods]
+        for day, periods in schedule.items()
     }
 
 
-def _schedule_summary(raw):
+def _readable_schedule(row):
+    """Every day with its stretches, from the best source the row carries."""
+    return _schedule_from_circuit_times(row) or _schedule_from_json(row.get("value"))
+
+
+def _schedule_summary(row):
     """The state: the whole week on one line, or None.
 
     "Programmed" was the entire state of these sensors, which says only that
-    the parameter exists - the times were reachable through an attribute and
-    nowhere else. Consecutive days with the same windows are collapsed, so
-    the common case reads "MO-SO 00:00-24:00" instead of seven repetitions.
-
-    The levels are deliberately left out here. A state has to survive a week
-    of three windows a day inside Home Assistant's length limit, and the
-    times are what a glance at a card is for - the attribute carries the
-    rest.
+    the parameter exists. Consecutive days that read the same are collapsed,
+    so a week that is programmed alike throughout reads once instead of seven
+    times.
     """
-    schedule = _parse_schedule(raw)
-    if schedule is None:
+    schedule = _readable_schedule(row)
+    if not schedule:
         return None
 
     groups = []
-    for day, periods in schedule.days.items():
-        times = ", ".join(period for period, _letter in periods)
-        if groups and groups[-1][2] == times:
+    for day, entries in schedule.items():
+        text = ", ".join(entries)
+        if groups and groups[-1][2] == text:
             groups[-1][1] = day
         else:
-            groups.append([day, day, times])
+            groups.append([day, day, text])
     return "; ".join(
-        f"{first} {times}" if first == last else f"{first}-{last} {times}"
-        for first, last, times in groups
+        f"{first} {text}" if first == last else f"{first}-{last} {text}"
+        for first, last, text in groups
     )
 
 
 class WemPortalSensor(WemPortalEntity, RestoreSensor):
     """Representation of a WEM Portal Sensor."""
+
+    def _current_row(self):
+        """The coordinator row behind this entity, or an empty one.
+
+        A weekly programme is read from more than its value - the schedule
+        fetch adds the device's own view of it to the same row - so the
+        value alone is no longer enough to build the state from.
+        """
+        try:
+            row = self.coordinator.data[self._device_id][self._data_key]
+        except (KeyError, TypeError):
+            return {}
+        return row if isinstance(row, dict) else {}
 
     def _validated_native_value(self, val, uom):
         """Return a Home Assistant-safe native value."""
@@ -256,7 +332,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 _LOGGER.debug('Empty value for "%s" this cycle -> unknown', self._attr_name)
                 return None
             if val.startswith("{"):
-                summary = _schedule_summary(val)
+                summary = _schedule_summary(self._current_row())
                 # Home Assistant refuses a state longer than this, and a
                 # refused state is no reading at all. Seven days that differ
                 # from one another, three windows each, can get there. The
@@ -410,7 +486,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 attr["PossibleValues"] = entity_data["PossibleValues"]
             if isinstance(entity_data.get("value"), str) and entity_data["value"].startswith("{"):
                 attr["Raw_JSON"] = entity_data["value"]
-                schedule = _readable_schedule(entity_data["value"])
+                schedule = _readable_schedule(entity_data)
                 if schedule:
                     attr["Schedule"] = schedule
         except KeyError:
