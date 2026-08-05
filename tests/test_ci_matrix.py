@@ -11,6 +11,7 @@ fast unit test rather than a network-dependent one.
 """
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -84,4 +85,47 @@ def test_an_explicit_requirement_is_passed_through(capsys):
 
     assert capsys.readouterr().out.strip() == (
         "PHCC_SPEC=pytest-homeassistant-custom-component==0.13.190"
+    )
+
+
+# --- the linter has to agree with the floor the matrix tests ------------
+
+REPO = Path(__file__).resolve().parents[1]
+WORKFLOW = REPO / ".github" / "workflows" / "test.yaml"
+
+
+def test_ruff_targets_the_python_the_minimum_job_runs():
+    """Two files that have to move together.
+
+    ruff.toml names the oldest Python this integration supports, and the
+    minimum job in the matrix runs exactly that one. Raised in one place
+    only, the linter would start allowing syntax the supported floor cannot
+    parse - and the job that exists to catch precisely that would not see it,
+    because Ruff never runs against the older version at all.
+    """
+    config = (REPO / "ruff.toml").read_text(encoding="utf-8")
+    target = re.search(r'target-version\s*=\s*"py(\d)(\d+)"', config)
+    assert target, "ruff.toml names no target version"
+    ruff_python = f"{target[1]}.{target[2]}"
+
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    minimum = re.search(
+        r'name:\s*"minimum HA[^"]*"\s*\n\s*python-version:\s*"([\d.]+)"', workflow
+    )
+    assert minimum, "the matrix has no minimum job to compare against"
+
+    assert ruff_python == minimum[1], (
+        f"Ruff targets Python {ruff_python} but the minimum job runs {minimum[1]}"
+    )
+
+
+def test_the_workflow_still_runs_ruff():
+    """Formatting that only one machine checks survives until the first
+    commit written somewhere else."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "ruff check ." in workflow
+    assert "ruff format --check ." in workflow
+    assert re.search(r'pip install "ruff==[\d.]+"', workflow), (
+        "an unpinned Ruff lets the CI enforce whatever it decides this week"
     )

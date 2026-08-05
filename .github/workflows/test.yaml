@@ -11,6 +11,31 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    # Its own job, not a step of the test matrix: a formatting complaint and a
+    # failing test are different news, and a red cross that could mean either
+    # gets read as neither.
+    name: ruff
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v7"
+      - uses: "actions/setup-python@v7"
+        with:
+          python-version: "3.12"
+      # Pinned. An unpinned install means the CI enforces whatever Ruff
+      # decided this week, and a release that reflows differently would fail
+      # a build nobody changed - which is exactly the drift ruff.toml exists
+      # to stop, let back in through the other door.
+      - name: Install Ruff
+        run: pip install "ruff==0.15.22"
+      - name: Lint
+        run: ruff check .
+      # The formatting only stays put if something checks it. It was applied
+      # once by hand; without this it survives until the first commit written
+      # in a different editor.
+      - name: Check formatting
+        run: ruff format --check .
+
   pytest:
     # Two ends of the supported range, because they catch opposite mistakes.
     #
