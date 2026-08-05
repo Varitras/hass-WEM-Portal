@@ -1265,5 +1265,26 @@
     "old": "            if all(\"parameters\" in module for module in device_modules.values()):",
     "new": "            if True:",
     "tests": "a_module_still_awaiting_its_description_does_fail_the_cycle"
+  },
+  {
+    "label": "status: publishing a status nobody could read must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self._forget_device_status(device_id)\n        return True",
+    "new": "        return True",
+    "tests": "a_status_that_could_not_be_read_stops_claiming_no_fault"
+  },
+  {
+    "label": "status: clearing the gate discovery reads must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        for suffix in (\"ConnectionStatus\", \"HasErrors\", \"ErrorMessages\"):",
+    "new": "        device_data[\"ConnectionStatus\"] = None\n        for suffix in (\"ConnectionStatus\", \"HasErrors\", \"ErrorMessages\"):",
+    "tests": "a_failed_status_read_does_not_stop_parameter_discovery"
+  },
+  {
+    "label": "status: forgetting only the connection and not the fault must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        for suffix in (\"ConnectionStatus\", \"HasErrors\", \"ErrorMessages\"):",
+    "new": "        for suffix in (\"ConnectionStatus\",):",
+    "tests": "a_status_that_could_not_be_read_stops_claiming_no_fault"
   }
 ]

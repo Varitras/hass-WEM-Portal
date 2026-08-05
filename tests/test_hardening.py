@@ -820,6 +820,72 @@ def _offline_api(status):
     return api
 
 
+# --- a status nobody could read must not be published as current --------
+
+
+def _api_with_a_read_status():
+    """An api that has read its device status once, successfully."""
+    api = _offline_api(0)
+    api.make_api_call = lambda *a, **k: FakeResponse(
+        {"ConnectionStatus": 0, "Errors": [], "GroupTypeDescriptions": []}
+    )
+    api._fetch_device_status("1234")
+    return api
+
+
+def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
+    """The one direction a fault sensor must never fail in.
+
+    The status rows are written only by a successful read. Left alone when
+    one fails, "Has Errors" goes on answering "No" - because nothing is
+    known, not because nothing is wrong - and an automation waiting for a
+    fault sees the quiet and concludes there is none.
+    """
+    api = _api_with_a_read_status()
+    assert api.data["1234"]["1234-HasErrors"]["value"] == "No"
+
+    def refuse(*_a, **_k):
+        raise exceptions.WemPortalError("portal unavailable")
+
+    api.make_api_call = refuse
+    api._fetch_device_status("1234")
+
+    assert api.data["1234"]["1234-HasErrors"]["value"] is None
+    assert api.data["1234"]["1234-ErrorMessages"]["value"] is None
+    assert api.data["1234"]["1234-ConnectionStatus"]["value"] is None
+
+
+def test_a_status_nobody_could_read_leaves_the_entities_available():
+    """"Unknown" is the honest answer; unavailable would hide the entity
+    that exists to explain the situation."""
+    from custom_components.wemportal.utils import device_is_reachable
+
+    api = _api_with_a_read_status()
+
+    def refuse(*_a, **_k):
+        raise exceptions.WemPortalError("portal unavailable")
+
+    api.make_api_call = refuse
+    api._fetch_device_status("1234")
+
+    assert device_is_reachable(api.data, "1234") is True
+
+
+def test_a_failed_status_read_does_not_stop_parameter_discovery():
+    """The raw gate stays: a failed status read says nothing about whether
+    the device is there, and stopping discovery over it would turn one
+    missed request into an installation with no parameters at all."""
+    api = _api_with_a_read_status()
+
+    def refuse(*_a, **_k):
+        raise exceptions.WemPortalError("portal unavailable")
+
+    api.make_api_call = refuse
+    api._fetch_device_status("1234")
+
+    assert api.data["1234"]["ConnectionStatus"] == 0
+
+
 @pytest.mark.parametrize(
     ("status", "expected"), [(50, "offline"), (7, "wrong_secret"), (8, "busy"), (99, "unknown")]
 )

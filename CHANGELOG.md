@@ -288,6 +288,16 @@ to ask the user for new credentials.
   the same request. Whether that is enough is measured, not assumed: if the
   portal refuses the pair as well, the parameters are read-only in practice
   and will be presented as such.
+- **A status nobody could read is no longer published as the current one.**
+  The connection-status, has-errors and error-message sensors are written
+  only by a successful device-status read. When one failed they went on
+  showing the previous answer as current - and for the fault sensor that
+  means reporting "No" because nothing is known rather than because nothing
+  is wrong, which is the one direction it must never fail in. They report
+  unknown now until the next successful read. The entities stay available,
+  because unknown is the honest answer and hiding them would remove the very
+  things that explain the situation, and parameter discovery is unaffected: a
+  failed status read says nothing about whether the device is there.
 - **A heating circuit the portal refuses to describe is no longer lost for
   the session.** A module whose parameter description came back rejected was
   deleted from the cache, and only the once-per-session device read could

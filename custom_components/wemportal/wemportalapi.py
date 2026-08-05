@@ -1902,7 +1902,34 @@ class WemPortalApi:
             # caller treats "unknown" as reachable, which is the safe
             # side - see device_is_reachable.
             _LOGGER.warning("Failed to fetch Device Status: %s", exc)
+            self._forget_device_status(device_id)
         return True
+
+    def _forget_device_status(self, device_id: str) -> None:
+        """Stop presenting the last known status as the current one.
+
+        These three rows are written only by a successful status read. Left
+        alone when one fails, they go on publishing whatever the previous
+        answer said - and for "Has Errors" that means answering "No" because
+        nothing is known rather than because nothing is wrong. That is the
+        one direction a fault sensor must never fail in: an automation
+        waiting for a fault sees the quiet and concludes there is none.
+
+        The raw ConnectionStatus that get_parameters() gates on is
+        deliberately NOT cleared. A failed status read says nothing about
+        whether the device is there, and stopping discovery over it would
+        turn one missed request into an installation with no parameters.
+        device_is_reachable is unaffected too: None is not one of the
+        definitively-dead states, so the entities stay available and show
+        "unknown", which is exactly what is true.
+        """
+        device_data = self.data.get(device_id)
+        if not isinstance(device_data, dict):
+            return
+        for suffix in ("ConnectionStatus", "HasErrors", "ErrorMessages"):
+            row = device_data.get(f"{device_id}-{suffix}")
+            if isinstance(row, dict):
+                row["value"] = None
 
     def _fetch_parameter_values(self, device_id: str) -> str | None:
         """Refresh and read all known parameter values for one device.
