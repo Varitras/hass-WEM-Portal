@@ -1321,5 +1321,26 @@
     "old": "            if \"Errors\" in entity_data:\n                attr[\"Errors\"] = entity_data[\"Errors\"]",
     "new": "            if False:\n                attr[\"Errors\"] = entity_data[\"Errors\"]",
     "tests": "the_error_attribute_reaches_the_entity"
+  },
+  {
+    "label": "collision: overwriting a reading without a word must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                        if name in output:\n                            _report_duplicate_row(name, header_raw, raw_name)",
+    "new": "                        if False:\n                            _report_duplicate_row(name, header_raw, raw_name)",
+    "tests": "the_same_row_twice_in_one_panel_is_reported"
+  },
+  {
+    "label": "collision: reporting the same one every cycle must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    if key in _DUPLICATE_ROWS:\n        return\n    _DUPLICATE_ROWS.add(key)",
+    "new": "    _DUPLICATE_ROWS.add(key)",
+    "tests": "a_collision_is_reported_once_not_every_cycle"
+  },
+  {
+    "label": "collision: calling two distinct rows a collision must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                        if name in output:",
+    "new": "                        if True:",
+    "tests": "rows_that_do_not_collide_say_nothing"
   }
 ]

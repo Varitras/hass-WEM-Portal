@@ -16,6 +16,7 @@ from .exceptions import (
 )
 from .const import (
     _LOGGER,
+    GITHUB_PROJECT_URL,
     WEB_LOGIN_URL,
     WEB_MAIN_URL,
     TEMPERATURE_KEYWORDS,
@@ -38,6 +39,44 @@ from .utils import (
 # The panel container the expert page is built from. Named once because two
 # things ask about it: the parser, and the report that explains an empty page.
 PANEL_XPATH = '//div[contains(@class, "RadPanelBar RadPanelBar_Default rpbSimpleData")]'
+
+# Keys already reported as colliding, so a portal that lists two identical
+# rows does not say so on every single cycle. Module level for the same
+# reason as utils._MARKER_REPORTED: the scraper object outlives a cycle but
+# not a reload, and this is about the page, not about one object's lifetime.
+_DUPLICATE_ROWS: set[str] = set()
+
+
+def _report_duplicate_row(key, panel, row_name) -> None:
+    """Say that one reading has just overwritten another.
+
+    The parser assigns into the output by key, which overwrites without a
+    word. Two rows that produce the same key therefore leave one of them
+    showing the other's value - a plausible number from the wrong place,
+    which is the worst kind of wrong there is. Upstream issue #92 is exactly
+    that, seen from the outside.
+
+    Two ways to get here, and the message names both, because from here they
+    are indistinguishable: the same row name twice inside one panel, or two
+    panels whose headers are identical - the second of those puts every row
+    of one circuit on top of another's and looks like a missing circuit.
+
+    Reported, not resolved. Making the key unique would mint new entities and
+    leave the old ones behind as corpses, for a collision nobody has yet been
+    observed to have. A real log will say which of the two it is, and that is
+    what a fix should be built on.
+    """
+    if key in _DUPLICATE_ROWS:
+        return
+    _DUPLICATE_ROWS.add(key)
+    _LOGGER.warning(
+        "Two rows of the WEM Portal expert page produce the same sensor (%s): "
+        "panel %r, row %r. The later one wins and the earlier reading is lost, "
+        "so a value shown here may belong to the other row. This happens when "
+        "one panel lists a name twice, or when two panels carry the same "
+        "heading. Please report it at %s with the panel headings you see.",
+        key, panel, row_name, GITHUB_PROJECT_URL,
+    )
 
 
 class WemPortalScraper:
@@ -399,6 +438,8 @@ class WemPortalScraper:
                         if isinstance(value, str):
                             value = sanitize_value(value, unit, name)
 
+                        if name in output:
+                            _report_duplicate_row(name, header_raw, raw_name)
                         output[name] = {
                             "value": value,
                             "name": name,

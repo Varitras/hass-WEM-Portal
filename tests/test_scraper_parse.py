@@ -684,6 +684,88 @@ def test_the_report_survives_unparseable_html(scraper, caplog):
     assert "No readable panels" in caplog.text
 
 
+# --- two rows that produce one sensor ----------------------------------
+#
+# The parser assigns into the output by key, which overwrites without a word.
+# Upstream #92 is that seen from the outside: one reading showing another's
+# value. The cross-panel case it reported is gone - the key carries the panel
+# heading now - but two ways to collide remain, and neither said anything.
+
+
+@pytest.fixture(autouse=True)
+def _forget_reported_duplicates():
+    from custom_components.wemportal import scraper as scraper_module
+
+    scraper_module._DUPLICATE_ROWS.clear()
+    yield
+    scraper_module._DUPLICATE_ROWS.clear()
+
+
+def test_the_same_row_twice_in_one_panel_is_reported(scraper, caplog):
+    import logging
+
+    page = _page(_panel("Heat pump", [
+        ("Outside temperature", "12.3 C"),
+        ("Outside temperature", "45.6 C"),
+    ]))
+
+    with caplog.at_level(logging.WARNING):
+        result = scraper.parse_expert_page(page)
+
+    assert "same sensor" in caplog.text
+    assert "Outside temperature" in caplog.text
+    # Unchanged behaviour: the later row still wins. This says so, it does
+    # not pretend to have fixed it.
+    assert result[0]["heat_pump-outside_temperature"]["value"] == 45.6
+
+
+def test_two_panels_with_the_same_heading_are_reported(scraper, caplog):
+    """The realistic one: two heating circuits the portal names alike. Every
+    row of the second lands on the first, and it looks like a missing
+    circuit rather than a collision."""
+    import logging
+
+    page = _page(
+        _panel("Heating circuit", [("Flow temperature", "30.0 C")]),
+        _panel("Heating circuit", [("Flow temperature", "40.0 C")]),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        scraper.parse_expert_page(page)
+
+    assert "same sensor" in caplog.text
+
+
+def test_a_collision_is_reported_once_not_every_cycle(scraper, caplog):
+    """It repeats on every scrape, and a warning per cycle for a page that
+    will not change buries everything else."""
+    import logging
+
+    page = _page(_panel("Heat pump", [
+        ("Outside temperature", "12.3 C"),
+        ("Outside temperature", "45.6 C"),
+    ]))
+
+    with caplog.at_level(logging.WARNING):
+        scraper.parse_expert_page(page)
+        scraper.parse_expert_page(page)
+
+    hits = [r for r in caplog.records if "same sensor" in r.getMessage()]
+    assert len(hits) == 1, f"reported {len(hits)} times"
+
+
+def test_rows_that_do_not_collide_say_nothing(scraper, caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        scraper.parse_expert_page(_page(
+            _panel("Heat pump", [("Outside temperature", "12.3 C")]),
+            _panel("Heating circuit", [("Outside temperature", "40.0 C")]),
+        ))
+
+    assert "same sensor" not in caplog.text
+
+
 def _empty_page_reports(caplog):
     return [r for r in caplog.records if "No readable panels" in r.getMessage()]
 

@@ -288,6 +288,16 @@ to ask the user for new credentials.
   the same request. Whether that is enough is measured, not assumed: if the
   portal refuses the pair as well, the parameters are read-only in practice
   and will be presented as such.
+- **Two scraped rows that produce one sensor are reported.** The parser
+  assigns into its output by key, which overwrites without a word, so one
+  reading ends up showing another's value - a plausible number from the wrong
+  place. Two ways to get there remain: the same row name twice in one panel,
+  or two panels carrying the same heading, where every row of one circuit
+  lands on another's and it looks like a missing circuit rather than a
+  collision. Both are now named in the log, once, with the panel and row they
+  came from. Deliberately reported and not resolved: making the key unique
+  would mint new entities and leave the old ones behind, for a collision
+  nobody has been observed to have yet.
 - **The fault message no longer drops what it cannot show.** Several active
   faults were joined into one string and sliced at 255 characters, silently -
   so the second fault disappeared while the first still read like the whole
