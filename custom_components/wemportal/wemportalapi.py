@@ -2382,150 +2382,139 @@ class WemPortalApi:
             _LOGGER.warning("Failed to fetch parameter data... %s", exc)
             return str(exc)
 
+    def _is_schedule_parameter(self, device_id, module, param_id, param_data) -> bool:
+        """Whether this parameter is one of the portal's weekly programmes.
+
+        Two ways the portal types one, and keying on the declared type alone
+        meant the whole fetch never ran on a 3.1.3.0 portal: there every
+        programme is DataType 2 with a JSON object in the value, and the
+        fetch - the only path that asks the DEVICE for its schedule rather
+        than reading the portal's stored copy - sat unused. It did not fail;
+        it was never entered, which is why nothing about it appeared in any
+        log.
+        """
+        row = self.data.get(device_id, {}).get(f"{module['Name']}-{param_id}")
+        return param_data.get("DataType") == WemDataType.PROGRAM or looks_like_schedule(
+            (row or {}).get("value")
+        )
+
+    def _schedule_is_due(self, device_id, param_id) -> bool:
+        """Whether this programme may be asked for again yet.
+
+        Heating schedules rarely change - only through the WEM Portal app
+        directly, since this integration shows them read-only - so refetching
+        one on every coordinator cycle is load for nothing.
+        """
+        last_fetch = self._last_circuit_times_fetch.get((device_id, param_id), 0)
+        return time.time() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
+
+    def _record_schedule_attempt(self, device_id, param_id, attempted_at, fetched):
+        """Book the ATTEMPT, however it ended.
+
+        Written only after a SUCCESS, as it once was, the interval guard never
+        engages for a schedule that keeps failing: every coordinator cycle
+        spends two more requests on it, at a portal that is already failing,
+        against an IP the portal blocks past 10,000 requests per 12 hours.
+        Back-dated rather than blocked outright when it did not work out, so
+        one bad cycle does not cost a full hour either. Same shape and same
+        reasoning as get_statistics().
+        """
+        if fetched:
+            self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at
+            return
+        self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at - max(
+            0,
+            CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
+            - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
+        )
+
+    def _read_one_schedule(self, device_id, module, param_id) -> bool:
+        """Ask the device for one programme and store what it reports.
+
+        Returns whether a schedule actually came back; the caller books the
+        attempt either way.
+        """
+        module_index = module.get("Index")
+        module_type = module.get("Type")
+        address = {
+            "DeviceID": int(device_id),
+            "ModuleIndex": module_index,
+            "ModuleType": module_type,
+            "ParameterID": param_id,
+        }
+
+        job_resp = self.make_api_call(
+            API_CIRCUIT_TIMES_REFRESH_URL, data=address, do_retry=True
+        ).json()
+        job_id = job_resp.get("JobID")
+        if job_id is None:
+            return False
+
+        time.sleep(2)  # Give backend time to build the schedule payload
+        schedule_resp = self.make_api_call(
+            API_CIRCUIT_TIMES_READ_URL,
+            data={**address, "JobID": job_id},
+            do_retry=True,
+        ).json()
+
+        sensor_name = f"{module['Name']}-{param_id}"
+        if sensor_name not in self.data[device_id]:
+            self.data[device_id][sensor_name] = {
+                "friendlyName": translate(
+                    self.language, friendly_name_mapper(param_id)
+                ),
+                "ParameterID": param_id,
+                "unit": None,
+                "value": "Active",
+                "IsWriteable": False,
+                "DataType": 6,
+                "ModuleIndex": module_index,
+                "ModuleType": module_type,
+                "platform": "sensor",
+                "icon": "mdi:calendar-clock",
+            }
+
+        self.data[device_id][sensor_name]["CircuitTimesDay"] = schedule_resp.get(
+            "CircuitTimesDay", []
+        )
+        self.data[device_id][sensor_name]["PossibleValues"] = schedule_resp.get(
+            "PossibleValues", []
+        )
+        # The value is NOT touched. This fetch adds detail to a row the value
+        # read already filled; writing "Active" over it replaced a readable
+        # week with a placeholder once an hour, until the next cycle put the
+        # programme back. Only a row that did not exist gets the placeholder,
+        # above - there the fetch is the only source there is.
+        return True
+
     def _fetch_circuit_times(self, device_id: str) -> None:
-        """Fetch heating schedules (DataType == 6), throttled per schedule."""
+        """Fetch the device's own view of every weekly programme it has,
+        throttled per programme."""
         try:
             for module in self.modules[device_id].values():
-                module_index = module.get("Index")
-                module_type = module.get("Type")
-                if "parameters" in module:
-                    for param_id, param_data in module["parameters"].items():
-                        sensor_name = f"{module['Name']}-{param_id}"
-                        row = self.data.get(device_id, {}).get(sensor_name)
-                        # Two ways the portal types a programme, and keying on
-                        # the declared one alone meant this whole block never
-                        # ran on a 3.1.3.0 portal: there every programme is
-                        # DataType 2 with a JSON object in the value, and the
-                        # fetch - the only path that asks the DEVICE for its
-                        # schedule rather than reading the portal's stored
-                        # copy - sat unused. It did not fail; it was never
-                        # entered, which is why nothing about it appeared in
-                        # any log.
-                        if param_data.get(
-                            "DataType"
-                        ) == WemDataType.PROGRAM or looks_like_schedule(
-                            (row or {}).get("value")
-                        ):
-                            # Heating schedules rarely change (only via
-                            # the WEM Portal app directly - this
-                            # integration only ever shows them
-                            # read-only), so refetching them on every
-                            # single coordinator cycle is unnecessary
-                            # load. Skip if we already fetched this
-                            # specific schedule recently enough.
-                            cache_key = (device_id, param_id)
-                            now = time.time()
-                            last_fetch = self._last_circuit_times_fetch.get(
-                                cache_key, 0
-                            )
-                            if (
-                                now - last_fetch
-                                < CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
-                            ):
-                                continue
-                            fetched = False
-                            try:
-                                refresh_payload = {
-                                    "DeviceID": int(device_id),
-                                    "ModuleIndex": module_index,
-                                    "ModuleType": module_type,
-                                    "ParameterID": param_id,
-                                }
-
-                                job_resp = self.make_api_call(
-                                    API_CIRCUIT_TIMES_REFRESH_URL,
-                                    data=refresh_payload,
-                                    do_retry=True,
-                                ).json()
-
-                                job_id = job_resp.get("JobID")
-                                if job_id is None:
-                                    continue
-
-                                time.sleep(
-                                    2
-                                )  # Give backend time to build the schedule payload
-
-                                read_payload = {
-                                    "DeviceID": int(device_id),
-                                    "JobID": job_id,
-                                    "ModuleIndex": module_index,
-                                    "ModuleType": module_type,
-                                    "ParameterID": param_id,
-                                }
-
-                                schedule_resp = self.make_api_call(
-                                    API_CIRCUIT_TIMES_READ_URL,
-                                    data=read_payload,
-                                    do_retry=True,
-                                ).json()
-
-                                if sensor_name not in self.data[device_id]:
-                                    self.data[device_id][sensor_name] = {
-                                        "friendlyName": translate(
-                                            self.language,
-                                            friendly_name_mapper(param_id),
-                                        ),
-                                        "ParameterID": param_id,
-                                        "unit": None,
-                                        "value": "Active",
-                                        "IsWriteable": False,
-                                        "DataType": 6,
-                                        "ModuleIndex": module_index,
-                                        "ModuleType": module_type,
-                                        "platform": "sensor",
-                                        "icon": "mdi:calendar-clock",
-                                    }
-
-                                self.data[device_id][sensor_name]["CircuitTimesDay"] = (
-                                    schedule_resp.get("CircuitTimesDay", [])
-                                )
-                                self.data[device_id][sensor_name]["PossibleValues"] = (
-                                    schedule_resp.get("PossibleValues", [])
-                                )
-                                # The value is NOT touched. This fetch adds
-                                # detail to a row the value read already
-                                # filled; writing "Active" over it replaced a
-                                # readable week with a placeholder once an
-                                # hour, until the next cycle put the programme
-                                # back. Only a row that did not exist gets the
-                                # placeholder, above - there the fetch is the
-                                # only source there is.
-                                fetched = True
-
-                            except Exception as exc:
-                                # Broad: one heating program failing is
-                                # not a reason to skip the rest.
-                                _LOGGER.warning(
-                                    "Failed to fetch CircuitTimes for %s: %s",
-                                    param_id,
-                                    exc,
-                                )
-                            finally:
-                                # Records the ATTEMPT, on every way out of the
-                                # block - including the `continue` above, which
-                                # has already spent a request.
-                                #
-                                # Written only after a SUCCESS, as it was, the
-                                # interval guard never engages for a schedule
-                                # that keeps failing: every coordinator cycle
-                                # spends two more requests on it, at a portal
-                                # that is already failing, against an IP the
-                                # portal blocks past 10,000 requests per 12
-                                # hours. Back-dated rather than blocked when
-                                # it did not work out, so one bad cycle does
-                                # not cost a full hour either. Same shape and
-                                # same reasoning as get_statistics().
-                                self._last_circuit_times_fetch[cache_key] = (
-                                    now
-                                    if fetched
-                                    else now
-                                    - max(
-                                        0,
-                                        CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
-                                        - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
-                                    )
-                                )
+                for param_id, param_data in (module.get("parameters") or {}).items():
+                    if not self._is_schedule_parameter(
+                        device_id, module, param_id, param_data
+                    ):
+                        continue
+                    if not self._schedule_is_due(device_id, param_id):
+                        continue
+                    attempted_at = time.time()
+                    fetched = False
+                    try:
+                        fetched = self._read_one_schedule(device_id, module, param_id)
+                    except Exception as exc:
+                        # Broad: one heating program failing is not a reason
+                        # to skip the rest.
+                        _LOGGER.warning(
+                            "Failed to fetch CircuitTimes for %s: %s",
+                            param_id,
+                            exc,
+                        )
+                    finally:
+                        self._record_schedule_attempt(
+                            device_id, param_id, attempted_at, fetched
+                        )
         except Exception as exc:
             # Broad: heating programs are extra detail on top of the
             # readings. Losing them must never cost the update itself.

@@ -604,22 +604,22 @@
   {
     "label": "schedules: recording the attempt only on success must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                                    \"Failed to fetch CircuitTimes for %s: %s\",\n                                    param_id,\n                                    exc,\n                                )\n                            finally:",
-    "new": "                                    \"Failed to fetch CircuitTimes for %s: %s\",\n                                    param_id,\n                                    exc,\n                                )\n                            else:",
+    "old": "        if fetched:\n            self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at\n            return\n",
+    "new": "        if not fetched:\n            return\n        self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at\n        return\n",
     "tests": "failing_schedule_is_not_refetched_on_every_cycle or refresh_without_a_job_id_also_counts"
   },
   {
     "label": "schedules: not shortening the wait after a failure must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                                    - max(\n                                        0,\n                                        CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS\n                                        - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,\n                                    )",
-    "new": "                                    - 0",
+    "old": "        self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at - max(\n            0,\n            CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS\n            - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,\n        )",
+    "new": "        self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at",
     "tests": "failed_schedule_is_tried_again_after_the_retry_interval"
   },
   {
     "label": "schedules: back-dating a successful fetch must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                                fetched = True",
-    "new": "                                fetched = False",
+    "old": "        if fetched:\n            self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at\n            return\n",
+    "new": "        if False:\n            self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at\n            return\n",
     "tests": "successful_schedule_keeps_the_full_interval"
   },
   {
@@ -1094,15 +1094,15 @@
   {
     "label": "programme: keying on the declared type alone must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                        if param_data.get(\n                            \"DataType\"\n                        ) == WemDataType.PROGRAM or looks_like_schedule(\n                            (row or {}).get(\"value\")\n                        ):",
-    "new": "                        if param_data.get(\"DataType\") == WemDataType.PROGRAM:",
+    "old": "        return param_data.get(\"DataType\") == WemDataType.PROGRAM or looks_like_schedule(\n            (row or {}).get(\"value\")\n        )",
+    "new": "        return param_data.get(\"DataType\") == WemDataType.PROGRAM",
     "tests": "a_programme_the_portal_types_as_a_switch_is_still_fetched"
   },
   {
     "label": "programme: fetching a schedule for a plain switch must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                        ) == WemDataType.PROGRAM or looks_like_schedule(\n                            (row or {}).get(\"value\")\n                        ):",
-    "new": "                        ) == WemDataType.PROGRAM or True:",
+    "old": " or looks_like_schedule(\n            (row or {}).get(\"value\")\n        )",
+    "new": " or True",
     "tests": "a_plain_switch_is_not_mistaken_for_a_programme"
   },
   {
@@ -1115,8 +1115,8 @@
   {
     "label": "programme: overwriting the week with a placeholder must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = (\n                                    schedule_resp.get(\"PossibleValues\", [])\n                                )",
-    "new": "                                self.data[device_id][sensor_name][\"PossibleValues\"] = (\n                                    schedule_resp.get(\"PossibleValues\", [])\n                                )\n                                self.data[device_id][sensor_name][\"value\"] = \"Active\"",
+    "old": "        self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\n            \"PossibleValues\", []\n        )",
+    "new": "        self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\n            \"PossibleValues\", []\n        )\n        self.data[device_id][sensor_name][\"value\"] = \"Active\"",
     "tests": "the_fetch_adds_to_the_programme_instead_of_replacing_it"
   },
   {
