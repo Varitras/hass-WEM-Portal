@@ -39,6 +39,63 @@ from .utils import (
 # things ask about it: the parser, and the report that explains an empty page.
 PANEL_XPATH = '//div[contains(@class, "RadPanelBar RadPanelBar_Default rpbSimpleData")]'
 
+# The three selectors inside one panel: its heading, its rows, and within a
+# row the label and the reading. Named because a bare XPath in the middle of a
+# parse loop says nothing about what it is looking for.
+PANEL_HEADING_XPATH = './/th[contains(@class, "simpleDataHeaderTextCell")]/span/text()'
+PANEL_ROW_XPATH = (
+    './/div[contains(@class, "rpTemplate")]'
+    '/table[contains(@class, "simpleDataTable")]/tbody/tr'
+)
+ROW_NAME_XPATH = './/td[contains(@class, "simpleDataNameCell")]/span/text()'
+ROW_VALUE_XPATH = (
+    './/td[contains(@class, "simpleDataValueCell") '
+    'or contains(@class, "simpleDataValueEnumCell")]/span/text()'
+)
+
+
+def _panel_key(heading: str) -> str:
+    """The panel heading, folded into the half of a row key it contributes.
+
+    Scraped rows have no id from the portal, so their key is built from the
+    heading plus the row label - see _warn_about_renamed_scraper_keys in
+    wemportalapi for what that costs when the portal rewords one.
+    """
+    return (
+        heading.replace("/#", "")
+        .replace("  ", "")
+        .replace(" - ", "_")
+        .replace("/*+/*", "_")
+        .replace(" ", "_")
+        .casefold()
+    )
+
+
+def _reading_and_unit(raw_value: str):
+    """Split a cell like "21,5 °C" into a number and its unit.
+
+    Anything that does not parse as a number keeps its FULL original string
+    and gets no unit: the portal writes words in these cells too, and half of
+    one ("Ein" out of "Ein Betrieb") would be worse than the whole.
+    """
+    parts = raw_value.split(" ", 1)
+    unit = parts[1] if len(parts) >= 2 else ""
+    try:
+        return float(".".join(parts[0].split(","))), unit
+    except ValueError:
+        return raw_value, None
+
+
+def _unit_from_name(name: str) -> str:
+    """The unit the portal left off, from what the row is called."""
+    lowered = name.lower()
+    if any(word in lowered for word in TEMPERATURE_KEYWORDS):
+        return "°C"
+    if any(word in lowered for word in PERCENTAGE_KEYWORDS):
+        return "%"
+    return ""
+
+
 # Keys already reported as colliding, so a portal that lists two identical
 # rows does not say so on every single cycle. Module level for the same
 # reason as utils._MARKER_REPORTED: the scraper object outlives a cycle but
@@ -390,6 +447,53 @@ class WemPortalScraper:
             "means the page is there but its markup no longer matches.",
         )
 
+    def _panel_rows(self, div):
+        """The heading of one panel and the rows under it, or None.
+
+        No heading means no stable sensor name can be built for anything in
+        this panel, so the whole panel is skipped.
+        """
+        headings = div.xpath(PANEL_HEADING_XPATH)
+        if not headings:
+            return None
+        return headings[0].strip(), _panel_key(headings[0]), div.xpath(PANEL_ROW_XPATH)
+
+    def _row_sensor(self, heading, panel_key, row):
+        """One reading from one table row, or None if the row carries none.
+
+        Returns the row's key, the portal's own wording for it (which the
+        collision report needs, and which the key has been folded past) and
+        the sensor itself.
+        """
+        names = row.xpath(ROW_NAME_XPATH)
+        values = row.xpath(ROW_VALUE_XPATH)
+        if not (names and values):
+            return None
+
+        raw_name = names[0].strip()
+        name = panel_key + "-" + names[0].replace("  ", "").replace(" ", "_").casefold()
+        value, unit = _reading_and_unit(values[0].strip())
+        if not unit:
+            unit = _unit_from_name(name) or unit
+        # Handle missing or boolean values (shared, language-independent
+        # logic - see utils.sanitize_value for details/rationale).
+        if isinstance(value, str):
+            value = sanitize_value(value, unit, name)
+
+        return (
+            name,
+            raw_name,
+            {
+                "value": value,
+                "name": name,
+                "icon": uom_to_icon(unit),
+                "unit": unit,
+                "platform": "sensor",
+                "friendlyName": f"{heading} - {raw_name.lstrip('- ')}",
+                "ParameterID": name,
+            },
+        )
+
     def parse_expert_page(self, html_content, source="the expert page", required=True):
         """Turn the expert page into sensor dicts.
 
@@ -404,87 +508,21 @@ class WemPortalScraper:
         tree = html.fromstring(html_content)
 
         for div in tree.xpath(PANEL_XPATH):
-            header_elems = div.xpath(
-                './/th[contains(@class, "simpleDataHeaderTextCell")]/span/text()'
-            )
-            if not header_elems:
-                # No header -> can't build stable sensor names for this
-                # panel, skip it entirely.
+            panel = self._panel_rows(div)
+            if panel is None:
                 continue
-            header_raw = header_elems[0].strip()
-            header = (
-                header_elems[0]
-                .replace("/#", "")
-                .replace("  ", "")
-                .replace(" - ", "_")
-                .replace("/*+/*", "_")
-                .replace(" ", "_")
-                .casefold()
-            )
-
-            for td in div.xpath(
-                './/div[contains(@class, "rpTemplate")]/table[contains(@class, "simpleDataTable")]/tbody/tr'
-            ):
+            heading, panel_key, rows = panel
+            for row in rows:
                 try:
-                    name_elems = td.xpath(
-                        './/td[contains(@class, "simpleDataNameCell")]/span/text()'
-                    )
-                    val_elems = td.xpath(
-                        './/td[contains(@class, "simpleDataValueCell") or contains(@class, "simpleDataValueEnumCell")]/span/text()'
-                    )
-
-                    if name_elems and val_elems:
-                        raw_name = name_elems[0].strip()
-                        friendly_name = f"{header_raw} - {raw_name.lstrip('- ')}"
-
-                        name = (
-                            name_elems[0].replace("  ", "").replace(" ", "_").casefold()
-                        )
-                        name = header + "-" + name
-                        original_value = val_elems[0].strip()
-                        value = original_value
-
-                        split_value = value.split(" ", 1)
-                        unit = ""
-                        if len(split_value) >= 2:
-                            value = split_value[0]
-                            unit = split_value[1]
-                        else:
-                            value = split_value[0]
-
-                        try:
-                            value = ".".join(value.split(","))
-                            value = float(value)
-                        except ValueError:
-                            # If it's not a number, revert to the full string
-                            value = original_value
-                            unit = None
-
-                        if not unit:
-                            name_lower = name.lower()
-                            if any(x in name_lower for x in TEMPERATURE_KEYWORDS):
-                                unit = "°C"
-                            elif any(x in name_lower for x in PERCENTAGE_KEYWORDS):
-                                unit = "%"
-
-                        # Handle missing or boolean values (shared, language-independent
-                        # logic - see utils.sanitize_value for details/rationale).
-                        if isinstance(value, str):
-                            value = sanitize_value(value, unit, name)
-
-                        if name in output:
-                            _report_duplicate_row(name, header_raw, raw_name)
-                        output[name] = {
-                            "value": value,
-                            "name": name,
-                            "icon": uom_to_icon(unit),
-                            "unit": unit,
-                            "platform": "sensor",
-                            "friendlyName": friendly_name,
-                            "ParameterID": name,
-                        }
+                    reading = self._row_sensor(heading, panel_key, row)
                 except (IndexError, ValueError):
                     continue
+                if reading is None:
+                    continue
+                name, raw_name, sensor = reading
+                if name in output:
+                    _report_duplicate_row(name, heading, raw_name)
+                output[name] = sensor
 
         # A page that parsed to nothing is not a successful scrape. The XPaths
         # above simply find no panels on an error or placeholder page served

@@ -1325,8 +1325,8 @@
   {
     "label": "collision: overwriting a reading without a word must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                        if name in output:\n                            _report_duplicate_row(name, header_raw, raw_name)",
-    "new": "                        if False:\n                            _report_duplicate_row(name, header_raw, raw_name)",
+    "old": "                if name in output:\n                    _report_duplicate_row(name, heading, raw_name)",
+    "new": "                if False:\n                    _report_duplicate_row(name, heading, raw_name)",
     "tests": "the_same_row_twice_in_one_panel_is_reported"
   },
   {
@@ -1339,8 +1339,8 @@
   {
     "label": "collision: calling two distinct rows a collision must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                        if name in output:",
-    "new": "                        if True:",
+    "old": "                if name in output:",
+    "new": "                if True:",
     "tests": "rows_that_do_not_collide_say_nothing"
   },
   {
