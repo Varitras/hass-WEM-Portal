@@ -735,13 +735,26 @@ class WemPortalApi:
         Scraped sensors have no stable id from the portal - the entityvalue
         in the row embeds the current VALUE, so it changes whenever the
         reading does and cannot serve as one. Their key is therefore built
-        from the panel heading and the row label, which means a wording
-        change at the portal produces a NEW entity: the old one is left
-        behind with all the history, the new one starts empty.
+        from the panel heading and the row label, so a wording change at the
+        portal produces a different key for the same reading.
 
         Nothing can prevent that here, but silently splitting a sensor's
         history is the kind of thing people notice weeks later. If keys
         disappear and others appear in the same cycle, say so.
+
+        The message names the display language first, because that is by far
+        the likeliest cause and the only one the reader can undo: switching it
+        in the portal's account settings relabels every row at once. Reported
+        as a portal rename, a language switch someone made themselves reads
+        like a fault in the integration - it cost an evening of looking for
+        one.
+
+        What happens NEXT is deliberately split in two, because the two are
+        not the same and the message used to claim only the second. Entities
+        are created once, during setup, so nothing new appears right now: the
+        existing sensors simply lose their row and go unknown. Only a restart
+        builds entities from the new keys, and that is when the history stays
+        behind with the old ones.
 
         Returns the keys that are no longer scraped, which the caller needs
         for a second reason: whatever they were showing is not current any
@@ -756,10 +769,15 @@ class WemPortalApi:
         added = set(scraped_keys) - previous
         if gone and added:
             _LOGGER.warning(
-                "The web portal appears to have renamed scraped rows: %s no "
-                "longer appear, while %s are new. Scraped sensors are keyed by "
-                "their portal labels, so the renamed ones become NEW entities "
-                "and their history stays with the old ones.",
+                "The web portal labelled scraped rows differently this cycle: "
+                "%s no longer appear, while %s are new. The usual cause is the "
+                "display language being changed in the portal's own account "
+                "settings, which relabels every row at once; a reworded row is "
+                "the other. Scraped sensors are keyed by those labels, so the "
+                "affected sensors have no reading this cycle and show as "
+                "unknown. They come back if the labels do. If the new labels "
+                "stay, the next Home Assistant restart creates NEW entities "
+                "from them and the history stays with the old ones.",
                 ", ".join(sorted(gone)),
                 ", ".join(sorted(added)),
             )

@@ -1441,12 +1441,12 @@ def _scraped(*keys):
     return {k: {"value": 1, "unit": "°C", "platform": "sensor"} for k in keys}
 
 
-def test_a_renamed_scraper_row_is_reported(caplog):
+def test_a_relabelled_scraper_row_is_reported(caplog):
     """Scraped sensors are keyed by their portal labels - there is no stable
     id to use instead, since the row's entityvalue embeds the current VALUE
-    and changes with every reading. A relabelled row therefore becomes a NEW
-    entity and the history stays with the old one. Nothing can prevent that,
-    but it must not happen silently."""
+    and changes with every reading. A relabelled row therefore lands under a
+    different key. Nothing can prevent that, but it must not happen
+    silently."""
     import logging
 
     api = _api()
@@ -1455,9 +1455,44 @@ def test_a_renamed_scraper_row_is_reported(caplog):
     with caplog.at_level(logging.WARNING):
         api._merge_webscraping_data("0000", _scraped("pump-flow", "pump-return-temp"))
 
-    assert "renamed" in caplog.text
+    assert "no longer appear" in caplog.text
     assert "pump-return" in caplog.text
     assert "pump-return-temp" in caplog.text
+
+
+def test_the_relabel_warning_names_the_language_setting(caplog):
+    """The likeliest cause by far, and the only one the reader can undo.
+
+    Reported as a portal rename, a language switch someone made themselves in
+    the portal's account settings reads like a fault in the integration - it
+    cost an evening of looking for one.
+    """
+    import logging
+
+    api = _api()
+    api._merge_webscraping_data("0000", _scraped("pump-flow"))
+
+    with caplog.at_level(logging.WARNING):
+        api._merge_webscraping_data("0000", _scraped("pump-vorlauf"))
+
+    assert "language" in caplog.text
+
+
+def test_the_relabel_warning_does_not_promise_entities_that_appear_now(caplog):
+    """Entities are created once, during setup. The message claimed the new
+    labels "become NEW entities", so the reader went looking for entities that
+    cannot exist yet - what actually happens is that the existing sensors lose
+    their row and go unknown until a restart builds the new ones."""
+    import logging
+
+    api = _api()
+    api._merge_webscraping_data("0000", _scraped("pump-flow"))
+
+    with caplog.at_level(logging.WARNING):
+        api._merge_webscraping_data("0000", _scraped("pump-vorlauf"))
+
+    assert "unknown" in caplog.text
+    assert "restart" in caplog.text
 
 
 def test_a_stable_scrape_says_nothing(caplog):
@@ -1470,11 +1505,11 @@ def test_a_stable_scrape_says_nothing(caplog):
         api._merge_webscraping_data("0000", _scraped("pump-flow"))
         api._merge_webscraping_data("0000", _scraped("pump-flow"))
 
-    assert "renamed" not in caplog.text
+    assert "no longer appear" not in caplog.text
 
 
-def test_a_purely_added_row_is_not_a_rename(caplog):
-    """A genuinely new parameter is not a rename, and saying so would train
+def test_a_purely_added_row_is_not_a_relabel(caplog):
+    """A genuinely new parameter is not a relabel, and saying so would train
     the user to ignore the message."""
     import logging
 
@@ -1484,7 +1519,7 @@ def test_a_purely_added_row_is_not_a_rename(caplog):
     with caplog.at_level(logging.WARNING):
         api._merge_webscraping_data("0000", _scraped("pump-flow", "pump-new"))
 
-    assert "renamed" not in caplog.text
+    assert "no longer appear" not in caplog.text
 
 
 def test_the_service_value_field_does_not_impose_a_percent_range():

@@ -86,6 +86,15 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **The relabelled-rows warning names the likeliest cause and stops promising
+  entities that cannot exist yet.** Changing the display language in the
+  portal's own account settings relabels every scraped row at once, which the
+  message did not mention - so a switch someone made themselves read like a
+  fault in the integration. It also claimed the new labels "become NEW
+  entities", but entities are created once during setup: nothing new appears
+  at that moment, the existing sensors simply lose their row and show as
+  unknown until the labels come back. Only a restart creates entities from the
+  new labels, and that is when the history stays with the old ones.
 - **Expert parameter discovery takes the same lock as everything else on that
   path.** Only one expert portal operation per account may run at a time - the
   entity write and the scheduled read both take a shared lock, but discovery,

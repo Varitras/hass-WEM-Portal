@@ -1482,5 +1482,19 @@
     "old": "                self._discovered = await self._run_expert(client.discover, modules)",
     "new": "                self._discovered = await self.hass.async_add_executor_job(\n                    client.discover, modules\n                )",
     "tests": "the_parameter_search_waits_for_the_shared_expert_lock"
+  },
+  {
+    "label": "relabel: the message no longer names the language setting",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                \"display language being changed in the portal's own account \"\n                \"settings, which relabels every row at once; a reworded row is \"\n                \"the other. Scraped sensors are keyed by those labels, so the \"",
+    "new": "                \"portal renaming a row. Scraped sensors are keyed by those labels, so the \"",
+    "tests": "the_relabel_warning_names_the_language_setting"
+  },
+  {
+    "label": "relabel: the message promises entities that cannot exist yet",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                \"affected sensors have no reading this cycle and show as \"\n                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, the next Home Assistant restart creates NEW entities \"\n                \"from them and the history stays with the old ones.\",",
+    "new": "                \"affected sensors become NEW entities and their history stays \"\n                \"with the old ones.\",",
+    "tests": "the_relabel_warning_does_not_promise_entities_that_appear_now"
   }
 ]
