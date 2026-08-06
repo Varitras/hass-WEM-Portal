@@ -44,10 +44,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -179,8 +177,21 @@ _EXIT_REASON = {
 }
 
 
-def apply_mutation(case: dict) -> tuple[Path, Path]:
+def apply_mutation(case: dict) -> tuple[Path, bytes]:
+    """Break one file on purpose, and hand back what it takes to undo that.
+
+    The original is returned as BYTES and kept in memory. It used to be copied
+    into a fresh tempfile.mkdtemp() that nothing ever removed - one directory
+    per case, so a full run left as many behind as the plan has entries, each
+    holding a copy of a source file.
+
+    Bytes rather than text because restoring has to be exact: the snippets in
+    the plan are written with \\n, so the match below needs a newline-normalised
+    read, and writing that back would silently convert a CRLF checkout to LF.
+    Two different reads, on purpose - one to compare against, one to restore.
+    """
     target = REPO / case["path"]
+    original = target.read_bytes()
     source = target.read_text(encoding="utf-8")
     occurrences = source.count(case["old"])
     if occurrences != 1:
@@ -188,12 +199,10 @@ def apply_mutation(case: dict) -> tuple[Path, Path]:
             f"{case['path']}: snippet found {occurrences} times, expected once. "
             "A mutation that cannot be applied proves nothing - fix the snippet."
         )
-    backup = Path(tempfile.mkdtemp()) / target.name
-    shutil.copy(target, backup)
     target.write_text(
         source.replace(case["old"], case["new"], 1), encoding="utf-8", newline=""
     )
-    return target, backup
+    return target, original
 
 
 def main() -> int:
@@ -218,11 +227,11 @@ def main() -> int:
 
     for case in cases:
         label = case.get("label", case["path"])
-        target, backup = apply_mutation(case)
+        target, original = apply_mutation(case)
         try:
             caught = run_tests(case["tests"], targets[case["tests"]])
         finally:
-            shutil.copy(backup, target)
+            target.write_bytes(original)
         print(f"{'caught  ' if caught else 'SURVIVED'} {label}")
         if not caught:
             survived.append(label)

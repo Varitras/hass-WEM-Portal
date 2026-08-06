@@ -14,6 +14,7 @@ add minutes for no extra confidence about this logic.
 import importlib.util
 import json
 import re
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,44 @@ def test_an_ambiguous_snippet_is_an_error(tmp_path, monkeypatch):
 
     with pytest.raises(SystemExit):
         mutate.apply_mutation({"path": "module.py", "old": "x = 1", "new": "x = 2"})
+
+
+def test_the_original_comes_back_byte_for_byte(tmp_path, monkeypatch):
+    """The harness edits the checkout it runs in, so restoring has to be
+    exact.
+
+    Line endings are the trap: the snippets in the plan are written with \\n,
+    so matching needs a newline-normalised read - and writing that back would
+    turn a CRLF checkout into an LF one on every run, a whole-file diff in
+    every touched file that has nothing to do with any mutation.
+    """
+    target = tmp_path / "module.py"
+    original = b"value = 1\r\nother = 2\r\n"
+    target.write_bytes(original)
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+
+    path, kept = mutate.apply_mutation(
+        {"path": "module.py", "old": "value = 1", "new": "value = 99"}
+    )
+    assert b"99" in path.read_bytes(), "the mutation was not applied at all"
+
+    path.write_bytes(kept)
+
+    assert path.read_bytes() == original
+
+
+def test_restoring_leaves_nothing_behind(tmp_path, monkeypatch):
+    """One temp directory per case was created and never removed - a full run
+    left as many as the plan has entries, each holding a copy of a source
+    file. The original is kept in memory instead."""
+    target = tmp_path / "module.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+
+    before = set(Path(tempfile.gettempdir()).iterdir())
+    mutate.apply_mutation({"path": "module.py", "old": "value = 1", "new": "value = 2"})
+
+    assert set(Path(tempfile.gettempdir()).iterdir()) == before
 
 
 def test_a_selector_matching_no_tests_is_an_error(monkeypatch):
