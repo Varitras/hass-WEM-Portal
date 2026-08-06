@@ -1670,6 +1670,151 @@ class WemPortalApi:
         age = time.time() - module.get("parameters_fetched_at", 0)
         return age >= PARAMETER_REDISCOVERY_INTERVAL_SECONDS
 
+    @staticmethod
+    def _http_status(exc):
+        """The HTTP status behind a WemPortalError, or None if it had none.
+
+        Read explicitly rather than through getattr with a default: a typo in
+        an attribute name would then silently mean "no status", and this is
+        what decides between backing off, dropping a module and re-raising.
+        """
+        cause = exc.__cause__
+        if not isinstance(cause, reqs.exceptions.HTTPError):
+            return None
+        return cause.response.status_code
+
+    def _module_description_is_due(self, device_id, values) -> bool:
+        """Whether this module's parameter list has to be read again.
+
+        Cached AND still young enough to trust. Without the age check the list
+        was kept forever, so a parameter added on a module the integration
+        already knew - activating an input or output in the portal - was never
+        discovered, with no error and no way to force a re-scan short of
+        removing the integration. A NEW module was always found; a new
+        parameter on an existing one never was.
+
+        Keyed on the timestamp, not on having parameters: a module the portal
+        describes as empty is answered too, and asking it again every cycle is
+        the waste this replaced.
+        """
+        if "parameters" not in values:
+            return True
+        age = time.time() - values.get("parameters_fetched_at", 0)
+        if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:
+            _LOGGER.debug(
+                "Parameters for device %s, index %s, and type %s are "
+                "cached and %.1f h old.",
+                device_id,
+                values["Index"],
+                values["Type"],
+                age / 3600,
+            )
+            return False
+        _LOGGER.debug(
+            "Re-reading parameters for device %s, index %s, type %s "
+            "(cached list is %.1f h old).",
+            device_id,
+            values["Index"],
+            values["Type"],
+            age / 3600,
+        )
+        return True
+
+    def _note_rate_limited_module(self, device_id, values, forbidden_count, exc) -> int:
+        """Count one 403 against this device, and give up after three.
+
+        Returns the new strike count. Three in a row means the portal is
+        refusing this IP rather than this request, so the whole integration
+        backs off instead of walking the remaining modules into the same wall.
+        """
+        forbidden_count += 1
+        if forbidden_count >= 3:
+            _LOGGER.error(
+                "Rate limited (403) three times while fetching parameters "
+                "for device %s. Aborting.",
+                device_id,
+            )
+            self._activate_cooldown()
+            raise ForbiddenError("Rate limited during get_parameters") from exc
+        _LOGGER.warning(
+            "Rate limit warning (403) for device %s module %s. Strike %s of 3.",
+            device_id,
+            values["Index"],
+            forbidden_count,
+        )
+        return forbidden_count
+
+    def _store_module_description(self, device_id, key, values, response) -> None:
+        """Keep what the portal said this module has, or book why it did not."""
+        parameters = {}
+        try:
+            for parameter in response.json()["Parameters"]:
+                parameters[parameter["ParameterID"]] = parameter
+            if not parameters:
+                self._note_undescribed_module(
+                    device_id,
+                    key,
+                    values,
+                    "it described no parameters",
+                    unsupported=False,
+                )
+            else:
+                self.modules[device_id][key]["parameters"] = parameters
+                self.modules[device_id][key]["parameters_fetched_at"] = time.time()
+        except (KeyError, ValueError):
+            # ValueError also covers a JSON-decode failure (e.g. an HTML error
+            # page returned instead of JSON) - without it, a single malformed
+            # response here would abort discovery for every remaining module
+            # on this device, not just skip this one.
+            #
+            # Booked like every other unusable answer. Skipping with only a
+            # log line left the module with no timestamp at all, so the age
+            # check never held it back and a portal answering nonsense was
+            # asked again every single cycle, without limit - the one failure
+            # mode the whole retry budget exists to bound.
+            self._note_undescribed_module(
+                device_id,
+                key,
+                values,
+                "its description could not be read",
+                unsupported=True,
+            )
+
+    def _discover_device_parameters(self, device_id) -> None:
+        """Read every module description of one device that is due."""
+        forbidden_count = 0
+        for key, values in self.modules[device_id].items():
+            if not self._module_description_is_due(device_id, values):
+                continue
+            data = {
+                "DeviceID": int(device_id),
+                "ModuleIndex": values["Index"],
+                "ModuleType": values["Type"],
+            }
+            try:
+                time.sleep(5)
+                response = self.make_api_call(
+                    API_EVENT_TYPE_READ_URL, data=data, do_retry=False
+                )
+            except WemPortalError as exc:
+                status_code = self._http_status(exc)
+                if status_code == 403:
+                    forbidden_count = self._note_rate_limited_module(
+                        device_id, values, forbidden_count, exc
+                    )
+                    continue
+                if status_code == 400:
+                    self._note_undescribed_module(
+                        device_id,
+                        key,
+                        values,
+                        "the portal rejected the request",
+                        unsupported=True,
+                    )
+                    continue
+                raise
+            self._store_module_description(device_id, key, values, response)
+
     def get_parameters(self):
         if self.modules is None:
             _LOGGER.debug(
@@ -1682,119 +1827,7 @@ class WemPortalApi:
             _LOGGER.debug("Fetching api parameters data for device %s", device_id)
             _LOGGER.debug(self.data)
             _LOGGER.debug(self.modules[device_id])
-            forbidden_count = 0
-            for key, values in self.modules[device_id].items():
-                # Cached AND still young enough to trust. Without the age
-                # check the list was kept forever, so a parameter added on a
-                # module the integration already knew - activating an input
-                # or output in the portal - was never discovered, with no
-                # error and no way to force a re-scan short of removing the
-                # integration. A NEW module was always found; a new parameter
-                # on an existing one never was.
-                # Keyed on the timestamp, not on having parameters: a
-                # module the portal describes as empty is answered too, and
-                # asking it again every cycle is the waste this replaced.
-                if "parameters" in values:
-                    age = time.time() - values.get("parameters_fetched_at", 0)
-                    if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:
-                        _LOGGER.debug(
-                            "Parameters for device %s, index %s, and type %s are "
-                            "cached and %.1f h old.",
-                            device_id,
-                            values["Index"],
-                            values["Type"],
-                            age / 3600,
-                        )
-                        continue
-                    _LOGGER.debug(
-                        "Re-reading parameters for device %s, index %s, type %s "
-                        "(cached list is %.1f h old).",
-                        device_id,
-                        values["Index"],
-                        values["Type"],
-                        age / 3600,
-                    )
-                data = {
-                    "DeviceID": int(device_id),
-                    "ModuleIndex": values["Index"],
-                    "ModuleType": values["Type"],
-                }
-                try:
-                    time.sleep(5)
-                    response = self.make_api_call(
-                        API_EVENT_TYPE_READ_URL, data=data, do_retry=False
-                    )
-                except WemPortalError as exc:
-                    if isinstance(exc.__cause__, reqs.exceptions.HTTPError):
-                        status_code = exc.__cause__.response.status_code
-                        if status_code == 403:
-                            forbidden_count += 1
-                            if forbidden_count >= 3:
-                                _LOGGER.error(
-                                    "Rate limited (403) three times while fetching parameters "
-                                    "for device %s. Aborting.",
-                                    device_id,
-                                )
-                                self._activate_cooldown()
-                                raise ForbiddenError(
-                                    "Rate limited during get_parameters"
-                                ) from exc
-
-                            _LOGGER.warning(
-                                "Rate limit warning (403) for device %s module %s. Strike %s of 3.",
-                                device_id,
-                                values["Index"],
-                                forbidden_count,
-                            )
-                            continue
-                        elif status_code == 400:
-                            self._note_undescribed_module(
-                                device_id,
-                                key,
-                                values,
-                                "the portal rejected the request",
-                                unsupported=True,
-                            )
-                            continue
-                    raise
-                parameters = {}
-                try:
-                    for parameter in response.json()["Parameters"]:
-                        parameters[parameter["ParameterID"]] = parameter
-                    if not parameters:
-                        self._note_undescribed_module(
-                            device_id,
-                            key,
-                            values,
-                            "it described no parameters",
-                            unsupported=False,
-                        )
-                    else:
-                        self.modules[device_id][key]["parameters"] = parameters
-                        self.modules[device_id][key]["parameters_fetched_at"] = (
-                            time.time()
-                        )
-                except (KeyError, ValueError):
-                    # ValueError also covers a JSON-decode failure (e.g. an
-                    # HTML error page returned instead of JSON) - without
-                    # it, a single malformed response here would abort
-                    # discovery for every remaining module on this device,
-                    # not just skip this one.
-                    #
-                    # Booked like every other unusable answer. Skipping with
-                    # only a log line left the module with no timestamp at
-                    # all, so the age check above never held it back and a
-                    # portal answering nonsense was asked again every single
-                    # cycle, without limit - the one failure mode the whole
-                    # retry budget exists to bound.
-                    self._note_undescribed_module(
-                        device_id,
-                        key,
-                        values,
-                        "its description could not be read",
-                        unsupported=True,
-                    )
-                    continue
+            self._discover_device_parameters(device_id)
 
     def change_value(
         self,
