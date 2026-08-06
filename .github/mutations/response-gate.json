@@ -660,9 +660,9 @@
   {
     "label": "date: showing a day the portal never took must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "        await self.async_write_parameter(\n            date_to_epoch(value), together_with=self._companion_dates()\n        )\n        self._attr_native_value = value",
-    "new": "        self._attr_native_value = value\n        await self.async_write_parameter(\n            date_to_epoch(value), together_with=self._companion_dates()\n        )\n",
-    "tests": "write_is_not_reported_before_the_portal_took_it"
+    "old": "        self._attr_native_value = epoch_to_date(self._current_value())",
+    "new": "        self._attr_native_value = value",
+    "tests": "a_day_the_portal_did_not_keep_is_not_displayed"
   },
   {
     "label": "date: keeping a vanished day must be noticed",
@@ -1531,5 +1531,19 @@
     "old": "                else:\n                    failed += 1\n                    _LOGGER.warning(\n                        \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                    )",
     "new": "                failed += 1\n                _LOGGER.warning(\n                    \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                )",
     "tests": "groups_that_do_not_apply_are_not_failures"
+  },
+  {
+    "label": "date: the write is not checked against what was stored",
+    "path": "custom_components/wemportal/date.py",
+    "old": "        failure = await self.hass.async_add_executor_job(\n            self.coordinator.api.reread_device_values, self._device_id\n        )",
+    "new": "        failure = None",
+    "tests": "a_day_the_portal_did_not_keep_is_not_displayed"
+  },
+  {
+    "label": "date: a failed read-back reported as a failed write",
+    "path": "custom_components/wemportal/date.py",
+    "old": "        if failure is not None:",
+    "new": "        if False:",
+    "tests": "a_failed_read_back_does_not_fail_the_write"
   }
 ]

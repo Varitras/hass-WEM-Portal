@@ -86,6 +86,16 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **A date the portal accepted but did not store is no longer displayed as
+  set.** A write that returns without an error means the request was accepted,
+  not that the value was kept: a holiday range that ends before it starts is
+  answered with a success status and silently discarded. The entity published
+  the written day on the strength of that answer, so Home Assistant showed a
+  holiday that did not exist until the next poll took it away again, minutes
+  later and with no explanation. It now reads the value back and shows what
+  the portal actually holds. The `set_holiday` service, which writes both
+  dates at once, refuses such a range up front and is unchanged. A read-back
+  that itself fails is logged, not raised - the write did happen.
 - **A device whose every statistics group failed no longer counts as read.**
   Statistics are fetched once an hour, and a cycle that failed for every
   device retries after a much shorter interval instead. Errors on individual

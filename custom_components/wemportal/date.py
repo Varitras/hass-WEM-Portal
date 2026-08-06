@@ -134,12 +134,51 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         return companions
 
     async def async_set_value(self, value: date) -> None:
-        """Write a new day to the portal."""
+        """Write a new day to the portal, then ask what it kept.
+
+        A write that returns without raising means the portal ACCEPTED the
+        request, not that it stored the value. Measured on a live
+        installation: a holiday range that ends before it starts is answered
+        with Status 0 and quietly discarded. Publishing the written date on
+        the strength of that answer showed a holiday nobody had - until the
+        next poll took it away again, minutes later and with no explanation.
+
+        The service that writes both dates at once refuses such a pair up
+        front. A single date cannot: which of the module's dates is the begin
+        and which the end is only known from parameter ids that differ per
+        installation, and guessing them is how this platform's predecessor
+        turned two dates into switches. So instead of deciding what the
+        portal will accept, this asks it afterwards.
+
+        Costs one refresh-and-read of this device. Dates are changed by hand
+        a few times a year, not once a cycle, and the alternative is
+        reporting a setting that did not happen.
+        """
         await self.async_write_parameter(
             date_to_epoch(value), together_with=self._companion_dates()
         )
-        self._attr_native_value = value
-        self.async_write_ha_state()
+
+        failure = await self.hass.async_add_executor_job(
+            self.coordinator.api.reread_device_values, self._device_id
+        )
+        if failure is not None:
+            # The write itself went through, so this must not be raised as a
+            # failed service call. What is unknown is whether it was kept.
+            _LOGGER.warning(
+                'Wrote %s to "%s" but could not read the value back (%s). '
+                "The next update will show what the portal actually stored.",
+                value,
+                self._attr_name,
+                failure,
+            )
+        self._attr_native_value = epoch_to_date(self._current_value())
+        self.coordinator.async_update_listeners()
+
+    def _current_value(self):
+        """This parameter's value as the coordinator now holds it."""
+        device = (self.coordinator.data or {}).get(self._device_id)
+        row = device.get(self._data_key) if isinstance(device, dict) else None
+        return row.get("value") if isinstance(row, dict) else None
 
     @callback
     def _handle_coordinator_update(self) -> None:

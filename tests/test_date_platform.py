@@ -71,7 +71,17 @@ class _Coordinator:
     def __init__(self, data):
         self.data = data
         self.last_update_success = True
-        self.api = types.SimpleNamespace(device_types={}, api_version=None)
+        # A portal that accepts a write and confirms whatever the row already
+        # says it stored. Tests that care about either replace them.
+        self.api = types.SimpleNamespace(
+            device_types={},
+            api_version=None,
+            change_value=lambda *_a, **_k: None,
+            reread_device_values=lambda *_a, **_k: None,
+        )
+
+    def async_update_listeners(self):
+        pass
 
 
 class _Entry:
@@ -100,7 +110,14 @@ def _entity(value=BEGIN_EPOCH):
         data["1234"]["Heat pump-U_Beginn"],
     )
     entity.async_write_ha_state = lambda: None
+    # Every write now ends in a read-back, which goes through the executor.
+    entity.hass = types.SimpleNamespace(async_add_executor_job=_run_now)
     return entity, data
+
+
+async def _run_now(func, *args):
+    """Run an executor job inline - there is no event loop thread here."""
+    return func(*args)
 
 
 def _with_companion(data, value=END_EPOCH, module=(0, 1), platform="date"):
@@ -152,7 +169,59 @@ async def test_setting_a_day_writes_the_portal_encoding():
     await entity.async_set_value(date(2026, 8, 4))
 
     assert seen["value"] == END_EPOCH
+
+
+async def test_a_day_the_portal_kept_is_displayed():
+    """The ordinary case, and the counter-test to the one below: without it,
+    an entity that never displays anything would pass that one."""
+    entity, _ = _entity()
+    _wired(entity)
+
+    await entity.async_set_value(date(2026, 8, 4))
+
     assert entity.native_value == date(2026, 8, 4)
+
+
+async def test_a_day_the_portal_did_not_keep_is_not_displayed():
+    """`Status: 0` means the request was ACCEPTED, not that the value was
+    stored.
+
+    Measured on a live installation: a holiday range that ends before it
+    starts is answered exactly that way and silently discarded. Publishing
+    the written day on the strength of that answer showed a holiday nobody
+    had - until the next poll took it away again, minutes later and with no
+    explanation. So the entity asks what was kept instead of assuming.
+    """
+    entity, data = _entity()
+    _wired(entity)
+
+    def portal_kept_the_old_value(_device_id):
+        data["1234"]["Heat pump-U_Beginn"]["value"] = BEGIN_EPOCH
+        return None
+
+    entity.coordinator.api.reread_device_values = portal_kept_the_old_value
+
+    await entity.async_set_value(date(2026, 12, 24))
+
+    assert entity.native_value == date(2026, 8, 3), (
+        "a day the portal discarded was displayed as if it had been set"
+    )
+
+
+async def test_a_failed_read_back_does_not_fail_the_write(caplog):
+    """The write went through; what is unknown is whether it was kept. Raising
+    here would report a failed service call for a write that happened."""
+    import logging
+
+    entity, _ = _entity()
+    _wired(entity)
+
+    entity.coordinator.api.reread_device_values = lambda _d: "the portal timed out"
+
+    with caplog.at_level(logging.WARNING):
+        await entity.async_set_value(date(2026, 8, 4))
+
+    assert "could not read the value back" in caplog.text
 
 
 async def test_a_write_is_not_reported_before_the_portal_took_it():
@@ -245,21 +314,17 @@ async def test_only_dates_are_taken_along():
 
 
 def _wired(entity):
-    """Give the entity a write path the portal accepts, and record nothing.
+    """Let the write reach the real write path rather than a recorder.
 
-    The point of these two tests is the state left BEHIND by a write, not
-    what went out - so the api simply says yes.
+    The point of these tests is the state left BEHIND by a write, not what
+    went out - so the api simply says yes. `runtime_data` is what the
+    writable-entry gate reads.
     """
     from custom_components.wemportal.models import WemPortalData
 
-    api = types.SimpleNamespace(change_value=lambda *_a, **_k: None)
-    entity._config_entry.runtime_data = WemPortalData(api=api, coordinator=None)
-    entity.coordinator.api = api
-
-    async def _executor(func, *args):
-        return func(*args)
-
-    entity.hass = types.SimpleNamespace(async_add_executor_job=_executor)
+    entity._config_entry.runtime_data = WemPortalData(
+        api=entity.coordinator.api, coordinator=None
+    )
     return entity
 
 

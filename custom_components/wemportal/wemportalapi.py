@@ -1782,6 +1782,27 @@ class WemPortalApi:
         finally:
             self._api_lock.release()
 
+    def reread_device_values(self, device_id) -> str | None:
+        """Read one device's parameter values again, under the shared lock.
+
+        For asking the portal what it actually stored. `Status: 0` on a write
+        means the request was accepted, NOT that the value was kept - a
+        holiday range that ends before it starts is answered exactly that way
+        and silently discarded. Anything that must not report such a write as
+        a success has to look.
+
+        The lock is the point of this method existing at all: the read itself
+        is the same one a poll does, and calling it straight from an entity
+        would let it interleave with a running cycle on the same session.
+
+        Same polarity as _fetch_parameter_values: None means it worked.
+        """
+        self._acquire_api_lock("value re-read")
+        try:
+            return self._fetch_parameter_values(str(device_id))
+        finally:
+            self._api_lock.release()
+
     def _change_value(
         self,
         device_id,
