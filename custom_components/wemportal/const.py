@@ -61,6 +61,20 @@ WEB_LOGIN_URL: Final = "https://www.wemportal.com/Web/Login.aspx"
 # submittable during maintenance - only the backend behind it is down - so
 # "is there a form?" cannot tell the two apart.
 WEB_MAINTENANCE_MARKER: Final = "offlinecontent"
+
+# How the answer to a submitted login form is read.
+#
+# The logout button only exists once a session is established, so its presence
+# is proof the login worked. Its ABSENCE proves nothing on its own: the portal
+# answers HTTP 200 for a rejected login, for a maintenance page, and for the
+# odd error page, and treating all of those as "wrong password" is how three
+# portal hiccups in a row ask for credentials that were correct.
+#
+# The password field is the second half of the answer: it means the portal
+# rendered the login form again, which is what a genuine rejection looks like.
+# Named after the field the login POST itself sends, so the two cannot drift.
+WEB_LOGGED_IN_MARKER: Final = "ctl00_btnLogout"
+WEB_LOGIN_FORM_MARKER: Final = "ctl00$content$tbxPassword"
 CONF_SCAN_INTERVAL_API: Final = "api_scan_interval"
 CONF_LANGUAGE: Final = "language"
 CONF_MODE: Final = "mode"

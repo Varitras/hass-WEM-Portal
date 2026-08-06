@@ -61,6 +61,8 @@ from .const import (
     API_TRANSPORT_RETRY_DELAY_SECONDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     SCRAPER_FALLBACK_DEVICE_ID,
+    WEB_LOGGED_IN_MARKER,
+    WEB_LOGIN_FORM_MARKER,
     WEB_LOGIN_URL,
 )
 from .mapper import WemPortalDataMapper
@@ -1059,6 +1061,13 @@ class WemPortalApi:
         return data
 
     def api_login(self):
+        # The cooldown gate belongs on every outbound request, and a login is
+        # the most expensive one to get wrong. _fetch_data and make_api_call
+        # both ask, so the polling path was covered - but the config and
+        # reauth flows call this directly, and those are exactly where
+        # somebody lands after deleting and re-adding the integration to
+        # "fix" a blockade. Every one of those attempts extended it.
+        self.check_cooldown()
         payload = {
             "Name": self.username,
             "PasswordUTF8": self.password,
@@ -1155,6 +1164,7 @@ class WemPortalApi:
             ForbiddenError: If access is forbidden.
             UnknownAuthError: For other unknown login errors.
         """
+        self.check_cooldown()
         session = reqs.Session()
         login_url = WEB_LOGIN_URL
 
@@ -1165,6 +1175,7 @@ class WemPortalApi:
         }
 
         # Step 1: Fetch the login page
+        initial_response = None
         try:
             initial_response = session.get(
                 login_url,
@@ -1173,6 +1184,16 @@ class WemPortalApi:
             )
             initial_response.raise_for_status()
         except reqs.exceptions.RequestException as exc:
+            # A 403 here is the same refusal the POST below already
+            # recognises, and it arrives FIRST - this is the request that
+            # meets a blocked IP. Reported as "could not load the page" it
+            # read like a network problem, invited an immediate retry, and
+            # started no cooldown, so the next cycle walked into it again.
+            if initial_response is not None and initial_response.status_code == 403:
+                self._activate_cooldown()
+                raise ForbiddenError(
+                    "Access forbidden while loading the login page."
+                ) from exc
             raise UnknownAuthError(f"Failed to load the login page: {exc}") from exc
 
         # Planned downtime: bail out BEFORE posting the credentials. The form
@@ -1210,12 +1231,27 @@ class WemPortalApi:
             )
             response.raise_for_status()
 
-            # Step 4: Check if login was successful
-            if "ctl00_btnLogout" in response.text:
+            # Step 4: Read the answer. Three outcomes, not two.
+            if WEB_LOGGED_IN_MARKER in response.text:
                 _LOGGER.debug("WEB login successful.")
                 return
-            else:
+            # Maintenance is checked on this answer too, not only on the page
+            # fetched above: the window can open between the two requests, and
+            # the portal serves the notice with HTTP 200 either way.
+            notice = maintenance_notice(response.text)
+            if notice:
+                raise PortalMaintenanceError(notice)
+            if WEB_LOGIN_FORM_MARKER in response.text:
                 raise AuthError("Login failed: Invalid username or password.")
+            # Neither logged in, nor the login form back, nor maintenance:
+            # some other page. Saying "wrong password" about it counted a
+            # portal hiccup towards the reauth prompt, and three of those in a
+            # row take the integration down until somebody re-enters
+            # credentials that were correct the whole time.
+            raise UnknownAuthError(
+                "Login failed: the portal answered with a page that is neither "
+                "the logged-in view nor the login form."
+            )
         except reqs.exceptions.RequestException as exc:
             if response is not None and response.status_code == 403:
                 self._activate_cooldown()

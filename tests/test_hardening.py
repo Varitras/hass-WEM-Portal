@@ -685,6 +685,114 @@ def test_web_login_reports_maintenance_without_sending_credentials(monkeypatch):
     assert posted == [], "credentials were sent to the maintenance page"
 
 
+def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
+    """An api whose web login gets `get_answer`, then posts and gets back
+    `post_answer`."""
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_a, **_k):
+            return get_answer if get_answer is not None else FakeResponse_html("")
+
+        def post(self, *_a, **_k):
+            return post_answer
+
+    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    return _api()
+
+
+def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
+    """This is the request that MEETS a blocked IP - it comes before the POST
+    the 403 handling was written for. Reported as "could not load the page" it
+    read like a hiccup, invited an immediate retry and started no cooldown, so
+    the next cycle walked into the same wall."""
+    import requests as real_requests
+
+    class _Refused(FakeResponse_html):
+        def raise_for_status(self):
+            raise real_requests.exceptions.HTTPError("403", response=self)
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_a, **_k):
+            return _Refused("forbidden", status_code=403)
+
+        def post(self, *_a, **_k):
+            raise AssertionError("credentials were sent to a refusing portal")
+
+    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    api = _api()
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api.web_login()
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api.check_cooldown()
+
+
+def test_a_page_that_is_neither_login_nor_session_is_not_a_wrong_password(monkeypatch):
+    """The portal answers HTTP 200 for a rejected login AND for the odd error
+    or interstitial page. Only the first is about the credentials; counting
+    the second towards the reauth escalation asks the user to re-enter a
+    password that was right all along."""
+    api = _web_login_answering(
+        FakeResponse_html("<html><body>Something else entirely</body></html>"),
+        monkeypatch=monkeypatch,
+    )
+
+    with pytest.raises(exceptions.UnknownAuthError):
+        api.web_login()
+
+
+def test_the_login_form_coming_back_is_still_a_wrong_password(monkeypatch):
+    """The other half of the same decision: the portal re-rendering its login
+    form IS the rejection, and must keep reaching the reauth flow."""
+    api = _web_login_answering(
+        FakeResponse_html('<input name="ctl00$content$tbxPassword" type="password">'),
+        monkeypatch=monkeypatch,
+    )
+
+    with pytest.raises(exceptions.AuthError):
+        api.web_login()
+
+
+def test_maintenance_starting_between_the_two_requests_is_recognised(monkeypatch):
+    """The window can open after the login page was fetched. Only the first
+    answer was checked, so the second was read as a wrong password."""
+    api = _web_login_answering(
+        FakeResponse_html(MAINTENANCE_PAGE), monkeypatch=monkeypatch
+    )
+
+    with pytest.raises(exceptions.PortalMaintenanceError):
+        api.web_login()
+
+
+def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
+    """Both logins, because both are reachable from the config and reauth
+    flows - which is where somebody lands after deleting and re-adding the
+    integration to "fix" a blockade, extending it with every attempt."""
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_a, **_k):
+            raise AssertionError("a request was sent during the cooldown")
+
+        def post(self, *_a, **_k):
+            raise AssertionError("a request was sent during the cooldown")
+
+    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    api = _api()
+    api._activate_cooldown()
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api.web_login()
+    with pytest.raises(exceptions.ForbiddenError):
+        api.api_login()
+
+
 def test_maintenance_is_not_an_auth_error():
     """It must not feed the reauth escalation: the portal serves a working
     login form during maintenance, so three cycles of it used to ask the user

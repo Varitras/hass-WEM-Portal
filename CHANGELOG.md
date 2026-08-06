@@ -86,6 +86,25 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **Setting up or re-authenticating no longer sends requests into an active
+  rate-limit block.** The cooldown after a 403 was checked on every polling
+  request but not on the logins themselves, and the config and re-authentication
+  flows call those directly - which is exactly where somebody lands after
+  deleting and re-adding the integration to "fix" a blockade. Every attempt
+  extended the very block it was trying to escape. It now fails immediately,
+  without a request, and says so.
+- **A refused login PAGE is reported as a refusal.** The 403 handling covered
+  the request that submits the credentials, but the one before it - fetching
+  the login page, and therefore the first request to meet a blocked IP - was
+  reported as "could not load the page". That reads like a network hiccup,
+  invites an immediate retry and started no cooldown at all.
+- **A portal page that is neither the login form nor a session is no longer
+  counted as a wrong password.** Anything answered with HTTP 200 that did not
+  contain the logout button was treated as rejected credentials, and three of
+  those in a row ask the user to re-enter a password that was correct the whole
+  time. A rejection now has to look like one: the portal rendering its login
+  form again. Planned maintenance is also recognised on this second answer, not
+  only on the page fetched before it - the window can open between the two.
 - **A module whose description cannot be read is no longer asked again every
   cycle.** A rejected request and an empty description are both recorded with a
   timestamp, which is what bounds the retry. An answer in an unexpected shape -

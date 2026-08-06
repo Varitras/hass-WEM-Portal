@@ -1405,5 +1405,40 @@
     "old": "                    self._note_undescribed_module(\n                        device_id,\n                        key,\n                        values,\n                        \"its description could not be read\",\n                        unsupported=True,\n                    )\n                    continue",
     "new": "                    continue",
     "tests": "an_unreadable_description_is_not_asked_again_every_cycle"
+  },
+  {
+    "label": "login: the api login sends before asking the cooldown",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.check_cooldown()\n        payload = {",
+    "new": "        payload = {",
+    "tests": "a_login_is_not_attempted_during_a_cooldown"
+  },
+  {
+    "label": "login: the web login sends before asking the cooldown",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.check_cooldown()\n        session = reqs.Session()",
+    "new": "        session = reqs.Session()",
+    "tests": "a_login_is_not_attempted_during_a_cooldown"
+  },
+  {
+    "label": "login: a refused login PAGE reported as a network problem",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                self._activate_cooldown()\n                raise ForbiddenError(\n                    \"Access forbidden while loading the login page.\"\n                ) from exc\n            raise UnknownAuthError",
+    "new": "            raise UnknownAuthError",
+    "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
+  },
+  {
+    "label": "login: any answered page taken as a wrong password",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if WEB_LOGIN_FORM_MARKER in response.text:\n                raise AuthError",
+    "new": "            if True:\n                raise AuthError",
+    "tests": "a_page_that_is_neither_login_nor_session_is_not_a_wrong_password"
+  },
+  {
+    "label": "login: maintenance checked only before the credentials go out",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            notice = maintenance_notice(response.text)\n            if notice:\n                raise PortalMaintenanceError(notice)\n            if WEB_LOGIN_FORM_MARKER in response.text:",
+    "new": "            if WEB_LOGIN_FORM_MARKER in response.text:",
+    "tests": "maintenance_starting_between_the_two_requests_is_recognised"
   }
 ]
