@@ -1510,5 +1510,26 @@
     "old": "            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._attr_name)",
     "new": "            _LOGGER.warning('No value for \"%s\" this cycle -> unknown', self._attr_name)",
     "tests": "a_missing_reading_is_not_reported_as_a_fault"
+  },
+  {
+    "label": "statistics: a device whose every group failed counts as read",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if failed and not read:\n            raise WemPortalError(\n                f\"Every statistics group of device {device_id} failed to read \"\n                f\"({failed} of {len(group_types)}).\"\n            )",
+    "new": "        pass",
+    "tests": "a_device_whose_every_group_failed_is_not_counted_as_a_success"
+  },
+  {
+    "label": "statistics: any group error condemns the whole device",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if failed and not read:",
+    "new": "        if failed:",
+    "tests": "one_group_that_worked_keeps_the_device_a_success"
+  },
+  {
+    "label": "statistics: a group that does not apply counted as a failure",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                else:\n                    failed += 1\n                    _LOGGER.warning(\n                        \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                    )",
+    "new": "                failed += 1\n                _LOGGER.warning(\n                    \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                )",
+    "tests": "groups_that_do_not_apply_are_not_failures"
   }
 ]

@@ -2581,6 +2581,18 @@ class WemPortalApi:
         failed is a failed device for the retry bookkeeping in get_statistics.
         A single rejected GROUP is a different matter and handled here - the
         portal routinely lists groups it then refuses to read.
+
+        But "a single group" quietly became "all of them": every group error
+        was swallowed here, so a device whose every group failed still
+        returned normally and counted as a success in get_statistics. The
+        shorter retry then never engaged and the readings waited the full
+        refresh interval - the one case where waiting is most clearly wrong.
+        Raises when nothing came back AND something actually failed.
+
+        Status 3001 is not a failure. It means the group does not apply to
+        this module, so there is nothing to fetch sooner; a device whose
+        groups are all 3001 has no statistics at all and retrying earlier
+        would only cost requests.
         """
         refresh_resp = self.make_api_call(
             API_STATISTICS_REFRESH_URL, data={"DeviceID": int(device_id)}, do_retry=True
@@ -2588,6 +2600,8 @@ class WemPortalApi:
 
         group_types = refresh_resp.get("GroupTypeDescriptions", [])
         headers = {"X-Api-Version": "2.0.0.0"}
+        read = 0
+        failed = 0
 
         for group in group_types:
             group_id = group.get("GroupType")
@@ -2613,6 +2627,7 @@ class WemPortalApi:
                 self._store_statistics_group(
                     device_id, group_id, group_name, stats_resp
                 )
+                read += 1
 
             except Exception as exc:
                 # Status 3001 = this statistics group isn't valid for
@@ -2629,9 +2644,16 @@ class WemPortalApi:
                         WEM_INVALID_PARAMETER_STATUS,
                     )
                 else:
+                    failed += 1
                     _LOGGER.warning(
                         "Failed to fetch Statistics for group %s: %s", group_id, exc
                     )
+
+        if failed and not read:
+            raise WemPortalError(
+                f"Every statistics group of device {device_id} failed to read "
+                f"({failed} of {len(group_types)})."
+            )
 
     def get_statistics(self, enabled_devices=None):
         """Fetch historical statistics from the API, rate limited to once per hour.

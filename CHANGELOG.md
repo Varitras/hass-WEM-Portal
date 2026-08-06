@@ -86,6 +86,14 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **A device whose every statistics group failed no longer counts as read.**
+  Statistics are fetched once an hour, and a cycle that failed for every
+  device retries after a much shorter interval instead. Errors on individual
+  groups were swallowed one at a time, so a device where all of them failed
+  still returned normally and counted towards that hour - the readings then
+  waited the full interval in the one case where waiting is most clearly
+  wrong. A group the portal reports as not applicable to the module is still
+  not a failure: retrying sooner cannot produce a reading that does not exist.
 - **A parameter the portal did not answer for is no longer logged as a fault.**
   An empty reading is a normal condition - the portal regularly omits a
   parameter, and the integration deliberately blanks one it left out so a stale

@@ -274,6 +274,88 @@ def test_failed_statistics_cycle_is_still_rate_limited():
     assert len(calls) == 1, "a failing portal was retried immediately"
 
 
+def _statistics_api_with_groups(groups, read_answer):
+    """An api whose refresh lists `groups` and whose group reads go through
+    `read_answer(group_id)` - returning a payload or raising."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api.last_statistics_fetch = 0.0
+
+    def make_api_call(url, **kwargs):
+        if url == wemportalapi.API_STATISTICS_REFRESH_URL:
+            return FakeResponse(
+                {"GroupTypeDescriptions": [{"GroupType": g} for g in groups]}
+            )
+        return read_answer(kwargs["data"]["GroupType"])
+
+    api.make_api_call = make_api_call
+    return api
+
+
+def _remaining_wait(api):
+    """How long until statistics would be fetched again."""
+    return wemportalapi.STATISTICS_REFRESH_INTERVAL_SECONDS - (
+        time.time() - api.last_statistics_fetch
+    )
+
+
+def _invalid_group_error():
+    """The portal's own "this group does not apply here" rejection."""
+    error = exceptions.WemPortalError("not valid for this module")
+    error.server_status = wemportalapi.WEM_INVALID_PARAMETER_STATUS
+    return error
+
+
+def test_a_device_whose_every_group_failed_is_not_counted_as_a_success():
+    """Group errors were swallowed one by one, so a device where ALL of them
+    failed still returned normally and counted as a success - and the shorter
+    retry, which exists for exactly that case, never engaged."""
+
+    def always_fails(_group_id):
+        raise exceptions.WemPortalError("portal unavailable")
+
+    api = _statistics_api_with_groups([1, 2], always_fails)
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    remaining = _remaining_wait(api)
+    assert remaining <= wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert remaining > 0, "the rate limit must not be dropped entirely"
+
+
+def test_one_group_that_worked_keeps_the_device_a_success():
+    """The counter-test. Without it, treating any group error as a device
+    failure would pass the test above and retry a device that is fine."""
+    stats = {"Values": [{"Date": "2026-08-06", "Value": 12.0}], "Unit": "kWh"}
+
+    def one_of_two_fails(group_id):
+        if group_id == 1:
+            raise exceptions.WemPortalError("portal unavailable")
+        return FakeResponse(stats)
+
+    api = _statistics_api_with_groups([1, 2], one_of_two_fails)
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert _remaining_wait(api) > wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+
+
+def test_groups_that_do_not_apply_are_not_failures():
+    """Status 3001 means the group does not exist for this module. Retrying
+    sooner cannot produce a reading that is not there, it only costs
+    requests."""
+
+    def never_applies(_group_id):
+        raise _invalid_group_error()
+
+    api = _statistics_api_with_groups([1, 2], never_applies)
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert _remaining_wait(api) > wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+
+
 def test_statistics_timestamp_is_kept_when_nothing_was_attempted():
     """No eligible device means nothing failed - the shorter retry must not
     kick in just because the loop had nothing to do."""
