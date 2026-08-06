@@ -92,7 +92,10 @@
       "duplicate_entityvalue": "This parameter is already selected in another slot. Each expert parameter can be used only once.",
       "discovery_failed": "Could not read from the portal. Try again later (the portal may be temporarily rate-limited).",
       "discovery_blocked": "Expert access was not attempted: the portal rejected an expert request with 403, so this path is backing off briefly. Sensor polling is unaffected. The exact remaining time and the rejected request are shown at the top of this form. A 403 here does not necessarily mean your IP is rate-limited - it can also mean the portal did not accept that particular request.",
-      "discovery_empty": "The search ran, but the selected module(s) returned no readable parameters. Try another module, or enter the entityvalue manually."
+      "discovery_empty": "The search ran, but the selected module(s) returned no readable parameters. Try another module, or enter the entityvalue manually.",
+      "invalid_auth": "Your stored credentials do not work for the connection this mode uses. The mobile API and the web portal are separate logins, so one of them working says nothing about the other. The mode was not changed.",
+      "cannot_connect": "The connection this mode uses could not be reached, so the mode was not changed. Try again later.",
+      "rate_limited": "The WEM Portal is refusing requests from this network right now, which it does after too many in a short time. The mode was not changed. Waiting is the only fix: it clears by itself, and every retry makes it last longer."
     },
     "abort": {
       "no_changes": "No changes to save - the integration was not reloaded."

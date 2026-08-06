@@ -86,6 +86,13 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **Changing the mode is checked against the connection it switches to.** The
+  mobile API and the web portal are separate logins, so one working says
+  nothing about the other - which is why the initial setup validates exactly
+  the transport the chosen mode will use. Switching mode afterwards skipped
+  that check, so an entry could be moved to a connection its credentials do not
+  work on: the dialog reported success and every update failed. A save that
+  leaves the mode alone still costs no portal request.
 - **Setting up or re-authenticating no longer sends requests into an active
   rate-limit block.** The cooldown after a 403 was checked on every polling
   request but not on the logins themselves, and the config and re-authentication

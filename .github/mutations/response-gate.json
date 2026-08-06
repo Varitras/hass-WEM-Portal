@@ -1440,5 +1440,19 @@
     "old": "            notice = maintenance_notice(response.text)\n            if notice:\n                raise PortalMaintenanceError(notice)\n            if WEB_LOGIN_FORM_MARKER in response.text:",
     "new": "            if WEB_LOGIN_FORM_MARKER in response.text:",
     "tests": "maintenance_starting_between_the_two_requests_is_recognised"
+  },
+  {
+    "label": "options: a mode change saved without checking its transport",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            if not errors:\n                errors.update(await self._validate_mode_change(user_input))\n",
+    "new": "",
+    "tests": "switching_mode_checks_the_transport_it_switches_to"
+  },
+  {
+    "label": "options: an unchanged mode costs a portal login anyway",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "        if new_mode == self.config_entry.options.get(CONF_MODE, DEFAULT_MODE):\n            return {}\n",
+    "new": "",
+    "tests": "saving_without_touching_the_mode_costs_no_login"
   }
 ]

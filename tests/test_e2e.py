@@ -22,7 +22,11 @@ from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wemportal import expert_writer
-from custom_components.wemportal.exceptions import ForbiddenError, ParameterWriteError
+from custom_components.wemportal.exceptions import (
+    AuthError,
+    ForbiddenError,
+    ParameterWriteError,
+)
 from custom_components.wemportal.const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     PLATFORMS,
@@ -446,6 +450,50 @@ def _configure_input(**overrides):
     }
     data.update(overrides)
     return data
+
+
+async def test_switching_mode_checks_the_transport_it_switches_to(hass, monkeypatch):
+    """The two logins are separate, so one working says nothing about the
+    other. Setup validates exactly the transport the mode will use; switching
+    later did not, so an entry could be moved to a connection its credentials
+    do not work on - the dialog reporting success and every update failing.
+    """
+    entry = await _setup(hass, _entry(hass))
+
+    def refuse_web(self, *_a, **_k):
+        raise AuthError("no web login for this account")
+
+    monkeypatch.setattr(WemPortalApi, "web_login", refuse_web)
+
+    result = await _open_options(hass, entry, "configure")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], _configure_input(**{CONF_MODE: "web"})
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_MODE: "invalid_auth"}
+    assert entry.options[CONF_MODE] == "api", "the broken mode was saved anyway"
+
+
+async def test_saving_without_touching_the_mode_costs_no_login(hass, monkeypatch):
+    """A save that leaves the mode alone must not spend a portal request -
+    least of all the one the portal is most likely to refuse."""
+    entry = await _setup(hass, _entry(hass))
+
+    def no_login(self, *_a, **_k):
+        raise AssertionError("an unchanged mode was validated against the portal")
+
+    monkeypatch.setattr(WemPortalApi, "api_login", no_login)
+    monkeypatch.setattr(WemPortalApi, "web_login", no_login)
+
+    result = await _open_options(hass, entry, "configure")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], _configure_input(**{CONF_SCAN_INTERVAL: 900})
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
 async def test_options_flow_saves_expert_slots(hass):
@@ -1328,7 +1376,6 @@ async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
     from homeassistant.exceptions import ConfigEntryAuthFailed
     from custom_components.wemportal import coordinator as coord_mod
     from custom_components.wemportal.const import AUTH_ERROR_ESCALATION_THRESHOLD
-    from custom_components.wemportal.exceptions import AuthError
 
     entry = _entry(hass)
 

@@ -383,6 +383,8 @@ class WemportalOptionsFlow(OptionsFlow):
         if user_input is not None:
             errors.update(self._validate_configure_input(user_input))
             if not errors:
+                errors.update(await self._validate_mode_change(user_input))
+            if not errors:
                 return self._save_configure(user_input)
 
         # On an error redisplay, prefill the form with what the user just
@@ -411,6 +413,34 @@ class WemportalOptionsFlow(OptionsFlow):
             description_placeholders={"status": detail},
             data_schema=self._configure_schema(opt, id_options),
         )
+
+    async def _validate_mode_change(self, user_input) -> dict:
+        """Check the credentials against the transport the new mode needs.
+
+        The initial setup deliberately validates exactly the transport the
+        chosen mode will use at runtime, because the two logins are separate
+        and one working says nothing about the other. Switching mode later
+        skipped that check entirely, so an entry validated with a web login
+        could be moved to `api` and then fail every single update - with the
+        options dialog having reported success.
+
+        Only on an actual change: a save that leaves the mode alone must not
+        cost a portal login, least of all one the portal might refuse.
+        """
+        new_mode = user_input.get(CONF_MODE)
+        if new_mode == self.config_entry.options.get(CONF_MODE, DEFAULT_MODE):
+            return {}
+        try:
+            await validate_input(
+                self.hass, {**self.config_entry.data, CONF_MODE: new_mode}
+            )
+        except RateLimited:
+            return {"base": "rate_limited"}
+        except InvalidAuth:
+            return {CONF_MODE: "invalid_auth"}
+        except CannotConnect:
+            return {"base": "cannot_connect"}
+        return {}
 
     def _validate_configure_input(self, user_input) -> dict:
         """Check the submitted options and return the per-field errors.
