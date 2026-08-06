@@ -4,4 +4,3 @@
 # version (which pins the Home Assistant release) without duplicating them.
 curl_cffi>=0.15.0
 lxml>=4.9.0
-beautifulsoup4>=4.9.0

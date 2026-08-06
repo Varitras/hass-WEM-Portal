@@ -86,6 +86,12 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **An unreadable login page no longer costs the password.** If the portal
+  answers the login page with an empty or unparseable body, the credentials
+  are not sent. Previously the form came back empty, the login posted anyway -
+  without the ASP.NET state the portal demands echoed back - and the request
+  could only be refused. Same rule as the maintenance check: nothing is handed
+  to a page that cannot process it.
 - **A weekly programme is no longer blanked by the value read on the portals
   that actually have one.** Schedules are exempt from the "stop showing what
   the portal did not send" rule, because they are fetched on their own path
@@ -489,6 +495,10 @@ to ask the user for new credentials.
   it belongs to; with several devices failing, every one of them is listed.
 
 ### Removed
+- **The `beautifulsoup4` dependency.** It was installed for three lines: the
+  hidden fields of the web login form. `lxml` is already required and already
+  parses the far more involved expert page, so it reads those three lines too
+  and the integration is down to two dependencies.
 - **`strings.json`.** Home Assistant reads a custom integration's translations
   from `translations/` only - `strings.json` is the source file core
   integrations hand to their translation pipeline, and there is no such

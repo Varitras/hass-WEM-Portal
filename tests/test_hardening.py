@@ -808,13 +808,50 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
         cookies = {}
 
         def get(self, *_a, **_k):
-            return get_answer if get_answer is not None else FakeResponse_html("")
+            # A real login page by default. These tests are about the answer
+            # to the POST, and an empty body here is not a shortcut but a
+            # different case entirely - the login now refuses to send
+            # credentials to a page it could not read.
+            return (
+                get_answer
+                if get_answer is not None
+                else FakeResponse_html(NORMAL_LOGIN_PAGE)
+            )
 
         def post(self, *_a, **_k):
             return post_answer
 
     monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
     return _api()
+
+
+def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
+    """The portal answering 200 with an empty body.
+
+    The previous HTML parser returned no fields for it and let the POST go
+    ahead, so the password went to a page that had said nothing, with none of
+    the ASP.NET state it demands back - a request that could only be refused.
+    Same rule as the maintenance bail-out: do not hand credentials to a page
+    that cannot process them.
+    """
+    posted = []
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_a, **_k):
+            return FakeResponse_html("")
+
+        def post(self, *_a, **_k):
+            posted.append(True)
+            return FakeResponse_html("")
+
+    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+
+    with pytest.raises(exceptions.UnknownAuthError):
+        _api().web_login()
+
+    assert posted == [], "credentials were sent to a page that could not be read"
 
 
 def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
@@ -906,6 +943,59 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
         api.web_login()
     with pytest.raises(exceptions.ForbiddenError):
         api.api_login()
+
+
+FORM_PAGE = """<html><body>
+  <input type="hidden" name="__VIEWSTATE" value="vs">
+  <input type="hidden" name="__EVENTVALIDATION" value="ev">
+  <input type="hidden" name="__EMPTY">
+  <input type="hidden" value="no name of its own">
+  <input type="hidden" name="" value="blank name">
+  <input name="ctl00$content$tbxUserName" type="text" value="visible">
+  <input name="ctl00$content$btnLogin" type="submit" value="Anmelden">
+  <input name="ctl00$content$chkStayLoggedIn" type="checkbox" value="stray">
+</body></html>"""
+
+
+def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
+    """ASP.NET rejects a post that does not echo its own hidden state back,
+    so which fields are collected IS the login.
+
+    Written against the behaviour before the HTML parser was swapped, so the
+    swap has something to be equal to - each of these is a way the two
+    parsers could differ: a hidden field with no value attribute, one with no
+    name, one whose name is empty, and the visible fields that must not come
+    along.
+    """
+    posted = {}
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_a, **_k):
+            return FakeResponse_html(FORM_PAGE)
+
+        def post(self, _url, data=None, **_k):
+            posted.update(data)
+            return FakeResponse_html("<html>ctl00_btnLogout</html>")
+
+    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    _api().web_login()
+
+    hidden = {
+        key: value
+        for key, value in posted.items()
+        if not key.startswith("ctl00$content$")
+    }
+    assert hidden == {"__VIEWSTATE": "vs", "__EVENTVALIDATION": "ev", "__EMPTY": ""}
+    # The credentials and the button are added by the login itself, not read
+    # off the page.
+    assert posted["ctl00$content$tbxUserName"] == "user@example.org"
+    # A visible field the login does NOT overwrite. The first version of this
+    # test only had visible fields whose names the login sets anyway, so
+    # dropping the type filter from the selector changed nothing it could see
+    # - the assertion passed while every visible field was being collected.
+    assert "ctl00$content$chkStayLoggedIn" not in posted
 
 
 def test_maintenance_is_not_an_auth_error():

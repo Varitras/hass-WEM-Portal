@@ -7,7 +7,8 @@ import time
 import threading
 from datetime import datetime, timedelta
 
-from bs4 import BeautifulSoup
+from lxml import html
+from lxml.etree import ParserError
 import requests as reqs
 from homeassistant.const import CONF_SCAN_INTERVAL
 from .exceptions import (
@@ -1278,12 +1279,31 @@ class WemPortalApi:
         if notice:
             raise PortalMaintenanceError(notice)
 
-        # Step 2: Parse the login page and extract hidden form fields
-        soup = BeautifulSoup(initial_response.text, "html.parser")
-        form_data = {}
-        for input_tag in soup.find_all("input"):
-            if input_tag.get("type") == "hidden" and input_tag.get("name"):
-                form_data[input_tag["name"]] = input_tag.get("value", "")
+        # Step 2: Parse the login page and extract hidden form fields.
+        #
+        # Read with lxml, which the scraper already uses for the far more
+        # involved expert page - so this is the only thing beautifulsoup4 was
+        # installed for, three lines of it, and the dependency is gone.
+        #
+        # The `string(@name)` half of the selector is not decoration: the old
+        # code tested the name for truthiness, which skips `name=""`, while a
+        # bare `[@name]` would keep it and post a field the portal never sent.
+        try:
+            page = html.fromstring(initial_response.text)
+        except ParserError as exc:
+            # An empty or unparseable body. The old parser returned no fields
+            # here and let the login POST go ahead, which sent the password to
+            # a page that had answered with nothing, collected no ASP.NET
+            # state to echo back, and could only be refused. Same reasoning as
+            # the maintenance bail-out above: do not hand over credentials to
+            # a page that cannot process them.
+            raise UnknownAuthError(
+                "The WEM Portal login page could not be read; no credentials were sent."
+            ) from exc
+        form_data = {
+            element.get("name"): element.get("value", "")
+            for element in page.xpath('//input[@type="hidden"][string(@name)]')
+        }
 
         # Add username and password to the form data
         form_data["ctl00$content$tbxUserName"] = self.username
