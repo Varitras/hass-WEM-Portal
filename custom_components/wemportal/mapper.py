@@ -3,7 +3,7 @@
 import re
 from .translations import friendly_name_mapper, translate
 from .const import WemDataType, _LOGGER
-from .utils import sanitize_value, uom_to_icon
+from .utils import looks_like_schedule, sanitize_value, uom_to_icon
 
 
 def get_min_max(param_id: str, data_type: int, min_val, max_val) -> tuple[float, float]:
@@ -400,12 +400,19 @@ def _clear_unanswered(
 
         cleared = []
         for param_id, parameter in device_module["parameters"].items():
-            if parameter.get("DataType") == WemDataType.PROGRAM:
-                continue
             name = f"{device_module['Name']}-{param_id}"
             if name in parsed_sensors:
                 continue
             entry = device_data.get(name)
+            # A weekly programme is exempt, and asking the DECLARED type alone
+            # got the wrong installations: a 3.1.3.0 portal types every
+            # programme as 2 (an ordinary switch) with the schedule as JSON in
+            # the value, so the exemption applied to nobody who has one. Same
+            # mistake, same fix as the schedule fetch itself.
+            if parameter.get("DataType") == WemDataType.PROGRAM or looks_like_schedule(
+                (entry or {}).get("value")
+            ):
+                continue
             if isinstance(entry, dict) and entry.get("value") is not None:
                 entry["value"] = None
                 cleared.append(param_id)

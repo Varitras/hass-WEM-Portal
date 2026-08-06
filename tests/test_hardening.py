@@ -3885,6 +3885,22 @@ def test_without_the_device_view_the_json_still_answers():
     ]
 
 
+def test_the_readable_week_needs_the_value_to_name_its_days():
+    """Why the freshness guard, not the sensor, is where this is solved.
+
+    The device's own view carries stretches per day NUMBER; which name each
+    number has is read from the window keys of the JSON payload, so that the
+    weekday names stay the portal's own and no language-specific table lives
+    here. Without the value there are therefore no day names and no week to
+    show - keeping the value is the only fix, and mapper._clear_unanswered is
+    where that is done.
+    """
+    row = _measured_monday()
+    row["value"] = None
+
+    assert _sensor_from_row("Programm", row).native_value is None
+
+
 def test_a_week_that_does_not_line_up_falls_back_instead_of_mislabelling():
     """Filing a day's programme under the wrong heading is worse than showing
     the poorer view, so anything but a full seven days hands over."""

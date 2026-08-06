@@ -691,6 +691,58 @@ def test_a_heating_schedule_is_not_cleared_by_the_value_read():
     assert data["Heat pump-Heizprogramm1"]["CircuitTimesDay"] == [{"day": "MO"}]
 
 
+def test_a_schedule_typed_as_a_switch_is_not_cleared_either():
+    """The same exemption, for the installations that actually have one.
+
+    A 3.1.3.0 portal types every weekly programme as DataType 2 - an ordinary
+    switch - and puts the schedule as JSON in the value. Keyed on the declared
+    type alone, the exemption applied to nobody with such a portal, so the
+    programme the schedule fetch maintains was blanked by the value read.
+    """
+    modules = _modules(
+        _parameter("AktRaumSoll"),
+        _parameter("Heizprogramm1", DataType=WemDataType.SWITCH),
+    )
+    existing = {
+        "Heat pump-Heizprogramm1": {
+            "value": '{"MO-1": "06:00-22:00"}',
+            "ParameterID": "Heizprogramm1",
+            "unit": None,
+            "platform": "sensor",
+            "CircuitTimesDay": [{"day": "MO"}],
+        },
+    }
+
+    data = _process(
+        modules, _values(_value("AktRaumSoll", numeric=22.0)), existing=existing
+    )
+
+    assert data["Heat pump-Heizprogramm1"]["value"] == '{"MO-1": "06:00-22:00"}'
+
+
+def test_an_ordinary_switch_the_portal_dropped_is_still_cleared():
+    """The counter-test: exempting every DataType 2 parameter would take the
+    freshness rule off real switches, which is most of them."""
+    modules = _modules(
+        _parameter("AktRaumSoll"),
+        _parameter("Pumpe", DataType=WemDataType.SWITCH),
+    )
+    existing = {
+        "Heat pump-Pumpe": {
+            "value": "on",
+            "ParameterID": "Pumpe",
+            "unit": None,
+            "platform": "switch",
+        },
+    }
+
+    data = _process(
+        modules, _values(_value("AktRaumSoll", numeric=22.0)), existing=existing
+    )
+
+    assert data["Heat pump-Pumpe"]["value"] is None
+
+
 def test_a_holiday_date_stops_being_current_once_the_portal_drops_it():
     """Intended, and the reason this is not an exception: the portal stops
     sending holiday begin once no holiday is set, and last August's date

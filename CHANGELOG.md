@@ -86,6 +86,15 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **A weekly programme is no longer blanked by the value read on the portals
+  that actually have one.** Schedules are exempt from the "stop showing what
+  the portal did not send" rule, because they are fetched on their own path
+  with their own throttle. That exemption asked for the declared parameter
+  type, and a 3.1.3.0 portal types every programme as an ordinary switch with
+  the schedule as JSON in the value - so it applied to nobody with such a
+  portal, and a cycle that answered without the programme took the readable
+  week with it. It is now recognised by what the value is, the same way the
+  schedule fetch already recognises it. Real switches are still cleared.
 - **Readings from a web scrape that stopped working stop being presented as
   current.** When the scrape failed, the values from the last one that worked
   stayed in place and the sensors stayed available, so a number from hours ago
