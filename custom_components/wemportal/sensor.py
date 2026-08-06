@@ -188,7 +188,11 @@ def _day_labels(raw):
             days.append(match["day"])
     if len(days) != len(_DAY_ORDER):
         return None
-    return dict(zip(_DAY_ORDER, days))
+    # strict, although the length was just checked: the guarantee then lives
+    # on this line rather than two above it, where a later edit can move it
+    # out from under this one. Pairing seven day numbers with six names would
+    # file a whole day's programme under the wrong heading.
+    return dict(zip(_DAY_ORDER, days, strict=True))
 
 
 def _level_names(possible_values) -> dict:
