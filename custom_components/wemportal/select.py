@@ -81,7 +81,22 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
         fuzzy string matching as a last resort. Raises ValueError/TypeError
         if none of these succeed, matching the previous per-callsite
         behavior so existing exception handling keeps working unchanged.
+
+        A MISSING reading is the exception: it returns None rather than
+        raising, because it is not a value this can fail to resolve. See the
+        guard below.
         """
+        # No reading this cycle is expected, not invalid. The portal
+        # regularly answers nothing for a parameter, and _clear_unanswered
+        # deliberately blanks one the portal left out so a stale reading is
+        # not published as current - so the warning this used to raise
+        # reported the integration's own bookkeeping as a fault, with all 49
+        # option names attached to say "no value". Same rule sensor.py states
+        # for its own readings. Genuinely unusable values still raise below.
+        if val is None:
+            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
+            return None
+
         if val in self._options_names:
             return val
         if val in self._options:

@@ -86,6 +86,14 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **A parameter the portal did not answer for is no longer logged as a fault.**
+  An empty reading is a normal condition - the portal regularly omits a
+  parameter, and the integration deliberately blanks one it left out so a stale
+  reading is not published as current. The sensor platform already treated that
+  as expected; number and select reported it as an invalid value, so the
+  integration's own bookkeeping arrived in the log as a warning. Select even
+  attached the parameter's full option list - 49 entries, to say there was no
+  value. A value that is present but genuinely unusable still warns.
 - **The relabelled-rows warning names the likeliest cause and stops promising
   entities that cannot exist yet.** Changing the display language in the
   portal's own account settings relabels every scraped row at once, which the

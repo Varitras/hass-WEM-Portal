@@ -109,10 +109,14 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         cycle (which previously could let a non-numeric string slip
         through uncaught whenever the per-cycle unit was empty).
         """
+        # No reading this cycle is expected, not invalid. The portal regularly
+        # answers nothing for a parameter, and _clear_unanswered deliberately
+        # blanks one the portal left out so a stale reading is not published as
+        # current - so warning about it reported the integration's own
+        # bookkeeping as a fault. Same rule sensor.py states for its own
+        # readings. A value that is present but unusable still warns below.
         if val is None:
-            _LOGGER.warning(
-                'Invalid number value for "%s": %r -> set to None', self._attr_name, val
-            )
+            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
             return None
 
         if isinstance(val, str):

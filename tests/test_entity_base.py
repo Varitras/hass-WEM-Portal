@@ -129,6 +129,47 @@ def test_an_icon_from_the_data_is_used(name):
     assert "_attr_icon" not in vars(plain)
 
 
+@pytest.mark.parametrize("name", sorted(PLATFORMS))
+def test_a_missing_reading_is_not_reported_as_a_fault(name, caplog):
+    """`None` means the portal sent no value for this parameter this cycle.
+
+    That is a normal condition - the portal regularly omits a parameter, and
+    _clear_unanswered deliberately blanks one it left out so a stale reading
+    is not published as current. Two of the four platforms warned about it
+    anyway, so the integration's own bookkeeping was reported as a fault;
+    select even attached all 49 option names to say "no value". Parametrised
+    because that is precisely how this drifted apart: the rule is stated in
+    sensor.py, and was applied to two platforms out of four.
+    """
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        _entity(PLATFORMS[name], value=None)
+
+    assert not caplog.records, f"{name} warned about a missing reading: {caplog.text}"
+
+
+def test_a_number_that_is_present_but_unusable_still_warns(caplog):
+    """The other half of the rule - without this, a platform that never warns
+    at all would pass the test above."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        _entity(WemPortalNumber, value="Ein")
+
+    assert caplog.records, "an unusable number value passed silently"
+
+
+def test_a_select_value_outside_its_options_still_warns(caplog):
+    """Same, for the platform whose warning started this."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        _entity(WemPortalSelect, value="nothing like an option")
+
+    assert caplog.records, "an unresolvable option passed silently"
+
+
 def test_an_unreachable_device_takes_its_entities_with_it():
     """The availability rule now lives in one place; this is that place
     doing its job for a platform that no longer carries its own copy."""

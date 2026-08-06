@@ -1496,5 +1496,19 @@
     "old": "                \"affected sensors have no reading this cycle and show as \"\n                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, the next Home Assistant restart creates NEW entities \"\n                \"from them and the history stays with the old ones.\",",
     "new": "                \"affected sensors become NEW entities and their history stays \"\n                \"with the old ones.\",",
     "tests": "the_relabel_warning_does_not_promise_entities_that_appear_now"
+  },
+  {
+    "label": "select: a missing reading reported as a value outside the options",
+    "path": "custom_components/wemportal/select.py",
+    "old": "        if val is None:\n            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._attr_name)\n            return None\n\n        if val in self._options_names:",
+    "new": "        if val in self._options_names:",
+    "tests": "a_missing_reading_is_not_reported_as_a_fault"
+  },
+  {
+    "label": "number: a missing reading reported as an invalid value",
+    "path": "custom_components/wemportal/number.py",
+    "old": "            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._attr_name)",
+    "new": "            _LOGGER.warning('No value for \"%s\" this cycle -> unknown', self._attr_name)",
+    "tests": "a_missing_reading_is_not_reported_as_a_fault"
   }
 ]
