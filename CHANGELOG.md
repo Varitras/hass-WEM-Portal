@@ -86,6 +86,13 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **A module whose description cannot be read is no longer asked again every
+  cycle.** A rejected request and an empty description are both recorded with a
+  timestamp, which is what bounds the retry. An answer in an unexpected shape -
+  an HTML error page, a truncated payload - was skipped with only a log line
+  and no timestamp, so nothing held it back and the request repeated on every
+  update, without limit. It is now booked like the other two, and a module that
+  already had a working parameter list keeps it.
 - **The "re-read parameter lists" option now also covers the modules it exists
   for.** A module the portal refuses to describe keeps an empty list, so it is
   retried once a day instead of never. The button tested that stored list for

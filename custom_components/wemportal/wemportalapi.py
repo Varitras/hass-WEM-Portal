@@ -1686,11 +1686,19 @@ class WemPortalApi:
                     # it, a single malformed response here would abort
                     # discovery for every remaining module on this device,
                     # not just skip this one.
-                    _LOGGER.warning(
-                        "An error occurred while gathering parameters data for module %s. Skipping this module. "
-                        "If this problem persists, open an issue at %s",
+                    #
+                    # Booked like every other unusable answer. Skipping with
+                    # only a log line left the module with no timestamp at
+                    # all, so the age check above never held it back and a
+                    # portal answering nonsense was asked again every single
+                    # cycle, without limit - the one failure mode the whole
+                    # retry budget exists to bound.
+                    self._note_undescribed_module(
+                        device_id,
+                        key,
                         values,
-                        GITHUB_PROJECT_URL,
+                        "its description could not be read",
+                        unsupported=True,
                     )
                     continue
 

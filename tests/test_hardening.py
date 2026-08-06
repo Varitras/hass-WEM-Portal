@@ -2969,6 +2969,42 @@ def test_a_module_described_as_empty_is_kept_and_not_asked_again():
     assert len(calls) == 1, "the empty module was asked again on the next cycle"
 
 
+def test_an_unreadable_description_is_not_asked_again_every_cycle():
+    """An answer without the expected shape has to be BOOKED, like every other
+    unusable one.
+
+    Skipping it with only a log line left the module without a timestamp, so
+    the age check never held it back: a portal answering nonsense - an HTML
+    error page, a truncated payload - was asked again on every single cycle,
+    without limit. The retry budget the 400 and the empty description already
+    fall under simply never covered this branch.
+    """
+    api, calls = _discovery_api([{"NotParameters": []}, {"NotParameters": []}])
+    del api.modules["1234"][(0, 1)]["parameters"]
+
+    api.get_parameters()
+
+    assert len(calls) == 1
+    assert api.modules["1234"][(0, 1)]["parameters_fetched_at"] > 0, (
+        "the attempt was not recorded, so nothing can bound the next one"
+    )
+
+    api.get_parameters()
+    assert len(calls) == 1, "an unreadable module was asked again immediately"
+
+
+def test_an_unreadable_description_keeps_the_parameters_it_had():
+    """Same rule as a failed re-read: one bad answer must not empty a working
+    list. The retry is the shorter one, because this module DID work."""
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, calls = _discovery_api([{"NotParameters": []}], fetched_at=stale)
+
+    api.get_parameters()
+
+    assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known"}
+    assert len(calls) == 1
+
+
 def _rejected_description():
     """A 400 from EventType/Read, as the portal delivers it."""
     import requests as real_requests
