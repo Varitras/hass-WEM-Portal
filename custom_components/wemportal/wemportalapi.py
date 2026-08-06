@@ -620,6 +620,117 @@ class WemPortalApi:
         finally:
             self._api_lock.release()
 
+    def _discover_parameters_if_due(self):
+        """Read the per-module parameter definitions, if any are due.
+
+        Two different reasons to run it, with different urgency.
+
+        MISSING definitions have to be fetched now: without them there is
+        nothing to read and nothing to show.
+
+        STALE ones are the daily re-read, and it deliberately waits for the
+        second cycle. The first refresh runs INSIDE Home Assistant's setup,
+        and this discovery sleeps five seconds per module - a re-read there
+        would make every restart with an expired cache a slow startup, which
+        Home Assistant then complains about. Nothing is lost by waiting one
+        interval for something that is a day old already.
+        """
+        missing = any(
+            "parameters" not in module
+            for modules in self.modules.values()
+            for module in modules.values()
+        )
+        stale = any(
+            self._parameters_are_stale(module)
+            for modules in self.modules.values()
+            for module in modules.values()
+        )
+        if not (missing or (stale and self._first_cycle_done)):
+            return
+        _LOGGER.info(
+            "Reading parameter definitions from the portal (%s).",
+            "some are missing" if missing else "the cached ones are due",
+        )
+        self.get_parameters()
+
+    def _ensure_api_session(self):
+        """Everything the API paths need before they can read anything."""
+        if not self.valid_login:
+            self.api_login()
+        # Refresh the device/module list once per session (cheap). This
+        # intentionally runs whether or not we started with a module cache:
+        # it's what discovers devices on a fresh install, and what picks up
+        # newly added devices/modules on an existing one - while preserving
+        # any cached parameter definitions (see get_devices()).
+        if not self._devices_fetched_this_session:
+            self.get_devices()
+            self._devices_fetched_this_session = True
+        # Only run the slow, rate-limited per-module discovery if something
+        # actually needs it. With a valid persisted cache this is skipped
+        # entirely after a restart, which is what makes startup fast again.
+        self._discover_parameters_if_due()
+
+    def _scrape_is_due(self, enabled_devices) -> bool:
+        """Whether `both` mode should scrape this cycle.
+
+        The order of these guards is load-bearing, which is why they are
+        guards and no longer one long condition. The device filter comes
+        FIRST: as part of an or-branch after `last_scraping_update is None`,
+        a check placed here never ran on the first cycle, which is exactly
+        when it mattered. The backoff is asked at the TOP level for the same
+        reason - it used to sit inside that branch, and `last_scraping_update
+        is None` is true on every fresh WemPortalApi, which the coordinator
+        builds whenever it recovers from repeated errors. The scrape backoff
+        was therefore skipped right after the failures that set it.
+        """
+        if not self._scraper_enabled(enabled_devices):
+            return False
+        if self.spider_wait_interval != 0:
+            return False
+        if self.last_scraping_update is None:
+            return True
+        waited = datetime.now() - self.last_scraping_update + timedelta(seconds=10)
+        return waited > self.scan_interval
+
+    def _count_down_scrape_backoff(self):
+        """One cycle closer to the next scrape attempt."""
+        if self.spider_wait_interval > 0:
+            self.spider_wait_interval -= 1
+
+    def _scrape_and_merge(self):
+        """Scrape once and merge the result. The timestamp moves only after
+        both have worked."""
+        webscraping_data = self.fetch_webscraping_data()
+        self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
+        self.last_scraping_update = datetime.now()
+
+    def _collect_web(self, enabled_devices):
+        """`web` mode: the scrape is the only source there is."""
+        if not self._scraper_enabled(enabled_devices):
+            _LOGGER.debug("Skipping web scrape: its device is disabled.")
+            return
+        webscraping_data = self.fetch_webscraping_data()
+        self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
+
+    def _collect_both(self, enabled_devices):
+        """`both` mode: scrape when due, then read the API either way."""
+        if self._scrape_is_due(enabled_devices):
+            try:
+                self._scrape_and_merge()
+            except Exception as exc:
+                # Broad: the scrape is the optional half of `both` mode. No
+                # scraper failure may cost the API readings that follow, so
+                # this deliberately does not re-raise.
+                _LOGGER.warning(
+                    "Web scraper failed this cycle. Falling back to API only. Error: %s",
+                    exc,
+                )
+        else:
+            self._count_down_scrape_backoff()
+
+        # Always run as a resilient fallback.
+        self.get_data(enabled_devices)
+
     def _fetch_data(self, enabled_devices=None):
         # Fail fast, without any network activity at all, if we're still
         # within a cooldown window from a previous 403 (see
@@ -630,131 +741,20 @@ class WemPortalApi:
         self.check_cooldown()
         try:
             if self.mode != "web":
-                # Login and get device info
-                if not self.valid_login:
-                    self.api_login()
-                # Refresh the device/module list once per session (cheap).
-                # This intentionally runs whether or not we started with a
-                # module cache: it's what discovers devices on a fresh
-                # install, and what picks up newly added devices/modules on
-                # an existing one - while preserving any cached parameter
-                # definitions (see get_devices()).
-                if not self._devices_fetched_this_session:
-                    self.get_devices()
-                    self._devices_fetched_this_session = True
+                self._ensure_api_session()
 
-                # Only run the slow, rate-limited per-module parameter
-                # discovery (get_parameters(), ~5 sec sleep per module) if
-                # something is actually missing its parameter definitions -
-                # e.g. a brand new install, a newly added module, or a
-                # previous discovery attempt that got interrupted/rate
-                # limited. With a valid persisted cache, this is skipped
-                # entirely after a restart, which is what makes Home
-                # Assistant startup fast again.
-                # Two different reasons to run it, with different urgency.
-                #
-                # MISSING definitions have to be fetched now: without them
-                # there is nothing to read and nothing to show.
-                #
-                # STALE ones are the daily re-read, and it deliberately waits
-                # for the second cycle. The first refresh runs INSIDE Home
-                # Assistant's setup, and this discovery sleeps five seconds
-                # per module - a re-read there would make every restart with
-                # an expired cache a slow startup, which Home Assistant then
-                # complains about. Nothing is lost by waiting one interval
-                # for something that is a day old already.
-                missing = any(
-                    "parameters" not in module
-                    for modules in self.modules.values()
-                    for module in modules.values()
-                )
-                stale = any(
-                    self._parameters_are_stale(module)
-                    for modules in self.modules.values()
-                    for module in modules.values()
-                )
-                if missing or (stale and self._first_cycle_done):
-                    _LOGGER.info(
-                        "Reading parameter definitions from the portal (%s).",
-                        "some are missing" if missing else "the cached ones are due",
-                    )
-                    self.get_parameters()
-
-            # Select data source based on mode
             if self.mode == "web":
-                # Get data by web scraping
-                if self._scraper_enabled(enabled_devices):
-                    webscraping_data = self.fetch_webscraping_data()
-                    self._merge_webscraping_data(
-                        self.resolve_scraper_device_id(), webscraping_data
-                    )
-                else:
-                    _LOGGER.debug("Skipping web scrape: its device is disabled.")
+                self._collect_web(enabled_devices)
             elif self.mode == "api":
-                # Get data using API
                 self.get_data(enabled_devices)
             else:
-                # Get data using web scraping if it hasn't been updated recently,
-                # otherwise use API to get data
-                # The device filter is checked FIRST: `last_scraping_update
-                # is None` short-circuits the rest of this condition on the
-                # first cycle, so a guard placed inside the or-branch never
-                # ran when it mattered most.
-                # spider_wait_interval is checked at the TOP level, not inside
-                # the or-branch. As part of that branch, `last_scraping_update
-                # is None` short-circuited past it - and that is true on every
-                # fresh WemPortalApi, which the coordinator builds whenever it
-                # recovers from repeated errors. The scrape backoff was
-                # therefore skipped right after the failures that set it.
-                if (
-                    self._scraper_enabled(enabled_devices)
-                    and self.spider_wait_interval == 0
-                    and (
-                        self.last_scraping_update is None
-                        or (
-                            datetime.now()
-                            - self.last_scraping_update
-                            + timedelta(seconds=10)
-                        )
-                        > self.scan_interval
-                    )
-                ):
-                    # Get data by web scraping
-                    try:
-                        webscraping_data = self.fetch_webscraping_data()
-                        self._merge_webscraping_data(
-                            self.resolve_scraper_device_id(), webscraping_data
-                        )
-
-                        # Update last_scraping_update timestamp
-                        self.last_scraping_update = datetime.now()
-                    except Exception as exc:
-                        # Broad: the scrape is the optional half of
-                        # `both` mode. No scraper failure may cost the
-                        # API readings that follow.
-                        _LOGGER.warning(
-                            "Web scraper failed this cycle. Falling back to API only. Error: %s",
-                            exc,
-                        )
-                        # We intentionally do not raise, so the API can still fetch the bulk of the data
-
-                else:
-                    # Reduce spider_wait_interval by 1 if > 0
-                    self.spider_wait_interval = (
-                        self.spider_wait_interval - 1
-                        if self.spider_wait_interval > 0
-                        else self.spider_wait_interval
-                    )
-
-                # Get data using API (always run as a resilient fallback)
-                self.get_data(enabled_devices)
+                self._collect_both(enabled_devices)
 
             # Set only after a cycle got this far, so a setup that fails
             # halfway does not let the next attempt count as "not the first
             # one" and slow itself down with a re-read.
             self._first_cycle_done = True
 
-            # Return data
             return self.data
 
         except Exception as exc:
@@ -1182,32 +1182,47 @@ class WemPortalApi:
             # clear, specific error message.
             _LOGGER.warning("API login failed with a network/HTTP error.")
             self.valid_login = False
-            response_status, response_message = self.get_response_details(response)
-            # Error messages carry the HTTP status plus the server's own
-            # status/message fields, but NOT the raw response body: these
-            # messages surface in the UI and logs, and a full body (often a
-            # whole HTML error page) doesn't belong there.
-            if response is None:
-                raise UnknownAuthError(
-                    f"Authentication Error: Could not reach WEM Portal ({exc})."
-                ) from exc
-            elif response.status_code == 400:
-                raise AuthError(
-                    f"Authentication Error: Check if your login credentials are correct. Received response code: {response.status_code}. Server returned internal status code: {response_status} and message: {response_message}"
-                ) from exc
-            elif response.status_code == 403:
-                self._activate_cooldown()
-                raise ForbiddenError(
-                    f"WemPortal forbidden error: Server returned internal status code: {response_status} and message: {response_message}"
-                ) from exc
-            elif response.status_code == 500:
-                raise ServerError(
-                    f"WemPortal server error: Server returned internal status code: {response_status} and message: {response_message}"
-                ) from exc
-            else:
-                raise UnknownAuthError(
-                    f"Authentication Error: Encountered an unknown authentication error. Received response code: {response.status_code}. Server returned internal status code: {response_status} and message: {response_message}"
-                ) from exc
+            self._raise_login_failure(response, exc)
+
+    def _raise_login_failure(self, response, exc):
+        """Turn a failed login into the error that fits what came back.
+
+        Always raises - the type is what the caller acts on: wrong password,
+        rate limit, portal fault, or "never got there". Written as guards
+        rather than an if/elif chain, which nested one level per status and
+        put the last case five deep.
+
+        Messages carry the HTTP status plus the server's own status and
+        message fields, but NOT the raw response body: they surface in the UI
+        and in logs, and a whole HTML error page does not belong there.
+        """
+        if response is None:
+            raise UnknownAuthError(
+                f"Authentication Error: Could not reach WEM Portal ({exc})."
+            ) from exc
+
+        response_status, response_message = self.get_response_details(response)
+        server_said = (
+            f"Server returned internal status code: {response_status} "
+            f"and message: {response_message}"
+        )
+
+        if response.status_code == 400:
+            raise AuthError(
+                "Authentication Error: Check if your login credentials are "
+                f"correct. Received response code: {response.status_code}. "
+                f"{server_said}"
+            ) from exc
+        if response.status_code == 403:
+            self._activate_cooldown()
+            raise ForbiddenError(f"WemPortal forbidden error: {server_said}") from exc
+        if response.status_code == 500:
+            raise ServerError(f"WemPortal server error: {server_said}") from exc
+        raise UnknownAuthError(
+            "Authentication Error: Encountered an unknown authentication "
+            f"error. Received response code: {response.status_code}. "
+            f"{server_said}"
+        ) from exc
 
     def web_login(self):
         """

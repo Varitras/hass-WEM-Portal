@@ -884,15 +884,15 @@
   {
     "label": "startup: re-reading during the first refresh must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                if missing or (stale and self._first_cycle_done):",
-    "new": "                if missing or stale:",
+    "old": "        if not (missing or (stale and self._first_cycle_done)):\n            return",
+    "new": "        if not (missing or stale):\n            return",
     "tests": "stale_definitions_wait_for_the_second_cycle"
   },
   {
     "label": "startup: never re-reading at all must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                if missing or (stale and self._first_cycle_done):",
-    "new": "                if missing:",
+    "old": "        if not (missing or (stale and self._first_cycle_done)):",
+    "new": "        if not missing:",
     "tests": "stale_definitions_are_read_on_a_later_cycle"
   },
   {
