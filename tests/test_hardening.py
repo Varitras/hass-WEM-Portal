@@ -662,17 +662,50 @@ def test_scrape_is_skipped_when_only_its_own_device_is_disabled():
     )
 
 
-def test_service_texts_exist_in_every_translation_file():
-    """Home Assistant reads service name/description from strings.json, not
-    services.yaml. A key missing in one file shows up only as untranslated
-    text in the UI, so check all three - including the privacy warning on
-    the entityvalue field, which must not get lost in translation."""
+def _catalogue(name):
+    """One shipped translation catalogue."""
     import json
     from pathlib import Path
 
     base = Path(__file__).resolve().parent.parent / "custom_components" / "wemportal"
-    for name in ("strings.json", "translations/en.json", "translations/de.json"):
-        data = json.loads((base / name).read_text(encoding="utf-8"))
+    return json.loads((base / name).read_text(encoding="utf-8"))
+
+
+def _keys(node, prefix=""):
+    """Every leaf path of a catalogue, so two of them can be compared."""
+    if not isinstance(node, dict):
+        return {prefix}
+    return {
+        key for name, value in node.items() for key in _keys(value, f"{prefix}/{name}")
+    }
+
+
+def test_the_two_translation_catalogues_carry_the_same_keys():
+    """The check that would have caught the drift this repository shipped.
+
+    A third catalogue, strings.json, sat beside these two: Home Assistant
+    never reads it for a custom integration - only translations/ - and
+    hassfest skips it when it is absent, so nothing anywhere compared it
+    against them. It fell two keys and one text behind without a single
+    warning, and was removed. What matters is that the two files people DO
+    see stay in step, and only a test can say so: a key missing in one shows
+    up as untranslated text in the UI and nowhere else.
+    """
+    missing = _keys(_catalogue("translations/en.json")) ^ _keys(
+        _catalogue("translations/de.json")
+    )
+
+    assert not missing, f"these keys exist in only one language: {sorted(missing)}"
+
+
+def test_service_texts_exist_in_every_translation_file():
+    """Home Assistant reads service name/description from the translation
+    catalogue, not from services.yaml. A key missing in one file shows up only
+    as untranslated text in the UI, so check both - including the privacy
+    warning on the entityvalue field, which must not get lost in
+    translation."""
+    for name in ("translations/en.json", "translations/de.json"):
+        data = _catalogue(name)
         service = data["services"]["set_expert_parameter"]
         assert service["name"] and service["description"], name
         fields = service["fields"]
@@ -1089,7 +1122,6 @@ def test_wrong_credentials_are_still_wrong_credentials(monkeypatch):
 
 def test_both_flows_have_a_message_for_a_blocked_ip():
     """The step catches it; without the translation the user gets a raw key."""
-    import json
     import pathlib
 
     from custom_components.wemportal import config_flow
@@ -1099,10 +1131,8 @@ def test_both_flows_have_a_message_for_a_blocked_ip():
         "the setup step and the re-authentication step must both say it"
     )
 
-    root = pathlib.Path(config_flow.__file__).parent
-    for name in ("strings.json", "translations/en.json", "translations/de.json"):
-        doc = json.loads((root / name).read_text(encoding="utf-8"))
-        assert doc["config"]["error"].get("rate_limited"), name
+    for name in ("translations/en.json", "translations/de.json"):
+        assert _catalogue(name)["config"]["error"].get("rate_limited"), name
 
 
 def _offline_api(status):

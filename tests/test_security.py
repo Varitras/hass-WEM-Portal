@@ -289,9 +289,9 @@ def test_the_documented_slot_count_is_the_enforced_one():
     )
 
     strings = json.loads(
-        (root / "custom_components" / "wemportal" / "strings.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            root / "custom_components" / "wemportal" / "translations" / "en.json"
+        ).read_text(encoding="utf-8")
     )
     description = strings["services"]["set_expert_parameter"]["description"]
     assert f"one of the {word} expert slots" in description, (
@@ -307,9 +307,9 @@ def test_the_service_description_states_the_single_account_limit():
 
     root = Path(__file__).resolve().parents[1]
     strings = json.loads(
-        (root / "custom_components" / "wemportal" / "strings.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            root / "custom_components" / "wemportal" / "translations" / "en.json"
+        ).read_text(encoding="utf-8")
     )
     description = strings["services"]["set_expert_parameter"]["description"]
 

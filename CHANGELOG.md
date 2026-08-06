@@ -488,6 +488,15 @@ to ask the user for new credentials.
   by timestamp. The reason now travels with the failure and names the device
   it belongs to; with several devices failing, every one of them is listed.
 
+### Removed
+- **`strings.json`.** Home Assistant reads a custom integration's translations
+  from `translations/` only - `strings.json` is the source file core
+  integrations hand to their translation pipeline, and there is no such
+  pipeline here. Nothing loaded it, and nothing compared it against the files
+  that are loaded, so it drifted: by the time it went it was two keys and one
+  text behind. A test now checks that the English and German catalogues carry
+  the same keys, which is the check that was missing all along.
+
 ### Changed
 - **The minimum supported Home Assistant version is 2024.12.0.** The options
   flow relies on an attribute that does not exist in 2024.11, so the declared
