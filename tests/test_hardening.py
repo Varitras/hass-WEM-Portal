@@ -2147,6 +2147,44 @@ def test_every_failed_scrape_earns_a_backoff(error, monkeypatch):
     assert api.spider_wait_interval == 1
 
 
+def _scraped_api(*keys):
+    """An api holding readings from a scrape that worked."""
+    api = _api()
+    api.scraper_device_id = "0000"
+    api._merge_webscraping_data(
+        "0000", {k: {"value": 1.0, "unit": "°C", "platform": "sensor"} for k in keys}
+    )
+    return api
+
+
+def test_readings_from_a_scrape_that_stopped_working_stop_being_current():
+    """A failed scrape produces no answer at all, so nothing in it can be read
+    as "that reading ended" - only repeated failure says the values are no
+    longer worth presenting. Until then a stale number was published as the
+    current one, indefinitely."""
+    api = _scraped_api("pump-flow", "pump-return")
+
+    for _ in range(wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE):
+        api._register_scrape_failure()
+
+    assert api.data["0000"]["pump-flow"]["value"] is None
+    assert api.data["0000"]["pump-return"]["value"] is None
+    # Identity survives: a dropped unit would tell Home Assistant the sensor
+    # changed kind.
+    assert api.data["0000"]["pump-flow"]["unit"] == "°C"
+
+
+def test_one_failed_scrape_does_not_throw_the_readings_away():
+    """The counter-test. Scrapes fail transiently all the time - that is what
+    the backoff is for - and clearing on the first one would make every
+    hiccup a gap in the history."""
+    api = _scraped_api("pump-flow")
+
+    api._register_scrape_failure()
+
+    assert api.data["0000"]["pump-flow"]["value"] == 1.0
+
+
 def test_a_successful_scrape_clears_the_backoff():
     """The counters must come back down, or one hiccup would slow the
     scraper for the rest of the session."""

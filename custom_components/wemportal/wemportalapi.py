@@ -55,6 +55,7 @@ from .const import (
     PARAMETER_REDISCOVERY_RETRY_SECONDS,
     CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
     STATISTICS_REFRESH_INTERVAL_SECONDS,
+    SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE,
     STATISTICS_RETRY_INTERVAL_SECONDS,
     API_LOCK_TIMEOUT_SECONDS,
     API_REQUEST_TIMEOUT_SECONDS,
@@ -389,6 +390,45 @@ class WemPortalApi:
         """
         self.spider_retry_count += 1
         self.spider_wait_interval = self.spider_retry_count
+        if self.spider_retry_count == SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE:
+            self._forget_scraped_values()
+
+    def _forget_scraped_values(self):
+        """Stop presenting readings from a scrape that stopped working.
+
+        The API path has the same rule and a much easier job: the portal
+        ANSWERS and leaves a parameter out, which is evidence the value is
+        gone (see mapper._clear_unanswered). A failed scrape produces no
+        answer at all, so nothing here can be read as "that reading ended" -
+        only the fact that several attempts in a row produced nothing.
+
+        Which rows those are is not guessed either: `both` mode merges
+        scraped rows into the same device as the API ones, so they are taken
+        from the last scrape that worked - the set already kept to notice
+        relabelled rows.
+
+        Only the `value` goes, as on the API path. Unit, name and icon stay,
+        so the entity keeps its identity and Home Assistant is not told a
+        unit changed.
+        """
+        device = self.data.get(str(self.resolve_scraper_device_id()))
+        if not device:
+            return
+        forgotten = []
+        for key in self._previous_scraper_keys:
+            row = device.get(key)
+            if isinstance(row, dict) and row.get("value") is not None:
+                row["value"] = None
+                forgotten.append(key)
+        if forgotten:
+            _LOGGER.warning(
+                "The web scrape has failed %d times in a row. The %d reading(s) "
+                "it provided are no longer current and are now shown as unknown "
+                "rather than as the value they had %s.",
+                self.spider_retry_count,
+                len(forgotten),
+                self.last_scraping_update or "at the last successful scrape",
+            )
 
     @property
     def scraper_backoff(self):

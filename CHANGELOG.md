@@ -86,6 +86,17 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **Readings from a web scrape that stopped working stop being presented as
+  current.** When the scrape failed, the values from the last one that worked
+  stayed in place and the sensors stayed available, so a number from hours ago
+  was shown as the present reading with nothing saying otherwise. After three
+  consecutive failures they now show as unknown instead. Three rather than
+  one: a single failed scrape is ordinary, and the second is where the cached
+  session is discarded and a full login retried - only the third says the
+  portal is not delivering. Counted in failures rather than in elapsed time
+  because each failure adds a growing pause of its own, so the same multiple
+  of the scan interval means a different thing on every installation. Units
+  and names are kept, so entities do not change identity.
 - **A date the portal accepted but did not store is no longer displayed as
   set.** A write that returns without an error means the request was accepted,
   not that the value was kept: a holiday range that ends before it starts is

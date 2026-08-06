@@ -1545,5 +1545,26 @@
     "old": "        if failure is not None:",
     "new": "        if False:",
     "tests": "a_failed_read_back_does_not_fail_the_write"
+  },
+  {
+    "label": "scrape: readings kept as current after the scrape stopped working",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if self.spider_retry_count == SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE:\n            self._forget_scraped_values()",
+    "new": "        pass",
+    "tests": "readings_from_a_scrape_that_stopped_working_stop_being_current"
+  },
+  {
+    "label": "scrape: one transient failure throws the readings away",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if self.spider_retry_count == SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE:",
+    "new": "        if self.spider_retry_count >= 1:",
+    "tests": "one_failed_scrape_does_not_throw_the_readings_away"
+  },
+  {
+    "label": "scrape: forgetting the reading takes its unit with it",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                row[\"value\"] = None\n                forgotten.append(key)",
+    "new": "                row.clear()\n                forgotten.append(key)",
+    "tests": "readings_from_a_scrape_that_stopped_working_stop_being_current"
   }
 ]

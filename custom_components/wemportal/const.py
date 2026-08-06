@@ -226,6 +226,27 @@ STATISTICS_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
 # calm pace.
 STATISTICS_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
 
+# How many scrapes in a row may fail before the values they produced stop
+# being presented as current.
+#
+# Counted in failures rather than measured as an age, because the two are not
+# proportional: each failure adds a growing pause of its own, so with a
+# five-minute interval the third failure lands about six intervals after the
+# last success, and with a thirty-minute one about three. A multiple of the
+# interval would therefore mean a different thing on every installation, while
+# a count means the same everywhere - and still clears sooner where the
+# interval is shorter, which is the right way round.
+#
+# Three rather than one: a single failed scrape is ordinary, and the second is
+# where the cached session is discarded and a full login retried. Only the
+# third says the portal is not delivering. The counter resets on any
+# successful scrape.
+#
+# Note this counts ATTEMPTS THAT FAILED, not "we have not looked". A scrape
+# that is never run - because its device is disabled - leaves the values
+# alone; nothing was asked, so nothing was refused.
+SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE: Final = 3
+
 # Backoff after a 403 on the EXPERT (Fachmann) path only.
 #
 # A 403 does not necessarily mean the portal is rate-limiting our IP: it can
