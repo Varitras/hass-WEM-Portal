@@ -153,8 +153,21 @@ def _time_or_programme_entity(common_attrs: dict, sent_a_number: bool) -> dict |
 
 
 def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None:
-    """The platform entity a writeable parameter becomes, or None when its
-    data type has no writeable platform - then it stays a plain sensor."""
+    """The platform entity this parameter becomes, or None for a plain sensor.
+
+    Three ways to get None, and the caller does not have to tell them apart:
+    the portal does not allow writing this parameter, its data type has no
+    writeable platform, or building one was refused (a dropdown with no
+    options). All three mean the same thing here - the value stays the plain
+    sensor already recorded.
+
+    The IsWriteable test used to sit at the one call site, which split a
+    single question across two places and put the whole thing one level
+    deeper for no gain.
+    """
+    if not sensor["IsWriteable"]:
+        return None
+
     data_type = sensor["DataType"]
     final_value = sensor["value"]
 
@@ -232,35 +245,50 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
     return None
 
 
+def _described_module(device_id, module, modules_dict):
+    """The stored description of one answered module, or None to skip it.
+
+    Two ways to have nothing: the answer is not shaped like a module at all,
+    or it is one this integration never discovered.
+    """
+    try:
+        module_tuple = (module["ModuleIndex"], module["ModuleType"])
+    except (KeyError, TypeError) as exc:
+        _LOGGER.warning("Skipping malformed module entry in API response: %s", exc)
+        return None
+    return modules_dict[device_id].get(module_tuple)
+
+
+def _described_parameter(value, device_module):
+    """The id and stored description of one answered value, or None to skip
+    it. Same two ways to have nothing as above."""
+    try:
+        param_id = value["ParameterID"]
+    except (KeyError, TypeError) as exc:
+        _LOGGER.warning("Skipping malformed value entry in API response: %s", exc)
+        return None
+    if param_id not in device_module["parameters"]:
+        return None
+    return param_id, device_module["parameters"][param_id]
+
+
 def _read_modules(device_id, values_json, modules_dict, language, api_data) -> dict:
     """Every value the portal returned, flattened - and every writeable one
     already placed on the platform its data type calls for."""
     parsed_sensors = {}
 
     for module in values_json.get("Modules", []):
-        try:
-            module_tuple = (module["ModuleIndex"], module["ModuleType"])
-        except (KeyError, TypeError) as exc:
-            _LOGGER.warning("Skipping malformed module entry in API response: %s", exc)
+        device_module = _described_module(device_id, module, modules_dict)
+        if device_module is None:
             continue
-        if module_tuple not in modules_dict[device_id]:
-            continue
-
-        device_module = modules_dict[device_id][module_tuple]
 
         for value in module.get("Values", []):
-            try:
-                param_id = value["ParameterID"]
-            except (KeyError, TypeError) as exc:
-                _LOGGER.warning(
-                    "Skipping malformed value entry in API response: %s", exc
-                )
+            described = _described_parameter(value, device_module)
+            if described is None:
                 continue
-            if param_id not in device_module["parameters"]:
-                continue
+            param_id, parameter = described
 
             try:
-                parameter = device_module["parameters"][param_id]
                 name, sensor = _describe_value(
                     param_id, module, device_module, parameter, value, language
                 )
@@ -270,10 +298,9 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> d
                 # still reach the second pass as a plain sensor.
                 parsed_sensors[name] = sensor
 
-                if sensor["IsWriteable"]:
-                    entity = _writeable_entity(sensor, parameter, value)
-                    if entity is not None:
-                        api_data[device_id][name] = entity
+                entity = _writeable_entity(sensor, parameter, value)
+                if entity is not None:
+                    api_data[device_id][name] = entity
             except Exception as exc:  # pylint: disable=broad-except
                 # A single malformed/unexpected data point should never
                 # cost us the rest of this device's update - log and

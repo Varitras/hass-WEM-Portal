@@ -142,8 +142,8 @@
   {
     "label": "net: a data type without a writeable platform must stay a plain sensor",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                    if entity is not None:",
-    "new": "                    if entity is None:",
+    "old": "                if entity is not None:",
+    "new": "                if entity is None:",
     "tests": "mapper_output_is_unchanged"
   },
   {
@@ -1580,5 +1580,12 @@
     "old": "looks_like_schedule(\n                (entry or {}).get(\"value\")\n            )",
     "new": "True",
     "tests": "an_ordinary_switch_the_portal_dropped_is_still_cleared"
+  },
+  {
+    "label": "net: a read-only parameter turned into a control",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    if not sensor[\"IsWriteable\"]:\n        return None\n",
+    "new": "",
+    "tests": "mapper_output_is_unchanged"
   }
 ]
