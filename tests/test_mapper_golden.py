@@ -221,6 +221,44 @@ def _normalise(obj):
     return json.loads(json.dumps(obj, sort_keys=True, default=str))
 
 
+def _as_text(result):
+    """One result as the stable string the packing indexes it by."""
+    return json.dumps(result, sort_keys=True, ensure_ascii=False)
+
+
+def _packed(snapshot):
+    """The snapshot with each distinct result stored once.
+
+    The matrix walks thousands of input combinations that land on a few
+    hundred distinct results, so written out in full the file repeated every
+    result dozens of times - 73,000 lines carrying 7,000 lines of
+    information.
+
+    What this recording freezes is the MAPPING from a combination to its
+    result, and that survives the packing exactly: every case still names its
+    own result, it just names it by index. Keeping only one case per distinct
+    result would freeze something weaker - that these results exist - and a
+    change moving a combination from one result to another, both still
+    present, is precisely the regression a mapper produces.
+
+    The results are sorted so the file is deterministic: an unordered dump
+    would reshuffle indices on every regeneration and make the diff
+    unreadable, which is the one thing this file has to stay good at.
+    """
+    results = sorted({_as_text(result) for result in snapshot.values()})
+    index = {text: number for number, text in enumerate(results)}
+    return {
+        "results": [json.loads(text) for text in results],
+        "cases": {case: index[_as_text(result)] for case, result in snapshot.items()},
+    }
+
+
+def _unpacked(recorded):
+    """The recording, back in the shape the comparison below works on."""
+    results = recorded["results"]
+    return {case: results[number] for case, number in recorded["cases"].items()}
+
+
 def test_the_matrix_covers_a_meaningful_number_of_shapes():
     """Guards the guard: a matrix that collapsed to a handful of cases would
     still pass its own comparison while covering almost nothing."""
@@ -239,6 +277,35 @@ def test_the_matrix_covers_a_meaningful_number_of_shapes():
     assert platforms == {"sensor", "number", "select", "switch", "date"}, platforms
 
 
+def test_packing_the_recording_loses_nothing():
+    """Guards the storage, the way the test above guards the mapper.
+
+    Storing each distinct result once is only safe while unpacking gives back
+    exactly what was packed. A packing that quietly dropped or merged cases
+    would shrink the file and the coverage together, and the comparison above
+    could not notice: it only ever sees the unpacked form.
+    """
+    snapshot = _normalise(build_snapshot())
+
+    assert _unpacked(_packed(snapshot)) == snapshot
+
+
+def test_the_recording_still_names_every_case_separately():
+    """The property the packing must not trade away.
+
+    What is frozen is which combination produces which result. Keeping one
+    case per distinct result would freeze something weaker - that these
+    results exist - and a change moving a combination from one result to
+    another, both still present, is exactly what a broken mapper does.
+    """
+    recorded = json.loads(GOLDEN.read_text(encoding="utf-8"))
+
+    assert len(recorded["cases"]) >= 3000, "cases were collapsed, not deduplicated"
+    assert len(recorded["results"]) < len(recorded["cases"]), (
+        "nothing was deduplicated - the file is the expanded form again"
+    )
+
+
 def test_the_mapper_output_is_unchanged(request):
     """Every input shape must still produce exactly what it produced before."""
     current = _normalise(build_snapshot())
@@ -246,7 +313,8 @@ def test_the_mapper_output_is_unchanged(request):
     if request.config.getoption("--update-golden"):
         GOLDEN.parent.mkdir(exist_ok=True)
         GOLDEN.write_text(
-            json.dumps(current, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            json.dumps(_packed(current), indent=2, sort_keys=True, ensure_ascii=False)
+            + "\n",
             encoding="utf-8",
         )
         pytest.skip("golden snapshot rewritten - review the diff before committing")
@@ -255,7 +323,7 @@ def test_the_mapper_output_is_unchanged(request):
         "no snapshot recorded yet - run: pytest tests/test_mapper_golden.py "
         "--update-golden"
     )
-    expected = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    expected = _unpacked(json.loads(GOLDEN.read_text(encoding="utf-8")))
 
     # Compared key by key: a whole-dict assertion prints thousands of lines
     # and hides which input actually moved.
