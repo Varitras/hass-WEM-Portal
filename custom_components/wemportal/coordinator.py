@@ -187,8 +187,15 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed("Waiting for more time to pass before retrying")
 
         device_registry = dr.async_get(self.hass)
+        # Which devices this integration KNOWS, not which it has already read
+        # this session. api.data is filled by get_devices() inside fetch_data,
+        # so right after a restart it is empty even for an install that has
+        # been running for months - and the filter below then let a disabled
+        # device be polled once per restart. The persisted module cache
+        # survives the restart and answers the same question.
+        known_devices = self.api.data or self.api.modules or {}
         enabled_devices = []
-        for device_id in self.api.data:
+        for device_id in known_devices:
             # Look the device up under the SAME identifier the entity
             # platforms register (utils.device_identifier); previously this
             # used a bare (DOMAIN, device_id), which never matched, so a
@@ -205,12 +212,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
 
         # None and [] mean DIFFERENT things to the api: None is "no filter,
         # do a full cycle", [] is "every known device is disabled, poll
-        # nothing". Before any device is known - a fresh install, and every
-        # restart, since self.api.data starts empty and is only filled by
-        # get_devices() INSIDE fetch_data - the loop above yields [], which
-        # must not be read as "poll nothing" or discovery never runs and no
-        # entities are ever created.
-        device_filter = enabled_devices if self.api.data else None
+        # nothing". Before any device is known - a fresh install - the loop
+        # above yields [], which must not be read as "poll nothing" or
+        # discovery never runs and no entities are ever created.
+        device_filter = enabled_devices if known_devices else None
 
         # asyncio.timeout does NOT raise TimeoutError where you await - it
         # CANCELS the task, and CancelledError derives from BaseException, so

@@ -707,6 +707,49 @@ async def test_first_refresh_does_not_filter_devices_away(hass, monkeypatch):
     assert hass.states.async_all("sensor"), "no entities were created"
 
 
+async def test_a_disabled_device_is_filtered_out_on_the_first_cycle(hass, monkeypatch):
+    """Restarting must not buy a disabled device one more poll.
+
+    `api.data` is empty until get_devices() runs inside the fetch, so keying
+    "do we know any devices?" off it answered "no" after every restart - and
+    a disabled device was polled once per restart, forever. The persisted
+    module cache knows the same devices and survives the restart.
+    """
+    from homeassistant.helpers import device_registry
+
+    from custom_components.wemportal.utils import device_identifier
+
+    entry = await _setup(hass, _entry(hass))
+    registry = device_registry.async_get(hass)
+    device = registry.async_get_device(
+        identifiers={device_identifier(entry.entry_id, "1234")}
+    )
+    assert device is not None, "setup did not register the device to disable"
+    registry.async_update_device(
+        device.id, disabled_by=device_registry.DeviceEntryDisabler.USER
+    )
+    await hass.async_block_till_done()
+
+    coordinator = entry.runtime_data.coordinator
+    # What a restart looks like: readings gone, the module cache still there.
+    coordinator.api.data = {}
+    coordinator.api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1}}}
+
+    seen = []
+
+    def record(self, enabled_devices=None):
+        seen.append(enabled_devices)
+        return FAKE_DATA
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", record)
+    await coordinator._async_update_data()
+
+    assert seen == [[]], (
+        f"the disabled device was polled anyway (filter was {seen}); "
+        "[] means 'poll nothing', None means 'no filter'"
+    )
+
+
 async def test_saving_options_keeps_options_that_are_not_form_fields(hass):
     """Home Assistant REPLACES the options dict with what the flow returns.
 
@@ -2231,6 +2274,33 @@ async def test_the_rescan_option_marks_the_cached_lists_as_due(hass):
     )
     # A module with no discovered list needs no marking - it is read anyway.
     assert "parameters_fetched_at" not in api.modules["1234"][(0, 7)]
+
+
+async def test_the_rescan_option_also_marks_a_refused_module(hass):
+    """The module this button exists for is the one with an EMPTY list.
+
+    A module the portal refused keeps `parameters: {}` plus its timestamp, so
+    it is retried once a day rather than never. Testing the stored list for
+    truthiness instead of presence skipped exactly those - the button did
+    nothing for the only case where waiting a day is the wrong answer.
+    """
+    entry = await _setup(hass, _entry(hass))
+    api = entry.runtime_data.api
+    api.modules = {
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heat pump",
+                "parameters": {},
+                "parameters_fetched_at": 9999.0,
+            }
+        }
+    }
+
+    await _open_options(hass, entry, "rescan_parameters")
+
+    assert api.modules["1234"][(0, 1)]["parameters_fetched_at"] == 0
 
 
 async def test_the_rescan_option_makes_no_portal_requests(hass):

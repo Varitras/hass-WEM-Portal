@@ -1384,5 +1384,19 @@
     "old": "                except RateLimited:\n                    errors[\"base\"] = \"rate_limited\"",
     "new": "                except RateLimited:\n                    errors[\"base\"] = \"cannot_connect\"",
     "tests": "both_flows_have_a_message_for_a_blocked_ip"
+  },
+  {
+    "label": "rescan: a refused module's empty list read as a truth value",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                if \"parameters\" in module:",
+    "new": "                if module.get(\"parameters\"):",
+    "tests": "the_rescan_option_also_marks_a_refused_module"
+  },
+  {
+    "label": "cycle: known devices asked of this session's readings",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        known_devices = self.api.data or self.api.modules or {}",
+    "new": "        known_devices = self.api.data",
+    "tests": "a_disabled_device_is_filtered_out_on_the_first_cycle"
   }
 ]

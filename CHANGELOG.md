@@ -86,6 +86,16 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **The "re-read parameter lists" option now also covers the modules it exists
+  for.** A module the portal refuses to describe keeps an empty list, so it is
+  retried once a day instead of never. The button tested that stored list for
+  truthiness rather than for presence, and therefore skipped exactly those
+  modules - the only ones for which waiting a day is the wrong answer.
+- **A disabled device is no longer polled once per restart.** The device filter
+  asked "do we know any devices?" of the readings collected this session, which
+  are empty until the first fetch runs - so every restart looked like a fresh
+  install and sent no filter at all. It now asks the persisted module cache,
+  which knows the same devices and survives the restart.
 - **Planned maintenance is recognised on the web path as well.** It was only
   detected during a full login, so a reused session ran into the maintenance
   page unchecked.

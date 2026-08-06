@@ -349,7 +349,11 @@ class WemportalOptionsFlow(OptionsFlow):
         marked = 0
         for device_modules in (modules or {}).values():
             for module in device_modules.values():
-                if module.get("parameters"):
+                # Presence, not truthiness. A module the portal refused keeps
+                # an EMPTY parameter list plus its timestamp, so a truthiness
+                # test skipped exactly the modules this button exists for -
+                # the ones whose list is due for another attempt.
+                if "parameters" in module:
                     module["parameters_fetched_at"] = 0
                     marked += 1
 
