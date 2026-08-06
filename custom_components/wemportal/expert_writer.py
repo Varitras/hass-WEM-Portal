@@ -21,6 +21,7 @@ from lxml import html
 
 from .exceptions import (
     AuthError,
+    ExpertOperationAborted,
     ForbiddenError,
     ParameterWriteError,
     PortalMaintenanceError,
@@ -100,14 +101,6 @@ VALUE_FIELD_ID = "ctl00_DialogContent_ddlNewValue"
 # can share one segment (/(A(..)S(..)F(..))/), so match the general shape
 # rather than the single upper-case example.
 _COOKIELESS_SESSION_RE = re.compile(r"/\((?:[A-Za-z]\([^)]*\))+\)")
-
-
-class ExpertOperationAborted(Exception):
-    """Raised when the configuration a portal operation belongs to is gone.
-
-    Its own type so the caller can tell "we deliberately stopped" apart from
-    "the portal rejected the write" and skip the user-facing notification.
-    """
 
 
 def redact_url(url) -> str:
@@ -1065,9 +1058,17 @@ class WemPortalExpertClient:
         if not ids:
             return result
         self._check_cooldown()
+        # Same cooperative stop the write path has. Cancelling the auto-poll
+        # cancels the AWAIT, not this thread, so an unload halfway through a
+        # batch kept navigating the portal with the credentials of an entry
+        # being torn down - and the longer the batch, the longer that lasted.
+        # Outside the per-id try below, which turns an exception into "this
+        # id could not be read" and would swallow the stop.
+        self._check_abort()
         try:
             self._login()
             for entityvalue in ids:
+                self._check_abort()
                 try:
                     result[entityvalue] = self._fetch_form(entityvalue)
                 except ForbiddenError:

@@ -37,6 +37,7 @@ from .coordinator import (
     get_modules_store,
     get_scraper_device_store,
 )
+from .exceptions import ExpertOperationAborted
 from .wemportalapi import WemPortalApi
 from .models import WemPortalConfigEntry, WemPortalData
 from .utils import clamped_scan_interval, deserialize_modules, close_api_sessions
@@ -522,8 +523,6 @@ def _async_register_expert_service(
             flag covers both: a different object means the configuration this
             write belongs to is gone, whatever its id says.
             """
-            from .expert_writer import ExpertOperationAborted
-
             reason = data.why_not_current(target_entry)
             if reason is not None:
                 raise ExpertOperationAborted(

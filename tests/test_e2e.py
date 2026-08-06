@@ -673,6 +673,62 @@ async def _run_discovery_with(hass, entry, monkeypatch, discover):
     )
 
 
+def _forbidden_expert_client(monkeypatch):
+    """Stub whose every portal call fails the test if it is reached."""
+
+    class _StubClient:
+        def list_modules(self):
+            raise AssertionError("the portal was contacted while the lock was held")
+
+        def discover(self, _selected):
+            raise AssertionError("the portal was contacted while the lock was held")
+
+    monkeypatch.setattr(
+        "custom_components.wemportal.config_flow.WemportalOptionsFlow._expert_client",
+        lambda self: _StubClient(),
+    )
+
+
+async def test_reading_the_module_list_waits_for_the_shared_expert_lock(
+    hass, monkeypatch
+):
+    """One expert operation per account at a time. The entity write and the
+    auto-poll both take the lock; discovery - the heaviest of the three, and
+    the only one a user starts by hand - did not, so it could open a second
+    portal session beside a running poll or write."""
+    entry = await _setup(hass, _entry(hass))
+    _forbidden_expert_client(monkeypatch)
+
+    assert entry.runtime_data.expert.lock.acquire(blocking=False)
+    try:
+        result = await _open_options(hass, entry, "discover_modules")
+    finally:
+        entry.runtime_data.expert.lock.release()
+
+    assert result["errors"] == {"base": "discovery_busy"}
+
+
+async def test_the_parameter_search_waits_for_the_shared_expert_lock(hass, monkeypatch):
+    """The second of the two portal calls in this flow, with the module list
+    already stored so only the search itself is exercised."""
+    from custom_components.wemportal.const import CONF_EXPERT_MODULE_LIST
+
+    modules = [{"index": 6, "value": "m6", "label": "Heat pump"}]
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_MODULE_LIST: modules}))
+    _forbidden_expert_client(monkeypatch)
+
+    result = await _open_options(hass, entry, "discover_modules")
+    assert entry.runtime_data.expert.lock.acquire(blocking=False)
+    try:
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"modules": ["6"], "refresh": False}
+        )
+    finally:
+        entry.runtime_data.expert.lock.release()
+
+    assert result["errors"] == {"base": "discovery_busy"}
+
+
 async def test_discovery_blocked_by_cooldown_is_reported(hass, monkeypatch):
     """A 403 cooldown aborts discovery BEFORE any request is sent. Silently
     showing an empty dropdown made that indistinguishable from "the portal

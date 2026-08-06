@@ -1865,6 +1865,93 @@ def test_the_write_is_stopped_directly_before_the_portal_is_changed():
     assert session.posts == [], "the parameter was written after the unload"
 
 
+def test_a_batch_read_stops_between_parameters_when_the_entry_goes_away():
+    """The auto-poll reads several ids on one session, so an unload halfway
+    through kept navigating the portal for the rest of the batch - with the
+    credentials of an entry being torn down. Cancelling the poll cancels the
+    await, not this thread; only looking before the next request can stop it.
+    """
+    from custom_components.wemportal import expert_writer
+
+    read = []
+    unloaded = []
+
+    def gate():
+        if unloaded:
+            raise expert_writer.ExpertOperationAborted("unloaded")
+
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", abort_check=gate
+    )
+    client._login = lambda: None
+    client.close = lambda: None
+
+    def fetch_form(entityvalue, *_a, **_k):
+        read.append(entityvalue)
+        unloaded.append(True)
+        return expert_writer.ExpertParameterState(20.0, [20.0], {})
+
+    client._fetch_form = fetch_form
+
+    with pytest.raises(expert_writer.ExpertOperationAborted):
+        client.read_many(["a" * 36, "b" * 36, "c" * 36])
+
+    assert len(read) == 1, f"the batch kept reading after the unload: {len(read)}"
+
+
+def test_the_auto_poll_hands_its_read_a_stop_gate(monkeypatch):
+    """The gate above only helps if one is actually handed over.
+
+    The write path passed one and the read path did not, so the batch read had
+    nothing to check - the entity write could be stopped mid-teardown and the
+    scheduled read could not.
+    """
+    import types
+
+    from custom_components.wemportal import expert_controller, expert_writer
+
+    class _Client:
+        def __init__(self, *_a, **kwargs):
+            self._abort = kwargs.get("abort_check")
+
+        def read_many(self, _ids):
+            if self._abort is not None:
+                self._abort()
+            return {}
+
+    monkeypatch.setattr(expert_writer, "WemPortalExpertClient", _Client)
+
+    def gate():
+        raise exceptions.ExpertOperationAborted("unloaded")
+
+    entry = types.SimpleNamespace(data={}, options={})
+    api = types.SimpleNamespace(
+        check_expert_cooldown=lambda: None,
+        activate_expert_cooldown=lambda *_a: None,
+        expert_cookies={},
+    )
+
+    with pytest.raises(exceptions.ExpertOperationAborted):
+        expert_controller.read_expert_values(entry, api, ["a" * 36], gate)
+
+
+def test_a_batch_read_without_an_abort_reads_everything():
+    """The gate must not cost the ordinary case - without this the test above
+    would pass on a client that reads nothing at all."""
+    from custom_components.wemportal import expert_writer
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client._login = lambda: None
+    client.close = lambda: None
+    client._fetch_form = lambda *_a, **_k: expert_writer.ExpertParameterState(
+        20.0, [20.0], {}
+    )
+
+    result = client.read_many(["a" * 36, "b" * 36])
+
+    assert len(result) == 2
+
+
 def test_a_write_without_an_abort_still_goes_through():
     """The gate must not block ordinary writes - without it the test above
     would pass on a client that never writes anything at all."""

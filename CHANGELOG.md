@@ -86,6 +86,18 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **Expert parameter discovery takes the same lock as everything else on that
+  path.** Only one expert portal operation per account may run at a time - the
+  entity write and the scheduled read both take a shared lock, but discovery,
+  the heaviest of the three and the only one started by hand, took none. It
+  could open a second portal session beside a running read or write. Starting
+  it while another operation holds the lock now says so instead of queueing a
+  second session.
+- **A scheduled expert read stops when its configuration is unloaded.** The
+  read fetches several parameters on one session, and cancelling it cancels the
+  waiting, not the worker thread - so an unload halfway through kept navigating
+  the portal with the credentials of an entry being torn down. The cooperative
+  stop the write path already had now covers the read as well.
 - **Changing the mode is checked against the connection it switches to.** The
   mobile API and the web portal are separate logins, so one working says
   nothing about the other - which is why the initial setup validates exactly

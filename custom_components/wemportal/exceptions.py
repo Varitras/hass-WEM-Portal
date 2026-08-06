@@ -53,6 +53,19 @@ class ApiBusyError(WemPortalError):
     """
 
 
+class ExpertOperationAborted(Exception):
+    """Raised when the configuration a portal operation belongs to is gone.
+
+    Its own type so the caller can tell "we deliberately stopped" apart from
+    "the portal rejected the write" and skip the user-facing notification.
+
+    Lives here rather than beside the expert client because three modules now
+    need to catch it, and importing that client pulls curl_cffi and lxml onto
+    whatever path does the import - which is why two of those three had a
+    function-local import instead.
+    """
+
+
 class PortalMaintenanceError(WemPortalError):
     """The portal is down for planned maintenance.
 

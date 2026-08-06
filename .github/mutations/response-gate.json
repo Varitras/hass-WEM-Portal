@@ -1454,5 +1454,33 @@
     "old": "        if new_mode == self.config_entry.options.get(CONF_MODE, DEFAULT_MODE):\n            return {}\n",
     "new": "",
     "tests": "saving_without_touching_the_mode_costs_no_login"
+  },
+  {
+    "label": "expert: the batch read never looks for a stop",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            for entityvalue in ids:\n                self._check_abort()\n",
+    "new": "            for entityvalue in ids:\n",
+    "tests": "a_batch_read_stops_between_parameters_when_the_entry_goes_away"
+  },
+  {
+    "label": "expert: the auto-poll is handed no stop gate at all",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        abort_check=abort_check,\n",
+    "new": "",
+    "tests": "the_auto_poll_hands_its_read_a_stop_gate"
+  },
+  {
+    "label": "discovery: the module list read outside the shared lock",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                modules = await self._run_expert(client.list_modules)",
+    "new": "                modules = await self.hass.async_add_executor_job(client.list_modules)",
+    "tests": "reading_the_module_list_waits_for_the_shared_expert_lock"
+  },
+  {
+    "label": "discovery: the parameter search run outside the shared lock",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                self._discovered = await self._run_expert(client.discover, modules)",
+    "new": "                self._discovered = await self.hass.async_add_executor_job(\n                    client.discover, modules\n                )",
+    "tests": "the_parameter_search_waits_for_the_shared_expert_lock"
   }
 ]

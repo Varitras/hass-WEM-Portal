@@ -138,6 +138,10 @@ class RateLimited(exceptions.HomeAssistantError):
     """The portal is refusing this IP, not these credentials."""
 
 
+class ExpertBusy(exceptions.HomeAssistantError):
+    """Another expert operation holds the shared per-account lock."""
+
+
 class CannotConnect(exceptions.HomeAssistantError):
     """Error to indicate we cannot connect."""
 
@@ -700,6 +704,33 @@ class WemportalOptionsFlow(OptionsFlow):
             **client_opts,
         )
 
+    async def _run_expert(self, work, *args):
+        """Run one blocking expert operation under the shared per-account lock.
+
+        The entity write and the auto-poll both take it, so only one expert
+        portal operation runs at a time - discovery, the heaviest of the three
+        and the only one a user starts by hand, did not. It could open a second
+        portal session on the same account beside a running poll or write.
+
+        Taken INSIDE the executor job, like the write path does it: waiting for
+        a threading lock on the event loop would stall Home Assistant for as
+        long as the other operation runs.
+        """
+        data = getattr(self.config_entry, "runtime_data", None)
+        controller = getattr(data, "expert", None) if data is not None else None
+        lock = getattr(controller, "lock", None) if controller is not None else None
+
+        def run_locked():
+            if lock is not None and not lock.acquire(blocking=False):
+                raise ExpertBusy("another expert operation is running for this account")
+            try:
+                return work(*args)
+            finally:
+                if lock is not None:
+                    lock.release()
+
+        return await self.hass.async_add_executor_job(run_locked)
+
     async def async_step_discover_modules(self, user_input=None):
         """Pick which modules to search. Module list is cached in options."""
         errors = {}
@@ -713,7 +744,11 @@ class WemportalOptionsFlow(OptionsFlow):
         if not modules or (user_input is not None and user_input.get("refresh")):
             client = self._expert_client()
             try:
-                modules = await self.hass.async_add_executor_job(client.list_modules)
+                modules = await self._run_expert(client.list_modules)
+            except ExpertBusy:
+                _LOGGER.debug("Expert discovery: another operation holds the lock.")
+                errors["base"] = "discovery_busy"
+                modules = self._known_modules()
             except ForbiddenError:
                 _LOGGER.warning(
                     "Expert discovery: module list not read - portal access is "
@@ -767,9 +802,10 @@ class WemportalOptionsFlow(OptionsFlow):
         if modules:
             client = self._expert_client()
             try:
-                self._discovered = await self.hass.async_add_executor_job(
-                    client.discover, modules
-                )
+                self._discovered = await self._run_expert(client.discover, modules)
+            except ExpertBusy:
+                _LOGGER.debug("Expert discovery: another operation holds the lock.")
+                self._discovery_error = "discovery_busy"
             except ForbiddenError as exc:
                 # Either the expert path is backing off from an earlier 403,
                 # or the portal rejected a request just now. The exception

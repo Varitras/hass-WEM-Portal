@@ -22,6 +22,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
 
+from .exceptions import ExpertOperationAborted
 from .const import (
     _LOGGER,
     CONF_EXPERT_AUTO_POLL,
@@ -53,7 +54,7 @@ def poll_interval_minutes(entry) -> int:
         return DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
 
 
-def read_expert_values(entry, api, entityvalues: list) -> dict:
+def read_expert_values(entry, api, entityvalues: list, abort_check=None) -> dict:
     """One shared portal session for every configured id.
 
     Runs in an executor thread - the expert client is blocking - and imports
@@ -68,6 +69,7 @@ def read_expert_values(entry, api, entityvalues: list) -> dict:
         cooldown_check=api.check_expert_cooldown,
         cooldown_activate=api.activate_expert_cooldown,
         cookie_jar=api.expert_cookies,
+        abort_check=abort_check,
         **expert_client_options(entry.options),
     )
     return client.read_many(entityvalues)
@@ -163,6 +165,17 @@ class ExpertController:
 
     # --- the cycle -----------------------------------------------------
 
+    def _raise_if_stopped(self) -> None:
+        """Abort gate handed to the portal client.
+
+        Called from the worker thread, so it must only read state - a plain
+        flag check on purpose, like the entity write's own gate.
+        """
+        if self._stopped:
+            raise ExpertOperationAborted(
+                "the entry was unloaded while the auto-poll was reading"
+            )
+
     def _next_delay_seconds(self) -> float:
         base = self._interval_min * 60
         return base + random.uniform(0, base * JITTER_FRACTION)
@@ -216,8 +229,18 @@ class ExpertController:
 
             try:
                 results = await self._hass.async_add_executor_job(
-                    read_expert_values, self._entry, current_api, entityvalues
+                    read_expert_values,
+                    self._entry,
+                    current_api,
+                    entityvalues,
+                    self._raise_if_stopped,
                 )
+            except ExpertOperationAborted as exc:
+                # Not a failure: the configuration this read belongs to is
+                # gone. Feeding it through the counters below would blame
+                # every configured id for an unload.
+                _LOGGER.debug("Expert auto-poll stopped: %s", exc)
+                return
             except Exception as exc:  # pylint: disable=broad-except
                 # Returns instead of falling through with an empty result:
                 # the per-id counters below mean "the portal answered, but
