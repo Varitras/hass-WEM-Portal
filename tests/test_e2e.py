@@ -409,6 +409,85 @@ async def test_config_flow_rejects_second_entry_for_same_account(hass):
     assert result["reason"] == "already_configured"
 
 
+def _blocked_ip(monkeypatch):
+    """A portal that is refusing this IP, on whichever login is tried."""
+
+    def refuse(self, *_a, **_k):
+        raise ForbiddenError("Rate limited")
+
+    monkeypatch.setattr(WemPortalApi, "api_login", refuse)
+    monkeypatch.setattr(WemPortalApi, "web_login", refuse)
+
+
+async def test_setup_names_a_blocked_ip_as_one(hass, monkeypatch):
+    """Reported as "cannot connect", a rate limit reads like a network fault
+    and invites an immediate retry - against an IP the portal is refusing for
+    twelve hours, where every attempt makes it last longer.
+
+    Driven through the real flow on purpose. The check that existed counted
+    occurrences of the error key in the SOURCE and verified the translations,
+    which stays green while the handler that produces it is unreachable -
+    and a reordered pair of except clauses makes it exactly that.
+    """
+    _blocked_ip(monkeypatch)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_USERNAME: USER,
+            CONF_PASSWORD: "secret",
+            CONF_LANGUAGE: "en",
+            CONF_MODE: "api",
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "rate_limited"}
+
+
+async def test_reauthentication_names_a_blocked_ip_as_one(hass, monkeypatch):
+    """The same, for the step somebody reaches after the entry has already
+    failed - which is where a blocked IP sends them."""
+    entry = await _setup(hass, _entry(hass))
+    _blocked_ip(monkeypatch)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "secret"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "rate_limited"}
+
+
+async def test_a_genuine_connection_problem_is_still_reported_as_one(hass, monkeypatch):
+    """The counter-test: naming everything a rate limit would pass the two
+    above and tell users to wait twelve hours for a DNS failure."""
+
+    def unreachable(self, *_a, **_k):
+        raise OSError("no route to host")
+
+    monkeypatch.setattr(WemPortalApi, "api_login", unreachable)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_USERNAME: USER,
+            CONF_PASSWORD: "secret",
+            CONF_LANGUAGE: "en",
+            CONF_MODE: "api",
+        },
+    )
+
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
 async def test_reauth_refuses_a_different_account(hass):
     """Reauth must re-authenticate the SAME account: the username field is
     editable, and silently repointing an entry at another login would move

@@ -1587,5 +1587,12 @@
     "old": "    if not sensor[\"IsWriteable\"]:\n        return None\n",
     "new": "",
     "tests": "mapper_output_is_unchanged"
+  },
+  {
+    "label": "order: the refusal handled after the catch-all",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "    except ForbiddenError as exc:\n        # Caught BEFORE the broad handler below, which would report it as\n",
+    "new": "    except Exception as exc:\n        raise CannotConnect from exc\n    except ForbiddenError as exc:\n        # Caught BEFORE the broad handler below, which would report it as\n",
+    "tests": "names_a_blocked_ip_as_one"
   }
 ]
