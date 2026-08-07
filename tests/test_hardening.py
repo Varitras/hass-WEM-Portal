@@ -74,7 +74,7 @@ def test_api_login_network_error_raises_clean_auth_error(monkeypatch):
     session = RecordingSession(
         post_exc=real_requests.exceptions.ConnectionError("reset")
     )
-    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: session)
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
     with pytest.raises(exceptions.UnknownAuthError):
         api.api_login()
     assert api.valid_login is False
@@ -83,7 +83,7 @@ def test_api_login_network_error_raises_clean_auth_error(monkeypatch):
 def test_api_login_post_has_timeout(monkeypatch):
     api = _api()
     session = RecordingSession()
-    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: session)
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
     api.api_login()
     assert api.valid_login is True
     assert (
@@ -794,7 +794,7 @@ def test_web_login_reports_maintenance_without_sending_credentials(monkeypatch):
             posted.append(True)
             return FakeResponse_html("")
 
-    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
     api = _api()
 
     with pytest.raises(exceptions.PortalMaintenanceError):
@@ -824,7 +824,7 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
         def post(self, *_a, **_k):
             return post_answer
 
-    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
     return _api()
 
 
@@ -849,7 +849,7 @@ def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
             posted.append(True)
             return FakeResponse_html("")
 
-    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
 
     with pytest.raises(exceptions.UnknownAuthError):
         _api().web_login()
@@ -877,7 +877,7 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
         def post(self, *_a, **_k):
             raise AssertionError("credentials were sent to a refusing portal")
 
-    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
     api = _api()
 
     with pytest.raises(exceptions.ForbiddenError):
@@ -938,7 +938,7 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
         def post(self, *_a, **_k):
             raise AssertionError("a request was sent during the cooldown")
 
-    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
     api = _api()
     api._activate_cooldown()
 
@@ -982,7 +982,7 @@ def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
             posted.update(data)
             return FakeResponse_html("<html>ctl00_btnLogout</html>")
 
-    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: _Session())
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
     _api().web_login()
 
     hidden = {
@@ -2697,7 +2697,7 @@ def test_the_login_rejects_a_false_status(monkeypatch):
     about what the same field means."""
     api = _api()
     session = RecordingSession(post_json={"Status": False, "Version": "3.1"})
-    monkeypatch.setattr(wemportalapi.reqs, "Session", lambda: session)
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
 
     with pytest.raises(exceptions.AuthError):
         api.api_login()

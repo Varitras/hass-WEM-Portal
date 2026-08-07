@@ -97,7 +97,7 @@ class ExpertController:
         self._started = False
         self._stopped = False
         self._initial_task: Any = None
-        self._unsub: Any = None
+        self._unsubscribe: Any = None
 
     def bind(self, data) -> None:
         """Hold the runtime store this controller belongs to."""
@@ -153,9 +153,9 @@ class ExpertController:
     def stop(self) -> None:
         """Stop the chain, including a read that is already in flight."""
         self._stopped = True
-        unsub, self._unsub = self._unsub, None
-        if unsub is not None:
-            unsub()
+        unsubscribe, self._unsubscribe = self._unsubscribe, None
+        if unsubscribe is not None:
+            unsubscribe()
         # The initial read is a background task that would otherwise keep
         # going after the entry is unloaded - only the scheduled timer used
         # to be cancelled.
@@ -190,7 +190,7 @@ class ExpertController:
             _LOGGER.debug("Expert auto-poll: entry unloaded, not rescheduling.")
             return
         delay = self._next_delay_seconds()
-        self._unsub = async_call_later(self._hass, delay, self.poll)
+        self._unsubscribe = async_call_later(self._hass, delay, self.poll)
         _LOGGER.debug(
             "Expert auto-poll: next read in %.1f min (base %d min + jitter).",
             delay / 60,
@@ -201,7 +201,7 @@ class ExpertController:
         """One cycle: read every configured id in one session, apply, re-arm."""
         try:
             entities = self.entities
-            entityvalues = [e.entityvalue for e in entities]
+            entityvalues = [entity.entityvalue for entity in entities]
             if not entityvalues:
                 return
             # Collision guard: if any entity write is in flight, skip this
@@ -209,7 +209,7 @@ class ExpertController:
             # Reading in parallel could also briefly write a pre-write
             # (stale) value back into an entity right after its verified
             # write. The next scheduled poll picks things up again.
-            if any(getattr(e, "_write_in_progress", False) for e in entities):
+            if any(getattr(entity, "_write_in_progress", False) for entity in entities):
                 _LOGGER.debug(
                     "Expert auto-poll: a write is in progress, skipping this cycle."
                 )
@@ -288,8 +288,10 @@ class ExpertController:
         installations off the air. One id keeps being counted, and the
         message below says plainly that the portal is the other candidate.
         """
-        requested = {ev: state for ev, state in results.items()}
-        failed = [ev for ev, state in requested.items() if state is None]
+        requested = {entityvalue: state for entityvalue, state in results.items()}
+        failed = [
+            entityvalue for entityvalue, state in requested.items() if state is None
+        ]
         whole_batch_failed = len(requested) >= 2 and len(failed) == len(requested)
         if whole_batch_failed:
             _LOGGER.warning(
@@ -301,26 +303,26 @@ class ExpertController:
             )
 
         for entity in self.entities:
-            ev = entity.entityvalue
-            state = results.get(ev)
-            unreadable_id = ev not in results
+            entityvalue = entity.entityvalue
+            state = results.get(entityvalue)
+            unreadable_id = entityvalue not in results
             counts_against_the_id = unreadable_id or (
                 state is None and not whole_batch_failed
             )
 
             if counts_against_the_id:
-                self.fail_counts[ev] = self.fail_counts.get(ev, 0) + 1
+                self.fail_counts[entityvalue] = self.fail_counts.get(entityvalue, 0) + 1
                 if (
-                    self.fail_counts[ev] >= FAILURES_BEFORE_NOTIFYING
-                    and ev not in self.fail_notified
+                    self.fail_counts[entityvalue] >= FAILURES_BEFORE_NOTIFYING
+                    and entityvalue not in self.fail_notified
                 ):
-                    self.fail_notified.add(ev)
+                    self.fail_notified.add(entityvalue)
                     self._notify_read_failure(
-                        entity, self.fail_counts[ev], unreadable_id
+                        entity, self.fail_counts[entityvalue], unreadable_id
                     )
             elif state is not None:
-                self.fail_counts.pop(ev, None)
-                self.fail_notified.discard(ev)
+                self.fail_counts.pop(entityvalue, None)
+                self.fail_notified.discard(entityvalue)
             entity.apply_read_state(state)
 
     def _notify_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
@@ -333,7 +335,7 @@ class ExpertController:
         """
         from .expert_writer import entityvalue_digest
 
-        ev = entity.entityvalue
+        entityvalue = entity.entityvalue
         if unreadable_id:
             reason = (
                 f"The configured ID for '{entity.name}' is not a readable "
@@ -354,7 +356,7 @@ class ExpertController:
                 {
                     "title": "WEM Portal expert auto-poll",
                     "message": reason,
-                    "notification_id": f"wemportal_poll_fail_{entityvalue_digest(ev)}",
+                    "notification_id": f"wemportal_poll_fail_{entityvalue_digest(entityvalue)}",
                 },
                 blocking=False,
             )

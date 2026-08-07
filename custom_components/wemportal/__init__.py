@@ -65,7 +65,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 # Migrate values from previous versions
-def _migrate_device_unique_ids(er, config_entry, device_id, data) -> bool:
+def _migrate_device_unique_ids(registry, config_entry, device_id, data) -> bool:
     """Migrate one device's entities from old unique_id formats to the current
     one. Returns True if any entity was updated. Factored out so migration can
     run for EVERY device, not just the first."""
@@ -104,14 +104,14 @@ def _migrate_device_unique_ids(er, config_entry, device_id, data) -> bool:
         for old_id in possible_old_ids:
             if not old_id:
                 continue
-            name_id = er.async_get_entity_id(platform, DOMAIN, old_id)
+            name_id = registry.async_get_entity_id(platform, DOMAIN, old_id)
             if name_id is not None:
-                new_entity_id = er.async_get_entity_id(platform, DOMAIN, new_id)
+                new_entity_id = registry.async_get_entity_id(platform, DOMAIN, new_id)
                 if new_entity_id is not None and new_entity_id != name_id:
                     _LOGGER.info(
                         "Found entity with old id and an entity with a new unique_id. Preserving old entity..."
                     )
-                    er.async_remove(new_entity_id)
+                    registry.async_remove(new_entity_id)
 
                 if old_id != new_id:
                     _LOGGER.info(
@@ -120,7 +120,7 @@ def _migrate_device_unique_ids(er, config_entry, device_id, data) -> bool:
                         old_id,
                         new_id,
                     )
-                    er.async_update_entity(
+                    registry.async_update_entity(
                         name_id,
                         new_unique_id=new_id,
                     )
@@ -130,7 +130,7 @@ def _migrate_device_unique_ids(er, config_entry, device_id, data) -> bool:
 
 
 def _remove_entities_from_a_previous_platform(
-    er, config_entry, device_id, data
+    registry, config_entry, device_id, data
 ) -> None:
     """Drop registry entries this integration no longer provides.
 
@@ -153,7 +153,7 @@ def _remove_entities_from_a_previous_platform(
         for platform in PLATFORMS:
             if platform == current:
                 continue
-            stale = er.async_get_entity_id(platform, DOMAIN, entity_unique_id)
+            stale = registry.async_get_entity_id(platform, DOMAIN, entity_unique_id)
             if stale is None:
                 continue
             _LOGGER.info(
@@ -162,13 +162,13 @@ def _remove_entities_from_a_previous_platform(
                 current,
                 platform,
             )
-            er.async_remove(stale)
+            registry.async_remove(stale)
 
 
 async def migrate_unique_ids(
     hass: HomeAssistant, config_entry: ConfigEntry, coordinator
 ):
-    er = entity_registry.async_get(hass)
+    registry = entity_registry.async_get(hass)
     # Nothing to migrate yet if the first refresh came back empty (e.g. no
     # devices found, or every device failed this cycle) - guard against
     # this instead of crashing with an IndexError on an empty keys() list,
@@ -181,14 +181,14 @@ async def migrate_unique_ids(
     change = False
     for device_id in coordinator.data:
         if _migrate_device_unique_ids(
-            er, config_entry, device_id, coordinator.data[device_id]
+            registry, config_entry, device_id, coordinator.data[device_id]
         ):
             change = True
         # After the id migration, not before: that step may still move an old
         # entry onto the current unique_id, and removing it first would throw
         # away the history it exists to preserve.
         _remove_entities_from_a_previous_platform(
-            er, config_entry, device_id, coordinator.data[device_id]
+            registry, config_entry, device_id, coordinator.data[device_id]
         )
 
     if change:
@@ -226,10 +226,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
 
     _backfill_account_unique_id(hass, entry)
 
-    dr = device_registry.async_get(hass)
+    registry = device_registry.async_get(hass)
     devices = [
         device
-        for device in dr.devices.values()
+        for device in registry.devices.values()
         if entry.entry_id in device.config_entries
     ]
     device_ids = [device.name for device in devices]
@@ -494,8 +494,10 @@ def _async_register_expert_service(
         # the service is a generic write primitive for ANY parameter of the
         # installation, including ones never surfaced in Home Assistant.
         allowed = {
-            (target_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip()
-            for i in range(1, EXPERT_SLOT_COUNT + 1)
+            (
+                target_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot) or ""
+            ).strip()
+            for slot in range(1, EXPERT_SLOT_COUNT + 1)
         }
         allowed.discard("")
         if entityvalue not in allowed:

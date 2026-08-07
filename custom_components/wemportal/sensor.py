@@ -532,8 +532,8 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
     def entity_category(self):
         """Return the entity category."""
         if any(
-            x in self._attr_unique_id
-            for x in ["ConnectionStatus", "HasErrors", "ErrorMessages"]
+            diagnostic in self._attr_unique_id
+            for diagnostic in ["ConnectionStatus", "HasErrors", "ErrorMessages"]
         ):
             return EntityCategory.DIAGNOSTIC
         return None

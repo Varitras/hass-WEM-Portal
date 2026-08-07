@@ -12,7 +12,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.helpers.storage import Store
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry
 from .exceptions import (
     ApiBusyError,
     AuthError,
@@ -186,7 +186,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             ):
                 raise UpdateFailed("Waiting for more time to pass before retrying")
 
-        device_registry = dr.async_get(self.hass)
+        registry = device_registry.async_get(self.hass)
         # Which devices this integration KNOWS, not which it has already read
         # this session. api.data is filled by get_devices() inside fetch_data,
         # so right after a restart it is empty even for an install that has
@@ -200,7 +200,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             # platforms register (utils.device_identifier); previously this
             # used a bare (DOMAIN, device_id), which never matched, so a
             # disabled device kept being polled.
-            device_entry = device_registry.async_get_device(
+            device_entry = registry.async_get_device(
                 identifiers={
                     device_identifier(self.config_entry.entry_id, str(device_id))
                 }
@@ -260,14 +260,14 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         around it without moving the error handling one level in."""
         async with asyncio.timeout(DEFAULT_TIMEOUT):
             try:
-                x = await self.hass.async_add_executor_job(
+                fetched = await self.hass.async_add_executor_job(
                     self.api.fetch_data, device_filter
                 )
                 self.num_failed = 0
                 self._reset_auth_failures()
                 await self._async_save_modules_cache()
                 await self._async_save_scraper_device_id()
-                return x
+                return fetched
             except PortalMaintenanceError as exc:
                 # Announced downtime, not a credential problem. Counted as a
                 # normal failure (so backoff engages) but NOT as an auth

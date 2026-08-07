@@ -338,7 +338,7 @@ class WemPortalScraper:
         # --- Full login sequence ---
         # 1. GET Login page
         try:
-            r1 = self.session.get(
+            login_page = self.session.get(
                 WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS
             )
         except Exception as e:
@@ -356,9 +356,9 @@ class WemPortalScraper:
         # never sent to a page that cannot process it: during planned
         # downtime the login form is fully present and submittable, and
         # posting would simply fail as "invalid credentials".
-        self._check_response(r1, "login page", check_maintenance=True)
+        self._check_response(login_page, "login page", check_maintenance=True)
 
-        tree = html.fromstring(r1.text)
+        tree = html.fromstring(login_page.text)
         viewstate_elem = tree.xpath("//*[@id='__VIEWSTATE']/@value")
         eventval_elem = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
 
@@ -379,21 +379,21 @@ class WemPortalScraper:
             "ctl00$content$btnLogin": "Anmelden",
         }
 
-        r2 = self.session.post(
+        login_response = self.session.post(
             WEB_LOGIN_URL,
             data=login_data,
             allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
-        self._check_response(r2, "login POST")
+        self._check_response(login_response, "login POST")
 
         # Check if we were redirected back to login with an error (like AspxAutoDetectCookieSupport)
         if (
-            "AspxAutoDetectCookieSupport" in r2.url
-            or WEB_LOGIN_URL.lower() in r2.url.lower()
+            "AspxAutoDetectCookieSupport" in login_response.url
+            or WEB_LOGIN_URL.lower() in login_response.url.lower()
         ):
             raise AuthError(
-                f"Authentication Error: Login failed or cookies not detected. URL: {r2.url}"
+                f"Authentication Error: Login failed or cookies not detected. URL: {login_response.url}"
             )
 
         # Wait a moment

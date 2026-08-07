@@ -406,8 +406,8 @@ class WemportalOptionsFlow(OptionsFlow):
         # this session) plus any already-configured ids, so a stored
         # selection stays selectable even without a fresh discovery.
         current_ids = [
-            self.config_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i, "")
-            for i in range(1, EXPERT_SLOT_COUNT + 1)
+            self.config_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot, "")
+            for slot in range(1, EXPERT_SLOT_COUNT + 1)
         ]
         id_options = discovery_option_list(self._discovered, current_ids)
 
@@ -466,8 +466,8 @@ class WemportalOptionsFlow(OptionsFlow):
         # slightly different length on another installation still passes.
         # Whitespace is stripped; empty stays allowed (slot unused).
         min_len = MIN_EXPERT_ENTITYVALUE_LENGTH
-        for i in range(1, EXPERT_SLOT_COUNT + 1):
-            id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
+        for slot in range(1, EXPERT_SLOT_COUNT + 1):
+            id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % slot
             raw = (user_input.get(id_key) or "").strip()
             user_input[id_key] = raw  # persist the stripped value
             if raw and (not re.fullmatch(r"[0-9A-Fa-f]+", raw) or len(raw) < min_len):
@@ -482,16 +482,18 @@ class WemportalOptionsFlow(OptionsFlow):
             errors[CONF_EXPERT_MODULE_ARG] = "invalid_module_arg"
         # De-dup: the same entityvalue must not be selected in two slots.
         slot_ids = [
-            (user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip()
-            for i in range(1, EXPERT_SLOT_COUNT + 1)
+            (user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot) or "").strip()
+            for slot in range(1, EXPERT_SLOT_COUNT + 1)
         ]
-        dupes = duplicate_entityvalues(slot_ids)
-        if dupes:
-            for i in range(1, EXPERT_SLOT_COUNT + 1):
+        duplicates = duplicate_entityvalues(slot_ids)
+        if duplicates:
+            for slot in range(1, EXPERT_SLOT_COUNT + 1):
                 if (
-                    user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or ""
-                ).strip() in dupes:
-                    errors[CONF_EXPERT_SLOT_ID_TEMPLATE % i] = "duplicate_entityvalue"
+                    user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot) or ""
+                ).strip() in duplicates:
+                    errors[CONF_EXPERT_SLOT_ID_TEMPLATE % slot] = (
+                        "duplicate_entityvalue"
+                    )
         return errors
 
     def _save_configure(self, user_input):
@@ -649,8 +651,8 @@ class WemportalOptionsFlow(OptionsFlow):
         id_selector = SelectSelector(
             SelectSelectorConfig(
                 options=[
-                    SelectOptionDict(value=o["value"], label=o["label"])
-                    for o in id_options
+                    SelectOptionDict(value=option["value"], label=option["label"])
+                    for option in id_options
                 ],
                 mode=SelectSelectorMode.DROPDOWN,
                 custom_value=True,
@@ -658,9 +660,9 @@ class WemportalOptionsFlow(OptionsFlow):
             )
         )
         fields = {}
-        for i in range(1, EXPERT_SLOT_COUNT + 1):
-            name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % i
-            id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % i
+        for slot in range(1, EXPERT_SLOT_COUNT + 1):
+            name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % slot
+            id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % slot
             fields[
                 vol.Optional(
                     name_key,
@@ -737,7 +739,9 @@ class WemportalOptionsFlow(OptionsFlow):
         modules = self._known_modules()
         if user_input is not None and not user_input.get("refresh"):
             selected = user_input.get("modules", [])
-            self._selected_modules = [m for m in modules if str(m["index"]) in selected]
+            self._selected_modules = [
+                module for module in modules if str(module["index"]) in selected
+            ]
             return await self.async_step_run_discovery()
 
         # (Re)fetch the module list if missing or a refresh was requested.
@@ -777,7 +781,7 @@ class WemportalOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Optional("modules", default=[]): cv.multi_select(
-                        {str(m["index"]): m["label"] for m in modules}
+                        {str(module["index"]): module["label"] for module in modules}
                     ),
                     vol.Optional("refresh", default=False): cv.boolean,
                 }

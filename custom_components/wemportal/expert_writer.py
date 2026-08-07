@@ -1404,17 +1404,17 @@ def create_expert_number_entities(config_entry):
     options = config_entry.options
     # Collect (name, entityvalue) pairs from the generic slots. A slot with
     # an id but no name gets a default name.
-    specs = []
+    configured_slots = []
     for slot in range(1, EXPERT_SLOT_COUNT + 1):
         entityvalue = (options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot) or "").strip()
         if not entityvalue:
             continue
         name = (options.get(CONF_EXPERT_SLOT_NAME_TEMPLATE % slot) or "").strip()
-        specs.append((name or f"expert_parameter_{slot}", entityvalue))
+        configured_slots.append((name or f"expert_parameter_{slot}", entityvalue))
 
     entities = []
     seen = set()
-    for name, entityvalue in specs:
+    for name, entityvalue in configured_slots:
         if entityvalue in seen:
             continue
         seen.add(entityvalue)

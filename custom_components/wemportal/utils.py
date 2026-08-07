@@ -173,7 +173,7 @@ def sanitize_value(value_str, unit=None, name=""):
     if value_lower == "":
         return None
 
-    if value_lower in [x.strip() for x in MISSING_DATA_STRINGS]:
+    if value_lower in [missing.strip() for missing in MISSING_DATA_STRINGS]:
         # Missing data is missing for EVERY sensor, not just energy/power:
         # return None (HA shows the sensor "unavailable") instead of a
         # fabricated 0.0. Previously non-energy/power sensors fell through to
@@ -314,7 +314,7 @@ def unit_to_device_class(unit):
     # Both sides normalised - the KEYS above are Home Assistant constants
     # in their own casing ("kW", "°C", "K"), so lowering only the lookup
     # value would miss every one of them.
-    return {str(k).strip().lower(): v for k, v in mapping.items()}.get(
+    return {str(key).strip().lower(): value for key, value in mapping.items()}.get(
         str(unit).strip().lower()
     )
 
@@ -444,12 +444,12 @@ def latest_statistics_entry(values):
     """
     if not values:
         return None
-    dated = [v for v in values if isinstance(v, dict) and v.get("Date")]
+    dated = [entry for entry in values if isinstance(entry, dict) and entry.get("Date")]
     if not dated:
         return values[-1]
     # ISO-8601 ("2026-04-27T00:00:00") sorts correctly as text, so no date
     # parsing - and thus no locale or format surprises - is needed.
-    return max(dated, key=lambda v: str(v["Date"]))
+    return max(dated, key=lambda entry: str(entry["Date"]))
 
 
 _MORE = " (+{} more)"
@@ -469,7 +469,7 @@ def error_state_and_detail(errors) -> tuple[str, list]:
     marked, because a cut that announces itself is still worth more than no
     state at all.
     """
-    messages = [text for text in (str(e).strip() for e in errors or []) if text]
+    messages = [text for text in (str(error).strip() for error in errors or []) if text]
     if not messages:
         return "None", []
 

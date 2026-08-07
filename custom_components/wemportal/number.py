@@ -6,7 +6,7 @@ from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import entity_registry
 from .const import _LOGGER, CONF_EXPERT_WRITE, DOMAIN
 from .utils import fix_value_and_unit, unit_to_device_class
 from .entity import WemPortalEntity
@@ -71,7 +71,7 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
     Best-effort: a failure only means the entity is re-created under the
     new unique_id instead of migrated.
     """
-    registry = er.async_get(hass)
+    registry = entity_registry.async_get(hass)
     for entity in expert_entities:
         old_unique_id = f"{config_entry.entry_id}:expert:{entity.entityvalue}"
         if old_unique_id == entity.unique_id:

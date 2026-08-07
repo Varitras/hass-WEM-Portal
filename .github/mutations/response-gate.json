@@ -212,14 +212,14 @@
   {
     "label": "poll: the notification must stay one per streak",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "                if (\n                    self.fail_counts[ev] >= FAILURES_BEFORE_NOTIFYING\n                    and ev not in self.fail_notified\n                ):",
-    "new": "                if self.fail_counts[ev] >= FAILURES_BEFORE_NOTIFYING:",
+    "old": "                if (\n                    self.fail_counts[entityvalue] >= FAILURES_BEFORE_NOTIFYING\n                    and entityvalue not in self.fail_notified\n                ):",
+    "new": "                if self.fail_counts[entityvalue] >= FAILURES_BEFORE_NOTIFYING:",
     "tests": "keeps_omitting_is_reported_once"
   },
   {
     "label": "poll: a recovery must clear the streak",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "                self.fail_counts.pop(ev, None)\n                self.fail_notified.discard(ev)",
+    "old": "                self.fail_counts.pop(entityvalue, None)\n                self.fail_notified.discard(entityvalue)",
     "new": "                pass",
     "tests": "recovered_parameter_clears"
   },
@@ -233,7 +233,7 @@
   {
     "label": "poll: a write in flight must stop the read",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "            if any(getattr(e, \"_write_in_progress\", False) for e in entities):",
+    "old": "            if any(getattr(entity, \"_write_in_progress\", False) for entity in entities):",
     "new": "            if False:",
     "tests": "portal_while_a_write_runs"
   },
@@ -527,15 +527,15 @@
   {
     "label": "migration: leaving the old platform's entity behind must be noticed",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "            er.async_remove(stale)",
+    "old": "            registry.async_remove(stale)",
     "new": "            pass",
     "tests": "entity_left_behind_by_a_platform_change"
   },
   {
     "label": "migration: reaching outside our own unique_ids must be noticed",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "            stale = er.async_get_entity_id(platform, DOMAIN, entity_unique_id)",
-    "new": "            stale = er.async_get_entity_id(platform, DOMAIN, unique_id)",
+    "old": "            stale = registry.async_get_entity_id(platform, DOMAIN, entity_unique_id)",
+    "new": "            stale = registry.async_get_entity_id(platform, DOMAIN, unique_id)",
     "tests": "only_our_own_unique_ids_are_touched"
   },
   {
@@ -1416,8 +1416,8 @@
   {
     "label": "login: the web login sends before asking the cooldown",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        self.check_cooldown()\n        session = reqs.Session()",
-    "new": "        session = reqs.Session()",
+    "old": "        self.check_cooldown()\n        session = requests.Session()",
+    "new": "        session = requests.Session()",
     "tests": "a_login_is_not_attempted_during_a_cooldown"
   },
   {

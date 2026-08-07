@@ -25,19 +25,22 @@ def discovery_option_list(discovered, current_ids) -> list:
     """
     options = []
     seen = set()
-    for p in discovered or []:
-        ev = (p.get("entityvalue") or "").strip()
-        if not ev or ev in seen:
+    for parameter in discovered or []:
+        entityvalue = (parameter.get("entityvalue") or "").strip()
+        if not entityvalue or entityvalue in seen:
             continue
-        seen.add(ev)
-        label = f"{p.get('group', '')} / {p.get('name', '')} ({p.get('value', '')})"
-        options.append({"value": ev, "label": label})
-    for ev in current_ids or []:
-        ev = (ev or "").strip()
-        if not ev or ev in seen:
+        seen.add(entityvalue)
+        label = (
+            f"{parameter.get('group', '')} / {parameter.get('name', '')} "
+            f"({parameter.get('value', '')})"
+        )
+        options.append({"value": entityvalue, "label": label})
+    for entityvalue in current_ids or []:
+        entityvalue = (entityvalue or "").strip()
+        if not entityvalue or entityvalue in seen:
             continue
-        seen.add(ev)
-        options.append({"value": ev, "label": ev})
+        seen.add(entityvalue)
+        options.append({"value": entityvalue, "label": entityvalue})
     return options
 
 
@@ -45,10 +48,10 @@ def duplicate_entityvalues(id_values) -> set:
     """Return the set of entityvalues used more than once (non-empty)."""
     counts = {}
     for raw in id_values or []:
-        ev = (raw or "").strip()
-        if ev:
-            counts[ev] = counts.get(ev, 0) + 1
-    return {ev for ev, n in counts.items() if n > 1}
+        entityvalue = (raw or "").strip()
+        if entityvalue:
+            counts[entityvalue] = counts.get(entityvalue, 0) + 1
+    return {entityvalue for entityvalue, n in counts.items() if n > 1}
 
 
 def expert_client_options(options):

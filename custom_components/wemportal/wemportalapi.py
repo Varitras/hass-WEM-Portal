@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from lxml import html
 from lxml.etree import ParserError
-import requests as reqs
+import requests
 from homeassistant.const import CONF_SCAN_INTERVAL
 from .exceptions import (
     ApiBusyError,
@@ -595,7 +595,7 @@ class WemPortalApi:
         device_id = self.scraper_device_id
         if not device_id:
             return True
-        return str(device_id) in {str(d) for d in enabled_devices}
+        return str(device_id) in {str(enabled) for enabled in enabled_devices}
 
     def _acquire_api_lock(self, what):
         """Take the shared API lock, or fail with a message the user can act on.
@@ -829,7 +829,7 @@ class WemPortalApi:
             self.data[str(device_id)] = {}
 
         vanished = self._warn_about_renamed_scraper_keys(
-            [k for k, v in webscraping_data.items() if isinstance(v, dict)]
+            [key for key, row in webscraping_data.items() if isinstance(row, dict)]
         )
 
         for key, new_val in webscraping_data.items():
@@ -1136,7 +1136,7 @@ class WemPortalApi:
         }
         if self.session is not None:
             self.session.close()
-        self.session = reqs.Session()
+        self.session = requests.Session()
         self.session.cookies.clear()
         self.session.headers.update(self.headers)
         # Initialized BEFORE the try block: if the POST itself fails with a
@@ -1174,7 +1174,7 @@ class WemPortalApi:
             raise WemPortalError(
                 "API login failed: received HTML instead of JSON (Possible rate limit or WAF block)"
             ) from exc
-        except reqs.exceptions.RequestException as exc:
+        except requests.exceptions.RequestException as exc:
             # Broader than just HTTPError: also covers ConnectionError,
             # Timeout, etc. - genuine network failures that aren't tied to
             # a specific HTTP status code, which previously weren't caught
@@ -1239,7 +1239,7 @@ class WemPortalApi:
             UnknownAuthError: For other unknown login errors.
         """
         self.check_cooldown()
-        session = reqs.Session()
+        session = requests.Session()
         login_url = WEB_LOGIN_URL
 
         headers = {
@@ -1257,7 +1257,7 @@ class WemPortalApi:
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             )
             initial_response.raise_for_status()
-        except reqs.exceptions.RequestException as exc:
+        except requests.exceptions.RequestException as exc:
             # A 403 here is the same refusal the POST below already
             # recognises, and it arrives FIRST - this is the request that
             # meets a blocked IP. Reported as "could not load the page" it
@@ -1345,13 +1345,13 @@ class WemPortalApi:
                 "Login failed: the portal answered with a page that is neither "
                 "the logged-in view nor the login form."
             )
-        except reqs.exceptions.RequestException as exc:
+        except requests.exceptions.RequestException as exc:
             if response is not None and response.status_code == 403:
                 self._activate_cooldown()
                 raise ForbiddenError("Access forbidden during login.") from exc
             raise UnknownAuthError(f"Failed to submit the login form: {exc}") from exc
 
-    def get_response_details(self, response: reqs.Response):
+    def get_response_details(self, response: requests.Response):
         server_status = ""
         server_message = ""
         # Use "is not None" rather than a plain truthiness check: a
@@ -1378,7 +1378,7 @@ class WemPortalApi:
         do_retry=True,
         delay=5,
         retry_transport=False,
-    ) -> reqs.Response:
+    ) -> requests.Response:
         """One mobile-API request, with two kinds of retry sharing one attempt.
 
         `do_retry` covers an expired session: re-login once and try again.
@@ -1458,10 +1458,10 @@ class WemPortalApi:
                 _LOGGER.debug(response)
                 return response
 
-            except (reqs.exceptions.RequestException, ExpiredSessionError) as exc:
+            except (requests.exceptions.RequestException, ExpiredSessionError) as exc:
                 status_code = (
                     response.status_code
-                    if isinstance(exc, reqs.exceptions.RequestException)
+                    if isinstance(exc, requests.exceptions.RequestException)
                     and response is not None
                     else None
                 )
@@ -1714,7 +1714,7 @@ class WemPortalApi:
         what decides between backing off, dropping a module and re-raising.
         """
         cause = exc.__cause__
-        if not isinstance(cause, reqs.exceptions.HTTPError):
+        if not isinstance(cause, requests.exceptions.HTTPError):
             return None
         return cause.response.status_code
 

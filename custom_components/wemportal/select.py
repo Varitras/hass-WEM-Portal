@@ -116,7 +116,11 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
             # 0.75 mirrors the previous fuzzywuzzy score threshold of 75.
             # Only string option names can be compared, so non-str options
             # are filtered out first.
-            str_names = [n for n in self._options_names if isinstance(n, str)]
+            str_names = [
+                option_name
+                for option_name in self._options_names
+                if isinstance(option_name, str)
+            ]
             matches = difflib.get_close_matches(str(value), str_names, n=1, cutoff=0.75)
             if matches:
                 return matches[0]
