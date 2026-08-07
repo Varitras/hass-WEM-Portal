@@ -7,22 +7,21 @@ import re
 
 from homeassistant.components.sensor import RestoreSensor
 from homeassistant.config_entries import ConfigEntry
-
+from homeassistant.const import MAX_LENGTH_STATE_STATE, EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.const import MAX_LENGTH_STATE_STATE, EntityCategory
 
 from .const import _LOGGER, GITHUB_PROJECT_URL
+from .entity import WemPortalEntity
 from .utils import (
+    build_device_info,
     device_is_reachable,
     device_model,
     fix_value_and_unit,
     unit_to_device_class,
     unit_to_state_class,
-    build_device_info,
 )
-from .entity import WemPortalEntity
 
 
 async def async_setup_entry(

@@ -1,8 +1,9 @@
 """Data mapper for mapping API values to Home Assistant platforms."""
 
 import re
+
+from .const import _LOGGER, WemDataType
 from .translations import friendly_name_mapper, translate
-from .const import WemDataType, _LOGGER
 from .utils import looks_like_schedule, sanitize_value, unit_to_icon
 
 

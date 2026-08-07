@@ -8,8 +8,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import _LOGGER
-from .utils import fix_value_and_unit
 from .entity import WemPortalEntity
+from .utils import fix_value_and_unit
 
 # Recognized "on" values, covering both the numeric form (API path) and the
 # German/English text forms a value may arrive in (e.g. depending on the

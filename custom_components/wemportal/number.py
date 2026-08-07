@@ -5,11 +5,12 @@ Number platform for wemportal component
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers import entity_registry
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
 from .const import _LOGGER, CONF_EXPERT_WRITE, DOMAIN
-from .utils import fix_value_and_unit, unit_to_device_class
 from .entity import WemPortalEntity
+from .utils import fix_value_and_unit, unit_to_device_class
 
 
 async def async_setup_entry(

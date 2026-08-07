@@ -22,7 +22,6 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
 
-from .exceptions import ExpertOperationAborted
 from .const import (
     _LOGGER,
     CONF_EXPERT_AUTO_POLL,
@@ -30,6 +29,7 @@ from .const import (
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
 )
+from .exceptions import ExpertOperationAborted
 
 # Fraction of extra, random delay added on top of the configured interval each
 # cycle (0..20%). Jitter is added ONLY upwards, so the effective interval is

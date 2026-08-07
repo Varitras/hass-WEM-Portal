@@ -9,7 +9,7 @@ if the integration cannot be imported against the installed HA version.
 
 import pytest
 
-from custom_components.wemportal import wemportalapi, expert_writer
+from custom_components.wemportal import expert_writer, wemportalapi
 
 pytest_plugins = ("pytest_homeassistant_custom_component",)
 

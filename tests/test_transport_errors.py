@@ -16,12 +16,10 @@ import pathlib
 import pytest
 import requests as real_requests
 
-from custom_components.wemportal import wemportalapi
+from custom_components.wemportal import exceptions, wemportalapi
 from custom_components.wemportal.wemportalapi import WemPortalApi
-from custom_components.wemportal import exceptions
 
 from .test_hardening import FakeResponse
-
 
 API_SOURCE = pathlib.Path(wemportalapi.__file__).read_text(encoding="utf-8")
 

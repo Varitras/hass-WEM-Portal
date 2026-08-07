@@ -5,61 +5,60 @@ from __future__ import annotations
 import logging
 import re
 
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-
+from homeassistant import exceptions
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     OptionsFlow,
 )
-
-from homeassistant import exceptions
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.core import callback, HomeAssistant
-import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.selector import (
-    TextSelector,
-    TextSelectorConfig,
-    TextSelectorType,
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
-    SelectOptionDict,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
-from .wemportalapi import WemPortalApi
+
 from .const import (
-    DOMAIN,
-    CONF_LANGUAGE,
-    CONF_MODE,
-    CONF_SCAN_INTERVAL_API,
-    DEFAULT_MODE,
     AVAILABLE_MODES,
-    DEFAULT_CONF_LANGUAGE_VALUE,
-    CONF_EXPERT_WRITE,
-    EXPERT_SLOT_COUNT,
-    MIN_EXPERT_ENTITYVALUE_LENGTH,
-    CONF_EXPERT_SLOT_NAME_TEMPLATE,
-    CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_AUTO_POLL,
-    CONF_EXPERT_POLL_INTERVAL,
-    CONF_EXPERT_NOTIFY_ON_SUCCESS,
-    DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
-    MIN_EXPERT_POLL_INTERVAL_MINUTES,
     CONF_EXPERT_ENABLE_MODULE_NAV,
     CONF_EXPERT_ENABLE_SECURITY_CODE,
     CONF_EXPERT_MODULE_ARG,
     CONF_EXPERT_MODULE_LIST,
-    MIN_SCAN_INTERVAL_SECONDS,
+    CONF_EXPERT_NOTIFY_ON_SUCCESS,
+    CONF_EXPERT_POLL_INTERVAL,
+    CONF_EXPERT_SLOT_ID_TEMPLATE,
+    CONF_EXPERT_SLOT_NAME_TEMPLATE,
+    CONF_EXPERT_WRITE,
+    CONF_LANGUAGE,
+    CONF_MODE,
+    CONF_SCAN_INTERVAL_API,
+    DEFAULT_CONF_LANGUAGE_VALUE,
+    DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
+    DEFAULT_MODE,
+    DOMAIN,
+    EXPERT_SLOT_COUNT,
+    MIN_EXPERT_ENTITYVALUE_LENGTH,
+    MIN_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_API_SECONDS,
+    MIN_SCAN_INTERVAL_SECONDS,
 )
 from .exceptions import AuthError, ForbiddenError
-from .utils import close_api_sessions
 from .expert_options import (
-    expert_client_options,
     discovery_option_list,
     duplicate_entityvalues,
+    expert_client_options,
 )
+from .utils import close_api_sessions
+from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
 

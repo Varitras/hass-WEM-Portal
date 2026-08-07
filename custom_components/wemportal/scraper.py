@@ -2,8 +2,19 @@
 
 import logging
 import time
+
 from curl_cffi import requests
 from lxml import html
+
+from .const import (
+    _LOGGER,
+    GITHUB_PROJECT_URL,
+    PERCENTAGE_KEYWORDS,
+    SCRAPER_REQUEST_TIMEOUT_SECONDS,
+    TEMPERATURE_KEYWORDS,
+    WEB_LOGIN_URL,
+    WEB_MAIN_URL,
+)
 
 # Relative imports and the shared integration logger, consistent with every
 # other module in this package (absolute custom_components.* imports would
@@ -13,15 +24,6 @@ from .exceptions import (
     ForbiddenError,
     PortalMaintenanceError,
     ServerError,
-)
-from .const import (
-    _LOGGER,
-    GITHUB_PROJECT_URL,
-    WEB_LOGIN_URL,
-    WEB_MAIN_URL,
-    TEMPERATURE_KEYWORDS,
-    PERCENTAGE_KEYWORDS,
-    SCRAPER_REQUEST_TIMEOUT_SECONDS,
 )
 from .utils import (
     maintenance_notice,

@@ -10,25 +10,28 @@ from datetime import timedelta
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry, entity_registry
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.config_entries import ConfigEntry
+
 from .const import (
+    _LOGGER,
+    CONF_EXPERT_NOTIFY_ON_SUCCESS,
+    CONF_EXPERT_SLOT_ID_TEMPLATE,
+    CONF_EXPERT_WRITE,
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
-    DOMAIN,
-    PLATFORMS,
-    _LOGGER,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
-    CONF_EXPERT_WRITE,
-    CONF_EXPERT_SLOT_ID_TEMPLATE,
+    DOMAIN,
     EXPERT_SLOT_COUNT,
-    CONF_EXPERT_NOTIFY_ON_SUCCESS,
-    MIN_SCAN_INTERVAL_SECONDS,
     MIN_SCAN_INTERVAL_API_SECONDS,
+    MIN_SCAN_INTERVAL_SECONDS,
+    PLATFORMS,
     SERVICE_SET_EXPERT_PARAMETER,
 )
 from .coordinator import (
@@ -38,11 +41,9 @@ from .coordinator import (
     get_scraper_device_store,
 )
 from .exceptions import ExpertOperationAborted
-from .wemportalapi import WemPortalApi
 from .models import WemPortalConfigEntry, WemPortalData
-from .utils import clamped_scan_interval, deserialize_modules, close_api_sessions
-from homeassistant.helpers import device_registry, entity_registry
-from homeassistant.helpers.service import async_register_admin_service
+from .utils import clamped_scan_interval, close_api_sessions, deserialize_modules
+from .wemportalapi import WemPortalApi
 
 
 def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):

@@ -1,18 +1,27 @@
 """WemPortal integration coordinator"""
 
 from __future__ import annotations
+
 import asyncio
 from time import monotonic
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
-from homeassistant.helpers.storage import Store
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers import device_registry
+
+from .const import (
+    _LOGGER,
+    AUTH_ERROR_ESCALATION_THRESHOLD,
+    DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
+    DEFAULT_TIMEOUT,
+    DOMAIN,
+)
 from .exceptions import (
     ApiBusyError,
     AuthError,
@@ -21,15 +30,8 @@ from .exceptions import (
     PortalMaintenanceError,
     WemPortalError,
 )
-from .const import (
-    _LOGGER,
-    AUTH_ERROR_ESCALATION_THRESHOLD,
-    DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
-    DEFAULT_TIMEOUT,
-    DOMAIN,
-)
+from .utils import device_identifier, serialize_modules
 from .wemportalapi import WemPortalApi
-from .utils import serialize_modules, device_identifier
 
 # Version of the on-disk format used to persist discovered device/module/
 # parameter metadata (see get_modules_store()). Bump this if the structure

@@ -3,80 +3,80 @@ Weishaupt webscraping and API library
 """
 
 import copy
-import time
 import threading
+import time
 from datetime import datetime, timedelta
 
-from lxml import html
-from lxml.etree import ParserError
 import requests
 from homeassistant.const import CONF_SCAN_INTERVAL
-from .exceptions import (
-    ApiBusyError,
-    PollDeadlineExceeded,
-    PortalMaintenanceError,
-    AuthError,
-    ForbiddenError,
-    UnknownAuthError,
-    WemPortalError,
-    ExpiredSessionError,
-    ParameterChangeError,
-    ServerError,
-)
+from lxml import html
+from lxml.etree import ParserError
 
 from .const import (
     _LOGGER,
-    WemDataType,
+    API_CIRCUIT_TIMES_READ_URL,
+    API_CIRCUIT_TIMES_REFRESH_URL,
     API_DATA_ACCESS_READ_URL,
     API_DATA_ACCESS_WRITE_URL,
     API_DEVICE_READ_URL,
+    API_DEVICE_STATUS_READ_URL,
     API_EVENT_TYPE_READ_URL,
+    API_LOCK_TIMEOUT_SECONDS,
     API_LOGIN_URL,
     API_REFRESH_URL,
-    API_DEVICE_STATUS_READ_URL,
-    API_CIRCUIT_TIMES_REFRESH_URL,
-    API_CIRCUIT_TIMES_READ_URL,
-    API_STATISTICS_REFRESH_URL,
+    API_REQUEST_TIMEOUT_SECONDS,
     API_STATISTICS_READ_URL,
+    API_STATISTICS_REFRESH_URL,
+    API_TRANSPORT_RETRY_DELAY_SECONDS,
+    CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
+    CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
     CONF_LANGUAGE,
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
     DATA_GATHERING_ERROR,
-    GITHUB_PROJECT_URL,
-    WEM_INVALID_PARAMETER_STATUS,
     DEFAULT_CONF_LANGUAGE_VALUE,
-    DEFAULT_MODE,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
-    MIN_SCAN_INTERVAL_SECONDS,
-    MIN_SCAN_INTERVAL_API_SECONDS,
-    FORBIDDEN_COOLDOWN_SECONDS,
+    DEFAULT_MODE,
+    DEFAULT_TIMEOUT,
     EXPERT_FORBIDDEN_COOLDOWN_SECONDS,
-    CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
+    FORBIDDEN_COOLDOWN_SECONDS,
+    GITHUB_PROJECT_URL,
+    MIN_SCAN_INTERVAL_API_SECONDS,
+    MIN_SCAN_INTERVAL_SECONDS,
     PARAMETER_REDISCOVERY_INTERVAL_SECONDS,
     PARAMETER_REDISCOVERY_RETRY_SECONDS,
-    CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
-    STATISTICS_REFRESH_INTERVAL_SECONDS,
-    SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE,
-    STATISTICS_RETRY_INTERVAL_SECONDS,
-    API_LOCK_TIMEOUT_SECONDS,
     POLL_DEADLINE_SECONDS,
-    DEFAULT_TIMEOUT,
-    API_REQUEST_TIMEOUT_SECONDS,
-    API_TRANSPORT_RETRY_DELAY_SECONDS,
-    SCRAPER_REQUEST_TIMEOUT_SECONDS,
+    SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE,
     SCRAPER_FALLBACK_DEVICE_ID,
+    SCRAPER_REQUEST_TIMEOUT_SECONDS,
+    STATISTICS_REFRESH_INTERVAL_SECONDS,
+    STATISTICS_RETRY_INTERVAL_SECONDS,
     WEB_LOGGED_IN_MARKER,
     WEB_LOGIN_FORM_MARKER,
     WEB_LOGIN_URL,
+    WEM_INVALID_PARAMETER_STATUS,
+    WemDataType,
+)
+from .exceptions import (
+    ApiBusyError,
+    AuthError,
+    ExpiredSessionError,
+    ForbiddenError,
+    ParameterChangeError,
+    PollDeadlineExceeded,
+    PortalMaintenanceError,
+    ServerError,
+    UnknownAuthError,
+    WemPortalError,
 )
 from .mapper import WemPortalDataMapper
-from .translations import friendly_name_mapper, translate
 from .mobile_protocol import (
     read_refresh_ticket,
     read_write_ack,
     status_is_success,
 )
+from .translations import friendly_name_mapper, translate
 from .utils import (
     clamped_scan_interval,
     error_state_and_detail,
@@ -84,7 +84,6 @@ from .utils import (
     looks_like_schedule,
     maintenance_notice,
 )
-
 
 # The three rows a device status read owns. Named once because they are
 # written in one place and forgotten in another when the read fails: a

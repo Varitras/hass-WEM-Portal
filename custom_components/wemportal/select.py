@@ -2,6 +2,8 @@
 Select platform for wemportal component
 """
 
+import difflib
+
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -9,7 +11,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import _LOGGER, BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
 from .entity import WemPortalEntity
-import difflib
 
 
 async def async_setup_entry(

@@ -5,8 +5,8 @@ reused/persisted.
 """
 
 from custom_components.wemportal.wemportalapi import (
-    WemPortalApi,
     SCRAPER_FALLBACK_DEVICE_ID,
+    WemPortalApi,
 )
 
 

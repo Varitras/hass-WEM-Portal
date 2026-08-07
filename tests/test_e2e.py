@@ -22,21 +22,21 @@ from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wemportal import expert_writer
-from custom_components.wemportal.exceptions import (
-    AuthError,
-    ForbiddenError,
-    ParameterWriteError,
-)
 from custom_components.wemportal.const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
-    PLATFORMS,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
     CONF_EXPERT_WRITE,
     CONF_LANGUAGE,
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
     DOMAIN,
+    PLATFORMS,
     SERVICE_SET_EXPERT_PARAMETER,
+)
+from custom_components.wemportal.exceptions import (
+    AuthError,
+    ForbiddenError,
+    ParameterWriteError,
 )
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
@@ -1097,11 +1097,11 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
     parameter, which is what the "one bad batch" rule needs to be visible at
     all - with a single id there is nothing to compare it against.
     """
+    from custom_components.wemportal import expert_controller
     from custom_components.wemportal.const import (
         CONF_EXPERT_AUTO_POLL,
         CONF_EXPERT_WRITE,
     )
-    from custom_components.wemportal import expert_controller
 
     scheduled = []
     # Patched where it is USED, not where it is defined: the controller
@@ -1443,8 +1443,9 @@ async def test_update_timeout_is_counted_and_reported(hass, monkeypatch):
     """
     import asyncio as _asyncio
 
-    from custom_components.wemportal import coordinator as coord_mod
     from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal import coordinator as coord_mod
 
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
@@ -1473,8 +1474,9 @@ async def test_a_busy_api_does_not_trigger_the_recovery_swap(hass, monkeypatch):
     poll a FRESH lock, so the two ran concurrently against a portal that was
     already too slow.
     """
-    from custom_components.wemportal.exceptions import ApiBusyError
     from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import ApiBusyError
 
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
@@ -1501,8 +1503,9 @@ async def test_a_cycle_that_ran_out_of_time_keeps_its_connection(hass, monkeypat
     the next cycle open a fresh login at the very portal that was already
     answering too slowly to finish in time.
     """
-    from custom_components.wemportal.exceptions import PollDeadlineExceeded
     from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import PollDeadlineExceeded
 
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
@@ -1534,8 +1537,9 @@ async def test_a_cycle_that_ran_out_of_time_still_counts_as_a_failure(
     failure, which would march towards a reauth prompt for credentials that
     were never in question.
     """
-    from custom_components.wemportal.exceptions import PollDeadlineExceeded
     from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import PollDeadlineExceeded
 
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
@@ -1601,6 +1605,7 @@ async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
     off left the entry retrying forever instead of asking for new credentials.
     """
     from homeassistant.exceptions import ConfigEntryAuthFailed
+
     from custom_components.wemportal import coordinator as coord_mod
     from custom_components.wemportal.const import AUTH_ERROR_ESCALATION_THRESHOLD
 
@@ -1971,6 +1976,7 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(
     from datetime import datetime
 
     from homeassistant.helpers.update_coordinator import UpdateFailed
+
     from custom_components.wemportal.exceptions import WemPortalError
 
     entry = await _setup(hass, _entry(hass))
@@ -2236,6 +2242,7 @@ async def test_the_recovery_runs_off_the_event_loop(hass, monkeypatch):
     import threading
 
     from homeassistant.helpers.update_coordinator import UpdateFailed
+
     from custom_components.wemportal.exceptions import WemPortalError
 
     entry = await _setup(hass, _entry(hass))

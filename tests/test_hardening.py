@@ -8,9 +8,8 @@ import time
 import pytest
 import requests as real_requests
 
-from custom_components.wemportal import wemportalapi
+from custom_components.wemportal import exceptions, wemportalapi
 from custom_components.wemportal.wemportalapi import WemPortalApi
-from custom_components.wemportal import exceptions
 
 
 class FakeResponse:
@@ -1855,8 +1854,9 @@ def test_the_service_value_field_does_not_impose_a_percent_range():
     curves are among them, and the data model knows half steps
     (NUMBER_STEP_HALF), which a step of 1 silently blocked. The real check is
     on write, against the option list the device itself offers."""
-    import yaml
     from pathlib import Path
+
+    import yaml
 
     p = Path(__file__).resolve().parent.parent / "custom_components" / "wemportal"
     spec = yaml.safe_load((p / "services.yaml").read_text(encoding="utf-8"))

@@ -1,8 +1,8 @@
 """Constants for the WEM Portal Integration"""
 
 import logging
-from typing import Final
 from enum import IntEnum
+from typing import Final
 
 
 class WemDataType(IntEnum):

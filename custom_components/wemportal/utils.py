@@ -3,24 +3,24 @@
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
     MAX_LENGTH_STATE_STATE,
-    UnitOfPressure,
     UnitOfEnergy,
+    UnitOfFrequency,
     UnitOfPower,
-    UnitOfVolumeFlowRate,
+    UnitOfPressure,
     UnitOfTemperature,
     UnitOfTime,
-    UnitOfFrequency,
+    UnitOfVolumeFlowRate,
 )
 
 from .const import (
-    DEFAULT_DEVICE_MODEL,
-    DEVICE_TYPE_NAMES,
-    WEB_MAINTENANCE_MARKER,
     _LOGGER,
-    MISSING_DATA_STRINGS,
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
+    DEFAULT_DEVICE_MODEL,
+    DEVICE_TYPE_NAMES,
     DOMAIN,
+    MISSING_DATA_STRINGS,
+    WEB_MAINTENANCE_MARKER,
 )
 
 

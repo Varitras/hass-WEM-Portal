@@ -7,13 +7,12 @@ import logging
 import pytest
 import requests as real_requests
 
-from custom_components.wemportal import wemportalapi
-from custom_components.wemportal.wemportalapi import WemPortalApi
-from custom_components.wemportal import exceptions
+from custom_components.wemportal import exceptions, wemportalapi
 from custom_components.wemportal.expert_writer import (
     WemPortalExpertClient,
     entityvalue_digest,
 )
+from custom_components.wemportal.wemportalapi import WemPortalApi
 
 
 def test_invalid_entityvalue_error_hides_full_id():
