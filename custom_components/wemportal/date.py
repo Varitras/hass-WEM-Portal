@@ -200,7 +200,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attr = {}
+        attributes = {}
         if self._last_updated is not None:
-            attr["Last Updated"] = self._last_updated
-        return attr
+            attributes["Last Updated"] = self._last_updated
+        return attributes

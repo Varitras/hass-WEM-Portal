@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import _LOGGER
-from .utils import fix_value_and_uom
+from .utils import fix_value_and_unit
 from .entity import WemPortalEntity
 
 # Recognized "on" values, covering both the numeric form (API path) and the
@@ -64,13 +64,15 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
         # (skip this one entity's optional metadata) instead of raising a
         # KeyError that would abort setup for every switch entity on this
         # device.
-        val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
+        value, unit = fix_value_and_unit(
+            entity_data.get("value"), entity_data.get("unit")
+        )
 
-        self._attr_unit = uom
+        self._attr_unit = unit
         # None means "no reading this cycle", which is not the same as
         # off: `None in WEM_SWITCH_ON_VALUES` is False, so a missing value
         # used to look like a real state change to any automation.
-        self._attr_is_on = None if val is None else val in WEM_SWITCH_ON_VALUES
+        self._attr_is_on = None if value is None else value in WEM_SWITCH_ON_VALUES
         self._attr_device_class = SwitchDeviceClass.SWITCH
 
         _LOGGER.debug(
@@ -121,7 +123,7 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attr = {}
+        attributes = {}
         if self._last_updated is not None:
-            attr["Last Updated"] = self._last_updated
-        return attr
+            attributes["Last Updated"] = self._last_updated
+        return attributes

@@ -27,7 +27,7 @@ from .utils import (
     maintenance_notice,
     report_unexpected_maintenance_marker,
     sanitize_value,
-    uom_to_icon,
+    unit_to_icon,
 )
 
 # Unit -> icon mapping for scraped sensors. Defined once at module level
@@ -486,7 +486,7 @@ class WemPortalScraper:
             {
                 "value": value,
                 "name": name,
-                "icon": uom_to_icon(unit),
+                "icon": unit_to_icon(unit),
                 "unit": unit,
                 "platform": "sensor",
                 "friendlyName": f"{heading} - {raw_name.lstrip('- ')}",

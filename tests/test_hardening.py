@@ -722,12 +722,15 @@ def test_portal_units_are_normalised_to_home_assistant_spelling():
     """A device class is not enough - the UNIT must match what Home Assistant
     accepts for it. The portal writes "BAR"; HA logs a warning for every
     reading unless it is "bar"."""
-    from custom_components.wemportal.utils import fix_value_and_uom, uom_to_device_class
+    from custom_components.wemportal.utils import (
+        fix_value_and_unit,
+        unit_to_device_class,
+    )
 
-    value, unit = fix_value_and_uom(2.5, "BAR")
+    value, unit = fix_value_and_unit(2.5, "BAR")
 
     assert (value, unit) == (2.5, "bar")
-    assert uom_to_device_class(unit) == "pressure"
+    assert unit_to_device_class(unit) == "pressure"
 
 
 # Trimmed from a real maintenance page. The login form stays fully present

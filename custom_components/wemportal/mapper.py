@@ -3,7 +3,7 @@
 import re
 from .translations import friendly_name_mapper, translate
 from .const import WemDataType, _LOGGER
-from .utils import looks_like_schedule, sanitize_value, uom_to_icon
+from .utils import looks_like_schedule, sanitize_value, unit_to_icon
 
 
 def get_min_max(param_id: str, data_type: int, min_val, max_val) -> tuple[float, float]:
@@ -175,7 +175,7 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
         "friendlyName": sensor["friendlyName"],
         "ParameterID": sensor["ParameterID"],
         "unit": sensor["unit"],
-        "icon": uom_to_icon(sensor["unit"]),
+        "icon": unit_to_icon(sensor["unit"]),
         "value": final_value,
         "DataType": data_type,
         "ModuleIndex": sensor["ModuleIndex"],
@@ -356,7 +356,7 @@ def _merge_into_scraped(
             "value": (previous.get("value") if api_value is None else api_value),
             "name": previous.get("name"),
             "unit": previous.get("unit", sensor.get("unit")),
-            "icon": previous.get("icon", uom_to_icon(sensor.get("unit"))),
+            "icon": previous.get("icon", unit_to_icon(sensor.get("unit"))),
             "friendlyName": previous.get("friendlyName", sensor.get("friendlyName")),
             "ParameterID": scraped_entity,
             "platform": "sensor",
@@ -378,7 +378,7 @@ def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
         "value": sensor["value"],
         "ParameterID": sensor["ParameterID"],
         "unit": final_unit,
-        "icon": uom_to_icon(final_unit),
+        "icon": unit_to_icon(final_unit),
         "friendlyName": sensor["friendlyName"],
         "platform": "sensor",
     }

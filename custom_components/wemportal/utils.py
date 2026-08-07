@@ -160,7 +160,7 @@ def sanitize_value(value_str, unit=None, name=""):
     if not isinstance(value_str, str):
         return value_str
 
-    val_lower = value_str.lower().strip()
+    value_lower = value_str.lower().strip()
 
     # An empty or whitespace-only string is missing data, not a real value.
     # The portal occasionally sends "" for a parameter (e.g. a value that
@@ -170,10 +170,10 @@ def sanitize_value(value_str, unit=None, name=""):
     # sensor as "unavailable") rather than a fabricated 0.0 - a room sensor
     # briefly without a reading should not report 0 degrees. This is the
     # same honesty the energy/power branch below already applies.
-    if val_lower == "":
+    if value_lower == "":
         return None
 
-    if val_lower in [x.strip() for x in MISSING_DATA_STRINGS]:
+    if value_lower in [x.strip() for x in MISSING_DATA_STRINGS]:
         # Missing data is missing for EVERY sensor, not just energy/power:
         # return None (HA shows the sensor "unavailable") instead of a
         # fabricated 0.0. Previously non-energy/power sensors fell through to
@@ -183,9 +183,9 @@ def sanitize_value(value_str, unit=None, name=""):
         # already returned None; now the same honesty applies to all).
         return None
 
-    if val_lower in BOOLEAN_OFF_STRINGS:
+    if value_lower in BOOLEAN_OFF_STRINGS:
         return 0.0
-    if val_lower in BOOLEAN_ON_STRINGS:
+    if value_lower in BOOLEAN_ON_STRINGS:
         return 1.0
 
     try:
@@ -232,37 +232,37 @@ def deserialize_modules(data: dict) -> dict:
     return modules
 
 
-def fix_value_and_uom(val, uom):
+def fix_value_and_unit(value, unit):
     """
     Translate WEM specific values and units of measurement to Home Assistant.
 
     This function returns:
-      * a valid Home Assistant UoM if it can be mapped
+      * a valid Home Assistant unit if it can be mapped
         (see: https://github.com/home-assistant/core/blob/dev/homeassistant/const.py)
-      * an empty string as UoM if the value is a number without any indication
+      * an empty string as unit if the value is a number without any indication
         of its unit of measurement (e.g., a counter)
-      * None as UoM if the value is a string without any indication
+      * None as unit if the value is a string without any indication
         of its unit of measurement (e.g., a status text)
     """
 
     # special case: volume flow rate
-    if isinstance(val, str) and val.endswith("m3/h"):
+    if isinstance(value, str) and value.endswith("m3/h"):
         return float(
-            val.replace("m3/h", "")
+            value.replace("m3/h", "")
         ), UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
 
     # special case: no unit of measurement
-    if uom is None:
-        return val, None
+    if unit is None:
+        return value, None
 
     # special case: empty string for unit of measurement for a number
-    if uom == "":
+    if unit == "":
         try:
-            return float(val), ""
+            return float(value), ""
         except (ValueError, TypeError):
-            return val, None
+            return value, None
 
-    uom = {
+    unit = {
         "": None,
         "w": UnitOfPower.WATT,
         "kw (w)": UnitOfPower.WATT,
@@ -277,11 +277,11 @@ def fix_value_and_uom(val, uom):
         # the entity has to be the canonical spelling too.
         "bar": UnitOfPressure.BAR,
         "m3/h": UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR,
-    }.get(uom.lower(), uom)
-    return val, uom
+    }.get(unit.lower(), unit)
+    return value, unit
 
 
-def uom_to_device_class(uom):
+def unit_to_device_class(unit):
     """Return the device_class of this unit of measurement, if any."""
 
     # see: <https://developers.home-assistant.io/docs/core/entity/sensor/#available-device-classes>
@@ -292,12 +292,12 @@ def uom_to_device_class(uom):
     # power factor (cos phi, the real/apparent power ratio). Home Assistant
     # accepted the combination, so nothing broke, but the label was simply
     # wrong. Percent sensors keep their "%" unit and MEASUREMENT state class
-    # (see uom_to_state_class), so history and long-term statistics are
+    # (see unit_to_state_class), so history and long-term statistics are
     # unaffected; only the icon and any device_class-based filtering change.
     # Matched case-insensitively: the portal delivers e.g. "BAR" where the
     # Home Assistant constant is "bar", which silently missed and left the
     # sensor without a device class (and thus without a proper icon).
-    if uom is None:
+    if unit is None:
         return None
     mapping = {
         UnitOfPressure.BAR: SensorDeviceClass.PRESSURE,
@@ -315,11 +315,11 @@ def uom_to_device_class(uom):
     # in their own casing ("kW", "°C", "K"), so lowering only the lookup
     # value would miss every one of them.
     return {str(k).strip().lower(): v for k, v in mapping.items()}.get(
-        str(uom).strip().lower()
+        str(unit).strip().lower()
     )
 
 
-def uom_to_icon(uom):
+def unit_to_icon(unit):
     """Icon for a unit - or None to let Home Assistant decide.
 
     Returning None is the important part: an explicitly set icon ALWAYS
@@ -328,15 +328,15 @@ def uom_to_icon(uom):
     sensor that had a device class (duration, power, energy, flow, ...).
     An icon is only supplied where HA has nothing to go on.
     """
-    if uom_to_device_class(uom) is not None:
+    if unit_to_device_class(unit) is not None:
         return None
     return {
         "%": "mdi:percent",
         "rpm": "mdi:fan",
-    }.get(str(uom).strip().lower() if uom else "", "mdi:flash")
+    }.get(str(unit).strip().lower() if unit else "", "mdi:flash")
 
 
-def uom_to_state_class(uom):
+def unit_to_state_class(unit):
     """Return the state class of this unit of measurement, if any."""
 
     # see: <https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes>
@@ -352,7 +352,7 @@ def uom_to_state_class(uom):
         UnitOfTime.HOURS: SensorStateClass.TOTAL_INCREASING,
         UnitOfFrequency.HERTZ: SensorStateClass.MEASUREMENT,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorStateClass.MEASUREMENT,
-    }.get(uom)  # return None if no state class is available
+    }.get(unit)  # return None if no state class is available
 
 
 # Request labels for which an unexpected maintenance marker has already been

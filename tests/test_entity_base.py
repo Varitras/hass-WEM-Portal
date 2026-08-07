@@ -75,7 +75,7 @@ def test_no_platform_redefines_a_shared_rule(name):
     a test failure anywhere else - it just silently stops following the
     shared rule, which is the state this refactor removed.
     """
-    redefined = [attr for attr in SHARED if attr in vars(PLATFORMS[name])]
+    redefined = [rule for rule in SHARED if rule in vars(PLATFORMS[name])]
     if name in ALLOWED_OVERRIDES:
         assert redefined, (
             f"{name} no longer overrides {SHARED} - if that is intended, drop "

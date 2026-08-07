@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers import entity_registry as er
 from .const import _LOGGER, CONF_EXPERT_WRITE, DOMAIN
-from .utils import fix_value_and_uom, uom_to_device_class
+from .utils import fix_value_and_unit, unit_to_device_class
 from .entity import WemPortalEntity
 
 
@@ -98,7 +98,7 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
 class WemPortalNumber(WemPortalEntity, NumberEntity):
     """Representation of a WEM Portal number."""
 
-    def _validated_native_value(self, val):
+    def _validated_native_value(self, value):
         """Return a Home Assistant-safe native value.
 
         Unlike sensor.py (where a value can legitimately be text when no
@@ -115,17 +115,17 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         # current - so warning about it reported the integration's own
         # bookkeeping as a fault. Same rule sensor.py states for its own
         # readings. A value that is present but unusable still warns below.
-        if val is None:
+        if value is None:
             _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
             return None
 
-        if isinstance(val, str):
-            val = val.strip()
-            if val == "":
+        if isinstance(value, str):
+            value = value.strip()
+            if value == "":
                 _LOGGER.warning(
                     'Invalid number value for "%s": %r -> set to None',
                     self._attr_name,
-                    val,
+                    value,
                 )
                 return None
 
@@ -133,12 +133,12 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
             # Return the CONVERTED float: NumberEntity.native_value must be
             # numeric, and a numeric string like "42.5" should not leak
             # through as a str just because it parses.
-            return float(val)
+            return float(value)
         except (TypeError, ValueError):
             _LOGGER.warning(
                 'Invalid numeric number value for "%s": %r -> set to None',
                 self._attr_name,
-                val,
+                value,
             )
             return None
 
@@ -153,10 +153,12 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         # (skip this one entity's optional metadata) instead of raising a
         # KeyError that would abort setup for every number entity on this
         # device.
-        val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
+        value, unit = fix_value_and_unit(
+            entity_data.get("value"), entity_data.get("unit")
+        )
 
-        self._attr_native_unit_of_measurement = uom
-        self._attr_native_value = self._validated_native_value(val)
+        self._attr_native_unit_of_measurement = unit
+        self._attr_native_value = self._validated_native_value(value)
         self._attr_native_min_value = entity_data.get("min_value", 0.0)
         self._attr_native_max_value = entity_data.get("max_value", 100.0)
         self._attr_native_step = entity_data.get("step", 1)
@@ -180,15 +182,15 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
 
         try:
             entity_data = self.coordinator.data[self._device_id][self._data_key]
-            val, uom = fix_value_and_uom(
+            value, unit = fix_value_and_unit(
                 entity_data.get("value"), entity_data.get("unit")
             )
 
-            self._attr_native_value = self._validated_native_value(val)
+            self._attr_native_value = self._validated_native_value(value)
 
-            # set uom if it references a valid non-trivial unit of measurement
-            if uom not in (None, ""):
-                self._attr_native_unit_of_measurement = uom
+            # set unit if it references a valid non-trivial unit of measurement
+            if unit not in (None, ""):
+                self._attr_native_unit_of_measurement = unit
 
             _LOGGER.debug(
                 'Update number: %s: "%s" [%s]',
@@ -207,12 +209,12 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
     @property
     def device_class(self):
         """Return the device class of the sensor."""
-        return uom_to_device_class(self._attr_native_unit_of_measurement)
+        return unit_to_device_class(self._attr_native_unit_of_measurement)
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attr = {}
+        attributes = {}
         if self._last_updated is not None:
-            attr["Last Updated"] = self._last_updated
-        return attr
+            attributes["Last Updated"] = self._last_updated
+        return attributes

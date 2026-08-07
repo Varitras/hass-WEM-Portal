@@ -1318,8 +1318,8 @@
   {
     "label": "faults: dropping the attribute on the way to the entity must be noticed",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "            if \"Errors\" in entity_data:\n                attr[\"Errors\"] = entity_data[\"Errors\"]",
-    "new": "            if False:\n                attr[\"Errors\"] = entity_data[\"Errors\"]",
+    "old": "            if \"Errors\" in entity_data:\n                attributes[\"Errors\"] = entity_data[\"Errors\"]",
+    "new": "            if False:\n                attributes[\"Errors\"] = entity_data[\"Errors\"]",
     "tests": "the_error_attribute_reaches_the_entity"
   },
   {
@@ -1500,8 +1500,8 @@
   {
     "label": "select: a missing reading reported as a value outside the options",
     "path": "custom_components/wemportal/select.py",
-    "old": "        if val is None:\n            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._attr_name)\n            return None\n\n        if val in self._options_names:",
-    "new": "        if val in self._options_names:",
+    "old": "        if value is None:\n            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._attr_name)\n            return None\n\n        if value in self._options_names:",
+    "new": "        if value in self._options_names:",
     "tests": "a_missing_reading_is_not_reported_as_a_fault"
   },
   {

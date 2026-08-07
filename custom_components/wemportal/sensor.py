@@ -17,9 +17,9 @@ from .const import _LOGGER, GITHUB_PROJECT_URL
 from .utils import (
     device_is_reachable,
     device_model,
-    fix_value_and_uom,
-    uom_to_device_class,
-    uom_to_state_class,
+    fix_value_and_unit,
+    unit_to_device_class,
+    unit_to_state_class,
     build_device_info,
 )
 from .entity import WemPortalEntity
@@ -350,23 +350,23 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             return {}
         return row if isinstance(row, dict) else {}
 
-    def _validated_native_value(self, val, uom):
+    def _validated_native_value(self, value, unit):
         """Return a Home Assistant-safe native value."""
-        effective_uom = uom
-        if effective_uom in (None, ""):
-            effective_uom = getattr(self, "_attr_native_unit_of_measurement", None)
+        effective_unit = unit
+        if effective_unit in (None, ""):
+            effective_unit = getattr(self, "_attr_native_unit_of_measurement", None)
         # A sensor is "numeric" if it has a real unit OR if it's tagged
         # with a device_class/state_class that requires a numeric state
         # (Home Assistant enforces this - see the entity's own state
         # property). Checking device_class/state_class too, not just
-        # uom, closes a gap where fix_value_and_uom() can legitimately
-        # return an empty/None uom for a given reading (e.g. a boolean
+        # unit, closes a gap where fix_value_and_unit() can legitimately
+        # return an empty/None unit for a given reading (e.g. a boolean
         # placeholder string with no unit attached) even though the
         # entity itself is declared as a numeric power/energy/etc.
         # sensor - which would otherwise let a non-numeric string like
         # "Off" slip through uncaught and crash entity setup entirely.
         is_numeric_sensor = (
-            effective_uom not in (None, "")
+            effective_unit not in (None, "")
             or getattr(self, "_attr_device_class", None) is not None
             or getattr(self, "_attr_state_class", None) is not None
         )
@@ -385,18 +385,18 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # below, i.e. a failed cycle or an unreachable device. Saying
         # "unavailable" here sent a reader looking for a fault in the wrong
         # half of the integration.
-        if val is None:
+        if value is None:
             _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
             return None
 
-        if isinstance(val, str):
-            val = val.strip()
-            if val == "":
+        if isinstance(value, str):
+            value = value.strip()
+            if value == "":
                 _LOGGER.debug(
                     'Empty value for "%s" this cycle -> unknown', self._attr_name
                 )
                 return None
-            if val.startswith("{"):
+            if value.startswith("{"):
                 summary = _schedule_summary(self._current_row())
                 # Home Assistant refuses a state longer than this, and a
                 # refused state is no reading at all. Seven days that differ
@@ -410,12 +410,12 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
 
         if is_numeric_sensor:
             try:
-                float(val)
+                float(value)
             except (TypeError, ValueError):
-                _report_unreadable_value(self._attr_name, val)
+                _report_unreadable_value(self._attr_name, value)
                 return None
 
-        return val
+        return value
 
     def __init__(
         self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data
@@ -425,16 +425,18 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
 
         # .get() like the other platforms: one malformed data point must not
         # abort setup for every sensor on this device with a KeyError.
-        val, uom = fix_value_and_uom(entity_data.get("value"), entity_data.get("unit"))
+        value, unit = fix_value_and_unit(
+            entity_data.get("value"), entity_data.get("unit")
+        )
 
-        self._attr_native_unit_of_measurement = uom
+        self._attr_native_unit_of_measurement = unit
         # Set device_class/state_class BEFORE validating the native value:
-        # _validated_native_value() uses them (in addition to uom) to
+        # _validated_native_value() uses them (in addition to unit) to
         # decide whether a numeric value is required, so they must already
         # be in place the first time it runs, not just on later updates.
         self._attr_device_class = entity_data.get("device_class")
         self._attr_state_class = entity_data.get("state_class")
-        self._attr_native_value = self._validated_native_value(val, uom)
+        self._attr_native_value = self._validated_native_value(value, unit)
 
         _LOGGER.debug(
             'Init sensor: %s: "%s" [%s]',
@@ -503,14 +505,14 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
 
         try:
             entity_data = self.coordinator.data[self._device_id][self._data_key]
-            val, uom = fix_value_and_uom(
+            value, unit = fix_value_and_unit(
                 entity_data.get("value"), entity_data.get("unit")
             )
-            self._attr_native_value = self._validated_native_value(val, uom)
+            self._attr_native_value = self._validated_native_value(value, unit)
 
-            # set uom if it references a valid non-trivial unit of measurement
-            if uom not in (None, ""):
-                self._attr_native_unit_of_measurement = uom
+            # set unit if it references a valid non-trivial unit of measurement
+            if unit not in (None, ""):
+                self._attr_native_unit_of_measurement = unit
 
             _LOGGER.debug(
                 'Update sensor: %s: "%s" [%s]',
@@ -541,41 +543,41 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         """Return the device class of the sensor."""
         if self._attr_device_class is not None:
             return self._attr_device_class
-        return uom_to_device_class(self._attr_native_unit_of_measurement)
+        return unit_to_device_class(self._attr_native_unit_of_measurement)
 
     @property
     def state_class(self):
         """Return the state class of the sensor."""
         if self._attr_state_class is not None:
             return self._attr_state_class
-        return uom_to_state_class(self._attr_native_unit_of_measurement)
+        return unit_to_state_class(self._attr_native_unit_of_measurement)
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attr = {}
+        attributes = {}
         if self._last_updated is not None:
-            attr["Last Updated"] = self._last_updated
+            attributes["Last Updated"] = self._last_updated
 
         try:
             entity_data = self.coordinator.data[self._device_id][self._data_key]
             if "CircuitTimesDay" in entity_data:
-                attr["CircuitTimesDay"] = entity_data["CircuitTimesDay"]
+                attributes["CircuitTimesDay"] = entity_data["CircuitTimesDay"]
             if "PossibleValues" in entity_data:
-                attr["PossibleValues"] = entity_data["PossibleValues"]
+                attributes["PossibleValues"] = entity_data["PossibleValues"]
             # Every active fault, whatever the state had room for. The state
             # is capped by Home Assistant and says how many it dropped; this
             # is where the dropped ones are.
             if "Errors" in entity_data:
-                attr["Errors"] = entity_data["Errors"]
+                attributes["Errors"] = entity_data["Errors"]
             if isinstance(entity_data.get("value"), str) and entity_data[
                 "value"
             ].startswith("{"):
-                attr["Raw_JSON"] = entity_data["value"]
+                attributes["Raw_JSON"] = entity_data["value"]
                 schedule = _readable_schedule(entity_data)
                 if schedule:
-                    attr["Schedule"] = schedule
+                    attributes["Schedule"] = schedule
         except KeyError:
             pass
 
-        return attr
+        return attributes

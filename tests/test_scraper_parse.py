@@ -444,13 +444,13 @@ def test_units_without_a_device_class_keep_a_useful_icon(scraper):
     """Percent and rpm have no device class in Home Assistant, so an explicit
     icon is the only way they get a meaningful one - just not a lightning
     bolt, which is what every non-Celsius unit used to receive."""
-    from custom_components.wemportal.utils import uom_to_icon
+    from custom_components.wemportal.utils import unit_to_icon
 
-    assert uom_to_icon("%") == "mdi:percent"
-    assert uom_to_icon("rpm") == "mdi:fan"
+    assert unit_to_icon("%") == "mdi:percent"
+    assert unit_to_icon("rpm") == "mdi:fan"
     # ...while anything Home Assistant can classify gets no icon from us.
     for unit in ("BAR", "kWh", "kW", "h", "m³/h", "°C", "K", "W"):
-        assert uom_to_icon(unit) is None, unit
+        assert unit_to_icon(unit) is None, unit
 
 
 # --- session reuse: what counts as "the expert page" -------------------

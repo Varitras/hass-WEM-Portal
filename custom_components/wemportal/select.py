@@ -40,7 +40,7 @@ async def async_setup_entry(
 class WemPortalSelect(WemPortalEntity, SelectEntity):
     """Representation of a WEM Portal Sensor."""
 
-    def _match_boolean_synonym(self, val):
+    def _match_boolean_synonym(self, value):
         """Match common German/English on-off synonyms across languages.
 
         The WEM Portal API can return a live value ("Off"/"On") in a
@@ -54,16 +54,16 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
         logical state and maps to whichever one is actually present in
         this entity's own option list.
 
-        Returns the matching option name, or None if `val` isn't a
+        Returns the matching option name, or None if `value` isn't a
         recognized on/off synonym at all (so the caller can fall through
         to fuzzy matching for genuinely different kinds of mismatches).
         """
-        if not isinstance(val, str):
+        if not isinstance(value, str):
             return None
-        val_lower = val.strip().lower()
-        if val_lower in BOOLEAN_OFF_STRINGS:
+        value_lower = value.strip().lower()
+        if value_lower in BOOLEAN_OFF_STRINGS:
             synonyms = BOOLEAN_OFF_STRINGS
-        elif val_lower in BOOLEAN_ON_STRINGS:
+        elif value_lower in BOOLEAN_ON_STRINGS:
             synonyms = BOOLEAN_ON_STRINGS
         else:
             return None
@@ -72,7 +72,7 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
                 return option_name
         return None
 
-    def _resolve_option(self, val):
+    def _resolve_option(self, value):
         """Resolve a raw coordinator value to one of this select's option names.
 
         Tries, in order: exact match against option names, exact match
@@ -93,31 +93,31 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
         # reported the integration's own bookkeeping as a fault, with all 49
         # option names attached to say "no value". Same rule sensor.py states
         # for its own readings. Genuinely unusable values still raise below.
-        if val is None:
+        if value is None:
             _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
             return None
 
-        if val in self._options_names:
-            return val
-        if val in self._options:
-            return self._options_names[self._options.index(val)]
+        if value in self._options_names:
+            return value
+        if value in self._options:
+            return self._options_names[self._options.index(value)]
         try:
-            return self._options_names[self._options.index(int(val))]
+            return self._options_names[self._options.index(int(value))]
         except (ValueError, TypeError):
             pass
 
-        synonym_match = self._match_boolean_synonym(val)
+        synonym_match = self._match_boolean_synonym(value)
         if synonym_match is not None:
             return synonym_match
 
-        if val is not None and self._options_names:
+        if value is not None and self._options_names:
             # Last-resort fuzzy match against the option names. Uses stdlib
             # difflib (no external dependency); its 0.0-1.0 ratio cutoff of
             # 0.75 mirrors the previous fuzzywuzzy score threshold of 75.
             # Only string option names can be compared, so non-str options
             # are filtered out first.
             str_names = [n for n in self._options_names if isinstance(n, str)]
-            matches = difflib.get_close_matches(str(val), str_names, n=1, cutoff=0.75)
+            matches = difflib.get_close_matches(str(value), str_names, n=1, cutoff=0.75)
             if matches:
                 return matches[0]
         raise ValueError
@@ -163,18 +163,18 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attr = {}
+        attributes = {}
         if self._last_updated is not None:
-            attr["Last Updated"] = self._last_updated
-        return attr
+            attributes["Last Updated"] = self._last_updated
+        return attributes
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
 
         try:
-            val = self.coordinator.data[self._device_id][self._data_key]["value"]
-            self._attr_current_option = self._resolve_option(val)
+            value = self.coordinator.data[self._device_id][self._data_key]["value"]
+            self._attr_current_option = self._resolve_option(value)
         except KeyError:
             self._attr_current_option = None
             _LOGGER.warning("Can't find %s", self._attr_unique_id)
@@ -183,7 +183,7 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
             self._attr_current_option = None
             _LOGGER.warning(
                 "Value %s not found in options %s (names: %s) for select %s",
-                val,
+                value,
                 self._options,
                 self._options_names,
                 self._attr_name,
