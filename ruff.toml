@@ -1,11 +1,5 @@
 # Records what Ruff is already doing here, so a later version cannot quietly
 # decide otherwise and reflow the whole tree unasked.
-#
-# Deliberately no [lint] section. The default rule selection (pyflakes plus a
-# handful of pycodestyle errors) is what this repository has been checked
-# against all along, and widening it would land on inherited upstream code
-# rather than on anything written here - a separate decision, not a side
-# effect of writing a config file.
 
 # The floor the integration supports, not the newest it runs on: hacs.json
 # declares Home Assistant 2024.12, which requires Python 3.12. Without this,
@@ -15,3 +9,31 @@ target-version = "py312"
 # Ruff's own default, written down because the formatting in the tree depends
 # on it.
 line-length = 88
+
+[lint]
+# Pyflakes plus a handful of pycodestyle errors: the selection this repository
+# has been checked against all along. Written down rather than left to the
+# default, because THE DEFAULT MOVED.
+#
+# Until Ruff 0.16 this same set was what you got with no [lint] section, and an
+# earlier version of this file said so and left the section out. 0.16 enables
+# nine further rule families by default - isort, flake8-simplify,
+# flake8-bandit, flake8-datetimez, refurb, pylint and more - which took this
+# unchanged tree from zero findings to 93 the moment a developer's local Ruff
+# was upgraded, while CI stayed silent on an older pin.
+#
+# `--isolated` ignores this file and shows what the current default would say:
+#     ruff check custom_components tests
+#     ruff check custom_components tests --isolated
+#
+# Widening the selection stays a decision to be made on its own terms. What
+# this section prevents is the widening arriving as a side effect of
+# `pip install -U ruff`.
+#
+# BLE001 is in the list on purpose, and it is the one rule here that is not
+# part of that historical set. Every deliberate broad `except Exception` in
+# this package carries a `# noqa: BLE001`, so the rule costs nothing today and
+# catches the next one written without a reason. Verify that the markers are
+# doing the work and not just decorating:
+#     ruff check custom_components tests --ignore-noqa   -> 34 BLE001
+select = ["E4", "E7", "E9", "F", "BLE001"]
