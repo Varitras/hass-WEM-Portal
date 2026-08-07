@@ -32,14 +32,14 @@ def test_valid_entityvalue_passes_unchanged():
     WemPortalExpertClient._validate_entityvalue("3A7F91C2E0B48D5619F2A0C7B4E83D105C2A")
 
 
-def test_ev_digest_is_stable_and_opaque():
-    ev = "3A7F91C2E0B48D5619F2A0C7B4E83D105C2A"
-    d1 = entityvalue_digest(ev)
-    assert d1 == entityvalue_digest(ev)
-    assert len(d1) == 16
-    assert d1 not in ev and ev not in d1
-    assert entityvalue_digest(f"  {ev}  ") == d1
-    assert entityvalue_digest(ev[:-1] + "B") != d1
+def test_the_entityvalue_digest_is_stable_and_opaque():
+    entityvalue = "3A7F91C2E0B48D5619F2A0C7B4E83D105C2A"
+    digest = entityvalue_digest(entityvalue)
+    assert digest == entityvalue_digest(entityvalue)
+    assert len(digest) == 16
+    assert digest not in entityvalue and entityvalue not in digest
+    assert entityvalue_digest(f"  {entityvalue}  ") == digest
+    assert entityvalue_digest(entityvalue[:-1] + "B") != digest
 
 
 class FakeResponse:
@@ -66,7 +66,7 @@ class FakeSession:
     def clear(self):
         pass
 
-    def update(self, *_a, **_k):
+    def update(self, *_args, **_kwargs):
         pass
 
     def post(self, url, **kwargs):

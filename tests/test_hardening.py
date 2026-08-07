@@ -50,7 +50,7 @@ class RecordingSession:
     def clear(self):
         pass
 
-    def update(self, *_a, **_k):
+    def update(self, *_args, **_kwargs):
         pass
 
     def post(self, url, **kwargs):
@@ -107,7 +107,7 @@ def test_get_devices_failure_keeps_cache():
     """A failing device-list call must not wipe the discovery cache."""
     api = _api(cached_modules=CACHED_MODULES, existing_data={"1234": {"k": "v"}})
 
-    def boom(*_a, **_k):
+    def boom(*_args, **_kwargs):
         raise exceptions.WemPortalError("403 etc.")
 
     api.make_api_call = boom
@@ -128,7 +128,7 @@ def test_get_devices_success_carries_cached_parameters():
             }
         ]
     }
-    api.make_api_call = lambda *a, **k: FakeResponse(device_json)
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(device_json)
     api.get_devices()
     assert api.modules["1234"][(0, 1)]["parameters"] == {"P1": {"ParameterID": "P1"}}
     assert api.data["1234"]["ConnectionStatus"] == 0
@@ -142,7 +142,7 @@ def test_get_statistics_accepts_int_device_ids():
     # scraper-only devices (no API modules, e.g. the "0000" placeholder).
     api.modules = {"1234": {}}
     calls = []
-    api.make_api_call = lambda url, **k: (
+    api.make_api_call = lambda url, **_kwargs: (
         calls.append(url) or FakeResponse({"GroupTypeDescriptions": []})
     )
     api.last_statistics_fetch = 0.0
@@ -224,7 +224,7 @@ def _statistics_api(call_recorder, fail=False):
     api.modules = {"1234": {}}
     api.last_statistics_fetch = 0.0
 
-    def make_api_call(url, **_k):
+    def make_api_call(url, **_kwargs):
         call_recorder.append(url)
         if fail:
             raise exceptions.WemPortalError("portal unavailable")
@@ -374,7 +374,7 @@ def test_get_data_accepts_int_device_ids():
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
-    api.make_api_call = lambda *a, **k: FakeResponse(
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
     )
     api.get_data(enabled_devices=[1234])
@@ -391,7 +391,7 @@ def test_empty_enabled_devices_polls_nothing():
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
-    api.make_api_call = lambda url, **k: (
+    api.make_api_call = lambda url, **_kwargs: (
         calls.append(url)
         or FakeResponse(
             {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
@@ -413,7 +413,7 @@ def test_none_enabled_devices_still_polls_everything():
     api.modules = {"1234": {}}
     # Online, so this stays a test about the filter and not about the
     # all-devices-offline case.
-    api.make_api_call = lambda url, **k: (
+    api.make_api_call = lambda url, **_kwargs: (
         calls.append(url)
         or FakeResponse(
             {
@@ -549,7 +549,7 @@ def test_api_lock_is_released_after_a_failing_poll():
     happen on the error path, or the next cycle blocks forever."""
     api = _api()
 
-    def boom(*_a, **_k):
+    def boom(*_args, **_kwargs):
         raise exceptions.WemPortalError("portal down")
 
     api._fetch_data = boom
@@ -629,7 +629,7 @@ def test_the_deadline_counts_the_wait_for_the_lock(monkeypatch):
 
     seen = {}
 
-    def record(*_a, **_k):
+    def record(*_args, **_kwargs):
         seen["deadline"] = api._deadline
         return {}
 
@@ -648,7 +648,7 @@ def test_the_deadline_is_cleared_after_a_failing_poll():
     would inherit a deadline that expired long ago and refuse to run."""
     api = _api()
 
-    def boom(*_a, **_k):
+    def boom(*_args, **_kwargs):
         raise exceptions.WemPortalError("portal down")
 
     api._fetch_data = boom
@@ -682,13 +682,13 @@ def _web_api(mode, scraped=None):
         return scraped if scraped is not None else [{"cookie": {}}]
 
     api.fetch_webscraping_data = fake_scrape
-    api._merge_webscraping_data = lambda *_a, **_k: None
-    api.get_devices = lambda *_a, **_k: None
-    api.get_data = lambda *_a, **_k: None
-    api.get_statistics = lambda *_a, **_k: None
-    api.get_parameters = lambda *_a, **_k: None
-    api.api_login = lambda *_a, **_k: None
-    api.web_login = lambda *_a, **_k: None
+    api._merge_webscraping_data = lambda *_args, **_kwargs: None
+    api.get_devices = lambda *_args, **_kwargs: None
+    api.get_data = lambda *_args, **_kwargs: None
+    api.get_statistics = lambda *_args, **_kwargs: None
+    api.get_parameters = lambda *_args, **_kwargs: None
+    api.api_login = lambda *_args, **_kwargs: None
+    api.web_login = lambda *_args, **_kwargs: None
     api._devices_fetched_this_session = True
     api.modules = {"0000": {}}
     return api
@@ -898,10 +898,10 @@ def test_web_login_reports_maintenance_without_sending_credentials(monkeypatch):
     class _Session:
         cookies = {}
 
-        def get(self, *_a, **_k):
+        def get(self, *_args, **_kwargs):
             return FakeResponse_html(MAINTENANCE_PAGE)
 
-        def post(self, *_a, **_k):
+        def post(self, *_args, **_kwargs):
             posted.append(True)
             return FakeResponse_html("")
 
@@ -921,7 +921,7 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
     class _Session:
         cookies = {}
 
-        def get(self, *_a, **_k):
+        def get(self, *_args, **_kwargs):
             # A real login page by default. These tests are about the answer
             # to the POST, and an empty body here is not a shortcut but a
             # different case entirely - the login now refuses to send
@@ -932,7 +932,7 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
                 else FakeResponse_html(NORMAL_LOGIN_PAGE)
             )
 
-        def post(self, *_a, **_k):
+        def post(self, *_args, **_kwargs):
             return post_answer
 
     monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
@@ -953,10 +953,10 @@ def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
     class _Session:
         cookies = {}
 
-        def get(self, *_a, **_k):
+        def get(self, *_args, **_kwargs):
             return FakeResponse_html("")
 
-        def post(self, *_a, **_k):
+        def post(self, *_args, **_kwargs):
             posted.append(True)
             return FakeResponse_html("")
 
@@ -982,10 +982,10 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
     class _Session:
         cookies = {}
 
-        def get(self, *_a, **_k):
+        def get(self, *_args, **_kwargs):
             return _Refused("forbidden", status_code=403)
 
-        def post(self, *_a, **_k):
+        def post(self, *_args, **_kwargs):
             raise AssertionError("credentials were sent to a refusing portal")
 
     monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
@@ -1043,10 +1043,10 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
     class _Session:
         cookies = {}
 
-        def get(self, *_a, **_k):
+        def get(self, *_args, **_kwargs):
             raise AssertionError("a request was sent during the cooldown")
 
-        def post(self, *_a, **_k):
+        def post(self, *_args, **_kwargs):
             raise AssertionError("a request was sent during the cooldown")
 
     monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
@@ -1086,10 +1086,10 @@ def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
     class _Session:
         cookies = {}
 
-        def get(self, *_a, **_k):
+        def get(self, *_args, **_kwargs):
             return FakeResponse_html(FORM_PAGE)
 
-        def post(self, _url, data=None, **_k):
+        def post(self, _url, data=None, **_kwargs):
             posted.update(data)
             return FakeResponse_html("<html>ctl00_btnLogout</html>")
 
@@ -1141,7 +1141,7 @@ def test_data_read_carries_the_job_id_from_refresh():
     api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
     calls = []
 
-    def make_api_call(url, data=None, **_k):
+    def make_api_call(url, data=None, **_kwargs):
         calls.append((url, data))
         if url == wemportalapi.API_REFRESH_URL:
             return FakeResponse({"Status": 0, "JobID": 100000001})
@@ -1150,10 +1150,16 @@ def test_data_read_carries_the_job_id_from_refresh():
     api.make_api_call = make_api_call
     api._fetch_parameter_values("1234")
 
-    read = next(d for url, d in calls if url == wemportalapi.API_DATA_ACCESS_READ_URL)
+    read = next(
+        payload
+        for url, payload in calls
+        if url == wemportalapi.API_DATA_ACCESS_READ_URL
+    )
     assert read["JobID"] == 100000001
     # The refresh itself must NOT carry a JobID - it is what creates one.
-    refresh = next(d for url, d in calls if url == wemportalapi.API_REFRESH_URL)
+    refresh = next(
+        payload for url, payload in calls if url == wemportalapi.API_REFRESH_URL
+    )
     assert "JobID" not in refresh
 
 
@@ -1164,14 +1170,18 @@ def test_data_read_omits_the_job_id_when_refresh_returns_none():
     api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
     calls = []
 
-    def make_api_call(url, data=None, **_k):
+    def make_api_call(url, data=None, **_kwargs):
         calls.append((url, data))
         return FakeResponse({"Modules": []} if "Read" in url else {"Status": 0})
 
     api.make_api_call = make_api_call
     api._fetch_parameter_values("1234")
 
-    read = next(d for url, d in calls if url == wemportalapi.API_DATA_ACCESS_READ_URL)
+    read = next(
+        payload
+        for url, payload in calls
+        if url == wemportalapi.API_DATA_ACCESS_READ_URL
+    )
     assert "JobID" not in read
 
 
@@ -1231,7 +1241,7 @@ def test_device_type_is_recorded_but_kept_out_of_the_entity_data():
             }
         ]
     }
-    api.make_api_call = lambda *a, **k: FakeResponse(device_json)
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(device_json)
 
     api.get_devices()
 
@@ -1263,8 +1273,8 @@ def test_web_mode_validation_does_not_accept_a_config_that_cannot_poll(monkeypat
 
     class _Hass:
         @staticmethod
-        async def async_add_executor_job(func, *args):
-            return func(*args)
+        async def async_add_executor_job(function, *args):
+            return function(*args)
 
     data = {"username": "user@example.org", "password": "secret", CONF_MODE: "both"}
     with pytest.raises(config_flow.InvalidAuth):
@@ -1290,8 +1300,8 @@ def _validate_with(monkeypatch, error):
 
     class _Hass:
         @staticmethod
-        async def async_add_executor_job(func, *args):
-            return func(*args)
+        async def async_add_executor_job(function, *args):
+            return function(*args)
 
     data = {"username": "user@example.org", "password": "secret", CONF_MODE: "api"}
     return asyncio.run(config_flow.validate_input(_Hass(), data))
@@ -1344,7 +1354,7 @@ def _offline_api(status):
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
-    api.make_api_call = lambda *a, **k: FakeResponse(
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"ConnectionStatus": status, "Errors": [], "GroupTypeDescriptions": []}
     )
     return api
@@ -1356,7 +1366,7 @@ def _offline_api(status):
 def _api_with_a_read_status():
     """An api that has read its device status once, successfully."""
     api = _offline_api(0)
-    api.make_api_call = lambda *a, **k: FakeResponse(
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"ConnectionStatus": 0, "Errors": [], "GroupTypeDescriptions": []}
     )
     api._fetch_device_status("1234")
@@ -1413,7 +1423,7 @@ def test_one_fault_too_long_on_its_own_is_cut_and_says_so():
 
 def test_the_full_fault_list_reaches_the_attribute():
     api = _api_with_a_read_status()
-    api.make_api_call = lambda *a, **k: FakeResponse(
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {
             "ConnectionStatus": 0,
             "Errors": ["E12 one", "E13 two"],
@@ -1460,7 +1470,7 @@ def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
     api = _api_with_a_read_status()
     assert api.data["1234"]["1234-HasErrors"]["value"] == "No"
 
-    def refuse(*_a, **_k):
+    def refuse(*_args, **_kwargs):
         raise exceptions.WemPortalError("portal unavailable")
 
     api.make_api_call = refuse
@@ -1478,7 +1488,7 @@ def test_a_status_nobody_could_read_leaves_the_entities_available():
 
     api = _api_with_a_read_status()
 
-    def refuse(*_a, **_k):
+    def refuse(*_args, **_kwargs):
         raise exceptions.WemPortalError("portal unavailable")
 
     api.make_api_call = refuse
@@ -1493,7 +1503,7 @@ def test_a_failed_status_read_does_not_stop_parameter_discovery():
     missed request into an installation with no parameters at all."""
     api = _api_with_a_read_status()
 
-    def refuse(*_a, **_k):
+    def refuse(*_args, **_kwargs):
         raise exceptions.WemPortalError("portal unavailable")
 
     api.make_api_call = refuse
@@ -1538,13 +1548,15 @@ def test_the_offline_warning_is_logged_once_per_change(caplog):
         for _ in range(3):
             api.get_data(enabled_devices=["1234"])
         warnings = [
-            r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+            record.getMessage()
+            for record in caplog.records
+            if record.levelno == logging.WARNING
         ]
         assert len(warnings) == 1, f"repeated every cycle: {warnings}"
         assert "offline" in warnings[0]
 
         caplog.clear()
-        api.make_api_call = lambda *a, **k: FakeResponse(
+        api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
             {
                 "ConnectionStatus": 0,
                 "Errors": [],
@@ -1555,9 +1567,9 @@ def test_the_offline_warning_is_logged_once_per_change(caplog):
         api.get_data(enabled_devices=["1234"])
 
     assert any(
-        "back online" in r.getMessage()
-        for r in caplog.records
-        if r.levelno == logging.INFO
+        "back online" in record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.INFO
     ), "recovery went unmentioned"
 
 
@@ -1583,8 +1595,8 @@ def _api_with_one_pollable_device():
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": _pollable_module()}
-    api.get_statistics = lambda *a, **k: None
-    api._fetch_circuit_times = lambda *a, **k: None
+    api.get_statistics = lambda *_args, **_kwargs: None
+    api._fetch_circuit_times = lambda *_args, **_kwargs: None
     return api
 
 
@@ -1598,7 +1610,7 @@ def test_a_failed_cycle_says_why_it_failed():
     """
     api = _api_with_one_pollable_device()
 
-    def make_api_call(url, **_k):
+    def make_api_call(url, **_kwargs):
         raise exceptions.WemPortalError("Read timed out. (read timeout=12)")
 
     api.make_api_call = make_api_call
@@ -1617,7 +1629,7 @@ def test_every_failing_device_is_named_not_just_the_first():
     api.data["5678"] = {}
     api.modules["5678"] = _pollable_module()
 
-    def make_api_call(url, data=None, **_k):
+    def make_api_call(url, data=None, **_kwargs):
         raise exceptions.WemPortalError(f"device {data['DeviceID']} is unhappy")
 
     api.make_api_call = make_api_call
@@ -1646,7 +1658,7 @@ def test_one_device_that_worked_still_keeps_the_cycle_green():
         "Modules": [{"ModuleIndex": 0, "ModuleType": 1, "Values": []}],
     }
 
-    def make_api_call(url, data=None, **_k):
+    def make_api_call(url, data=None, **_kwargs):
         if data.get("DeviceID") == 5678:
             raise exceptions.WemPortalError("this one is unhappy")
         return FakeResponse(healthy)
@@ -1666,7 +1678,7 @@ def _switch(value):
         data={"1234": {}},
         api=_api(),
         last_update_success=True,
-        async_add_listener=lambda *_a, **_k: None,
+        async_add_listener=lambda *_args, **_kwargs: None,
     )
     entry = types.SimpleNamespace(entry_id="e1")
     return WemPortalSwitch(
@@ -1754,7 +1766,7 @@ def test_a_device_without_a_status_stays_reachable():
 
 
 def _scraped(*keys):
-    return {k: {"value": 1, "unit": "°C", "platform": "sensor"} for k in keys}
+    return {key: {"value": 1, "unit": "°C", "platform": "sensor"} for key in keys}
 
 
 def test_a_relabelled_scraper_row_is_reported(caplog):
@@ -1951,7 +1963,7 @@ def test_a_returning_device_becomes_eligible_for_parameter_discovery():
     api = _api()
     api.data = {"1234": {"ConnectionStatus": 50}}
     api.modules = {"1234": {}}
-    api.make_api_call = lambda *a, **k: FakeResponse(
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"ConnectionStatus": 0, "Errors": [], "GroupTypeDescriptions": []}
     )
 
@@ -1972,7 +1984,7 @@ def test_an_empty_value_read_is_not_a_refreshed_device():
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
-    api.make_api_call = lambda *a, **k: FakeResponse({"Modules": []})
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse({"Modules": []})
 
     assert api._fetch_parameter_values("1234") is not None
 
@@ -1983,7 +1995,7 @@ def test_a_device_without_modules_is_not_turned_into_a_failure():
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
-    api.make_api_call = lambda *a, **k: FakeResponse({"Modules": []})
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse({"Modules": []})
 
     assert api._fetch_parameter_values("1234") is None
 
@@ -2004,7 +2016,7 @@ def test_a_write_answered_with_a_page_is_not_a_completed_write():
     """Reported as success, this told the user their heating parameter had
     been changed when it had not."""
     api = _api()
-    api.make_api_call = lambda *a, **k: _BodyResponse(
+    api.make_api_call = lambda *_args, **_kwargs: _BodyResponse(
         b"<html>Service unavailable</html>"
     )
 
@@ -2021,7 +2033,7 @@ def test_an_empty_write_response_is_no_longer_taken_for_success():
     therefore not a confirmation of anything.
     """
     api = _api()
-    api.make_api_call = lambda *a, **k: _BodyResponse(b"")
+    api.make_api_call = lambda *_args, **_kwargs: _BodyResponse(b"")
 
     with pytest.raises(exceptions.ParameterChangeError):
         api.change_value("1234", "P1", 0, 1, 21.0, login=False)
@@ -2047,7 +2059,7 @@ def test_the_scrape_backoff_survives_a_fresh_api_instance():
     api.modules = {}
     scrapes = []
     api.fetch_webscraping_data = lambda: scrapes.append(True) or {}
-    api.get_data = lambda *_a, **_k: None
+    api.get_data = lambda *_args, **_kwargs: None
 
     api._fetch_data(enabled_devices=None)
 
@@ -2069,16 +2081,16 @@ def _write_entity(api, monkeypatch):
     built = []
 
     class _Client:
-        def __init__(self, *_a, **_k):
+        def __init__(self, *_args, **_kwargs):
             built.append(True)
 
-        def write_parameter(self, *_a, **_k):
+        def write_parameter(self, *_args, **_kwargs):
             return types.SimpleNamespace(current=21.0, min_value=None, max_value=None)
 
     monkeypatch.setattr(expert_writer, "WemPortalExpertClient", _Client)
 
-    async def run_inline(func, *args):
-        return func(*args)
+    async def run_inline(function, *args):
+        return function(*args)
 
     entity.hass.async_add_executor_job = run_inline
     entity.hass.async_create_task = lambda coro: coro.close()
@@ -2133,7 +2145,7 @@ def test_a_rejected_refresh_is_not_read_as_a_fresh_measurement():
     api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
     urls = []
 
-    def make_api_call(url, **_k):
+    def make_api_call(url, **_kwargs):
         urls.append(url)
         return FakeResponse({"Status": 3, "Message": "refresh refused"})
 
@@ -2148,7 +2160,7 @@ def test_a_refresh_without_a_status_field_still_works():
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
-    api.make_api_call = lambda *a, **k: FakeResponse(
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"Modules": [{"ModuleIndex": 0, "ModuleType": 1, "Values": []}]}
     )
 
@@ -2202,7 +2214,7 @@ def test_the_write_is_stopped_directly_before_the_portal_is_changed():
     client._login = lambda: None
     client.close = lambda: None
 
-    def fetch_form(*_a, **_k):
+    def fetch_form(*_args, **_kwargs):
         # The unload happens WHILE the form is being read, i.e. after every
         # gate except the last one.
         unloaded.append(True)
@@ -2237,7 +2249,7 @@ def test_a_batch_read_stops_between_parameters_when_the_entry_goes_away():
     client._login = lambda: None
     client.close = lambda: None
 
-    def fetch_form(entityvalue, *_a, **_k):
+    def fetch_form(entityvalue, *_args, **_kwargs):
         read.append(entityvalue)
         unloaded.append(True)
         return expert_writer.ExpertParameterState(20.0, [20.0], {})
@@ -2262,7 +2274,7 @@ def test_the_auto_poll_hands_its_read_a_stop_gate(monkeypatch):
     from custom_components.wemportal import expert_controller, expert_writer
 
     class _Client:
-        def __init__(self, *_a, **kwargs):
+        def __init__(self, *_args, **kwargs):
             self._abort = kwargs.get("abort_check")
 
         def read_many(self, _ids):
@@ -2278,7 +2290,7 @@ def test_the_auto_poll_hands_its_read_a_stop_gate(monkeypatch):
     entry = types.SimpleNamespace(data={}, options={})
     api = types.SimpleNamespace(
         check_expert_cooldown=lambda: None,
-        activate_expert_cooldown=lambda *_a: None,
+        activate_expert_cooldown=lambda *_args: None,
         expert_cookies={},
     )
 
@@ -2294,7 +2306,7 @@ def test_a_batch_read_without_an_abort_reads_everything():
     client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
     client._login = lambda: None
     client.close = lambda: None
-    client._fetch_form = lambda *_a, **_k: expert_writer.ExpertParameterState(
+    client._fetch_form = lambda *_args, **_kwargs: expert_writer.ExpertParameterState(
         20.0, [20.0], {}
     )
 
@@ -2313,7 +2325,7 @@ def test_a_write_without_an_abort_still_goes_through():
     client.session = session
     client._login = lambda: None
     client.close = lambda: None
-    client._fetch_form = lambda *a, **k: expert_writer.ExpertParameterState(
+    client._fetch_form = lambda *_args, **_kwargs: expert_writer.ExpertParameterState(
         20.0, [20.0, 21.0], {}
     )
 
@@ -2335,7 +2347,7 @@ def test_an_unreadable_refresh_answer_does_not_serve_the_previous_job():
     api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
     urls = []
 
-    def make_api_call(url, **_k):
+    def make_api_call(url, **_kwargs):
         urls.append(url)
         return _BodyResponse(b"<html>gateway timeout</html>")
 
@@ -2386,7 +2398,8 @@ def _scraped_api(*keys):
     api = _api()
     api.scraper_device_id = "0000"
     api._merge_webscraping_data(
-        "0000", {k: {"value": 1.0, "unit": "°C", "platform": "sensor"} for k in keys}
+        "0000",
+        {key: {"value": 1.0, "unit": "°C", "platform": "sensor"} for key in keys},
     )
     return api
 
@@ -2462,7 +2475,7 @@ def test_the_real_success_response_is_accepted():
     legitimate write.
     """
     api = _api()
-    api.make_api_call = lambda *a, **k: FakeResponse(REAL_WRITE_SUCCESS)
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(REAL_WRITE_SUCCESS)
 
     api.change_value("1234", "P1", 0, 1, 21.0, login=False)
 
@@ -2485,7 +2498,7 @@ def test_anything_but_an_explicit_success_is_a_rejection(payload):
     next poll quietly replaces it.
     """
     api = _api()
-    api.make_api_call = lambda *a, **k: FakeResponse(payload)
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(payload)
 
     with pytest.raises(exceptions.ParameterChangeError):
         api.change_value("1234", "P1", 0, 1, 21.0, login=False)
@@ -2495,7 +2508,7 @@ def test_the_rejection_message_carries_the_portal_reason():
     """DetailMessages/Message is what the portal says went wrong - dropping
     it leaves the user with a bare number."""
     api = _api()
-    api.make_api_call = lambda *a, **k: FakeResponse(
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"Status": 3, "Message": "value out of range"}
     )
 
@@ -2516,7 +2529,7 @@ def test_a_rejected_write_puts_the_portal_answer_in_the_log(caplog):
     import logging
 
     api = _api()
-    api.make_api_call = lambda *a, **k: FakeResponse(
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"Status": 3, "Message": "value out of range"}
     )
 
@@ -2527,7 +2540,9 @@ def test_a_rejected_write_puts_the_portal_answer_in_the_log(caplog):
         api.change_value("1234", "P1", 0, 1, 21.0, login=False)
 
     warnings = " ".join(
-        r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno >= logging.WARNING
     )
     assert "value out of range" in warnings
 
@@ -2538,14 +2553,16 @@ def test_a_successful_write_records_the_answer_at_debug(caplog):
     import logging
 
     api = _api()
-    api.make_api_call = lambda *a, **k: FakeResponse(REAL_WRITE_SUCCESS)
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(REAL_WRITE_SUCCESS)
 
     with caplog.at_level(logging.DEBUG):
         api.change_value("1234", "P1", 0, 1, 21.0, login=False)
 
     assert "Write response for P1" in caplog.text
     # And nothing about the write ends up at warning level.
-    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert not [
+        record for record in caplog.records if record.levelno >= logging.WARNING
+    ]
 
 
 # --- is the maintenance marker safe to check everywhere? --------------
@@ -2610,7 +2627,9 @@ def test_the_report_is_made_once_per_request_label(caplog):
         for _ in range(5):
             scraper._check_response(_Page(MAINTENANCE_HTML), "module page")
 
-    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    warnings = [
+        record for record in caplog.records if record.levelno >= logging.WARNING
+    ]
     assert len(warnings) == 1, f"{len(warnings)} reports for one request site"
 
 
@@ -2633,7 +2652,9 @@ def test_a_healthy_page_is_silent(caplog):
     with caplog.at_level(logging.WARNING):
         scraper._check_response(_Page("<html><body>fine</body></html>"), "main page")
 
-    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert not [
+        record for record in caplog.records if record.levelno >= logging.WARNING
+    ]
 
 
 # --- what a recovery may and may not touch ----------------------------
@@ -2825,7 +2846,7 @@ def test_a_refresh_answering_false_is_a_refusal():
     """Same field, same verdict, on the third of the three sites."""
     api = _api()
     api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
-    api.make_api_call = lambda url, **_k: FakeResponse(
+    api.make_api_call = lambda url, **_kwargs: FakeResponse(
         {"Status": False} if "Refresh" in url else {"Modules": []}
     )
 
@@ -2847,7 +2868,7 @@ def test_a_missing_job_id_is_reported_once_per_device(caplog):
     api_module._MISSING_JOB_ID_REPORTED.clear()
     api = _api()
     api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
-    api.make_api_call = lambda url, **_k: FakeResponse(
+    api.make_api_call = lambda url, **_kwargs: FakeResponse(
         {"Modules": [{"ModuleIndex": 1, "ModuleType": 2, "Values": []}]}
         if "Read" in url
         else {"Status": 0}
@@ -2857,7 +2878,9 @@ def test_a_missing_job_id_is_reported_once_per_device(caplog):
         assert api._fetch_parameter_values("1234") is None
         assert api._fetch_parameter_values("1234") is None
 
-    hits = [r for r in caplog.records if "without a JobID" in r.getMessage()]
+    hits = [
+        record for record in caplog.records if "without a JobID" in record.getMessage()
+    ]
     assert len(hits) == 1, f"expected exactly one report, got {len(hits)}"
 
 
@@ -2903,7 +2926,7 @@ def test_a_recovery_leaves_a_busy_connection_alone(monkeypatch, caplog):
     assert closed == [], "the recovery closed a session another operation was using"
     assert api.session is not None, "the transport was torn down under a write"
     assert api.valid_login is True
-    assert any("still in use" in r.getMessage() for r in caplog.records)
+    assert any("still in use" in record.getMessage() for record in caplog.records)
 
 
 def test_a_recovery_on_a_free_connection_still_resets_and_frees_the_lock():
@@ -3370,7 +3393,7 @@ def test_a_device_with_no_parameters_is_not_asked_for_values(caplog):
     # which has nothing to poll and is not a failure.
     api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump"}}}
     calls = []
-    api.make_api_call = lambda url, **_k: calls.append(url) or FakeResponse({})
+    api.make_api_call = lambda url, **_kwargs: calls.append(url) or FakeResponse({})
 
     with caplog.at_level(logging.WARNING):
         failure = api._fetch_parameter_values("1234")
@@ -3396,7 +3419,7 @@ def test_a_device_with_no_modules_at_all_is_not_a_failure():
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
     calls = []
-    api.make_api_call = lambda url, **_k: calls.append(url) or FakeResponse({})
+    api.make_api_call = lambda url, **_kwargs: calls.append(url) or FakeResponse({})
 
     assert api._fetch_parameter_values("1234") is None
     assert calls == [], "a read with an empty module list was sent anyway"
@@ -3649,7 +3672,7 @@ def test_a_device_whose_every_module_was_rejected_is_not_a_failed_cycle():
     api.get_parameters()
 
     reads = []
-    api.make_api_call = lambda url, **_k: reads.append(url) or FakeResponse({})
+    api.make_api_call = lambda url, **_kwargs: reads.append(url) or FakeResponse({})
 
     assert api._fetch_parameter_values("1234") is None, (
         "a device with nothing to poll was reported as a failed refresh"
@@ -3687,7 +3710,7 @@ def test_get_devices_carries_the_parameter_timestamp_too():
         }
     }
     api = _api(cached_modules=cached)
-    api.make_api_call = lambda *a, **k: FakeResponse(
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {
             "Devices": [
                 {
@@ -3723,7 +3746,7 @@ def _cycle_api(fetched_at):
     api.valid_login = True
     read = []
     api.get_parameters = lambda: read.append("read")
-    api.get_data = lambda *_a, **_k: None
+    api.get_data = lambda *_args, **_kwargs: None
     return api, read
 
 
@@ -3826,7 +3849,7 @@ def _sensor_from_row(key, row):
         data={"1234": {key: row}},
         api=types.SimpleNamespace(api_version="2.0", modules={}),
         last_update_success=True,
-        async_add_listener=lambda *_a, **_k: None,
+        async_add_listener=lambda *_args, **_kwargs: None,
     )
     return WemPortalSensor(
         coordinator, types.SimpleNamespace(entry_id="e1"), "1234", key, row
@@ -3892,7 +3915,7 @@ def test_an_unreadable_word_is_reported_once_not_every_cycle(
         for _ in range(3):
             _numeric_sensor("Stop")
 
-    hits = [r for r in caplog.records if "as a number" in r.getMessage()]
+    hits = [record for record in caplog.records if "as a number" in record.getMessage()]
     assert len(hits) == 1, f"reported {len(hits)} times"
     assert "Stop" in hits[0].getMessage(), "the unknown word was not named"
 
@@ -3908,7 +3931,7 @@ def test_a_different_unreadable_word_is_reported_on_its_own(
         _numeric_sensor("Stop")
         _numeric_sensor("Blockiert")
 
-    hits = [r for r in caplog.records if "as a number" in r.getMessage()]
+    hits = [record for record in caplog.records if "as a number" in record.getMessage()]
     assert len(hits) == 2
 
 
@@ -4258,7 +4281,10 @@ def test_companion_parameters_travel_in_the_same_request():
     assert len(sent) == 1, "the pair went out as two separate writes"
     module = sent[0]["Modules"][0]
     assert (module["ModuleIndex"], module["ModuleType"]) == (1, 2)
-    assert {p["ParameterID"]: p["NumericValue"] for p in module["Parameters"]} == {
+    assert {
+        parameter["ParameterID"]: parameter["NumericValue"]
+        for parameter in module["Parameters"]
+    } == {
         "U_Beginn": 1785715200.0,
         "U_Ende": 1785974400.0,
     }
@@ -4282,7 +4308,7 @@ def test_the_parameter_being_changed_wins_over_a_companion():
     )
 
     parameters = sent[0]["Modules"][0]["Parameters"]
-    assert [p["NumericValue"] for p in parameters] == [1785974400.0]
+    assert [parameter["NumericValue"] for parameter in parameters] == [1785974400.0]
 
 
 def test_a_write_without_companions_is_unchanged():

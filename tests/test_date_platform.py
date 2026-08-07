@@ -76,8 +76,8 @@ class _Coordinator:
         self.api = types.SimpleNamespace(
             device_types={},
             api_version=None,
-            change_value=lambda *_a, **_k: None,
-            reread_device_values=lambda *_a, **_k: None,
+            change_value=lambda *_args, **_kwargs: None,
+            reread_device_values=lambda *_args, **_kwargs: None,
         )
 
     def async_update_listeners(self):
@@ -115,9 +115,9 @@ def _entity(value=BEGIN_EPOCH):
     return entity, data
 
 
-async def _run_now(func, *args):
+async def _run_now(function, *args):
     """Run an executor job inline - there is no event loop thread here."""
-    return func(*args)
+    return function(*args)
 
 
 def _with_companion(data, value=END_EPOCH, module=(0, 1), platform="date"):
@@ -373,6 +373,6 @@ def test_only_date_rows_become_date_entities():
     entry = _Entry()
     entry.runtime_data = types.SimpleNamespace(coordinator=_Coordinator(data))
 
-    asyncio.run(async_setup_entry(None, entry, lambda e: added.extend(e)))
+    asyncio.run(async_setup_entry(None, entry, lambda entities: added.extend(entities)))
 
-    assert [e._data_key for e in added] == ["Heat pump-U_Beginn"]
+    assert [entity._data_key for entity in added] == ["Heat pump-U_Beginn"]

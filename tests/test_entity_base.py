@@ -54,7 +54,7 @@ def _entity(cls, reachable=True, **overrides):
         data={"1234": {"Pump": row, "1234-ConnectionStatus": status}},
         api=types.SimpleNamespace(api_version="2.0", modules={}),
         last_update_success=True,
-        async_add_listener=lambda *_a, **_k: None,
+        async_add_listener=lambda *_args, **_kwargs: None,
     )
     entry = types.SimpleNamespace(entry_id="e1")
     return cls(coordinator, entry, "1234", "Pump", row)
@@ -205,8 +205,8 @@ def _writeable(cls, unloading=False, calls=None):
     entity._config_entry.runtime_data = data
     entity.coordinator.api = api
 
-    async def _executor(func, *args):
-        return func(*args)
+    async def _executor(function, *args):
+        return function(*args)
 
     entity.hass = types.SimpleNamespace(async_add_executor_job=_executor)
     return entity

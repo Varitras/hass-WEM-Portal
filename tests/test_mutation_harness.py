@@ -114,7 +114,7 @@ def test_a_selector_matching_no_tests_is_an_error(monkeypatch):
     how the harness recognises a caught mutation. A typo in the selector
     would therefore certify every mutation as caught."""
     monkeypatch.setattr(
-        mutate.subprocess, "run", lambda *a, **k: _Result(5, "no tests ran")
+        mutate.subprocess, "run", lambda *_args, **_kwargs: _Result(5, "no tests ran")
     )
 
     with pytest.raises(SystemExit) as excinfo:
@@ -125,7 +125,7 @@ def test_a_selector_matching_no_tests_is_an_error(monkeypatch):
 
 def test_a_failing_suite_counts_as_caught(monkeypatch):
     monkeypatch.setattr(
-        mutate.subprocess, "run", lambda *a, **k: _Result(1, "1 failed")
+        mutate.subprocess, "run", lambda *_args, **_kwargs: _Result(1, "1 failed")
     )
 
     assert mutate.run_tests("something") is True
@@ -135,7 +135,7 @@ def test_a_passing_suite_counts_as_survived(monkeypatch):
     """The mutation was applied, the code was broken, and the tests stayed
     green - that is the finding, not a success."""
     monkeypatch.setattr(
-        mutate.subprocess, "run", lambda *a, **k: _Result(0, "3 passed")
+        mutate.subprocess, "run", lambda *_args, **_kwargs: _Result(0, "3 passed")
     )
 
     assert mutate.run_tests("something") is False
@@ -251,7 +251,9 @@ def test_a_broken_test_run_is_not_evidence(monkeypatch, code, reason):
         stdout = ""
         stderr = "boom"
 
-    monkeypatch.setattr(mutate.subprocess, "run", lambda *a, **k: _BrokenRun())
+    monkeypatch.setattr(
+        mutate.subprocess, "run", lambda *_args, **_kwargs: _BrokenRun()
+    )
 
     with pytest.raises(SystemExit) as excinfo:
         mutate.run_tests("anything")
@@ -264,7 +266,7 @@ def test_a_hung_test_run_is_not_evidence_either(monkeypatch):
     for as long as it hangs, and report nothing at all."""
     mutate = _load()
 
-    def _hang(*_a, **_k):
+    def _hang(*_args, **_kwargs):
         raise mutate.subprocess.TimeoutExpired(cmd="pytest", timeout=1)
 
     monkeypatch.setattr(mutate.subprocess, "run", _hang)
@@ -319,7 +321,9 @@ tests/test_gamma.py::TestGroup::test_three
 
 
 def _locations(monkeypatch):
-    monkeypatch.setattr(mutate.subprocess, "run", lambda *a, **k: _Result(0, COLLECTED))
+    monkeypatch.setattr(
+        mutate.subprocess, "run", lambda *_args, **_kwargs: _Result(0, COLLECTED)
+    )
     return mutate.collect_test_locations()
 
 
@@ -356,7 +360,9 @@ def test_the_selector_resolves_the_way_pytest_would(monkeypatch):
 def test_a_failed_collection_stops_the_run(monkeypatch):
     """Without the map every mutation would silently fall back to the whole
     suite, or worse, to nothing."""
-    monkeypatch.setattr(mutate.subprocess, "run", lambda *a, **k: _Result(2, "boom"))
+    monkeypatch.setattr(
+        mutate.subprocess, "run", lambda *_args, **_kwargs: _Result(2, "boom")
+    )
 
     with pytest.raises(SystemExit) as excinfo:
         mutate.collect_test_locations()

@@ -82,8 +82,8 @@ def _mock_sleep(monkeypatch):
     those waits must be instant. Mocking centrally (not per test) keeps later
     tests that hit the same code paths fast too.
     """
-    monkeypatch.setattr(wemportalapi.time, "sleep", lambda *a, **k: None)
-    monkeypatch.setattr(expert_writer.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(expert_writer.time, "sleep", lambda *_args, **_kwargs: None)
     yield
 
 

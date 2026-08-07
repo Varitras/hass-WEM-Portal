@@ -32,7 +32,9 @@ def _modules(*parameters):
         DEVICE: {
             MODULE_KEY: {
                 "Name": "Heat pump",
-                "parameters": {p["ParameterID"]: p for p in parameters},
+                "parameters": {
+                    parameter["ParameterID"]: parameter for parameter in parameters
+                },
             }
         }
     }

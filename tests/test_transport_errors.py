@@ -219,8 +219,10 @@ def _retry_transport_by_url():
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        func = node.func
-        if not (isinstance(func, ast.Attribute) and func.attr == "make_api_call"):
+        function = node.func
+        if not (
+            isinstance(function, ast.Attribute) and function.attr == "make_api_call"
+        ):
             continue
         if not node.args or not isinstance(node.args[0], ast.Name):
             raise AssertionError(

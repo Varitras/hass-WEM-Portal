@@ -204,7 +204,7 @@ def test_expert_module_page_prefers_the_postback_response():
 
     delta = _delta_with_parameter("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
-    client._postback = lambda *a, **k: delta
+    client._postback = lambda *_args, **_kwargs: delta
     client.session = _ExplodingSession()
 
     html_content = client._fetch_module_page({"index": 6, "label": "Heat pump"})
@@ -219,7 +219,9 @@ def test_expert_module_page_falls_back_to_the_plain_get():
 
     page = _delta_with_parameter("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
     client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
-    client._postback = lambda *a, **k: "<html><body>no panel here</body></html>"
+    client._postback = lambda *_args, **_kwargs: (
+        "<html><body>no panel here</body></html>"
+    )
     client.session = _StubSession(page)
 
     html_content = client._fetch_module_page({"index": 6, "label": "Heat pump"})
@@ -403,14 +405,14 @@ class _StubSession:
     def __init__(self, text):
         self._text = text
 
-    def get(self, *_a, **_k):
+    def get(self, *_args, **_kwargs):
         return types.SimpleNamespace(status_code=200, text=self._text, url="https://x/")
 
 
 class _ExplodingSession:
     """Fails the test if a second request is made."""
 
-    def get(self, *_a, **_k):
+    def get(self, *_args, **_kwargs):
         raise AssertionError("no follow-up request should be sent")
 
 
@@ -473,7 +475,7 @@ class _ReuseSession:
         self._post_response = post_response
         self.cookies = {}
 
-    def get(self, *_a, **_k):
+    def get(self, *_args, **_kwargs):
         return _ReuseResponse(
             "<html><body>"
             "<input id='__VIEWSTATE' value='vs'/>"
@@ -481,7 +483,7 @@ class _ReuseSession:
             "</body></html>"
         )
 
-    def post(self, *_a, **_k):
+    def post(self, *_args, **_kwargs):
         return self._post_response
 
 
@@ -555,7 +557,7 @@ def test_a_broken_main_page_is_not_a_credential_problem():
     class _BrokenSession:
         cookies = {}
 
-        def get(self, *_a, **_k):
+        def get(self, *_args, **_kwargs):
             return _ReuseResponse("<html>Internal Server Error</html>", status_code=500)
 
     scraper.session = _BrokenSession()
@@ -772,7 +774,7 @@ def test_a_collision_is_reported_once_not_every_cycle(scraper, caplog):
         scraper.parse_expert_page(page)
         scraper.parse_expert_page(page)
 
-    hits = [r for r in caplog.records if "same sensor" in r.getMessage()]
+    hits = [record for record in caplog.records if "same sensor" in record.getMessage()]
     assert len(hits) == 1, f"reported {len(hits)} times"
 
 
@@ -791,7 +793,11 @@ def test_rows_that_do_not_collide_say_nothing(scraper, caplog):
 
 
 def _empty_page_reports(caplog):
-    return [r for r in caplog.records if "No readable panels" in r.getMessage()]
+    return [
+        record
+        for record in caplog.records
+        if "No readable panels" in record.getMessage()
+    ]
 
 
 def test_the_reuse_path_reports_its_empty_page_quietly(scraper, caplog):
@@ -816,7 +822,7 @@ def test_the_reuse_path_reports_its_empty_page_quietly(scraper, caplog):
 
     reports = _empty_page_reports(caplog)
     assert reports, "the report is gone entirely"
-    assert [r.levelname for r in reports] == ["DEBUG"]
+    assert [record.levelname for record in reports] == ["DEBUG"]
 
 
 def test_the_full_login_path_still_warns_about_an_empty_page(scraper, caplog):
@@ -834,4 +840,4 @@ def test_the_full_login_path_still_warns_about_an_empty_page(scraper, caplog):
         with pytest.raises(ServerError):
             scraper.parse_expert_page("<html><title>Main</title></html>")
 
-    assert [r.levelname for r in _empty_page_reports(caplog)] == ["WARNING"]
+    assert [record.levelname for record in _empty_page_reports(caplog)] == ["WARNING"]

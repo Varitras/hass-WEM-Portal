@@ -60,8 +60,8 @@ def _api(script, devices=(DEVICE,)):
     first.
     """
     api = WemPortalApi("user@example.org", "secret")
-    api.data = {d: {} for d in devices}
-    api.modules = {d: {} for d in devices}
+    api.data = {device: {} for device in devices}
+    api.modules = {device: {} for device in devices}
     api.last_statistics_fetch = 0.0
     calls = []
     counters = {}

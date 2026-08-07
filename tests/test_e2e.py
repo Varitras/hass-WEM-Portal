@@ -87,16 +87,18 @@ def _mock_portal(monkeypatch):
     coordinator, the entity platforms and the unload path all run against
     the production types.
     """
-    monkeypatch.setattr(WemPortalApi, "fetch_data", lambda self, *a, **k: FAKE_DATA)
-    monkeypatch.setattr(WemPortalApi, "api_login", lambda self, *a, **k: None)
-    monkeypatch.setattr(WemPortalApi, "web_login", lambda self, *a, **k: None)
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+    )
+    monkeypatch.setattr(WemPortalApi, "api_login", lambda self, *_args, **_kwargs: None)
+    monkeypatch.setattr(WemPortalApi, "web_login", lambda self, *_args, **_kwargs: None)
 
     # The EXPERT client must be blocked too. It uses curl_cffi, which is not
     # covered by the socket guard, so an expert path reached during a test
     # really did contact wemportal.com - a failed login against a live
     # third-party service, on every run. Every network entry point is stubbed
     # here; tests that need specific behaviour override these.
-    def _no_network(*_a, **_k):
+    def _no_network(*_args, **_kwargs):
         raise AssertionError(
             "a test reached the real portal - stub the expert client instead"
         )
@@ -210,7 +212,9 @@ async def test_unique_ids_are_migrated_for_every_device(hass, monkeypatch):
         "1234": {"Outside temperature": _sensor()},
         "5678": {"Outside temperature": _sensor()},
     }
-    monkeypatch.setattr(WemPortalApi, "fetch_data", lambda self, *a, **k: two_devices)
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: two_devices
+    )
 
     entry = _entry(hass)
 
@@ -246,7 +250,7 @@ async def test_unique_ids_are_migrated_for_every_device(hass, monkeypatch):
 async def test_migration_is_skipped_when_no_data_arrived(hass, monkeypatch):
     """An empty first refresh must not abort setup - the migration simply
     has nothing to do."""
-    monkeypatch.setattr(WemPortalApi, "fetch_data", lambda self, *a, **k: {})
+    monkeypatch.setattr(WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: {})
 
     entry = await _setup(hass, _entry(hass))
 
@@ -331,7 +335,7 @@ async def test_expert_service_raises_on_write_failure(hass, monkeypatch):
     fire-and-forget handler always reported success."""
     await _setup(hass, _entry(hass, _expert_options()))
 
-    def boom(self, *_a, **_k):
+    def boom(self, *_args, **_kwargs):
         raise ParameterWriteError("portal said no")
 
     monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", boom)
@@ -412,7 +416,7 @@ async def test_config_flow_rejects_second_entry_for_same_account(hass):
 def _blocked_ip(monkeypatch):
     """A portal that is refusing this IP, on whichever login is tried."""
 
-    def refuse(self, *_a, **_k):
+    def refuse(self, *_args, **_kwargs):
         raise ForbiddenError("Rate limited")
 
     monkeypatch.setattr(WemPortalApi, "api_login", refuse)
@@ -467,7 +471,7 @@ async def test_a_genuine_connection_problem_is_still_reported_as_one(hass, monke
     """The counter-test: naming everything a rate limit would pass the two
     above and tell users to wait twelve hours for a DNS failure."""
 
-    def unreachable(self, *_a, **_k):
+    def unreachable(self, *_args, **_kwargs):
         raise OSError("no route to host")
 
     monkeypatch.setattr(WemPortalApi, "api_login", unreachable)
@@ -539,7 +543,7 @@ async def test_switching_mode_checks_the_transport_it_switches_to(hass, monkeypa
     """
     entry = await _setup(hass, _entry(hass))
 
-    def refuse_web(self, *_a, **_k):
+    def refuse_web(self, *_args, **_kwargs):
         raise AuthError("no web login for this account")
 
     monkeypatch.setattr(WemPortalApi, "web_login", refuse_web)
@@ -560,7 +564,7 @@ async def test_saving_without_touching_the_mode_costs_no_login(hass, monkeypatch
     least of all the one the portal is most likely to refuse."""
     entry = await _setup(hass, _entry(hass))
 
-    def no_login(self, *_a, **_k):
+    def no_login(self, *_args, **_kwargs):
         raise AssertionError("an unchanged mode was validated against the portal")
 
     monkeypatch.setattr(WemPortalApi, "api_login", no_login)
@@ -996,7 +1000,7 @@ async def test_failed_first_refresh_closes_its_sessions(hass, monkeypatch):
         wemportal_init, "close_api_sessions", lambda api: closed.append(api)
     )
 
-    def boom(self, *_a, **_k):
+    def boom(self, *_args, **_kwargs):
         raise ConnectionError("portal unreachable")
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", boom)
@@ -1287,7 +1291,7 @@ async def _submit_options(hass, entry, changes, omit=()):
     """
     result = await _open_options(hass, entry, "configure")
     schema_keys = {str(marker) for marker in result["data_schema"].schema}
-    payload = {k: v for k, v in entry.options.items() if k in schema_keys}
+    payload = {key: value for key, value in entry.options.items() if key in schema_keys}
     payload.update(changes)
     for key in omit:
         payload.pop(key, None)
@@ -1427,7 +1431,7 @@ async def test_update_timeout_is_counted_and_reported(hass, monkeypatch):
 
     monkeypatch.setattr(coord_mod, "DEFAULT_TIMEOUT", 0.05)
 
-    async def never_returns(*_a, **_k):
+    async def never_returns(*_args, **_kwargs):
         await _asyncio.sleep(5)
 
     monkeypatch.setattr(hass, "async_add_executor_job", never_returns)
@@ -1456,7 +1460,7 @@ async def test_a_busy_api_does_not_trigger_the_recovery_swap(hass, monkeypatch):
     api_before = coordinator.api
     coordinator.num_failed = 1  # one more failure would trip the swap
 
-    def busy(self, *_a, **_k):
+    def busy(self, *_args, **_kwargs):
         raise ApiBusyError("Timed out waiting for the connection to become free")
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", busy)
@@ -1488,7 +1492,7 @@ async def test_a_cycle_that_ran_out_of_time_keeps_its_connection(hass, monkeypat
         WemPortalApi, "reset_transport", lambda self: resets.append(True)
     )
 
-    def out_of_time(self, *_a, **_k):
+    def out_of_time(self, *_args, **_kwargs):
         raise PollDeadlineExceeded("passed its 330s budget and stopped")
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", out_of_time)
@@ -1517,7 +1521,7 @@ async def test_a_cycle_that_ran_out_of_time_still_counts_as_a_failure(
     failures_before = coordinator.num_failed
     coordinator.num_auth_failed = 2
 
-    def out_of_time(self, *_a, **_k):
+    def out_of_time(self, *_args, **_kwargs):
         raise PollDeadlineExceeded("passed its 330s budget and stopped")
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", out_of_time)
@@ -1581,7 +1585,7 @@ async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
 
     entry = _entry(hass)
 
-    def bad_credentials(self, *_a, **_k):
+    def bad_credentials(self, *_args, **_kwargs):
         raise AuthError("Login failed: Invalid username or password.")
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", bad_credentials)
@@ -1643,7 +1647,9 @@ async def test_entities_of_an_offline_device_go_unavailable(hass, monkeypatch):
             "Outside temperature": _sensor(),
         },
     }
-    monkeypatch.setattr(WemPortalApi, "fetch_data", lambda self, *a, **k: two_devices)
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: two_devices
+    )
 
     await _setup(hass, _entry(hass))
 
@@ -1706,7 +1712,9 @@ async def test_a_duplicate_account_is_not_given_a_second_unique_id(hass):
     # call covers both - and which of them is reached first is not defined.
     await _setup(hass, first)
 
-    ids = sorted((e.unique_id for e in (first, second)), key=lambda v: v or "")
+    ids = sorted(
+        (e.unique_id for e in (first, second)), key=lambda unique_id: unique_id or ""
+    )
     assert ids == [None, USER], "the account id must be claimed exactly once"
     assert first.state is ConfigEntryState.LOADED
     assert second.state is ConfigEntryState.LOADED, (
@@ -1764,7 +1772,7 @@ async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):
 
     failures = []
 
-    def flaky(self, *_a, **_k):
+    def flaky(self, *_args, **_kwargs):
         raise failures.pop(0)
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", flaky)
@@ -1906,7 +1914,7 @@ async def test_saving_options_reloads_the_entry(hass, monkeypatch):
     # Submit what the form itself declares, so this does not have to track
     # every field the options step happens to offer.
     schema_keys = {str(marker) for marker in result["data_schema"].schema}
-    payload = {k: v for k, v in entry.options.items() if k in schema_keys}
+    payload = {key: value for key, value in entry.options.items() if key in schema_keys}
     # The API interval, because this entry runs in `api` mode - so the value
     # is observable in the coordinator afterwards.
     payload[CONF_SCAN_INTERVAL_API] = 600
@@ -1978,7 +1986,9 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(
     monkeypatch.setattr(
         WemPortalApi,
         "fetch_data",
-        lambda self, *a, **k: (_ for _ in ()).throw(WemPortalError("portal broken")),
+        lambda self, *_args, **_kwargs: (_ for _ in ()).throw(
+            WemPortalError("portal broken")
+        ),
     )
 
     # The recovery runs from the second consecutive failure onwards.
@@ -2144,7 +2154,9 @@ async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatc
     monkeypatch.setattr(
         ExpertController,
         "setup_auto_poll",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("poll setup broke")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("poll setup broke")
+        ),
     )
 
     coordinators = []
@@ -2218,7 +2230,9 @@ async def test_the_recovery_runs_off_the_event_loop(hass, monkeypatch):
     monkeypatch.setattr(
         WemPortalApi,
         "fetch_data",
-        lambda self, *a, **k: (_ for _ in ()).throw(WemPortalError("portal broken")),
+        lambda self, *_args, **_kwargs: (_ for _ in ()).throw(
+            WemPortalError("portal broken")
+        ),
     )
 
     for _ in range(2):
@@ -2240,7 +2254,7 @@ async def test_a_failed_platform_setup_does_not_leak_the_store(hass, monkeypatch
     """
     entry = _entry(hass)
 
-    async def boom(*_a, **_k):
+    async def boom(*_args, **_kwargs):
         raise RuntimeError("platform setup exploded")
 
     monkeypatch.setattr(hass.config_entries, "async_forward_entry_setups", boom)
@@ -2275,7 +2289,7 @@ async def test_a_write_is_abandoned_when_its_entry_is_reloaded(hass, monkeypatch
         ),
     )
 
-    def reload_midway(self, *_a, **_k):
+    def reload_midway(self, *_args, **_kwargs):
         # The reload happens WHILE the write runs, which is the whole point:
         # the store the handler captured is replaced by an equivalent one
         # under the same id. Swapping it before the call would simply hand
@@ -2320,7 +2334,7 @@ async def test_a_write_is_abandoned_while_the_entry_is_unloading(hass, monkeypat
     # Exactly what async_unload_entry sets before unloading the platforms.
     entry.runtime_data.unloading = True
 
-    def never(self, *_a, **_k):
+    def never(self, *_args, **_kwargs):
         raise AssertionError("the write continued during the unload")
 
     monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", never)
@@ -2418,7 +2432,9 @@ async def test_a_setup_that_fails_after_forwarding_takes_the_platforms_back_down
     monkeypatch.setattr(
         ExpertController,
         "setup_auto_poll",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("poll setup broke")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("poll setup broke")
+        ),
     )
 
     unloaded = []
@@ -2447,7 +2463,7 @@ async def test_one_bad_batch_is_not_blamed_on_every_configured_id(hass, monkeypa
     entry, scheduled, notifications = await _auto_poll_entry(
         hass,
         monkeypatch,
-        lambda ids: {ev: None for ev in ids},
+        lambda ids: {entityvalue: None for entityvalue in ids},
         entityvalues=[EV_A, EV_B],
     )
     poll = scheduled[-1]
@@ -2473,7 +2489,7 @@ async def test_a_single_configured_id_is_still_reported(hass, monkeypatch):
     entry, scheduled, notifications = await _auto_poll_entry(
         hass,
         monkeypatch,
-        lambda ids: {ev: None for ev in ids},
+        lambda ids: {entityvalue: None for entityvalue in ids},
     )
     poll = scheduled[-1]
 
@@ -2569,7 +2585,7 @@ async def test_the_rescan_option_makes_no_portal_requests(hass):
         }
     }
     calls = []
-    api.make_api_call = lambda url, **_k: calls.append(url)
+    api.make_api_call = lambda url, **_kwargs: calls.append(url)
 
     await _open_options(hass, entry, "rescan_parameters")
 

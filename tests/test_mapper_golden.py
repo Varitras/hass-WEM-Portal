@@ -391,7 +391,9 @@ def _extra_case(
         DEVICE: {
             MODULE_KEY: {
                 "Name": "Heat pump",
-                "parameters": {p["ParameterID"]: p for p in parameters},
+                "parameters": {
+                    parameter["ParameterID"]: parameter for parameter in parameters
+                },
             }
         }
     }
@@ -402,18 +404,18 @@ def _extra_case(
                 "ModuleType": MODULE_KEY[1],
                 "Values": [
                     {
-                        "ParameterID": p["ParameterID"],
+                        "ParameterID": parameter["ParameterID"],
                         "NumericValue": 21.5,
                         "StringValue": "",
                         "Unit": "°C",
                     }
-                    for p in parameters
+                    for parameter in parameters
                 ],
             }
         ]
     }
     api_data = {DEVICE: dict(existing)}
-    mapper_state = {k: list(v) for k, v in scraping_mapper.items()}
+    mapper_state = {key: list(value) for key, value in scraping_mapper.items()}
     WemPortalDataMapper.process_api_values(
         DEVICE,
         values,

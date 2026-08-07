@@ -267,8 +267,8 @@ def test_the_gate_is_where_the_status_is_actually_handled(module):
 GUARDED = """
 class C:
     def f(self):
-        r = self.session.get("u")
-        self._check_response(r, "page")
+        response = self.session.get("u")
+        self._check_response(response, "page")
 """
 
 OTHER_RESPONSE = """

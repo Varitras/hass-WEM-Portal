@@ -101,8 +101,8 @@ def _world(monkeypatch, rows=None, refuse=False):
     )
     monkeypatch.setattr(holiday.entity_registry, "async_get", lambda _hass: registry)
 
-    async def _executor(func, *args):
-        return func(*args)
+    async def _executor(function, *args):
+        return function(*args)
 
     hass = types.SimpleNamespace(
         config_entries=types.SimpleNamespace(
