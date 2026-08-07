@@ -351,23 +351,23 @@ def test_the_mapper_output_is_unchanged(request):
 EXTRA_GOLDEN = Path(__file__).parent / "fixtures" / "mapper_golden_extra.json"
 
 
-def _scraped_row(param_id, **overrides):
+def _scraped_row(parameter_id, **overrides):
     row = {
         "value": 11.0,
-        "name": param_id,
+        "name": parameter_id,
         "unit": "°C",
         "icon": "mdi:thermometer",
         "friendlyName": "Heat pump - Outside",
-        "ParameterID": param_id,
+        "ParameterID": parameter_id,
         "platform": "sensor",
     }
     row.update(overrides)
     return row
 
 
-def _param(param_id, **overrides):
+def _param(parameter_id, **overrides):
     parameter = {
-        "ParameterID": param_id,
+        "ParameterID": parameter_id,
         "IsWriteable": False,
         "DataType": None,
         "MinValue": 10,

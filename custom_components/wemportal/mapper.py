@@ -6,7 +6,9 @@ from .const import WemDataType, _LOGGER
 from .utils import looks_like_schedule, sanitize_value, unit_to_icon
 
 
-def get_min_max(param_id: str, data_type: int, min_val, max_val) -> tuple[float, float]:
+def get_min_max(
+    parameter_id: str, data_type: int, min_val, max_val
+) -> tuple[float, float]:
     try:
         if min_val is not None and max_val is not None:
             return float(min_val), float(max_val)
@@ -16,10 +18,10 @@ def get_min_max(param_id: str, data_type: int, min_val, max_val) -> tuple[float,
     if data_type == WemDataType.SWITCH:
         return 0.0, 1.0
 
-    param_lower = param_id.lower()
-    if "ww" in param_lower or "warmwasser" in param_lower:
+    parameter_lower = parameter_id.lower()
+    if "ww" in parameter_lower or "warmwasser" in parameter_lower:
         return 30.0, 65.0
-    if any(k in param_lower for k in ["raum", "komfort", "absenk", "normal"]):
+    if any(k in parameter_lower for k in ["raum", "komfort", "absenk", "normal"]):
         return 5.0, 35.0
 
     return 0.0, 100.0
@@ -30,12 +32,12 @@ def _tokenize(text):
     return set(re.sub(r"[^a-zA-Z0-9äöüß]", " ", text.lower()).split())
 
 
-def _friendly_name(language: str, param_id: str, module_name: str) -> str:
+def _friendly_name(language: str, parameter_id: str, module_name: str) -> str:
     """The display name, without repeating the module name when the parameter
     name already carries it."""
     translated_name = translate(
         language,
-        friendly_name_mapper(param_id),
+        friendly_name_mapper(parameter_id),
     )
     translated_module_name = translate(language, module_name.strip())
 
@@ -48,7 +50,7 @@ def _friendly_name(language: str, param_id: str, module_name: str) -> str:
 
 
 def _describe_value(
-    param_id, module, device_module, parameter, value, language
+    parameter_id, module, device_module, parameter, value, language
 ) -> tuple[str, dict]:
     """Flatten one portal value into the description the rest of the mapper
     works with. Raises on malformed portal data just like the inline code it
@@ -82,8 +84,8 @@ def _describe_value(
             final_value = sanitize_value(final_value, value.get("Unit"), name)
 
     return name, {
-        "friendlyName": _friendly_name(language, param_id, device_module["Name"]),
-        "ParameterID": param_id,
+        "friendlyName": _friendly_name(language, parameter_id, device_module["Name"]),
+        "ParameterID": parameter_id,
         "unit": value.get("Unit"),
         "value": final_value,
         "IsWriteable": parameter.get("IsWriteable", False),
@@ -263,13 +265,13 @@ def _described_parameter(value, device_module):
     """The id and stored description of one answered value, or None to skip
     it. Same two ways to have nothing as above."""
     try:
-        param_id = value["ParameterID"]
+        parameter_id = value["ParameterID"]
     except (KeyError, TypeError) as exc:
         _LOGGER.warning("Skipping malformed value entry in API response: %s", exc)
         return None
-    if param_id not in device_module["parameters"]:
+    if parameter_id not in device_module["parameters"]:
         return None
-    return param_id, device_module["parameters"][param_id]
+    return parameter_id, device_module["parameters"][parameter_id]
 
 
 def _read_modules(device_id, values_json, modules_dict, language, api_data) -> dict:
@@ -286,11 +288,11 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> d
             described = _described_parameter(value, device_module)
             if described is None:
                 continue
-            param_id, parameter = described
+            parameter_id, parameter = described
 
             try:
                 name, sensor = _describe_value(
-                    param_id, module, device_module, parameter, value, language
+                    parameter_id, module, device_module, parameter, value, language
                 )
                 # Recorded before the platform decision below, which can
                 # raise: a value that has no writeable platform - because
@@ -321,8 +323,8 @@ def _merge_into_scraped(
 ) -> None:
     """Feed an API reading into the scraped entity that shows the same value,
     so both sources keep one entity instead of two that drift apart."""
-    param_id = sensor["ParameterID"]
-    if param_id not in scraping_mapper:
+    parameter_id = sensor["ParameterID"]
+    if parameter_id not in scraping_mapper:
         for scraped_data in api_data[device_id].values():
             if not isinstance(scraped_data, dict):
                 continue
@@ -337,14 +339,16 @@ def _merge_into_scraped(
                 scraped_words = _tokenize(translated_scraped)
 
                 if scraped_words and scraped_words.issubset(sensor_words):
-                    scraping_mapper.setdefault(param_id, []).append(scraped_entity_id)
+                    scraping_mapper.setdefault(parameter_id, []).append(
+                        scraped_entity_id
+                    )
             except IndexError:
                 pass
 
-        if param_id not in scraping_mapper:
-            scraping_mapper[param_id] = [key]
+        if parameter_id not in scraping_mapper:
+            scraping_mapper[parameter_id] = [key]
 
-    for scraped_entity in scraping_mapper[param_id]:
+    for scraped_entity in scraping_mapper[parameter_id]:
         # An API read that came back empty must not erase a
         # web value that was scraped successfully in the same
         # cycle. Both paths feed this one entity, and writing
@@ -426,8 +430,8 @@ def _clear_unanswered(
             continue
 
         cleared = []
-        for param_id, parameter in device_module["parameters"].items():
-            name = f"{device_module['Name']}-{param_id}"
+        for parameter_id, parameter in device_module["parameters"].items():
+            name = f"{device_module['Name']}-{parameter_id}"
             if name in parsed_sensors:
                 continue
             entry = device_data.get(name)
@@ -442,7 +446,7 @@ def _clear_unanswered(
                 continue
             if isinstance(entry, dict) and entry.get("value") is not None:
                 entry["value"] = None
-                cleared.append(param_id)
+                cleared.append(parameter_id)
 
         if cleared:
             _LOGGER.debug(

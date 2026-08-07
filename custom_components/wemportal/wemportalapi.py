@@ -2450,7 +2450,9 @@ class WemPortalApi:
             _LOGGER.warning("Failed to fetch parameter data... %s", exc)
             return str(exc)
 
-    def _is_schedule_parameter(self, device_id, module, param_id, param_data) -> bool:
+    def _is_schedule_parameter(
+        self, device_id, module, parameter_id, parameter_data
+    ) -> bool:
         """Whether this parameter is one of the portal's weekly programmes.
 
         Two ways the portal types one, and keying on the declared type alone
@@ -2461,22 +2463,22 @@ class WemPortalApi:
         it was never entered, which is why nothing about it appeared in any
         log.
         """
-        row = self.data.get(device_id, {}).get(f"{module['Name']}-{param_id}")
-        return param_data.get("DataType") == WemDataType.PROGRAM or looks_like_schedule(
-            (row or {}).get("value")
-        )
+        row = self.data.get(device_id, {}).get(f"{module['Name']}-{parameter_id}")
+        return parameter_data.get(
+            "DataType"
+        ) == WemDataType.PROGRAM or looks_like_schedule((row or {}).get("value"))
 
-    def _schedule_is_due(self, device_id, param_id) -> bool:
+    def _schedule_is_due(self, device_id, parameter_id) -> bool:
         """Whether this programme may be asked for again yet.
 
         Heating schedules rarely change - only through the WEM Portal app
         directly, since this integration shows them read-only - so refetching
         one on every coordinator cycle is load for nothing.
         """
-        last_fetch = self._last_circuit_times_fetch.get((device_id, param_id), 0)
+        last_fetch = self._last_circuit_times_fetch.get((device_id, parameter_id), 0)
         return time.time() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
 
-    def _record_schedule_attempt(self, device_id, param_id, attempted_at, fetched):
+    def _record_schedule_attempt(self, device_id, parameter_id, attempted_at, fetched):
         """Book the ATTEMPT, however it ended.
 
         Written only after a SUCCESS, as it once was, the interval guard never
@@ -2488,15 +2490,15 @@ class WemPortalApi:
         reasoning as get_statistics().
         """
         if fetched:
-            self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at
+            self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at
             return
-        self._last_circuit_times_fetch[(device_id, param_id)] = attempted_at - max(
+        self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at - max(
             0,
             CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
             - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
         )
 
-    def _read_one_schedule(self, device_id, module, param_id) -> bool:
+    def _read_one_schedule(self, device_id, module, parameter_id) -> bool:
         """Ask the device for one programme and store what it reports.
 
         Returns whether a schedule actually came back; the caller books the
@@ -2508,7 +2510,7 @@ class WemPortalApi:
             "DeviceID": int(device_id),
             "ModuleIndex": module_index,
             "ModuleType": module_type,
-            "ParameterID": param_id,
+            "ParameterID": parameter_id,
         }
 
         job_resp = self.make_api_call(
@@ -2525,13 +2527,13 @@ class WemPortalApi:
             do_retry=True,
         ).json()
 
-        sensor_name = f"{module['Name']}-{param_id}"
+        sensor_name = f"{module['Name']}-{parameter_id}"
         if sensor_name not in self.data[device_id]:
             self.data[device_id][sensor_name] = {
                 "friendlyName": translate(
-                    self.language, friendly_name_mapper(param_id)
+                    self.language, friendly_name_mapper(parameter_id)
                 ),
-                "ParameterID": param_id,
+                "ParameterID": parameter_id,
                 "unit": None,
                 "value": "Active",
                 "IsWriteable": False,
@@ -2560,28 +2562,32 @@ class WemPortalApi:
         throttled per programme."""
         try:
             for module in self.modules[device_id].values():
-                for param_id, param_data in (module.get("parameters") or {}).items():
+                for parameter_id, parameter_data in (
+                    module.get("parameters") or {}
+                ).items():
                     if not self._is_schedule_parameter(
-                        device_id, module, param_id, param_data
+                        device_id, module, parameter_id, parameter_data
                     ):
                         continue
-                    if not self._schedule_is_due(device_id, param_id):
+                    if not self._schedule_is_due(device_id, parameter_id):
                         continue
                     attempted_at = time.time()
                     fetched = False
                     try:
-                        fetched = self._read_one_schedule(device_id, module, param_id)
+                        fetched = self._read_one_schedule(
+                            device_id, module, parameter_id
+                        )
                     except Exception as exc:
                         # Broad: one heating program failing is not a reason
                         # to skip the rest.
                         _LOGGER.warning(
                             "Failed to fetch CircuitTimes for %s: %s",
-                            param_id,
+                            parameter_id,
                             exc,
                         )
                     finally:
                         self._record_schedule_attempt(
-                            device_id, param_id, attempted_at, fetched
+                            device_id, parameter_id, attempted_at, fetched
                         )
         except Exception as exc:
             # Broad: heating programs are extra detail on top of the

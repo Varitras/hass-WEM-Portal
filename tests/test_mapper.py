@@ -15,9 +15,9 @@ DEVICE = "1234"
 MODULE_KEY = (0, 1)
 
 
-def _parameter(param_id, **overrides):
+def _parameter(parameter_id, **overrides):
     parameter = {
-        "ParameterID": param_id,
+        "ParameterID": parameter_id,
         "IsWriteable": False,
         "DataType": None,
         "MinValue": None,
@@ -50,9 +50,9 @@ def _values(*values):
     }
 
 
-def _value(param_id, numeric=None, string="", unit=None):
+def _value(parameter_id, numeric=None, string="", unit=None):
     return {
-        "ParameterID": param_id,
+        "ParameterID": parameter_id,
         "NumericValue": numeric,
         "StringValue": string,
         "Unit": unit,
@@ -97,7 +97,7 @@ def test_switch_defaults_to_zero_one():
 
 
 @pytest.mark.parametrize(
-    ("param_id", "expected"),
+    ("parameter_id", "expected"),
     [
         ("WW_Solltemperatur", (30.0, 65.0)),
         ("Warmwasser", (30.0, 65.0)),
@@ -107,10 +107,12 @@ def test_switch_defaults_to_zero_one():
         ("Unbekannt", (0.0, 100.0)),
     ],
 )
-def test_bounds_are_guessed_from_the_parameter_name(param_id, expected):
+def test_bounds_are_guessed_from_the_parameter_name(parameter_id, expected):
     """Without bounds from the portal, the name decides the plausible range -
     a hot-water setpoint must not offer 0-100 °C."""
-    assert get_min_max(param_id, WemDataType.NUMBER_STEP_ONE, None, None) == expected
+    assert (
+        get_min_max(parameter_id, WemDataType.NUMBER_STEP_ONE, None, None) == expected
+    )
 
 
 def test_unparsable_bounds_fall_back_instead_of_raising():
@@ -322,16 +324,16 @@ def test_friendly_name_does_not_repeat_the_module_name():
 # --- mode "both": API values merged onto scraped sensors --------------
 
 
-def _scraped(param_id, friendly_name, value=None, unit="°C"):
+def _scraped(parameter_id, friendly_name, value=None, unit="°C"):
     """One entry as the web scraper leaves it in api_data."""
     return {
-        param_id: {
+        parameter_id: {
             "value": value,
-            "name": param_id,
+            "name": parameter_id,
             "unit": unit,
             "icon": "mdi:thermometer",
             "friendlyName": friendly_name,
-            "ParameterID": param_id,
+            "ParameterID": parameter_id,
             "platform": "sensor",
         }
     }
