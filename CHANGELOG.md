@@ -86,6 +86,17 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **A device that stops answering stops showing its last readings.** With
+  more than one device, a cycle in which one answers and another does not is
+  reported as successful - correctly, because failing it would take every
+  other device's entities down too. The silent device kept publishing
+  whatever it last returned, though, with nothing to say so: the rule that
+  blanks a value the portal left out needs a reply to work from, and there is
+  no reply here at all. A device that has not answered for half an hour now
+  has its readings shown as unknown instead. Units, names and icons stay, so
+  the entities keep their identity, and a single missed read changes nothing -
+  the portal refuses requests routinely. Single-device installations are
+  unaffected: there, a failed device already fails the cycle.
 - **The expert auto-poll stops when an unload begins, not when it ends.** The
   teardown raises its flag before the platforms come down, because unloading
   them is the slow part - but the auto-poll only watched the second flag, set

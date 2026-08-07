@@ -33,6 +33,23 @@ DEFAULT_TIMEOUT: Final = 360
 # behind.
 API_LOCK_TIMEOUT_SECONDS: Final = DEFAULT_TIMEOUT - 30
 
+# How long one device's readings may stay on display without a successful
+# read of its own.
+#
+# A cycle where one device fails and another succeeds is reported as a
+# SUCCESS, and rightly so: failing it would take every other device's
+# entities down with it. But that also means the failing device keeps
+# publishing whatever it last returned, with nothing saying otherwise -
+# mapper._clear_unanswered only runs when the portal ANSWERED and left a
+# parameter out, which is not this case.
+#
+# A duration rather than a count of failed cycles, unlike the scrape: there
+# the backoff stretches the gap between attempts, so counting attempts was
+# the only honest measure. Here the cycle counts as successful, so the
+# interval stays whatever the user configured - and a limit in minutes then
+# means the same thing whether that is 5 minutes or 30.
+DEVICE_VALUES_STALE_AFTER_SECONDS: Final = 30 * 60
+
 # How long one poll cycle may spend before it stops itself.
 #
 # The same reasoning as the lock timeout above, one step further along.

@@ -2476,6 +2476,97 @@ def test_readings_from_a_scrape_that_stopped_working_stop_being_current():
     assert api.data["0000"]["pump-flow"]["unit"] == "°C"
 
 
+def _two_device_api(failing_device):
+    """Two devices; `failing_device` never answers, None means both do."""
+    api = _api()
+    api.data = {
+        "1234": {"flow": {"value": 21.0, "unit": "°C"}},
+        "5678": {"flow": {"value": 42.0, "unit": "°C"}},
+    }
+    api.modules = {"1234": {}, "5678": {}}
+    api._fetch_device_status = lambda device_id: True
+    api._fetch_circuit_times = lambda device_id: None
+    api.get_statistics = lambda *_args, **_kwargs: None
+    api._fetch_parameter_values = lambda device_id: (
+        "no answer" if device_id == failing_device else None
+    )
+    return api
+
+
+def test_a_device_that_stops_answering_stops_showing_its_last_values():
+    """One device failing does not fail the cycle - another one answered, and
+    failing would take every device's entities down.
+
+    That is right, and it left the silent device publishing whatever it last
+    returned, for as long as the session lasted. mapper._clear_unanswered
+    cannot help: it needs a REPLY that left a parameter out, and there is no
+    reply here at all.
+    """
+    api = _two_device_api("5678")
+    api.get_data(enabled_devices=["1234", "5678"])
+    # Answered once, then went silent longer than the window allows.
+    api._last_device_read["5678"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+
+    api.get_data(enabled_devices=["1234", "5678"])
+
+    assert api.data["5678"]["flow"]["value"] is None, (
+        "a device that has not answered for half an hour still showed its old "
+        "reading as current"
+    )
+    assert api.data["5678"]["flow"]["unit"] == "°C", (
+        "dropping the unit tells Home Assistant the sensor changed kind"
+    )
+    assert api.data["1234"]["flow"]["value"] == 21.0, (
+        "the working device lost its readings too"
+    )
+
+
+def test_a_brief_gap_does_not_throw_a_device_away():
+    """The counter-test. A single missed read is normal - the portal refuses
+    requests routinely - and clearing on the first one would put a gap in the
+    history for every hiccup.
+
+    The device has to ANSWER first. Written without that it proved nothing:
+    a device that never answered is skipped by the "nothing on display yet"
+    guard before the age is even looked at, so removing the age check
+    entirely left this green. The mutation said so.
+    """
+    api = _two_device_api(None)
+    api.get_data(enabled_devices=["1234", "5678"])
+    assert api.data["5678"]["flow"]["value"] == 42.0, "the setup did not read"
+
+    # Now it goes quiet - but only just.
+    api._fetch_parameter_values = lambda device_id: (
+        "no answer" if device_id == "5678" else None
+    )
+    api.get_data(enabled_devices=["1234", "5678"])
+
+    assert api.data["5678"]["flow"]["value"] == 42.0
+
+
+def test_a_device_that_answers_again_starts_its_clock_over():
+    """Without this the window would be measured from the first success ever,
+    so a device answering fine could still be cleared once it had been
+    running long enough."""
+    api = _two_device_api("5678")
+    api.get_data(enabled_devices=["1234", "5678"])
+    api._last_device_read["5678"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+
+    # It answers this time.
+    api._fetch_parameter_values = lambda device_id: None
+    api.get_data(enabled_devices=["1234", "5678"])
+
+    assert api.data["5678"]["flow"]["value"] == 42.0, "a working device was cleared"
+    assert (
+        time.monotonic() - api._last_device_read["5678"]
+        < wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS
+    ), "the clock was not restarted by a successful read"
+
+
 def test_one_failed_scrape_does_not_throw_the_readings_away():
     """The counter-test. Scrapes fail transiently all the time - that is what
     the backoff is for - and clearing on the first one would make every
@@ -2774,10 +2865,16 @@ TRANSPORT_FIELDS = frozenset(
 # between cycles and finds it None either way - but "the transport was
 # rebuilt" is not a reason for a running cycle to gain more time, and having
 # it in TRANSPORT_FIELDS would say it was.
+# _last_device_read says when each device last returned values. Not transport:
+# replacing the connection does not make readings from half an hour ago any
+# fresher, and dropping it would restart the staleness clock on every
+# recovery - so a device that never answers again would keep publishing its
+# last values for another full window after each reset.
 PRESERVED_FIELDS = frozenset(
     {
         "_first_cycle_done",
         "_deadline",
+        "_last_device_read",
         "data",
         "username",
         "password",

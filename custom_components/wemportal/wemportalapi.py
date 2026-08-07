@@ -40,6 +40,7 @@ from .const import (
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
     DEFAULT_MODE,
     DEFAULT_TIMEOUT,
+    DEVICE_VALUES_STALE_AFTER_SECONDS,
     EXPERT_FORBIDDEN_COOLDOWN_SECONDS,
     FORBIDDEN_COOLDOWN_SECONDS,
     GITHUB_PROJECT_URL,
@@ -348,6 +349,11 @@ class WemPortalApi:
         # service call has a user waiting on it and no coordinator timeout
         # behind it, so neither gets a deadline.
         self._deadline = None
+        # device_id -> when its values were last refreshed, for the staleness
+        # check above. Monotonic because it measures a duration and never
+        # appears in output; a restart starts empty, which is correct - there
+        # is nothing on display yet either.
+        self._last_device_read: dict[str, float] = {}
         self.webscraping_cookie = {}
         # Persistent scraper instance, kept across coordinator cycles so
         # its underlying HTTP session (TCP connection + TLS handshake) is
@@ -401,6 +407,53 @@ class WemPortalApi:
         self.spider_wait_interval = self.spider_retry_count
         if self.spider_retry_count == SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE:
             self._forget_scraped_values()
+
+    def _forget_stale_device_values(self, device_id: str) -> None:
+        """Stop presenting one device's readings once they are too old.
+
+        The same rule _forget_scraped_values applies to the web source, for
+        the case the API path has no other answer to: the device did not
+        reply at all. mapper._clear_unanswered cannot help there - it needs a
+        reply that left a parameter out, which is evidence the reading ended.
+        A refusal is no evidence about any reading, only about the request.
+
+        Deliberately NOT tied to the cycle's success: a cycle where another
+        device answered is reported as successful, so without this the silent
+        device keeps publishing its last values indefinitely, and the only
+        symptom is a number that never changes.
+
+        Only `value` goes, as on both other paths - unit, name and icon stay,
+        so the entity keeps its identity and Home Assistant is not told a unit
+        changed.
+        """
+        last_read = self._last_device_read.get(device_id)
+        if last_read is None:
+            # Never read successfully in this session, so there is nothing on
+            # display that this could be about.
+            return
+        stale_for = time.monotonic() - last_read
+        if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:
+            return
+
+        forgotten = []
+        for key, row in (self.data.get(device_id) or {}).items():
+            if isinstance(row, dict) and row.get("value") is not None:
+                row["value"] = None
+                forgotten.append(key)
+        if not forgotten:
+            return
+        # Reset, so the next failure is measured from here rather than
+        # repeating this warning on every cycle for as long as the device
+        # stays away.
+        self._last_device_read[device_id] = time.monotonic()
+        _LOGGER.warning(
+            "Device %s has not answered for %d minutes. Its %d reading(s) are "
+            "no longer current and are now shown as unknown rather than as "
+            "the values they had then.",
+            device_id,
+            int(stale_for // 60),
+            len(forgotten),
+        )
 
     def _forget_scraped_values(self):
         """Stop presenting readings from a scrape that stopped working.
@@ -2187,8 +2240,10 @@ class WemPortalApi:
             failure = self._fetch_parameter_values(device_id)
             if failure is None:
                 successes += 1
+                self._last_device_read[device_id] = time.monotonic()
             else:
                 failures.append(f"device {device_id}: {failure}")
+                self._forget_stale_device_values(device_id)
             self._fetch_circuit_times(device_id)
 
         # Fetch Energy Statistics (rate limited internally)

@@ -1563,8 +1563,8 @@
   {
     "label": "scrape: forgetting the reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                row[\"value\"] = None\n                forgotten.append(key)",
-    "new": "                row.clear()\n                forgotten.append(key)",
+    "old": "        for key in self._previous_scraper_keys:\n            row = device.get(key)\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
+    "new": "        for key in self._previous_scraper_keys:\n            row = device.get(key)\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
     "tests": "readings_from_a_scrape_that_stopped_working_stop_being_current"
   },
   {
@@ -1615,6 +1615,34 @@
     "old": "'//input[@type=\"hidden\"][string(@name)]'",
     "new": "'//input[string(@name)]'",
     "tests": "the_login_form_carries_exactly_the_hidden_fields"
+  },
+  {
+    "label": "freshness: a silent device left publishing its last values",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                failures.append(f\"device {device_id}: {failure}\")\n                self._forget_stale_device_values(device_id)",
+    "new": "                failures.append(f\"device {device_id}: {failure}\")",
+    "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
+  },
+  {
+    "label": "freshness: a single missed read clearing a device",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:\n            return",
+    "new": "        if False:\n            return",
+    "tests": "a_brief_gap_does_not_throw_a_device_away"
+  },
+  {
+    "label": "freshness: a successful read that does not restart the clock",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                successes += 1\n                self._last_device_read[device_id] = time.monotonic()",
+    "new": "                successes += 1",
+    "tests": "a_device_that_answers_again_starts_its_clock_over"
+  },
+  {
+    "label": "freshness: forgetting a reading takes its unit with it",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        for key, row in (self.data.get(device_id) or {}).items():\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
+    "new": "        for key, row in (self.data.get(device_id) or {}).items():\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
+    "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
     "label": "unload: a poll that keeps going through the slow half of a teardown",
