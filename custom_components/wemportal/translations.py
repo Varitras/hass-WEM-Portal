@@ -116,9 +116,9 @@ def translate(language: str, value: str) -> str:
 
         # Use placeholders to prevent cascading translation bugs
         placeholders = {}
-        for i, (de_word, en_word) in enumerate(replacements):
+        for position, (de_word, en_word) in enumerate(replacements):
             if de_word in out:
-                placeholder = f"__TOKEN_{i}__"
+                placeholder = f"__TOKEN_{position}__"
                 placeholders[placeholder] = f" {en_word} "
                 out = out.replace(de_word, placeholder)
 

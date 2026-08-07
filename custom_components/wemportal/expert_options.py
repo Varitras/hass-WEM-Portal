@@ -51,7 +51,7 @@ def duplicate_entityvalues(id_values) -> set:
         entityvalue = (raw or "").strip()
         if entityvalue:
             counts[entityvalue] = counts.get(entityvalue, 0) + 1
-    return {entityvalue for entityvalue, n in counts.items() if n > 1}
+    return {entityvalue for entityvalue, count in counts.items() if count > 1}
 
 
 def expert_client_options(options):
