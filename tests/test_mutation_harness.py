@@ -15,6 +15,7 @@ import importlib.util
 import json
 import re
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -156,7 +157,9 @@ def test_the_file_is_restored_even_when_the_run_explodes(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mutate,
         "run_tests",
-        lambda selector, paths=None: (_ for _ in ()).throw(RuntimeError("boom")),
+        lambda selector, paths=None, root=None: (_ for _ in ()).throw(
+            RuntimeError("boom")
+        ),
     )
     plan = tmp_path / "plan.json"
     plan.write_text(
@@ -172,7 +175,11 @@ def test_the_file_is_restored_even_when_the_run_explodes(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan)])
+    # --jobs 1 on purpose: this is about the file in the REPOSITORY coming
+    # back. A parallel run breaks a copy instead, and that copy is thrown away
+    # afterwards either way - see the sibling test for the restore that
+    # matters there, which is between two cases sharing one worker tree.
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "1"])
 
     with pytest.raises(RuntimeError):
         mutate.main()
@@ -432,4 +439,160 @@ def test_a_dead_selector_stops_before_anything_is_mutated(tmp_path, monkeypatch)
     assert runs == [], "the plan was run although a selector named nothing"
     assert target.read_text(encoding="utf-8") == original, (
         "a mutation was applied before the plan was known to be sound"
+    )
+
+
+# --- running the plan in parallel, one copy of the repo per worker ------
+
+
+def _plan_of(count, tmp_path):
+    """A plan of `count` trivially-caught mutations, and the file it breaks."""
+    (tmp_path / "module.py").write_text(
+        "\n".join(f"value{index} = 1" for index in range(count)) + "\n",
+        encoding="utf-8",
+    )
+    plan = [
+        {
+            "path": "module.py",
+            "old": f"value{index} = 1",
+            "new": f"value{index} = 2",
+            "tests": "test_real",
+            "label": f"case{index}",
+        }
+        for index in range(count)
+    ]
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps(plan), encoding="utf-8")
+    return path
+
+
+def test_one_job_runs_in_the_repository_itself(tmp_path, monkeypatch):
+    """--jobs 1 is the fallback when a parallel run reports something odd, so
+    it has to be the OLD behaviour exactly: no copy, no temp directory."""
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    monkeypatch.setattr(
+        mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
+    )
+    seen = []
+    monkeypatch.setattr(
+        mutate,
+        "run_tests",
+        lambda selector, paths=None, root=None: seen.append(root) or True,
+    )
+    copies = []
+    monkeypatch.setattr(
+        mutate, "build_worktrees", lambda *_a, **_k: copies.append(True) or []
+    )
+    plan = _plan_of(2, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "1"])
+
+    assert mutate.main() == 0
+    assert seen == [None, None], "a copy was used although --jobs 1 was asked for"
+    assert copies == [], "worker copies were built for a serial run"
+
+
+def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
+    """Workers finish in whatever order they finish.
+
+    Reporting in that order would make two runs of the same plan produce
+    different output, which is a diff nobody can read - and the one case that
+    SURVIVED would move around between runs.
+    """
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    monkeypatch.setattr(
+        mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
+    )
+
+    def slowest_first(selector, paths=None, root=None):
+        # case0 takes longest, so finishing order is the reverse of plan order.
+        index = int(root.name.removeprefix("worker"))
+        time.sleep(0.05 * (3 - index))
+        return True
+
+    monkeypatch.setattr(mutate, "run_tests", slowest_first)
+    plan = _plan_of(3, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "3"])
+
+    assert mutate.main() == 0
+
+    reported = [
+        line.split()[-1]
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("caught")
+    ]
+    assert reported == ["case0", "case1", "case2"], (
+        "results were reported in finishing order, not plan order"
+    )
+
+
+def test_a_copy_missing_a_mutated_file_is_an_error(tmp_path, monkeypatch):
+    """The mistake that produced believable-looking nonsense once already.
+
+    A copy without pytest.ini collects nothing, so every case ends in an
+    unrelated pytest error - a wall of exit-code 4 that says nothing about
+    the file that is actually missing. Naming it here costs one stat per case.
+    """
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    (tmp_path / "module.py").write_text("value = 1\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        mutate.build_worktrees(
+            1, tmp_path / "holding", [{"path": "not-copied.py", "old": "", "new": ""}]
+        )
+
+    assert "not-copied.py" in str(excinfo.value)
+
+
+def test_the_worker_copies_are_removed_afterwards(tmp_path, monkeypatch):
+    """A run that leaves 1.7 MB per worker behind fills the temp directory
+    one invocation at a time."""
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    monkeypatch.setattr(
+        mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
+    )
+    monkeypatch.setattr(
+        mutate, "run_tests", lambda selector, paths=None, root=None: True
+    )
+    holding = []
+    real_mkdtemp = tempfile.mkdtemp
+    monkeypatch.setattr(
+        tempfile,
+        "mkdtemp",
+        lambda **kwargs: holding.append(real_mkdtemp(**kwargs)) or holding[-1],
+    )
+    plan = _plan_of(2, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "2"])
+
+    assert mutate.main() == 0
+    assert holding, "no temp directory was created for the worker copies"
+    assert not Path(holding[0]).exists(), "the worker copies were left behind"
+
+
+def test_a_worker_tree_is_clean_again_for_the_next_case(tmp_path, monkeypatch):
+    """Workers reuse their tree, so each case has to hand it back intact.
+
+    Without the restore the second case would run against code broken in two
+    places - its own mutation plus whatever the previous case left there - and
+    "caught" would then say nothing about the mutation it names.
+    """
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    (tmp_path / "module.py").write_text("a = 1\nb = 1\n", encoding="utf-8")
+
+    seen = []
+
+    def record_what_the_tree_looks_like(selector, paths=None, root=None):
+        seen.append((root / "module.py").read_text(encoding="utf-8"))
+        return True
+
+    monkeypatch.setattr(mutate, "run_tests", record_what_the_tree_looks_like)
+    cases = [
+        {"path": "module.py", "old": "a = 1", "new": "a = 2", "tests": "t"},
+        {"path": "module.py", "old": "b = 1", "new": "b = 2", "tests": "t"},
+    ]
+
+    # One worker, so both cases provably share a tree.
+    mutate.run_in_parallel(cases, {"t": ["tests/x.py"]}, jobs=1)
+
+    assert seen == ["a = 2\nb = 1\n", "a = 1\nb = 2\n"], (
+        "a case ran against a mutation left behind by the previous one"
     )

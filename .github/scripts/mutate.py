@@ -38,17 +38,44 @@ Then:
 Every mutation is reverted afterwards, including on failure. Exit code is
 non-zero if any mutation SURVIVED - that is, the suite stayed green while the
 code was broken, which means the test does not test it.
+
+Cases run several at a time, each in its own copy of the repository under the
+system temp directory (`--jobs`, default: cores - 2). Copies rather than
+locking, because the thing being shared is a file this script deliberately
+breaks. `--jobs 1` skips the copying and works in the repository itself, which
+is what to fall back to if a parallel run ever reports something surprising.
+
+Results are printed in PLAN order regardless, so two runs of the same plan
+produce the same output.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import queue
+import shutil
 import subprocess
 import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+
+# Everything else is copied into each worker's tree. Listing what to EXCLUDE
+# rather than what to include is the safer direction: a forgotten include is a
+# tree where pytest cannot collect, and the first attempt at this lost
+# pytest.ini that way - every run then ended in a collection error that read
+# like a real result.
+WORKTREE_EXCLUDES = (
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+)
 
 
 # pytest's exit codes. Only ONE of them means "the tests noticed": 1. The
@@ -121,8 +148,12 @@ def files_for(selector: str, locations: dict) -> list:
     return sorted(files)
 
 
-def run_tests(selector: str, paths=None) -> bool:
-    """True if the selected tests FAIL, i.e. the mutation was caught."""
+def run_tests(selector: str, paths=None, root: Path | None = None) -> bool:
+    """True if the selected tests FAIL, i.e. the mutation was caught.
+
+    `root` is the tree to run in, which is the repository itself unless a
+    parallel run handed this worker a copy of it.
+    """
     targets = list(paths) if paths else ["tests/"]
     try:
         result = subprocess.run(
@@ -140,7 +171,7 @@ def run_tests(selector: str, paths=None) -> bool:
                 "-k",
                 selector,
             ],
-            cwd=REPO,
+            cwd=root or REPO,
             capture_output=True,
             text=True,
             timeout=TEST_TIMEOUT_SECONDS,
@@ -177,8 +208,11 @@ _EXIT_REASON = {
 }
 
 
-def apply_mutation(case: dict) -> tuple[Path, bytes]:
+def apply_mutation(case: dict, root: Path | None = None) -> tuple[Path, bytes]:
     """Break one file on purpose, and hand back what it takes to undo that.
+
+    `root` is the tree to break, which is the repository itself unless a
+    parallel run handed this worker a copy of it.
 
     The original is returned as BYTES and kept in memory. It used to be copied
     into a fresh tempfile.mkdtemp() that nothing ever removed - one directory
@@ -190,7 +224,7 @@ def apply_mutation(case: dict) -> tuple[Path, bytes]:
     read, and writing that back would silently convert a CRLF checkout to LF.
     Two different reads, on purpose - one to compare against, one to restore.
     """
-    target = REPO / case["path"]
+    target = (root or REPO) / case["path"]
     original = target.read_bytes()
     source = target.read_text(encoding="utf-8")
     occurrences = source.count(case["old"])
@@ -205,9 +239,106 @@ def apply_mutation(case: dict) -> tuple[Path, bytes]:
     return target, original
 
 
+def default_jobs() -> int:
+    """Workers to use when nobody says. Two cores are left for everything else.
+
+    Measured on this suite: a single mutation spends about 0.8s running its
+    tests and roughly twice that starting pytest up, so the run is dominated
+    by per-process startup - which is exactly the shape that parallelises.
+    Six workers on eight cores came out at 5.3x.
+    """
+    return max(1, (os.cpu_count() or 2) - 2)
+
+
+def build_worktrees(count: int, into: Path, cases: list) -> list:
+    """One independent copy of the repository per worker.
+
+    The whole point of a copy: mutating a shared tree is why this ran serially
+    before. Each worker breaks only its own file, so nothing has to be
+    coordinated beyond handing a tree to one worker at a time.
+
+    They are built under the system temp directory, not inside the repository,
+    and that placement is doing real work: on WSL2 the repository lives on
+    /mnt/c, whose filesystem calls cross into Windows and cost roughly twice
+    what the Linux-native temp directory does. Measured on one mutation, 4.7s
+    against 2.4s. A copy is 1.7 MB, so even eight of them are noise.
+    """
+    trees = []
+    for index in range(count):
+        tree = into / f"worker{index}"
+        shutil.copytree(REPO, tree, ignore=shutil.ignore_patterns(*WORKTREE_EXCLUDES))
+        # A tree missing a file the plan mutates would report every one of its
+        # cases as an unrelated pytest error. Cheaper to say so here, once,
+        # naming the file - the alternative is reading a wall of exit-code 4.
+        for case in cases:
+            if not (tree / case["path"]).exists():
+                raise SystemExit(
+                    f"the worker copy has no {case['path']}, which the plan "
+                    "mutates. Check WORKTREE_EXCLUDES."
+                )
+        trees.append(tree)
+    return trees
+
+
+def run_case(case: dict, files: list, root: Path | None) -> bool:
+    """One mutation, applied and reverted in `root`."""
+    target, original = apply_mutation(case, root=root)
+    try:
+        return run_tests(case["tests"], files, root=root)
+    finally:
+        target.write_bytes(original)
+
+
+def run_in_parallel(cases: list, targets: dict, jobs: int) -> list:
+    """Every case, `jobs` at a time, each in a tree of its own.
+
+    Results come back in PLAN order rather than finishing order, so two runs
+    of the same plan produce the same output and can be diffed.
+    """
+    holding = Path(tempfile.mkdtemp(prefix="mutate-"))
+    try:
+        free_trees: queue.SimpleQueue = queue.SimpleQueue()
+        for tree in build_worktrees(jobs, holding, cases):
+            free_trees.put(tree)
+
+        done = 0
+
+        def one(case):
+            nonlocal done
+            tree = free_trees.get()
+            try:
+                caught = run_case(case, targets[case["tests"]], tree)
+            finally:
+                free_trees.put(tree)
+            done += 1
+            # A counter on stderr, so stdout stays the result list - and only
+            # on a terminal, because \r into a log file writes one long line.
+            if sys.stderr.isatty():
+                print(f"\r{done}/{len(cases)}", end="", file=sys.stderr, flush=True)
+            return caught
+
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            results = list(pool.map(one, cases))
+        if sys.stderr.isatty():
+            print("", file=sys.stderr)
+        return results
+    finally:
+        shutil.rmtree(holding, ignore_errors=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan", type=Path, help="JSON file describing the mutations")
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=default_jobs(),
+        help=(
+            "mutations to run at once, each in its own copy of the repository "
+            "(default: cores - 2). 1 runs in the repository itself, unchanged "
+            "from how this always worked."
+        ),
+    )
     args = parser.parse_args()
 
     cases = json.loads(args.plan.read_text(encoding="utf-8"))
@@ -225,13 +356,16 @@ def main() -> int:
             raise SystemExit(f"selector {selector!r} matched no tests")
         targets[selector] = files
 
-    for case in cases:
+    jobs = max(1, args.jobs)
+    if jobs == 1:
+        # In the repository itself, one at a time - what this always did, and
+        # what to fall back to when a parallel run reports something odd.
+        results = [run_case(case, targets[case["tests"]], None) for case in cases]
+    else:
+        results = run_in_parallel(cases, targets, jobs)
+
+    for case, caught in zip(cases, results, strict=True):
         label = case.get("label", case["path"])
-        target, original = apply_mutation(case)
-        try:
-            caught = run_tests(case["tests"], targets[case["tests"]])
-        finally:
-            target.write_bytes(original)
         print(f"{'caught  ' if caught else 'SURVIVED'} {label}")
         if not caught:
             survived.append(label)
