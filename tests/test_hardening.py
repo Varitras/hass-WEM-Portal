@@ -561,6 +561,117 @@ def test_api_lock_is_released_after_a_failing_poll():
     api._api_lock.release()
 
 
+class _Clock:
+    """A monotonic clock the test moves by hand.
+
+    Real elapsed time would make the deadline tests race their own runtime;
+    what they assert is which INSTANT the budget is measured from, and that
+    is only checkable when the test owns the clock.
+    """
+
+    def __init__(self, now=1000.0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+def test_a_cycle_out_of_time_makes_no_further_request(monkeypatch):
+    """The worker stops itself rather than spending another request.
+
+    asyncio.timeout cancels the coordinator's await, never the executor
+    thread: an overrunning cycle used to run on to completion, holding the
+    shared lock and still spending requests at a portal that counts them per
+    IP, long after Home Assistant had given up on the answer.
+    """
+    api = _api()
+    session = RecordingSession()
+    api.session = session
+    api._deadline = time.monotonic() - 1
+
+    with pytest.raises(exceptions.PollDeadlineExceeded, match="budget"):
+        api.make_api_call(url="https://example.invalid/data", do_retry=False)
+
+    assert session.post_kwargs is None, "a request was sent after the deadline"
+
+
+def test_the_scrape_is_not_started_without_budget_left():
+    """The scrape has its own session and never passes through
+    make_api_call, so the cycle's deadline has to be checked here too. It is
+    also the most expensive thing a cycle does - starting one with no budget
+    left guarantees it is abandoned half-way."""
+    api = _api()
+    api._deadline = time.monotonic() - 1
+
+    with pytest.raises(exceptions.PollDeadlineExceeded, match="budget"):
+        api.fetch_webscraping_data()
+
+    assert api._scraper is None, "the scraper was built despite no budget left"
+
+
+def test_the_deadline_counts_the_wait_for_the_lock(monkeypatch):
+    """The budget starts when fetch_data is ENTERED, not when it finally
+    gets the lock.
+
+    A cycle that spent its whole budget queueing has nothing left to spend at
+    the portal - it would only be cut off mid-request. Measuring from the
+    acquire instead would let a pile-up of queued cycles each claim a full
+    budget of their own, which is the situation this exists to end.
+    """
+    api = _api()
+    clock = _Clock()
+    monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
+    monkeypatch.setattr(wemportalapi, "POLL_DEADLINE_SECONDS", 100)
+
+    def slow_acquire(_what):
+        clock.now += 90  # queued behind a running operation
+        api._api_lock.acquire()
+
+    seen = {}
+
+    def record(*_a, **_k):
+        seen["deadline"] = api._deadline
+        return {}
+
+    api._acquire_api_lock = slow_acquire
+    api._fetch_data = record
+    api.fetch_data()
+
+    assert seen["deadline"] == 1100, (
+        "the deadline was measured from the acquire (1090+100), not from "
+        "entry (1000+100), so queueing cost the cycle nothing"
+    )
+
+
+def test_the_deadline_is_cleared_after_a_failing_poll():
+    """It must not outlive its cycle. Left standing, the next on-demand write
+    would inherit a deadline that expired long ago and refuse to run."""
+    api = _api()
+
+    def boom(*_a, **_k):
+        raise exceptions.WemPortalError("portal down")
+
+    api._fetch_data = boom
+    with pytest.raises(exceptions.WemPortalError):
+        api.fetch_data()
+
+    assert api._deadline is None
+
+
+def test_an_operation_outside_a_poll_is_not_deadlined():
+    """Only fetch_data sets a deadline. An on-demand write has a user waiting
+    on it and no coordinator timeout behind it, so it must run even when the
+    last poll's budget would long since have expired."""
+    api = _api()
+    session = RecordingSession()
+    api.session = session
+
+    api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+
+    assert api._deadline is None
+    assert session.post_kwargs is not None, "the write was refused without a poll"
+
+
 def _web_api(mode, scraped=None):
     api = _api(config={"mode": mode}, scraper_device_id="0000")
     api.modules = {}
@@ -2582,9 +2693,15 @@ TRANSPORT_FIELDS = frozenset(
 # out of Home Assistant's setup. A recovery does not un-complete the cycles
 # that already ran, and clearing it would only postpone that re-read by one
 # cycle for no reason.
+# _deadline belongs to the poll cycle in progress, not to the connection, so
+# replacing the connection must not touch it. In practice a recovery runs
+# between cycles and finds it None either way - but "the transport was
+# rebuilt" is not a reason for a running cycle to gain more time, and having
+# it in TRANSPORT_FIELDS would say it was.
 PRESERVED_FIELDS = frozenset(
     {
         "_first_cycle_done",
+        "_deadline",
         "data",
         "username",
         "password",

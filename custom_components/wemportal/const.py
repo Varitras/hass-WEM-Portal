@@ -32,6 +32,20 @@ DEFAULT_TIMEOUT: Final = 360
 # await it belongs to, otherwise every cycle leaves another parked worker
 # behind.
 API_LOCK_TIMEOUT_SECONDS: Final = DEFAULT_TIMEOUT - 30
+
+# How long one poll cycle may spend before it stops itself.
+#
+# The same reasoning as the lock timeout above, one step further along.
+# asyncio.timeout cancels the coordinator's AWAIT; it cannot cancel the
+# executor thread behind it. A cycle that overran therefore ran on to
+# completion - holding the shared lock, still spending requests at a portal
+# that counts them per IP - while Home Assistant had already recorded the
+# failure and moved on. Nobody was waiting for that work any more.
+#
+# Below DEFAULT_TIMEOUT so the worker is gone BEFORE the coordinator gives
+# up on it rather than after, which is the whole point: the next cycle then
+# finds a free lock instead of queueing behind an abandoned one.
+POLL_DEADLINE_SECONDS: Final = DEFAULT_TIMEOUT - 30
 WEB_MAIN_URL: Final = "https://www.wemportal.com/Web/Default.aspx"
 # The portal origin, sent on every postback (confirmed via HAR) - both
 # full and async postbacks include it. Async postbacks additionally

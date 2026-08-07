@@ -86,6 +86,24 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **A poll cycle that runs out of time now stops instead of running on
+  unwatched.** Home Assistant abandons a cycle after 360 seconds, but that
+  timeout cancels the *await* - it cannot cancel the worker thread behind it.
+  The overrunning cycle therefore ran to completion: still holding the shared
+  connection lock, still spending requests at a portal that counts them per
+  IP, long after the result had been recorded as a failure and discarded. The
+  next cycle then queued behind work nobody was waiting for any more.
+
+  The worker now carries its own deadline, set when the cycle starts and
+  checked before each request and before the scrape begins. It stops shortly
+  before Home Assistant would give up, so the connection is free when the next
+  cycle arrives. The cycle is reported as failed - a partial read is not
+  booked as a success - and the readings gathered so far are kept for the next
+  one to build on. Parameter discovery in particular resumes where it left
+  off rather than restarting.
+
+  Only automatic polling is affected. An on-demand write or service call has
+  someone waiting on it and no timeout behind it, so neither gets a deadline.
 - **An unreadable login page no longer costs the password.** If the portal
   answers the login page with an empty or unparseable body, the credentials
   are not sent. Previously the form came back empty, the login posted anyway -

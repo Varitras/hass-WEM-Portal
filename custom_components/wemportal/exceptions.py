@@ -53,6 +53,21 @@ class ApiBusyError(WemPortalError):
     """
 
 
+class PollDeadlineExceeded(WemPortalError):
+    """The poll cycle used up its time budget and stopped itself.
+
+    Its own type for the same reason ApiBusyError is: the connection is not
+    broken, so the WemPortalError recovery - which resets the transport after
+    two failures - would throw away a warm session over a portal that is
+    merely slow, and make the next cycle start from a cold login.
+
+    Raised rather than returned so a half-finished cycle fails honestly. The
+    partial readings are still in api.data and the next cycle builds on them;
+    what must not happen is Home Assistant recording an incomplete read as a
+    successful one.
+    """
+
+
 class ExpertOperationAborted(Exception):
     """Raised when the configuration a portal operation belongs to is gone.
 

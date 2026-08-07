@@ -1467,6 +1467,73 @@ async def test_a_busy_api_does_not_trigger_the_recovery_swap(hass, monkeypatch):
     assert coordinator.api is api_before, "a busy api was replaced as if broken"
 
 
+async def test_a_cycle_that_ran_out_of_time_keeps_its_connection(hass, monkeypatch):
+    """A worker that stopped on its own deadline says "too slow", not
+    "session broken".
+
+    Handled by the generic WemPortalError branch it would trip the transport
+    reset on the second failure - throwing away a warm session, and making
+    the next cycle open a fresh login at the very portal that was already
+    answering too slowly to finish in time.
+    """
+    from custom_components.wemportal.exceptions import PollDeadlineExceeded
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_failed = 1  # one more failure would trip the reset
+
+    resets = []
+    monkeypatch.setattr(
+        WemPortalApi, "reset_transport", lambda self: resets.append(True)
+    )
+
+    def out_of_time(self, *_a, **_k):
+        raise PollDeadlineExceeded("passed its 330s budget and stopped")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", out_of_time)
+
+    with pytest.raises(UpdateFailed, match="budget"):
+        await coordinator._async_update_data()
+
+    assert resets == [], "a slow cycle had its connection reset as if broken"
+
+
+async def test_a_cycle_that_ran_out_of_time_still_counts_as_a_failure(
+    hass, monkeypatch
+):
+    """Unlike a busy api, this cycle really did fail to deliver readings.
+
+    The backoff that gives a struggling portal more room is exactly what is
+    wanted here, so the failure has to be counted - just not as an AUTH
+    failure, which would march towards a reauth prompt for credentials that
+    were never in question.
+    """
+    from custom_components.wemportal.exceptions import PollDeadlineExceeded
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    failures_before = coordinator.num_failed
+    coordinator.num_auth_failed = 2
+
+    def out_of_time(self, *_a, **_k):
+        raise PollDeadlineExceeded("passed its 330s budget and stopped")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", out_of_time)
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert coordinator.num_failed == failures_before + 1, (
+        "the cycle delivered nothing but did not count as a failure, so the "
+        "backoff never engages"
+    )
+    assert coordinator.num_auth_failed == 0, (
+        "a slow portal moved the integration towards a reauth prompt"
+    )
+
+
 async def test_expert_service_refuses_an_unconfigured_parameter(hass):
     """Without this the service is a generic write primitive for ANY
     parameter of the installation, including ones never surfaced in Home

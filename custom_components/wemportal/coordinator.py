@@ -17,6 +17,7 @@ from .exceptions import (
     ApiBusyError,
     AuthError,
     ForbiddenError,
+    PollDeadlineExceeded,
     PortalMaintenanceError,
     WemPortalError,
 )
@@ -304,6 +305,22 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     exc,
                 )
                 raise UpdateFailed(f"Authentication error, will retry: {exc}") from exc
+            except PollDeadlineExceeded as exc:
+                # The cycle stopped itself, so nothing is broken - the portal
+                # was simply slower than one cycle allows. Caught BEFORE the
+                # WemPortalError handler for the same reason ApiBusyError is:
+                # that one resets the transport after two failures, which
+                # here would throw away a warm session over slowness alone
+                # and make the next cycle start from a cold login.
+                #
+                # Still counted as a failure, unlike ApiBusyError. This cycle
+                # really did fail to deliver readings, and the extra backoff
+                # is exactly what a portal that cannot answer in time needs.
+                # Not an auth failure: the credentials were never in doubt.
+                self.num_failed += 1
+                self._reset_auth_failures()
+                _LOGGER.warning("Poll cycle stopped on its own deadline: %s", exc)
+                raise UpdateFailed(str(exc)) from exc
             except ApiBusyError as exc:
                 # NOT a corrupted session: a previous poll is still running.
                 # Must be caught BEFORE the WemPortalError handler below, or

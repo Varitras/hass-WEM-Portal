@@ -13,6 +13,7 @@ import requests
 from homeassistant.const import CONF_SCAN_INTERVAL
 from .exceptions import (
     ApiBusyError,
+    PollDeadlineExceeded,
     PortalMaintenanceError,
     AuthError,
     ForbiddenError,
@@ -59,6 +60,8 @@ from .const import (
     SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE,
     STATISTICS_RETRY_INTERVAL_SECONDS,
     API_LOCK_TIMEOUT_SECONDS,
+    POLL_DEADLINE_SECONDS,
+    DEFAULT_TIMEOUT,
     API_REQUEST_TIMEOUT_SECONDS,
     API_TRANSPORT_RETRY_DELAY_SECONDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
@@ -340,6 +343,11 @@ class WemPortalApi:
         # session/state. A plain Lock is safe - writes never call fetch_data
         # and vice versa, so the two never nest on one thread.
         self._api_lock = threading.Lock()
+        # When the poll cycle currently in progress has to stop, or None when
+        # no poll is running. Only fetch_data sets it: an on-demand write or a
+        # service call has a user waiting on it and no coordinator timeout
+        # behind it, so neither gets a deadline.
+        self._deadline = None
         self.webscraping_cookie = {}
         # Persistent scraper instance, kept across coordinator cycles so
         # its underlying HTTP session (TCP connection + TLS handshake) is
@@ -615,11 +623,42 @@ class WemPortalApi:
         """Run a full poll cycle under the shared API lock, so it can't
         interleave with an on-demand write (change_value) on the same
         session/state."""
+        started = time.monotonic()
         self._acquire_api_lock("poll cycle")
         try:
+            # Set AFTER taking the lock, but measured from BEFORE it. Both
+            # halves matter. Queueing is part of the budget - a cycle that
+            # spent it waiting has nothing left to spend at the portal, and
+            # would only be cut off mid-request anyway. Setting it before the
+            # acquire would be worse than useless: the field is shared, so
+            # this cycle's deadline would land on whatever operation is
+            # holding the lock right now, which has its own caller waiting.
+            self._deadline = started + POLL_DEADLINE_SECONDS
             return self._fetch_data(enabled_devices)
         finally:
+            self._deadline = None
             self._api_lock.release()
+
+    def check_deadline(self):
+        """Stop the poll cycle if it has used up its time budget.
+
+        Checked at the two points every long cycle passes through - each
+        mobile-API request and the entry to the scrape - rather than inside
+        the loops that call them. Those loops all funnel through here, so
+        guarding them individually would be six places to forget instead of
+        two.
+
+        Does nothing when no poll is running: see the note on `_deadline`.
+        """
+        if self._deadline is None:
+            return
+        if time.monotonic() >= self._deadline:
+            raise PollDeadlineExceeded(
+                f"This poll cycle passed its {POLL_DEADLINE_SECONDS}s budget "
+                f"and stopped. Home Assistant abandons the cycle at "
+                f"{DEFAULT_TIMEOUT}s regardless; stopping first releases the "
+                f"connection for the next one instead of holding it."
+            )
 
     def _discover_parameters_if_due(self):
         """Read the per-module parameter definitions, if any are due.
@@ -1021,6 +1060,12 @@ class WemPortalApi:
         # not just the API path - a 403 from either frontend means the
         # server wants us to back off everywhere.
         self.check_cooldown()
+        # The scrape does not go through make_api_call - it has its own
+        # session and its own request sequence - so the cycle's deadline has
+        # to be checked here as well. A scrape is the single most expensive
+        # thing a cycle does; starting one with no budget left guarantees the
+        # coordinator abandons it half-way.
+        self.check_deadline()
 
         # Reuse the existing scraper (and with it, its warm HTTP
         # connection) across cycles; only create a new one on first use
@@ -1410,6 +1455,11 @@ class WemPortalApi:
             # applies to every single call site that goes through here,
             # not just the one that originally triggered it.
             self.check_cooldown()
+            # Same idea, different budget: stop a poll cycle that is out of
+            # time before spending another request on it. Inside the attempt
+            # loop on purpose, so a retry cannot carry a cycle past the
+            # deadline the first attempt was still inside of.
+            self.check_deadline()
 
             time.sleep(1)  # Wait 1 sec between requests to be graceful to the API.
             # Merge any call-specific headers on top of the default headers,

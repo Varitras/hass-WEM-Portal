@@ -1615,5 +1615,61 @@
     "old": "'//input[@type=\"hidden\"][string(@name)]'",
     "new": "'//input[string(@name)]'",
     "tests": "the_login_form_carries_exactly_the_hidden_fields"
+  },
+  {
+    "label": "deadline: an out-of-time cycle spending another request",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "\n            self.check_deadline()",
+    "new": "\n            pass",
+    "tests": "a_cycle_out_of_time_makes_no_further_request"
+  },
+  {
+    "label": "deadline: starting a scrape with no budget left",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "\n        self.check_deadline()",
+    "new": "\n        pass",
+    "tests": "the_scrape_is_not_started_without_budget_left"
+  },
+  {
+    "label": "deadline: measured from the lock instead of from entry",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self._deadline = started + POLL_DEADLINE_SECONDS",
+    "new": "            self._deadline = time.monotonic() + POLL_DEADLINE_SECONDS",
+    "tests": "the_deadline_counts_the_wait_for_the_lock"
+  },
+  {
+    "label": "deadline: outliving the cycle it belongs to",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        finally:\n            self._deadline = None\n            self._api_lock.release()",
+    "new": "        finally:\n            self._api_lock.release()",
+    "tests": "the_deadline_is_cleared_after_a_failing_poll"
+  },
+  {
+    "label": "deadline: a slow cycle handled as a broken session",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            except PollDeadlineExceeded as exc:",
+    "new": "            except ApiBusyError as exc:",
+    "tests": "a_cycle_that_ran_out_of_time_keeps_its_connection"
+  },
+  {
+    "label": "deadline: a cycle that delivered nothing not counted as failed",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                self.num_failed += 1\n                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
+    "new": "                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
+    "tests": "a_cycle_that_ran_out_of_time_still_counts_as_a_failure"
+  },
+  {
+    "label": "deadline: an operation outside a poll deadlined anyway",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if self._deadline is None:\n            return\n",
+    "new": "",
+    "tests": "an_operation_outside_a_poll_is_not_deadlined"
+  },
+  {
+    "label": "deadline: a slow portal left marching towards a reauth prompt",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
+    "new": "                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
+    "tests": "a_cycle_that_ran_out_of_time_still_counts_as_a_failure"
   }
 ]
