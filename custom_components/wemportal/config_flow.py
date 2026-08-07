@@ -396,7 +396,7 @@ class WemportalOptionsFlow(OptionsFlow):
         # stored options.
         source = user_input if user_input is not None else self.config_entry.options
 
-        def opt(key, fallback):
+        def prefill(key, fallback):
             # Local helper (previously a lambda stored on self): read an
             # option value with a fallback - from the just-submitted input on
             # an error redisplay, or the stored options otherwise.
@@ -415,7 +415,7 @@ class WemportalOptionsFlow(OptionsFlow):
             step_id="configure",
             errors=errors,
             description_placeholders={"status": detail},
-            data_schema=self._configure_schema(opt, id_options),
+            data_schema=self._configure_schema(prefill, id_options),
         )
 
     async def _validate_mode_change(self, user_input) -> dict:
@@ -540,9 +540,9 @@ class WemportalOptionsFlow(OptionsFlow):
         self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
         return self.async_create_entry(title="", data=merged)
 
-    def _configure_schema(self, opt, id_options):
-        """The options form itself. `opt` reads a prefill value, `id_options`
-        is the slot-id dropdown content."""
+    def _configure_schema(self, prefill, id_options):
+        """The options form itself. `prefill` reads a field's stored or
+        just-submitted value, `id_options` is the slot-id dropdown content."""
         return vol.Schema(
             {
                 # Both scan intervals are clamped to a lower bound (like
@@ -551,14 +551,14 @@ class WemportalOptionsFlow(OptionsFlow):
                 # and reliably trigger the IP-wide 403 rate limit.
                 vol.Optional(
                     CONF_SCAN_INTERVAL,
-                    default=opt(CONF_SCAN_INTERVAL, 1800),
+                    default=prefill(CONF_SCAN_INTERVAL, 1800),
                 ): vol.All(
                     cv.positive_int,
                     vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
                 ),
                 vol.Optional(
                     CONF_SCAN_INTERVAL_API,
-                    default=opt(CONF_SCAN_INTERVAL_API, 300),
+                    default=prefill(CONF_SCAN_INTERVAL_API, 300),
                 ): vol.All(
                     cv.positive_int,
                     vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
@@ -568,23 +568,23 @@ class WemportalOptionsFlow(OptionsFlow):
                 # unsupported language code.
                 vol.Optional(
                     CONF_LANGUAGE,
-                    default=opt(CONF_LANGUAGE, "en"),
+                    default=prefill(CONF_LANGUAGE, "en"),
                 ): vol.In(["en", "de"]),
-                vol.Optional(CONF_MODE, default=opt(CONF_MODE, DEFAULT_MODE)): vol.In(
-                    AVAILABLE_MODES
-                ),
+                vol.Optional(
+                    CONF_MODE, default=prefill(CONF_MODE, DEFAULT_MODE)
+                ): vol.In(AVAILABLE_MODES),
                 # Expert write access (web) - off by default. Entities/
                 # service only exist while this is enabled.
                 vol.Optional(
                     CONF_EXPERT_WRITE,
-                    default=opt(CONF_EXPERT_WRITE, False),
+                    default=prefill(CONF_EXPERT_WRITE, False),
                 ): cv.boolean,
                 # Post a persistent notification after a SUCCESSFUL expert
                 # write. OFF by default (noisy when setting several
                 # values); failures always notify regardless.
                 vol.Optional(
                     CONF_EXPERT_NOTIFY_ON_SUCCESS,
-                    default=opt(CONF_EXPERT_NOTIFY_ON_SUCCESS, False),
+                    default=prefill(CONF_EXPERT_NOTIFY_ON_SUCCESS, False),
                 ): cv.boolean,
                 # Optional periodic read-back of the configured expert
                 # parameters - OFF by default (each read is a full
@@ -593,11 +593,11 @@ class WemportalOptionsFlow(OptionsFlow):
                 # MIN_EXPERT_POLL_INTERVAL_MINUTES.
                 vol.Optional(
                     CONF_EXPERT_AUTO_POLL,
-                    default=opt(CONF_EXPERT_AUTO_POLL, False),
+                    default=prefill(CONF_EXPERT_AUTO_POLL, False),
                 ): cv.boolean,
                 vol.Optional(
                     CONF_EXPERT_POLL_INTERVAL,
-                    default=opt(
+                    default=prefill(
                         CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
                     ),
                 ): vol.All(
@@ -612,27 +612,27 @@ class WemportalOptionsFlow(OptionsFlow):
                 # module layout where reads/writes otherwise fail.
                 vol.Optional(
                     CONF_EXPERT_ENABLE_MODULE_NAV,
-                    default=opt(CONF_EXPERT_ENABLE_MODULE_NAV, False),
+                    default=prefill(CONF_EXPERT_ENABLE_MODULE_NAV, False),
                 ): cv.boolean,
                 # Module menu index used ONLY when module select is
                 # enabled above. Empty default; "6" = heat pump on the
                 # reference install.
                 vol.Optional(
                     CONF_EXPERT_MODULE_ARG,
-                    default=opt(CONF_EXPERT_MODULE_ARG, ""),
+                    default=prefill(CONF_EXPERT_MODULE_ARG, ""),
                 ): cv.string,
                 vol.Optional(
                     CONF_EXPERT_ENABLE_SECURITY_CODE,
-                    default=opt(CONF_EXPERT_ENABLE_SECURITY_CODE, False),
+                    default=prefill(CONF_EXPERT_ENABLE_SECURITY_CODE, False),
                 ): cv.boolean,
                 # Ten generic expert-parameter slots (name + entityvalue
                 # hex ID). Added programmatically below so the block stays
                 # compact. Empty slots are ignored.
-                **self._expert_slot_schema(opt, id_options),
+                **self._expert_slot_schema(prefill, id_options),
             }
         )
 
-    def _expert_slot_schema(self, opt, id_options):
+    def _expert_slot_schema(self, prefill, id_options):
         """Build the vol schema fields for the ten generic expert slots.
 
         Each slot is a free-text name field and an entityvalue-id field. The
@@ -664,13 +664,13 @@ class WemportalOptionsFlow(OptionsFlow):
             fields[
                 vol.Optional(
                     name_key,
-                    description={"suggested_value": opt(name_key, "")},
+                    description={"suggested_value": prefill(name_key, "")},
                 )
             ] = cv.string
             fields[
                 vol.Optional(
                     id_key,
-                    description={"suggested_value": opt(id_key, "")},
+                    description={"suggested_value": prefill(id_key, "")},
                 )
             ] = id_selector
         return fields
@@ -692,7 +692,7 @@ class WemportalOptionsFlow(OptionsFlow):
         from .expert_writer import WemPortalExpertClient
 
         entry = self.config_entry
-        client_opts = expert_client_options(entry.options)
+        client_options = expert_client_options(entry.options)
         data = getattr(entry, "runtime_data", None)
         api = data.api if data is not None else None
         return WemPortalExpertClient(
@@ -701,10 +701,10 @@ class WemportalOptionsFlow(OptionsFlow):
             cooldown_check=api.check_expert_cooldown if api is not None else None,
             cooldown_activate=api.activate_expert_cooldown if api is not None else None,
             cookie_jar=api.expert_cookies if api is not None else None,
-            **client_opts,
+            **client_options,
         )
 
-    async def _run_expert(self, work, *args):
+    async def _run_expert(self, work, *arguments):
         """Run one blocking expert operation under the shared per-account lock.
 
         The entity write and the auto-poll both take it, so only one expert
@@ -724,7 +724,7 @@ class WemportalOptionsFlow(OptionsFlow):
             if lock is not None and not lock.acquire(blocking=False):
                 raise ExpertBusy("another expert operation is running for this account")
             try:
-                return work(*args)
+                return work(*arguments)
             finally:
                 if lock is not None:
                     lock.release()
