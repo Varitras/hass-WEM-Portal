@@ -1617,6 +1617,13 @@
     "tests": "the_login_form_carries_exactly_the_hidden_fields"
   },
   {
+    "label": "scrape: a naive timestamp that hides the DST jump",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.last_scraping_update = dt_util.now()",
+    "new": "        self.last_scraping_update = dt_util.now().replace(tzinfo=None)",
+    "tests": "the_scrape_timestamp_carries_its_timezone"
+  },
+  {
     "label": "options: the discovery list shared by every flow again",
     "path": "custom_components/wemportal/config_flow.py",
     "old": "        self._discovered: list = []",

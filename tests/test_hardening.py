@@ -693,6 +693,30 @@ def _web_api(mode, scraped=None):
     return api
 
 
+def test_the_scrape_timestamp_carries_its_timezone():
+    """The scrape interval is a difference between two of these timestamps.
+
+    Naive local times are subtracted as if the clock never moved, so a
+    daylight-saving change lands squarely in that difference: in spring it
+    reads an hour too LONG and the next scrape fires at once, in autumn an
+    hour too SHORT and a whole hour of cycles is skipped. An aware timestamp
+    carries its offset, so Python normalises both sides to UTC first.
+
+    Asserted on the stored value rather than by simulating a DST change: the
+    offset is the property that makes the arithmetic right, and a test that
+    moved the clock would only be testing Python's own subtraction.
+    """
+    api = _web_api("both")
+    api.spider_wait_interval = 0
+    api.last_scraping_update = None
+
+    api._scrape_and_merge()
+
+    assert api.last_scraping_update.tzinfo is not None, (
+        "a naive timestamp puts the DST jump straight into the scrape interval"
+    )
+
+
 def test_web_mode_honours_a_fully_disabled_installation():
     """Scraping is the heaviest request the integration makes, and it
     ignored the device filter entirely - so disabling every device still

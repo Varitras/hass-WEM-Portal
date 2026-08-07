@@ -86,6 +86,15 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **The web scrape keeps its schedule across a daylight-saving change.** The
+  interval between scrapes was measured as the difference between two naive
+  local timestamps, which are subtracted as if the clock never moved. So the
+  hour the clock jumps landed straight in that difference: in spring it read
+  an hour too long and the next scrape fired immediately, in autumn an hour
+  too short and scraping paused for up to an hour beyond the configured
+  interval. Both timestamps are timezone-aware now, so the arithmetic goes
+  through UTC and the interval is the interval. Twice a year, and only the
+  web scrape - the API poll was never affected.
 - **A poll cycle that runs out of time now stops instead of running on
   unwatched.** Home Assistant abandons a cycle after 360 seconds, but that
   timeout cancels the *await* - it cannot cancel the worker thread behind it.

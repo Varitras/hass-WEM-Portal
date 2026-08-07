@@ -12,13 +12,14 @@ everyday run deselects them (see pytest.ini), CI runs them with `-m ""`.
 
 import threading
 import types
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wemportal import expert_writer
@@ -1975,7 +1976,6 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(
 
     So this pins both halves: the transport is gone, everything else is not.
     """
-    from datetime import datetime
 
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -1985,7 +1985,9 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(
     coordinator = entry.runtime_data.coordinator
     api = coordinator.api
 
-    stamp = datetime(2026, 8, 2, 12, 0, 0)
+    # Aware, like the value the api itself stores: a naive one would raise
+    # TypeError the moment _scrape_is_due subtracts it.
+    stamp = dt_util.as_local(datetime(2026, 8, 2, 12, 0, 0, tzinfo=UTC))
     api.spider_wait_interval, api.spider_retry_count = 3, 3
     api.last_scraping_update = stamp
     api.last_statistics_fetch = 111.0

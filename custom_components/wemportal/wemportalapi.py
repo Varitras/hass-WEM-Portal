@@ -5,10 +5,11 @@ Weishaupt webscraping and API library
 import copy
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import requests
 from homeassistant.const import CONF_SCAN_INTERVAL
+from homeassistant.util import dt as dt_util
 from lxml import html
 from lxml.etree import ParserError
 
@@ -728,7 +729,13 @@ class WemPortalApi:
             return False
         if self.last_scraping_update is None:
             return True
-        waited = datetime.now() - self.last_scraping_update + timedelta(seconds=10)
+        # Timezone-aware on both sides, and that is the point rather than a
+        # formality. Two NAIVE local timestamps are subtracted as if the clock
+        # never moved, so a DST change lands in this difference: in spring it
+        # reads an hour too long and scrapes at once, in autumn an hour too
+        # short and skips a whole hour's worth of cycles. Aware values carry
+        # their offset, so Python normalises both to UTC before subtracting.
+        waited = dt_util.now() - self.last_scraping_update + timedelta(seconds=10)
         return waited > self.scan_interval
 
     def _count_down_scrape_backoff(self):
@@ -741,7 +748,10 @@ class WemPortalApi:
         both have worked."""
         webscraping_data = self.fetch_webscraping_data()
         self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
-        self.last_scraping_update = datetime.now()
+        # Local time rather than UTC: this value is also printed to the user in
+        # the "no longer current" warning, and dt_util.now() is both aware (see
+        # _scrape_is_due) and in the timezone Home Assistant is configured for.
+        self.last_scraping_update = dt_util.now()
 
     def _collect_web(self, enabled_devices):
         """`web` mode: the scrape is the only source there is."""
