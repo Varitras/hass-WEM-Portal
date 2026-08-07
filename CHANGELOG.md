@@ -86,6 +86,26 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **A device whose modules the portal refuses to describe recovers in an
+  hour, not a day - and says so.** When the portal rejects a module's
+  description, that module is kept rather than dropped, with an empty
+  parameter list, and asked again later. How much later was the wrong way
+  round: a module that already had parameters retried after an hour, while
+  one that had none yet waited a full day. The second is the more urgent of
+  the two - it has nothing to show at all - so a device whose every module
+  was rejected stayed empty for a day over one refused request.
+
+  Both cases retry within the hour now. A module that genuinely answers "I
+  have no parameters" is unchanged and keeps the daily round: that is a real
+  answer, and asking it hourly would spend twenty-four times the requests on
+  modules that replied correctly the first time.
+
+  The refusal is also visible now. A device left with no readable parameters
+  because its descriptions were refused says exactly that, instead of the
+  debug line it used to leave behind - so "no entities appeared for this
+  device" has a stated cause rather than being something to guess at. The
+  cycle still does not fail for it: the device may genuinely have nothing,
+  and failing would put every other device into a backoff.
 - **The web scrape keeps its schedule across a daylight-saving change.** The
   interval between scrapes was measured as the difference between two naive
   local timestamps, which are subtracted as if the clock never moved. So the

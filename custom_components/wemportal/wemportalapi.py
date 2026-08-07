@@ -1717,17 +1717,27 @@ class WemPortalApi:
             )
             return
 
-        # An empty description is a normal answer, not a fault: some modules
-        # simply have nothing to poll. A rejected request might be the same
-        # thing said less politely, or a portal having a bad minute - from
-        # here the two are indistinguishable, which is exactly why neither
-        # may be treated as final.
+        # Both are recorded with an empty list and a timestamp rather than
+        # deleted, so the module survives and is asked again. What differs is
+        # how soon, and that difference is the point.
         #
-        # Both are recorded with an empty list and a timestamp, so the normal
-        # interval applies and the module is asked once a day like everything
-        # else. If it ever does gain parameters, that is when they are found.
-        # An empty list is falsy, so nothing is asked of it in the meantime -
-        # the value read skips modules without parameters.
+        # An empty description is a real answer: the module says it has
+        # nothing to poll. Believe it and ask again on the normal daily
+        # round.
+        #
+        # A REJECTED description is not an answer at all. The module may well
+        # have parameters; the portal just would not say. Treated like the
+        # empty case it waited a full day - and a device whose every module
+        # was rejected then showed nothing at all for that day, with only a
+        # debug line to explain it. That is the wrong way round: a module
+        # that already has parameters keeps showing them while it retries in
+        # an hour, and one that has none yet has nothing to show at all, so
+        # it is the more urgent of the two, not the less.
+        #
+        # So a rejection gets the same short retry a failed RE-read gets, and
+        # `description_refused` records which of the two happened - the value
+        # read needs it to tell "this device has nothing" from "this device
+        # was not told anything".
         if unsupported:
             _LOGGER.warning(
                 "Device %s module %s/%s (%s) would not describe itself (%s). "
@@ -1738,7 +1748,13 @@ class WemPortalApi:
                 values["Type"],
                 values.get("Name", "?"),
                 why,
-                PARAMETER_REDISCOVERY_INTERVAL_SECONDS // 3600,
+                PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,
+            )
+            values["description_refused"] = True
+            values["parameters_fetched_at"] = time.time() - max(
+                0,
+                PARAMETER_REDISCOVERY_INTERVAL_SECONDS
+                - PARAMETER_REDISCOVERY_RETRY_SECONDS,
             )
         else:
             _LOGGER.debug(
@@ -1750,8 +1766,9 @@ class WemPortalApi:
                 values.get("Name", "?"),
                 PARAMETER_REDISCOVERY_INTERVAL_SECONDS // 3600,
             )
+            values.pop("description_refused", None)
+            values["parameters_fetched_at"] = time.time()
         values["parameters"] = {}
-        values["parameters_fetched_at"] = time.time()
 
     def _parameters_are_stale(self, module) -> bool:
         """Whether this module's parameter list is due for a re-read.
@@ -1855,6 +1872,11 @@ class WemPortalApi:
             else:
                 self.modules[device_id][key]["parameters"] = parameters
                 self.modules[device_id][key]["parameters_fetched_at"] = time.time()
+                # The portal answered this time. Clearing it here rather than
+                # only on the empty branch matters: the flag is persisted with
+                # the module cache, so a refusal that was never cleared would
+                # outlive the restart that fixed it.
+                self.modules[device_id][key].pop("description_refused", None)
         except (KeyError, ValueError):
             # ValueError also covers a JSON-decode failure (e.g. an HTML error
             # page returned instead of JSON) - without it, a single malformed
@@ -2382,11 +2404,41 @@ class WemPortalApi:
             # cycle that fails for ever - backoff, recovery, eventually a
             # re-authentication prompt. One bug traded for a worse one.
             if all("parameters" in module for module in device_modules.values()):
+                refused = [
+                    module
+                    for module in device_modules.values()
+                    if module.get("description_refused")
+                ]
                 if not device_modules:
-                    reason = "it has no modules"
+                    _LOGGER.debug(
+                        "Device %s has nothing to read: it has no modules.", device_id
+                    )
+                elif refused:
+                    # Still not a failed cycle - the device may genuinely have
+                    # nothing, and failing here would drag every other device
+                    # into a backoff. But it is not the silent nothing the
+                    # debug line below describes either: the portal refused to
+                    # say what these modules hold, so "no entities appeared"
+                    # has a cause, and the user gets to see it rather than
+                    # guess. Said once per cycle at most, and it stops as soon
+                    # as one description comes back.
+                    _LOGGER.warning(
+                        "Device %s produced no readable parameters: the portal "
+                        "refused to describe %d of its %d modules. Home "
+                        "Assistant therefore shows no entities for it. Retrying "
+                        "those descriptions in about %d h; if this persists, the "
+                        "modules may not be supported by your installation.",
+                        device_id,
+                        len(refused),
+                        len(device_modules),
+                        PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,
+                    )
                 else:
-                    reason = "every module describes no parameters"
-                _LOGGER.debug("Device %s has nothing to read: %s.", device_id, reason)
+                    _LOGGER.debug(
+                        "Device %s has nothing to read: every module describes "
+                        "no parameters.",
+                        device_id,
+                    )
                 return None
 
             # Modules whose description has not arrived at all: discovery has

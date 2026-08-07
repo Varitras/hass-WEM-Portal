@@ -821,8 +821,8 @@
   {
     "label": "rediscovery: retrying a refused module at once must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            values[\"parameters_fetched_at\"] = time.time() - max(",
-    "new": "            values[\"parameters_fetched_at\"] = 0 * max(",
+    "old": "                len(values[\"parameters\"]),\n                PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,\n            )\n            values[\"parameters_fetched_at\"] = time.time() - max(",
+    "new": "                len(values[\"parameters\"]),\n                PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,\n            )\n            values[\"parameters_fetched_at\"] = 0 * max(",
     "tests": "failed_re_read_is_not_retried_on_the_very_next_cycle"
   },
   {
@@ -1241,15 +1241,15 @@
   {
     "label": "rediscovery: deleting a module the portal rejects must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        values[\"parameters\"] = {}\n        values[\"parameters_fetched_at\"] = time.time()",
-    "new": "        if unsupported:\n            del self.modules[device_id][key]\n            return\n        values[\"parameters\"] = {}\n        values[\"parameters_fetched_at\"] = time.time()",
+    "old": "        values[\"parameters\"] = {}",
+    "new": "        if unsupported:\n            del self.modules[device_id][key]\n            return\n        values[\"parameters\"] = {}",
     "tests": "a_module_the_portal_rejects_is_kept_and_asked_again"
   },
   {
     "label": "rediscovery: retrying a rejected module at once must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        values[\"parameters\"] = {}\n        values[\"parameters_fetched_at\"] = time.time()",
-    "new": "        values[\"parameters\"] = {}",
+    "old": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() - max(",
+    "new": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = 0 - max(",
     "tests": "a_rejected_module_is_not_asked_again_on_the_next_cycle"
   },
   {
@@ -1615,6 +1615,34 @@
     "old": "'//input[@type=\"hidden\"][string(@name)]'",
     "new": "'//input[string(@name)]'",
     "tests": "the_login_form_carries_exactly_the_hidden_fields"
+  },
+  {
+    "label": "rediscovery: a refused first description left waiting a full day",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() - max(",
+    "new": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() + 0 * max(",
+    "tests": "a_refused_description_is_retried_within_the_hour_not_the_day"
+  },
+  {
+    "label": "rediscovery: an empty answer retried as often as a refusal",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            values.pop(\"description_refused\", None)\n            values[\"parameters_fetched_at\"] = time.time()",
+    "new": "            values.pop(\"description_refused\", None)\n            values[\"parameters_fetched_at\"] = time.time() - PARAMETER_REDISCOVERY_INTERVAL_SECONDS",
+    "tests": "a_module_that_says_it_is_empty_keeps_the_daily_round"
+  },
+  {
+    "label": "rediscovery: an empty device that cannot say why",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                    if module.get(\"description_refused\")",
+    "new": "                    if False",
+    "tests": "a_device_whose_modules_were_all_refused_says_so"
+  },
+  {
+    "label": "rediscovery: a refusal that survives the description fixing it",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                self.modules[device_id][key].pop(\"description_refused\", None)",
+    "new": "                pass",
+    "tests": "a_description_that_arrives_clears_the_refusal"
   },
   {
     "label": "scrape: a naive timestamp that hides the DST jump",

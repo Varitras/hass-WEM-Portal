@@ -3449,6 +3449,127 @@ def test_a_device_with_no_modules_at_all_is_not_a_failure():
     assert calls == [], "a read with an empty module list was sent anyway"
 
 
+def test_a_refused_description_is_retried_within_the_hour_not_the_day():
+    """A module that has nothing yet is the URGENT one, not the patient one.
+
+    A failed RE-read already retried in an hour, because the module keeps
+    showing its known parameters meanwhile. A failed FIRST description waited
+    a full day - and that module has nothing to show at all, so the device it
+    belongs to stayed empty for a day over one refused request. The urgency
+    was exactly inverted.
+    """
+    api = _api()
+    values = {"Index": 0, "Type": 1, "Name": "Heat pump"}
+
+    api._note_undescribed_module(
+        "1234", (0, 1), values, "the portal rejected the request", unsupported=True
+    )
+
+    age = time.time() - values["parameters_fetched_at"]
+    due_in = wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS - age
+    assert due_in <= wemportalapi.PARAMETER_REDISCOVERY_RETRY_SECONDS + 5, (
+        "a refused description waits the full day before it is asked again"
+    )
+    assert values["description_refused"] is True
+
+
+def test_a_module_that_says_it_is_empty_keeps_the_daily_round():
+    """The other half, and the reason this is not one branch.
+
+    An empty description is an ANSWER: the module says it has nothing to
+    poll. Believing it costs one request a day; retrying it hourly would
+    spend twenty-four times that on modules that answered correctly the
+    first time.
+    """
+    api = _api()
+    values = {"Index": 0, "Type": 1, "Name": "Heat pump"}
+
+    api._note_undescribed_module(
+        "1234", (0, 1), values, "it described no parameters", unsupported=False
+    )
+
+    assert time.time() - values["parameters_fetched_at"] < 5, (
+        "a module that answered was back-dated as if it had refused"
+    )
+    assert "description_refused" not in values
+
+
+def test_a_device_whose_modules_were_all_refused_says_so(caplog):
+    """ "No entities appeared" must not be the only symptom.
+
+    The cycle deliberately does NOT fail - the device may genuinely have
+    nothing, and failing would drag every other device into a backoff. But
+    the refusal is the reason there is nothing to show, and it used to be a
+    debug line, so the user saw an empty device and no explanation anywhere.
+    """
+    import logging
+
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "parameters": {},
+                "description_refused": True,
+            }
+        }
+    }
+    calls = []
+    api.make_api_call = lambda url, **_kwargs: calls.append(url) or FakeResponse({})
+
+    with caplog.at_level(logging.WARNING):
+        failure = api._fetch_parameter_values("1234")
+
+    assert failure is None, "a refused description must not fail the whole cycle"
+    assert calls == [], "a read with an empty module list was sent anyway"
+    assert "refused to describe" in caplog.text, (
+        "an empty device gave the user nothing to go on"
+    )
+
+
+def test_a_device_that_is_simply_empty_stays_quiet(caplog):
+    """The counterpart: no refusal, no warning.
+
+    Without this the previous test would pass just as well against a warning
+    on every empty device, which is noise on an installation where a module
+    legitimately has nothing to poll.
+    """
+    import logging
+
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {}}}}
+
+    with caplog.at_level(logging.WARNING):
+        assert api._fetch_parameter_values("1234") is None
+
+    assert not caplog.records, f"an empty device warned anyway: {caplog.text}"
+
+
+def test_a_description_that_arrives_clears_the_refusal():
+    """The flag is persisted with the module cache, so a refusal that is
+    never cleared outlives the restart that fixed it."""
+    api = _api()
+    api.modules = {
+        "1234": {
+            (0, 1): {"Index": 0, "Type": 1, "description_refused": True},
+        }
+    }
+
+    api._store_module_description(
+        "1234",
+        (0, 1),
+        api.modules["1234"][(0, 1)],
+        FakeResponse({"Parameters": [{"ParameterID": "P1"}]}),
+    )
+
+    module = api.modules["1234"][(0, 1)]
+    assert module["parameters"] == {"P1": {"ParameterID": "P1"}}
+    assert "description_refused" not in module
+
+
 def test_a_device_with_parameters_is_still_read():
     """The guard must not swallow the ordinary case."""
     api = _api()
