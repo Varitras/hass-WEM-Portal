@@ -131,7 +131,7 @@ _EXPERT_BLOCKED_UNTIL: dict[str, float] = {}
 
 def _extend_cooldown(current: float, until: float) -> float:
     """Only ever later, never sooner - the rule both backoffs already had."""
-    return until if until > current else current
+    return max(current, until)
 
 
 def reset_cooldowns_for_tests() -> None:
@@ -2331,7 +2331,7 @@ class WemPortalApi:
                         ],
                     }
                     for module in self.modules[device_id].values()
-                    if "parameters" in module and module["parameters"]
+                    if module.get("parameters")
                 ],
             }
         except KeyError as exc:

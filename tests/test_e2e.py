@@ -684,6 +684,27 @@ async def test_the_expert_client_is_actually_buildable(hass, monkeypatch):
     assert type(client).__name__ == "WemPortalExpertClient"
 
 
+def test_two_options_flows_do_not_share_their_discovery():
+    """Each flow gets its own lists, because one of them holds entityvalues.
+
+    They used to be class attributes - one list object for every options flow
+    in the process. Nothing mutated them, so nothing leaked, but the fix is
+    cheaper than the failure: on a Home Assistant running two WEM Portal
+    accounts, the first `.append()` anyone wrote would have offered one
+    account's installation-specific parameter ids in the other's dropdown.
+    """
+    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+
+    first = WemportalOptionsFlow()
+    second = WemportalOptionsFlow()
+
+    first._discovered.append({"entityvalue": "AAAA"})
+    first._selected_modules.append({"index": 1})
+
+    assert second._discovered == [], "one flow's discovery reached another"
+    assert second._selected_modules == [], "one flow's selection reached another"
+
+
 async def test_options_flow_discovery_fills_slot_dropdown(hass, monkeypatch):
     """The discovery path: pick modules, run discovery, and land back on the
     configure form with the found parameters offered in the slot dropdowns."""

@@ -23,7 +23,7 @@ from custom_components.wemportal.models import WemPortalData
 
 pytest.importorskip("homeassistant")
 
-from homeassistant.exceptions import HomeAssistantError  # noqa: E402
+from homeassistant.exceptions import HomeAssistantError
 
 BEGIN_ROW = {
     "friendlyName": "Holiday begin",

@@ -197,7 +197,6 @@ async def test_a_day_the_portal_did_not_keep_is_not_displayed():
 
     def portal_kept_the_old_value(_device_id):
         data["1234"]["Heat pump-U_Beginn"]["value"] = BEGIN_EPOCH
-        return None
 
     entity.coordinator.api.reread_device_values = portal_kept_the_old_value
 

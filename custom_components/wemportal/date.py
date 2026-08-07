@@ -13,7 +13,7 @@ exactly on midnight UTC. Whole days, no time component - which is why this is
 a date platform and not a datetime one.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, UTC
 
 from homeassistant.components.date import DateEntity
 from homeassistant.config_entries import ConfigEntry
@@ -36,7 +36,7 @@ def epoch_to_date(value) -> date | None:
     except (TypeError, ValueError):
         return None
     try:
-        return datetime.fromtimestamp(seconds, tz=timezone.utc).date()
+        return datetime.fromtimestamp(seconds, tz=UTC).date()
     except (OverflowError, OSError, ValueError):
         # Out of range for the platform's clock - report nothing rather than
         # a wrong date.
@@ -51,7 +51,7 @@ def date_to_epoch(value: date) -> float:
     local midnight would shift every write by the UTC offset and, east of
     Greenwich, land the previous day.
     """
-    return datetime(value.year, value.month, value.day, tzinfo=timezone.utc).timestamp()
+    return datetime(value.year, value.month, value.day, tzinfo=UTC).timestamp()
 
 
 async def async_setup_entry(

@@ -3180,7 +3180,7 @@ def test_a_refresh_without_a_job_id_also_counts_as_an_attempt():
 
 def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
     """Back-dated, not blocked: one bad cycle must not cost a full hour."""
-    api, calls = _circuit_times_api([exceptions.WemPortalError("nope")] * 10)
+    api, _calls = _circuit_times_api([exceptions.WemPortalError("nope")] * 10)
 
     api._fetch_circuit_times("1234")
     stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
@@ -3195,7 +3195,7 @@ def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
 
 
 def test_a_successful_schedule_keeps_the_full_interval():
-    api, calls = _circuit_times_api(
+    api, _calls = _circuit_times_api(
         [
             {"JobID": 7},
             {"CircuitTimesDay": [], "PossibleValues": []},

@@ -643,9 +643,8 @@ def test_a_reused_session_that_missed_the_expert_page_logs_in_fresh(scraper, cap
 
     # DEBUG, not WARNING: the reuse path deliberately reports its empty page
     # quietly now - see the two tests about the level further down.
-    with caplog.at_level(logging.DEBUG):
-        with pytest.raises(ServerError) as excinfo:
-            scraper.scrape()
+    with caplog.at_level(logging.DEBUG), pytest.raises(ServerError) as excinfo:
+        scraper.scrape()
 
     # What comes out is the LOGIN failing, not "no readable panels": the
     # reuse branch handed over instead of ending the cycle.
@@ -836,8 +835,7 @@ def test_the_full_login_path_still_warns_about_an_empty_page(scraper, caplog):
 
     from custom_components.wemportal.exceptions import ServerError
 
-    with caplog.at_level(logging.DEBUG):
-        with pytest.raises(ServerError):
-            scraper.parse_expert_page("<html><title>Main</title></html>")
+    with caplog.at_level(logging.DEBUG), pytest.raises(ServerError):
+        scraper.parse_expert_page("<html><title>Main</title></html>")
 
     assert [record.levelname for record in _empty_page_reports(caplog)] == ["WARNING"]

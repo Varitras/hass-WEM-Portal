@@ -1302,7 +1302,7 @@ class WemPortalExpertClient:
             )
 
     def _fetch_form(
-        self, entityvalue: str, max_attempts: int = None
+        self, entityvalue: str, max_attempts: int | None = None
     ) -> ExpertParameterState:
         """GET + parse the edit form on the already logged-in session.
 

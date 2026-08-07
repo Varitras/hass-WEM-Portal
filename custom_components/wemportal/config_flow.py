@@ -306,11 +306,6 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
 class WemportalOptionsFlow(OptionsFlow):
     """Handle options."""
 
-    # Discovery result and the modules the user picked, held across the
-    # multi-step options flow (menu -> module select -> discovery ->
-    # configure). Not persisted; re-open re-discovers on demand.
-    _discovered: list = []
-    _selected_modules: list = []
     # Error key from the last discovery run, shown on the configure form.
     # Without this a failed discovery silently produced an EMPTY dropdown,
     # which is indistinguishable from "the portal has no parameters" - the
@@ -324,6 +319,23 @@ class WemportalOptionsFlow(OptionsFlow):
     # Module list fetched during THIS flow. Persisted only by the final save,
     # so discovery never triggers an integration reload mid-flow.
     _module_list: list | None = None
+
+    def __init__(self) -> None:
+        # Per-flow, not per-class. Discovery result and the modules the user
+        # picked, held across the multi-step options flow (menu -> module
+        # select -> discovery -> configure). Not persisted; re-opening the
+        # flow re-discovers on demand.
+        #
+        # As class attributes these were ONE list shared by every options flow
+        # in the process. Nothing leaks today - both are only ever reassigned,
+        # never appended to - but `_discovered` holds installation-specific
+        # entityvalues, so on a Home Assistant running two WEM Portal accounts
+        # the first `.append()` anyone writes here would show one account's
+        # parameter ids in the other account's dropdown. The others above stay
+        # class attributes: they are immutable defaults, which cannot be
+        # shared by accident.
+        self._discovered: list = []
+        self._selected_modules: list = []
 
     async def async_step_init(self, user_input=None):
         """Options menu: configure, discover expert parameters, or re-scan."""

@@ -100,7 +100,7 @@ class WemPortalData:
 WemPortalConfigEntry = ConfigEntry[WemPortalData]
 
 
-def raise_if_not_writable(config_entry, what: str) -> "WemPortalData":
+def raise_if_not_writable(config_entry, what: str) -> WemPortalData:
     """The gate every write from an entity passes through.
 
     `unloading` is set at the very top of async_unload_entry, before the

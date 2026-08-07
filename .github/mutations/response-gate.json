@@ -548,7 +548,7 @@
   {
     "label": "cooldown: letting a caller shorten a running backoff must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "    return until if until > current else current",
+    "old": "    return max(current, until)",
     "new": "    return until",
     "tests": "cannot_shorten_a_running_cooldown"
   },
@@ -646,15 +646,15 @@
   {
     "label": "date: an inexact write encoding must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "    return datetime(value.year, value.month, value.day, tzinfo=timezone.utc).timestamp()",
-    "new": "    return (\n        datetime(value.year, value.month, value.day, tzinfo=timezone.utc).timestamp()\n        + 3600\n    )",
+    "old": "    return datetime(value.year, value.month, value.day, tzinfo=UTC).timestamp()",
+    "new": "    return (\n        datetime(value.year, value.month, value.day, tzinfo=UTC).timestamp()\n        + 3600\n    )",
     "tests": "writing_uses_the_encoding_the_portal_sent or setting_a_day_writes_the_portal_encoding"
   },
   {
     "label": "date: an inexact read decoding must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "        return datetime.fromtimestamp(seconds, tz=timezone.utc).date()",
-    "new": "        return datetime.fromtimestamp(seconds + 86400, tz=timezone.utc).date()",
+    "old": "        return datetime.fromtimestamp(seconds, tz=UTC).date()",
+    "new": "        return datetime.fromtimestamp(seconds + 86400, tz=UTC).date()",
     "tests": "measured_values_decode_to_the_days_they_stood_for"
   },
   {
@@ -1615,6 +1615,13 @@
     "old": "'//input[@type=\"hidden\"][string(@name)]'",
     "new": "'//input[string(@name)]'",
     "tests": "the_login_form_carries_exactly_the_hidden_fields"
+  },
+  {
+    "label": "options: the discovery list shared by every flow again",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "        self._discovered: list = []",
+    "new": "        WemportalOptionsFlow._discovered = []",
+    "tests": "two_options_flows_do_not_share_their_discovery"
   },
   {
     "label": "deadline: an out-of-time cycle spending another request",

@@ -201,7 +201,7 @@ def test_every_selector_clause_names_a_real_test():
             re.findall(
                 r"^\s*(?:async )?def (test_\w+)",
                 module.read_text(encoding="utf-8"),
-                re.M,
+                re.MULTILINE,
             )
         )
     assert names, "no test functions found - the check would pass vacuously"
