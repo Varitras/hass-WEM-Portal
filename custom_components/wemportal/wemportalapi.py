@@ -2059,7 +2059,7 @@ class WemPortalApi:
 
         try:
             payload = response.json()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # On the failure path the body goes out at WARNING, because this
             # is exactly when someone asks what the portal said - and debug
             # logging is exactly what is not enabled at that moment.

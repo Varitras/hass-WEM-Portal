@@ -569,7 +569,7 @@ def _async_register_expert_service(
         # action. Only a SHORTENED entityvalue appears in any user-facing text.
         try:
             state = await hass.async_add_executor_job(_do_write)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.error("Expert write failed for %s: %s", ev_short, exc)
             raise HomeAssistantError(
                 f"WEM Portal expert write for {ev_short} to {value} failed: {exc}"

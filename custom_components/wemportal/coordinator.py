@@ -351,7 +351,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed(
                     f"Error fetching data from wemportal: {exc}"
                 ) from exc
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 # Catch-all safety net: covers cases that don't come from
                 # fetch_data() itself (which already wraps its own
                 # unexpected errors as WemPortalError) - most notably
