@@ -79,8 +79,8 @@
   {
     "label": "golden: a swapped option field must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "\"options\": [x[\"Value\"] for x in enum_values],",
-    "new": "\"options\": [x[\"Name\"] for x in enum_values],",
+    "old": "\"options\": [enum_value[\"Value\"] for enum_value in enum_values],",
+    "new": "\"options\": [enum_value[\"Name\"] for enum_value in enum_values],",
     "tests": "mapper_output_is_unchanged"
   },
   {
@@ -506,8 +506,8 @@
   {
     "label": "mapper: reading a word as an epoch must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                common_attrs, value.get(\"NumericValue\") is not None",
-    "new": "                common_attrs, True",
+    "old": "                common_attributes, value.get(\"NumericValue\") is not None",
+    "new": "                common_attributes, True",
     "tests": "mapper_output_is_unchanged or holiday_date or word"
   },
   {

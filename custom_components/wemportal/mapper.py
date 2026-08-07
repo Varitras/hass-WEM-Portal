@@ -7,11 +7,11 @@ from .utils import looks_like_schedule, sanitize_value, unit_to_icon
 
 
 def get_min_max(
-    parameter_id: str, data_type: int, min_val, max_val
+    parameter_id: str, data_type: int, min_value, max_value
 ) -> tuple[float, float]:
     try:
-        if min_val is not None and max_val is not None:
-            return float(min_val), float(max_val)
+        if min_value is not None and max_value is not None:
+            return float(min_value), float(max_value)
     except (ValueError, TypeError):
         pass
 
@@ -21,7 +21,10 @@ def get_min_max(
     parameter_lower = parameter_id.lower()
     if "ww" in parameter_lower or "warmwasser" in parameter_lower:
         return 30.0, 65.0
-    if any(k in parameter_lower for k in ["raum", "komfort", "absenk", "normal"]):
+    if any(
+        keyword in parameter_lower
+        for keyword in ["raum", "komfort", "absenk", "normal"]
+    ):
         return 5.0, 35.0
 
     return 0.0, 100.0
@@ -57,10 +60,10 @@ def _describe_value(
     replaces - the caller's guard turns that into a skipped value."""
     name = f"{device_module['Name']}-{parameter['ParameterID']}"
 
-    numeric_val = value.get("NumericValue")
-    string_val = value.get("StringValue", "")
+    numeric_value = value.get("NumericValue")
+    string_value = value.get("StringValue", "")
 
-    final_value = numeric_val if numeric_val is not None else string_val
+    final_value = numeric_value if numeric_value is not None else string_value
 
     data_type = parameter.get("DataType")
 
@@ -76,9 +79,9 @@ def _describe_value(
             # (select.py matches the raw value against those
             # names verbatim). Rewriting "Aus" to "Off"/0.0
             # here would silently break that match.
-            final_value = sanitize_value(string_val, value.get("Unit"), name)
+            final_value = sanitize_value(string_value, value.get("Unit"), name)
         else:
-            final_value = string_val
+            final_value = string_value
     else:
         if isinstance(final_value, str):
             final_value = sanitize_value(final_value, value.get("Unit"), name)
@@ -131,7 +134,9 @@ def _is_time_or_programme(parameter: dict) -> bool:
     return not _declares_bounds(parameter)
 
 
-def _time_or_programme_entity(common_attrs: dict, sent_a_number: bool) -> dict | None:
+def _time_or_programme_entity(
+    common_attributes: dict, sent_a_number: bool
+) -> dict | None:
     """The writeable platform for a time or programme parameter, if any.
 
     Two forms have been observed. A schedule comes as a JSON string and is
@@ -150,7 +155,7 @@ def _time_or_programme_entity(common_attrs: dict, sent_a_number: bool) -> dict |
     1970, to a heating system.
     """
     if sent_a_number:
-        return {**common_attrs, "platform": "date"}
+        return {**common_attributes, "platform": "date"}
     return None
 
 
@@ -173,7 +178,7 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
     data_type = sensor["DataType"]
     final_value = sensor["value"]
 
-    common_attrs = {
+    common_attributes = {
         "friendlyName": sensor["friendlyName"],
         "ParameterID": sensor["ParameterID"],
         "unit": sensor["unit"],
@@ -184,7 +189,7 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
         "ModuleType": sensor["ModuleType"],
     }
 
-    min_val, max_val = get_min_max(
+    min_value, max_value = get_min_max(
         sensor["ParameterID"],
         data_type,
         parameter.get("MinValue"),
@@ -193,10 +198,10 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
 
     if data_type in (WemDataType.NUMBER_STEP_HALF, WemDataType.NUMBER_STEP_ONE):
         return {
-            **common_attrs,
+            **common_attributes,
             "platform": "number",
-            "min_value": min_val,
-            "max_value": max_val,
+            "min_value": min_value,
+            "max_value": max_value,
             "step": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
         }
     if data_type == WemDataType.SELECT:
@@ -215,10 +220,10 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
         if not enum_values:
             return None
         return {
-            **common_attrs,
+            **common_attributes,
             "platform": "select",
-            "options": [x["Value"] for x in enum_values],
-            "optionsNames": [x["Name"] for x in enum_values],
+            "options": [enum_value["Value"] for enum_value in enum_values],
+            "optionsNames": [enum_value["Name"] for enum_value in enum_values],
         }
     if data_type == WemDataType.SWITCH:
         if isinstance(final_value, str) and final_value.startswith("{"):
@@ -230,18 +235,18 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
         # passed it and became a switch.
         if _is_time_or_programme(parameter):
             return _time_or_programme_entity(
-                common_attrs, value.get("NumericValue") is not None
+                common_attributes, value.get("NumericValue") is not None
             )
-        if int(min_val) == 0 and int(max_val) == 1:
+        if int(min_value) == 0 and int(max_value) == 1:
             return {
-                **common_attrs,
+                **common_attributes,
                 "platform": "switch",
             }
         return {
-            **common_attrs,
+            **common_attributes,
             "platform": "number",
-            "min_value": min_val,
-            "max_value": max_val,
+            "min_value": min_value,
+            "max_value": max_value,
             "step": 1,
         }
     return None
