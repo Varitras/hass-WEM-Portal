@@ -114,8 +114,8 @@
   {
     "label": "net: the partial write on a malformed parameter must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            except Exception as exc:  # pylint: disable=broad-except",
-    "new": "            except ZeroDivisionError as exc:  # pylint: disable=broad-except",
+    "old": "            except Exception as exc:  # noqa: BLE001",
+    "new": "            except ZeroDivisionError as exc:  # noqa: BLE001",
     "tests": "malformed_parameter"
   },
   {
@@ -149,8 +149,8 @@
   {
     "label": "stats: a routine rejection must not abort the remaining groups",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            except Exception as exc:\n                # Status 3001 = this statistics group isn't valid for",
-    "new": "            except ZeroDivisionError as exc:\n                # Status 3001 = this statistics group isn't valid for",
+    "old": "            except Exception as exc:  # noqa: BLE001\n                # Status 3001 = this statistics group isn't valid for",
+    "new": "            except ZeroDivisionError as exc:  # noqa: BLE001\n                # Status 3001 = this statistics group isn't valid for",
     "tests": "statistics_output_is_unchanged or routine_rejection_still_counts"
   },
   {

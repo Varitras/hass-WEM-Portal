@@ -144,7 +144,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             await self._scraper_device_store.async_save(device_id)
             self._saved_scraper_device_id = device_id
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not persist WEM Portal scraper device id: %s", exc)
 
     async def _async_save_modules_cache(self) -> None:
@@ -165,7 +165,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 return
             await self._modules_store.async_save(serialized)
             self._saved_modules_snapshot = serialized
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not persist WEM Portal module cache: %s", exc)
 
     async def _async_update_data(self):
@@ -351,7 +351,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed(
                     f"Error fetching data from wemportal: {exc}"
                 ) from exc
-            except Exception as exc:  # pylint: disable=broad-except
+            except Exception as exc:  # noqa: BLE001
                 # Catch-all safety net: covers cases that don't come from
                 # fetch_data() itself (which already wraps its own
                 # unexpected errors as WemPortalError) - most notably

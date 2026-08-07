@@ -241,7 +241,7 @@ class ExpertController:
                 # every configured id for an unload.
                 _LOGGER.debug("Expert auto-poll stopped: %s", exc)
                 return
-            except Exception as exc:  # pylint: disable=broad-except
+            except Exception as exc:  # noqa: BLE001
                 # Returns instead of falling through with an empty result:
                 # the per-id counters below mean "the portal answered, but
                 # not for this id". Feeding an outage through them would

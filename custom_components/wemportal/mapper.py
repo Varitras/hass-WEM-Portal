@@ -309,7 +309,7 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> d
                 entity = _writeable_entity(sensor, parameter, value)
                 if entity is not None:
                     api_data[device_id][name] = entity
-            except Exception as exc:  # pylint: disable=broad-except
+            except Exception as exc:  # noqa: BLE001
                 # A single malformed/unexpected data point should never
                 # cost us the rest of this device's update - log and
                 # move on to the next value instead of letting the

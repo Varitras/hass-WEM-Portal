@@ -756,7 +756,7 @@ class WemPortalApi:
         if self._scrape_is_due(enabled_devices):
             try:
                 self._scrape_and_merge()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # Broad: the scrape is the optional half of `both` mode. No
                 # scraper failure may cost the API readings that follow, so
                 # this deliberately does not re-raise.
@@ -1016,7 +1016,7 @@ class WemPortalApi:
         if self.session is not None:
             try:
                 self.session.close()
-            except Exception as exc:  # pylint: disable=broad-except
+            except Exception as exc:  # noqa: BLE001
                 _LOGGER.debug("Ignoring error while closing the API session: %s", exc)
             self.session = None
         self._reset_scraper()
@@ -2059,7 +2059,7 @@ class WemPortalApi:
 
         try:
             payload = response.json()
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001
             # On the failure path the body goes out at WARNING, because this
             # is exactly when someone asks what the portal said - and debug
             # logging is exactly what is not enabled at that moment.
@@ -2265,7 +2265,7 @@ class WemPortalApi:
             if previous is not None and previous != "online":
                 _LOGGER.info("Device %s is back online.", device_id)
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # Broad: an unreadable status must not stop the poll. The
             # caller treats "unknown" as reachable, which is the safe
             # side - see device_is_reachable.
@@ -2491,7 +2491,7 @@ class WemPortalApi:
                 ),
             )
             return None
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # Broad: one device's parameter read failing must not take
             # the other devices' readings with it. The reason goes to the
             # caller as well as into this warning - it is what Home Assistant
@@ -2626,7 +2626,7 @@ class WemPortalApi:
                         fetched = self._read_one_schedule(
                             device_id, module, parameter_id
                         )
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         # Broad: one heating program failing is not a reason
                         # to skip the rest.
                         _LOGGER.warning(
@@ -2638,7 +2638,7 @@ class WemPortalApi:
                         self._record_schedule_attempt(
                             device_id, parameter_id, attempted_at, fetched
                         )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # Broad: heating programs are extra detail on top of the
             # readings. Losing them must never cost the update itself.
             _LOGGER.warning("Error processing CircuitTimes: %s", exc)
@@ -2802,7 +2802,7 @@ class WemPortalApi:
                 )
                 read += 1
 
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # Status 3001 = this statistics group isn't valid for
                 # the queried module. The refresh call lists such
                 # groups but reading them is rejected; that's expected
@@ -2860,7 +2860,7 @@ class WemPortalApi:
             try:
                 self._fetch_device_statistics(device_id)
                 succeeded += 1
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # Broad: one device's statistics failing must not stop
                 # the others. `succeeded` stays unincremented, which is
                 # what the retry back-dating below reads.

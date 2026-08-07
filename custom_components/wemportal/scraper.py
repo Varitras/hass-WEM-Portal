@@ -158,7 +158,7 @@ class WemPortalScraper:
         """
         try:
             self.session.close()
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001
             # Closing is best-effort; the session is being discarded anyway.
             _LOGGER.debug("Ignoring error while closing scraper session: %s", exc)
 
@@ -276,7 +276,7 @@ class WemPortalScraper:
         if self.cookie:
             try:
                 self.session.cookies.update(self.cookie)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # Broad: restoring a cached cookie is an optimisation.
                 # Whatever goes wrong, the full login below still works.
                 _LOGGER.debug(
@@ -295,7 +295,7 @@ class WemPortalScraper:
                     # off, and for a server error it would also relabel the
                     # outage as an authentication problem.
                     raise
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     # Broad, but the three answers that must NOT be
                     # retried are re-raised above. Everything left is a
                     # reuse failure, and the full login handles those.
@@ -333,7 +333,7 @@ class WemPortalScraper:
                 )
                 try:
                     self.session.cookies.clear()
-                except Exception as exc:  # pylint: disable=broad-except
+                except Exception as exc:  # noqa: BLE001
                     # Non-fatal: we re-login below regardless.
                     _LOGGER.debug("Ignoring error while clearing cookies: %s", exc)
 
@@ -343,12 +343,14 @@ class WemPortalScraper:
             login_page = self.session.get(
                 WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS
             )
-        except Exception as e:
+        except Exception as exc:
             # A transport failure (timeout, connection reset, DNS) says
             # nothing about the credentials. Reported as AuthError it fed the
             # reauth counter, so three network hiccups in a row could ask the
             # user to re-enter a working password.
-            raise ServerError(f"Could not reach the WEM Portal login page: {e}") from e
+            raise ServerError(
+                f"Could not reach the WEM Portal login page: {exc}"
+            ) from exc
         # Deliberately outside the try block: our own ForbiddenError /
         # AuthError below must propagate as-is instead of being caught by
         # the broad network-error handler above and re-wrapped (which
@@ -435,7 +437,7 @@ class WemPortalScraper:
             # one container's class attribute, so a substring count answers a
             # different question than the one being asked.
             containers = len(tree.xpath(PANEL_XPATH))
-        except Exception:  # pylint: disable=broad-except
+        except Exception:  # noqa: BLE001
             # The report must never be the thing that fails.
             title = "<unparseable>"
         _LOGGER.log(

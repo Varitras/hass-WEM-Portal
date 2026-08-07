@@ -252,7 +252,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         cached_modules = (
             deserialize_modules(cached_modules_raw) if cached_modules_raw else None
         )
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001
         # A corrupted/unreadable cache file must never prevent the
         # integration from starting - worst case, we just lose the
         # startup-time optimization for this one restart and fall back to
@@ -281,7 +281,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         scraper_device_id = await get_scraper_device_store(
             hass, entry.entry_id
         ).async_load()
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001
         _LOGGER.debug("Could not load stored scraper device id: %s", exc)
 
     # Creating API object
@@ -310,7 +310,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     _LOGGER.info("Migrating entity names for wemportal")
     try:
         await migrate_unique_ids(hass, entry, coordinator)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001
         # Migration is a best-effort cleanup step (renames old unique_ids
         # to the new format). A failure here should never prevent the
         # integration from loading - worst case, some entities keep their
@@ -381,7 +381,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # failed, unavailable and un-reloadable, one more set per setup retry.
         try:
             await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-        except Exception as unload_exc:  # pylint: disable=broad-except
+        except Exception as unload_exc:  # noqa: BLE001
             # Best effort. The original failure is the one worth raising, and
             # losing it to a secondary error while cleaning up would hide why
             # the setup failed at all.
@@ -569,7 +569,7 @@ def _async_register_expert_service(
         # action. Only a SHORTENED entityvalue appears in any user-facing text.
         try:
             state = await hass.async_add_executor_job(_do_write)
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Expert write failed for %s: %s", ev_short, exc)
             raise HomeAssistantError(
                 f"WEM Portal expert write for {ev_short} to {value} failed: {exc}"

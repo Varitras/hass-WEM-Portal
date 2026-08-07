@@ -120,7 +120,7 @@ def redact_url(url) -> str:
         if parts.netloc:
             return f"{parts.scheme}://{parts.netloc}{path}"
         return path or "unknown URL"
-    except Exception:  # pylint: disable=broad-except
+    except Exception:  # noqa: BLE001
         # Redaction must never be the thing that breaks error handling.
         return "unknown URL"
 
@@ -190,7 +190,7 @@ def parse_parameter_list(html_content) -> list:
     results = []
     try:
         tree = html.fromstring(html_content)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001
         _LOGGER.debug("Could not parse parameter list page: %s", exc)
         return results
     for panel in tree.xpath("//div[contains(@class, 'RadPanelBar')]"):
@@ -227,7 +227,7 @@ def parse_module_list(html_content) -> list:
     """
     try:
         tree = html.fromstring(html_content)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001
         _LOGGER.debug("Could not parse module list page: %s", exc)
         return []
     menu = tree.xpath("//div[contains(@class, 'IconMenuControl')]")
@@ -453,7 +453,7 @@ class WemPortalExpertClient:
         self.session = requests.Session(impersonate="chrome146")
         try:
             self.session.cookies.update(cookies)
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not restore cached expert cookies: %s", exc)
             return False
 
@@ -473,7 +473,7 @@ class WemPortalExpertClient:
             # is that fix in the module next door, which is where this
             # codebase keeps finding the other half of a fix.
             raise
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001
             # Broad, but the three answers that must NOT be retried are
             # re-raised above. What is left really is a stale session -
             # AuthError, a dropped connection - and a fresh login is the
@@ -493,7 +493,7 @@ class WemPortalExpertClient:
         try:
             self._cookie_jar["cookies"] = dict(self.session.cookies)
             self._cookie_jar["saved_at"] = time.monotonic()
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001
             # Caching is an optimisation; failing to cache only means the
             # next operation logs in again.
             _LOGGER.debug("Could not cache expert session cookies: %s", exc)
@@ -835,7 +835,7 @@ class WemPortalExpertClient:
                 name = hidden_input.get("name")
                 if name:
                     fields[name] = hidden_input.get("value", "")
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001
             # Malformed/unparseable response: return whatever was collected
             # so the caller degrades gracefully instead of crashing. Logged
             # so a parsing regression (e.g. a portal format change) is visible.
@@ -958,7 +958,7 @@ class WemPortalExpertClient:
         if self.session is not None:
             try:
                 self.session.close()
-            except Exception as exc:  # pylint: disable=broad-except
+            except Exception as exc:  # noqa: BLE001
                 # Closing is best-effort; the session is being discarded anyway.
                 _LOGGER.debug("Ignoring error while closing expert session: %s", exc)
             self.session = None
@@ -1077,7 +1077,7 @@ class WemPortalExpertClient:
                     result[entityvalue] = self._fetch_form(entityvalue)
                 except ForbiddenError:
                     raise
-                except Exception as exc:  # pylint: disable=broad-except
+                except Exception as exc:  # noqa: BLE001
                     _LOGGER.warning(
                         "Expert auto-poll: reading %s failed: %s",
                         short_entityvalue(entityvalue),
@@ -1122,7 +1122,7 @@ class WemPortalExpertClient:
                     html_text = self._fetch_module_page(module)
                 except ForbiddenError:
                     raise
-                except Exception as exc:  # pylint: disable=broad-except
+                except Exception as exc:  # noqa: BLE001
                     _LOGGER.warning(
                         "Expert discovery: module %s failed: %s",
                         module.get("label"),
@@ -1635,7 +1635,7 @@ try:
                 _LOGGER.debug("Expert write for %s stopped: %s", self._attr_name, exc)
                 self._write_in_progress = False
                 return
-            except Exception as exc:  # pylint: disable=broad-except
+            except Exception as exc:  # noqa: BLE001
                 _LOGGER.error("Expert write failed for %s: %s", self._attr_name, exc)
                 self._notify(
                     f"Setting {self._attr_name} to {value} failed: {exc}",

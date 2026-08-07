@@ -416,7 +416,7 @@ def maintenance_notice(html_text):
             text = " ".join(div.text_content().split())
             if text:
                 return text
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # noqa: BLE001
         _LOGGER.debug("Could not read the maintenance notice: %s", exc)
     # Marker present but unreadable - still a maintenance page.
     return "The portal reports scheduled maintenance."

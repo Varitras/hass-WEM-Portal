@@ -1619,15 +1619,17 @@ async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
     raised = None
     for _ in range(AUTH_ERROR_ESCALATION_THRESHOLD):
         # A fresh coordinator per attempt, exactly like a setup retry.
-        c = coord_mod.WemPortalDataUpdateCoordinator(
+        coordinator = coord_mod.WemPortalDataUpdateCoordinator(
             hass, WemPortalApi(USER, "secret"), entry, timedelta(seconds=300)
         )
         try:
-            await c._async_update_data()
+            await coordinator._async_update_data()
         except ConfigEntryAuthFailed as exc:
             raised = exc
             break
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
+            # Every failure except the one under test is uninteresting here:
+            # what is being counted is how many attempts it takes to escalate.
             continue
 
     assert raised is not None, (

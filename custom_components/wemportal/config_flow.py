@@ -219,7 +219,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
+            except Exception:  # noqa: BLE001
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
 
@@ -274,7 +274,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["base"] = "cannot_connect"
                 except InvalidAuth:
                     errors["base"] = "invalid_auth"
-                except Exception:  # pylint: disable=broad-except
+                except Exception:  # noqa: BLE001
                     _LOGGER.exception("Unexpected exception during reauth")
                     errors["base"] = "unknown"
                 else:
@@ -771,7 +771,7 @@ class WemportalOptionsFlow(OptionsFlow):
                 )
                 errors["base"] = "discovery_blocked"
                 modules = self._known_modules()
-            except Exception:  # pylint: disable=broad-except
+            except Exception:  # noqa: BLE001
                 _LOGGER.exception("Expert discovery: reading module list failed")
                 errors["base"] = "discovery_failed"
                 modules = self._known_modules()
@@ -829,7 +829,7 @@ class WemportalOptionsFlow(OptionsFlow):
                 _LOGGER.warning("Expert discovery: not run - %s", exc)
                 self._discovery_error = "discovery_blocked"
                 self._discovery_detail = str(exc)
-            except Exception:  # pylint: disable=broad-except
+            except Exception:  # noqa: BLE001
                 _LOGGER.exception("Expert discovery: parameter discovery failed")
                 self._discovery_error = "discovery_failed"
             else:
