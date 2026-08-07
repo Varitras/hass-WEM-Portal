@@ -86,6 +86,18 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **The expert auto-poll stops when an unload begins, not when it ends.** The
+  teardown raises its flag before the platforms come down, because unloading
+  them is the slow part - but the auto-poll only watched the second flag, set
+  right at the end. A read that started just before a reload therefore kept
+  navigating the portal through the whole gap between them. Every other write
+  path already respected the earlier flag.
+- **A rate-limit refusal during the statistics fetch is reported once, not
+  once per group.** A 403 says something about the connection, not about the
+  statistics group being read, but it was handled like any other group error -
+  so the remaining groups were each asked, each refused by the cooldown check,
+  and each logged. The cycle then closed by blaming "every group" for what was
+  a single block. It now stops at the first refusal and reports it as one.
 - **A device whose modules the portal refuses to describe recovers in an
   hour, not a day - and says so.** When the portal rejects a module's
   description, that module is kept rather than dropped, with an empty

@@ -685,6 +685,32 @@ async def test_the_expert_client_is_actually_buildable(hass, monkeypatch):
     assert type(client).__name__ == "WemPortalExpertClient"
 
 
+def test_the_auto_poll_stops_at_the_START_of_an_unload():
+    """The two teardown flags sit at opposite ends of the unload.
+
+    `unloading` is set before the platforms come down; `stop()` runs last,
+    through async_on_unload. Reading only the second let a poll that began
+    just before an unload keep navigating the portal through the whole slow
+    part in between - which is the window begin_unload() exists to close, and
+    which every other write gate already respects.
+    """
+    import types
+
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
+    from custom_components.wemportal.expert_controller import ExpertController
+
+    controller = ExpertController()
+    store = types.SimpleNamespace(unloading=False)
+    controller.bind(store)
+
+    controller._raise_if_stopped()  # nothing announced yet
+
+    store.unloading = True
+
+    with pytest.raises(ExpertOperationAborted):
+        controller._raise_if_stopped()
+
+
 def test_two_options_flows_do_not_share_their_discovery():
     """Each flow gets its own lists, because one of them holds entityvalues.
 

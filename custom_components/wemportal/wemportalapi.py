@@ -2864,6 +2864,15 @@ class WemPortalApi:
                 )
                 read += 1
 
+            except ForbiddenError:
+                # The portal is refusing this IP, which is not a fact about
+                # this group. Every remaining group would take the same
+                # answer - make_api_call's cooldown check now returns it
+                # without a request, so the cost is not traffic but a warning
+                # per group about one refusal, and a final message blaming
+                # the groups rather than the block. Let it out instead: the
+                # coordinator has a handler for exactly this.
+                raise
             except Exception as exc:  # noqa: BLE001
                 # Status 3001 = this statistics group isn't valid for
                 # the queried module. The refresh call lists such

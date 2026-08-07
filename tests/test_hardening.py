@@ -323,6 +323,37 @@ def test_a_device_whose_every_group_failed_is_not_counted_as_a_success():
     assert remaining > 0, "the rate limit must not be dropped entirely"
 
 
+def test_a_refusal_stops_the_group_loop_instead_of_repeating_itself(caplog):
+    """A 403 is a fact about the IP, not about the statistics group.
+
+    Swallowed like any other group error it was re-raised by the cooldown
+    check for every remaining group - no extra traffic, but one warning each
+    about a single refusal, and a closing message blaming "every group" for
+    what was one block. The coordinator has a handler for ForbiddenError;
+    this lets it get there.
+    """
+    import logging
+
+    seen = []
+
+    def refuses(group_id):
+        seen.append(group_id)
+        raise exceptions.ForbiddenError("rate limited")
+
+    api = _statistics_api_with_groups([1, 2, 3], refuses)
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(exceptions.ForbiddenError):
+            api._fetch_device_statistics("1234")
+
+    assert seen == [1], f"the loop kept asking after a refusal: {seen}"
+    assert not [
+        record
+        for record in caplog.records
+        if "Failed to fetch Statistics" in record.getMessage()
+    ], "a refusal was reported as a per-group failure"
+
+
 def test_one_group_that_worked_keeps_the_device_a_success():
     """The counter-test. Without it, treating any group error as a device
     failure would pass the test above and retry a device that is fine."""

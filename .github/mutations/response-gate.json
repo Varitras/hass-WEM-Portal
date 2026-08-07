@@ -1617,6 +1617,20 @@
     "tests": "the_login_form_carries_exactly_the_hidden_fields"
   },
   {
+    "label": "unload: a poll that keeps going through the slow half of a teardown",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        unloading = self._data is not None and self._data.unloading\n        if self._stopped or unloading:",
+    "new": "        if self._stopped:",
+    "tests": "the_auto_poll_stops_at_the_START_of_an_unload"
+  },
+  {
+    "label": "stats: a refusal repeated once per remaining group",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            except ForbiddenError:",
+    "new": "            except ZeroDivisionError:",
+    "tests": "a_refusal_stops_the_group_loop_instead_of_repeating_itself"
+  },
+  {
     "label": "rediscovery: a refused first description left waiting a full day",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() - max(",

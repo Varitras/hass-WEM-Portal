@@ -170,8 +170,16 @@ class ExpertController:
 
         Called from the worker thread, so it must only read state - a plain
         flag check on purpose, like the entity write's own gate.
+
+        TWO flags, because they are set at opposite ends of the teardown.
+        `unloading` goes up first, before the platforms come down; `stop()`
+        runs last, via async_on_unload. Reading only the second meant a poll
+        that started just before an unload kept navigating the portal for the
+        whole slow part in between - the exact window begin_unload() exists to
+        close, and every other write gate already respects.
         """
-        if self._stopped:
+        unloading = self._data is not None and self._data.unloading
+        if self._stopped or unloading:
             raise ExpertOperationAborted(
                 "the entry was unloaded while the auto-poll was reading"
             )
