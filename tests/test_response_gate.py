@@ -84,7 +84,11 @@ def _branch_paths(function):
 def _alternatives(paths, a, b) -> bool:
     """Whether a and b sit in branches of the same `if` that exclude each other."""
     pa, pb = paths.get(a, []), paths.get(b, [])
-    for step_a, step_b in zip(pa, pb):
+    # strict=False is the point, not a concession: the loop looks for the
+    # first step where the two paths diverge, so stopping at the shorter one
+    # is correct - a shorter path is a prefix of the longer, and a prefix
+    # contains no branch that could separate them.
+    for step_a, step_b in zip(pa, pb, strict=False):
         if step_a != step_b:
             return step_a[0] is step_b[0]
     return False

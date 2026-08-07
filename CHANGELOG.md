@@ -86,6 +86,11 @@ to ask the user for new credentials.
   here; the portal ships their names alongside the programme.
 
 ### Fixed
+- **An expert slot's name can be cleared again, not only replaced.** Emptying
+  the field and saving brought the old name straight back: an empty optional
+  field is left out of the form data, and the save merges what was submitted
+  over what was stored. The slot IDs were already written back explicitly for
+  exactly this reason - the names now are too, and they are stored stripped.
 - **A device that stops answering stops showing its last readings.** With
   more than one device, a cycle in which one answers and another does not is
   reported as successful - correctly, because failing it would take every

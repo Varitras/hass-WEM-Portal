@@ -466,6 +466,11 @@ class WemportalOptionsFlow(OptionsFlow):
         field is simply absent from the form data, the merge in
         _save_configure keeps the STORED id, and "empty a slot" quietly stops
         working - the bug 1.8.3 shipped.
+
+        The slot NAMES need the same treatment for the same reason, and used
+        not to get it: clearing a name left the field out of the form data,
+        the merge brought the old one back, and the name could only be
+        replaced, never removed.
         """
         errors = {}
         # Validate the ten expert slot IDs on save: an entityvalue must
@@ -483,6 +488,10 @@ class WemportalOptionsFlow(OptionsFlow):
             user_input[id_key] = raw  # persist the stripped value
             if raw and (not re.fullmatch(r"[0-9A-Fa-f]+", raw) or len(raw) < min_len):
                 errors[id_key] = "invalid_entityvalue"
+            # Materialised for the same reason, not validated: any name is
+            # allowed, including none.
+            name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % slot
+            user_input[name_key] = (user_input.get(name_key) or "").strip()
         # The module menu index feeds an ASP.NET postback argument and a
         # ClientState JSON template verbatim - restrict it to digits so
         # a typo (or stray JSON) is caught in the form instead of being

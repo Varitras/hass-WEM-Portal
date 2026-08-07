@@ -1378,6 +1378,56 @@ async def test_clearing_a_slot_id_actually_clears_it(hass):
     )
 
 
+async def test_a_cleared_slot_name_is_actually_cleared(hass):
+    """The same trap as the slot id, one field over.
+
+    An emptied optional field is absent from the form data, and
+    _save_configure merges over the stored options - so without writing the
+    name back explicitly the old one came straight back, and a name could be
+    replaced but never removed.
+    """
+    entry = await _setup(
+        hass,
+        _entry(
+            hass,
+            {
+                CONF_EXPERT_WRITE: True,
+                CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+                CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "Slot one",
+            },
+        ),
+    )
+
+    await _submit_options(hass, entry, {}, omit=[CONF_EXPERT_SLOT_NAME_TEMPLATE % 1])
+
+    assert entry.options[CONF_EXPERT_SLOT_NAME_TEMPLATE % 1] == "", (
+        "the cleared slot name came back from the stored options"
+    )
+    assert entry.options[CONF_EXPERT_SLOT_ID_TEMPLATE % 1] == EV_A, (
+        "clearing the name took the id with it"
+    )
+
+
+async def test_a_slot_name_is_stored_stripped(hass):
+    """Whitespace around a name would travel into the entity name."""
+    entry = await _setup(
+        hass,
+        _entry(
+            hass,
+            {
+                CONF_EXPERT_WRITE: True,
+                CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+            },
+        ),
+    )
+
+    await _submit_options(
+        hass, entry, {CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "  Living room  "}
+    )
+
+    assert entry.options[CONF_EXPERT_SLOT_NAME_TEMPLATE % 1] == "Living room"
+
+
 async def test_a_slot_id_is_stored_stripped(hass):
     """Whitespace from a copy/paste would otherwise travel into the request
     URL."""

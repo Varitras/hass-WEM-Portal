@@ -1617,6 +1617,20 @@
     "tests": "the_login_form_carries_exactly_the_hidden_fields"
   },
   {
+    "label": "options: a cleared slot name that comes back from the merge",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % slot\n            user_input[name_key] = (user_input.get(name_key) or \"\").strip()",
+    "new": "            pass",
+    "tests": "a_cleared_slot_name_is_actually_cleared"
+  },
+  {
+    "label": "options: a slot name stored with the whitespace around it",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            user_input[name_key] = (user_input.get(name_key) or \"\").strip()",
+    "new": "            user_input[name_key] = user_input.get(name_key) or \"\"",
+    "tests": "a_slot_name_is_stored_stripped"
+  },
+  {
     "label": "freshness: a silent device left publishing its last values",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "                failures.append(f\"device {device_id}: {failure}\")\n                self._forget_stale_device_values(device_id)",
