@@ -125,7 +125,7 @@ def redact_url(url) -> str:
         return "unknown URL"
 
 
-def short_ev(entityvalue: str) -> str:
+def short_entityvalue(entityvalue: str) -> str:
     """Shortened entityvalue for user-visible log/notification text.
 
     entityvalues are installation-specific and shouldn't end up verbatim in
@@ -133,11 +133,11 @@ def short_ev(entityvalue: str) -> str:
     (needed for troubleshooting); info/warning/error and notifications use
     this shortened form.
     """
-    ev = entityvalue or ""
-    return f"{ev[:6]}…" if len(ev) > 6 else ev
+    text = entityvalue or ""
+    return f"{text[:6]}…" if len(text) > 6 else text
 
 
-def ev_digest(entityvalue: str) -> str:
+def entityvalue_digest(entityvalue: str) -> str:
     """Short, stable digest of an entityvalue for use in internal IDs.
 
     Used wherever an id derived from the entityvalue must be unique and
@@ -148,8 +148,8 @@ def ev_digest(entityvalue: str) -> str:
     would otherwise leak it. SHA-256 (truncated) keeps the mapping
     deterministic without being reversible.
     """
-    ev = (entityvalue or "").strip()
-    return hashlib.sha256(ev.encode("utf-8")).hexdigest()[:16]
+    cleaned = (entityvalue or "").strip()
+    return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:16]
 
 
 def _is_valid_entityvalue(entityvalue) -> bool:
@@ -161,10 +161,10 @@ def _is_valid_entityvalue(entityvalue) -> bool:
     readable parameter and only produces an empty dialog. Callers use this
     to skip such values instead of firing a pointless portal request.
     """
-    ev = (entityvalue or "").strip()
+    cleaned = (entityvalue or "").strip()
     return (
-        bool(re.fullmatch(r"[0-9A-Fa-f]+", ev))
-        and len(ev) >= MIN_EXPERT_ENTITYVALUE_LENGTH
+        bool(re.fullmatch(r"[0-9A-Fa-f]+", cleaned))
+        and len(cleaned) >= MIN_EXPERT_ENTITYVALUE_LENGTH
     )
 
 
@@ -246,10 +246,10 @@ def parse_module_list(html_content) -> list:
             values = _MODULE_VALUE_RE.findall(text)
             break
     return [
-        {"index": i, "value": value, "label": label}
+        {"index": index, "value": value, "label": label}
         # strict=False on purpose: if labels and values ever differ in count
         # (unexpected portal change), pair up to the shorter instead of raising.
-        for i, (label, value) in enumerate(zip(labels, values, strict=False))
+        for index, (label, value) in enumerate(zip(labels, values, strict=False))
     ]
 
 
@@ -365,7 +365,7 @@ class WemPortalExpertClient:
         rounds each found the next unguarded request. A per-site decision is
         a per-site chance to forget; one gate cannot be forgotten.
 
-        `check_maintenance` is opt-in rather than universal on purpose. The
+        `check_maintenance` is option-in rather than universal on purpose. The
         marker is a container class in the page, and whether it can appear on
         a HEALTHY portal page has not been established - enabling it
         everywhere would trade a known gap for an unknown false positive. It
@@ -502,9 +502,11 @@ class WemPortalExpertClient:
         """Perform a fresh web login on a new session."""
         self.session = requests.Session(impersonate="chrome146")
 
-        r1 = self.session.get(WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
-        self._check_response(r1, "login page", check_maintenance=True)
-        tree = html.fromstring(r1.text)
+        login_page = self.session.get(
+            WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS
+        )
+        self._check_response(login_page, "login page", check_maintenance=True)
+        tree = html.fromstring(login_page.text)
         viewstate = tree.xpath("//*[@id='__VIEWSTATE']/@value")
         eventval = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
         if not viewstate or not eventval:
@@ -517,17 +519,17 @@ class WemPortalExpertClient:
             "ctl00$content$tbxPassword": self.password,
             "ctl00$content$btnLogin": "Anmelden",
         }
-        r2 = self.session.post(
+        login_response = self.session.post(
             WEB_LOGIN_URL,
             data=login_data,
             allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
-        self._check_response(r2, "login POST")
+        self._check_response(login_response, "login POST")
         # Redirect back to login page means the login did not succeed.
         if (
-            "AspxAutoDetectCookieSupport" in r2.url
-            or WEB_LOGIN_URL.lower() in r2.url.lower()
+            "AspxAutoDetectCookieSupport" in login_response.url
+            or WEB_LOGIN_URL.lower() in login_response.url.lower()
         ):
             raise AuthError("Expert client: login failed.")
 
@@ -558,15 +560,15 @@ class WemPortalExpertClient:
         runs solely on explicit, on-demand read/write operations.
         """
         # Step 1: main page (also captures the base VIEWSTATE we need).
-        r_main = self.session.get(
+        main_page = self.session.get(
             WEB_MAIN_URL,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers={"Accept": WEB_ACCEPT_NAV, "Accept-Language": WEB_ACCEPT_LANGUAGE},
         )
-        self._check_response(r_main, "main page", check_maintenance=True)
-        if WEB_LOGIN_URL.lower() in r_main.url.lower():
+        self._check_response(main_page, "main page", check_maintenance=True)
+        if WEB_LOGIN_URL.lower() in main_page.url.lower():
             raise AuthError("Expert client: session not accepted by portal main page.")
-        current_html = r_main.text
+        current_html = main_page.text
         _LOGGER.debug(
             "Expert navigation step 1 (main page): %d bytes, pagestate=%s",
             len(current_html),
@@ -737,7 +739,7 @@ class WemPortalExpertClient:
         # The dialog is a RadWindow served from its own URL; fetch it to
         # get its VIEWSTATE, then post the code via the dialog's save button.
         dialog_url = f"{WEB_CODE_EXPERTS_URL}?rwndrnd={random.random()}"
-        r = self.session.get(
+        dialog_page = self.session.get(
             dialog_url,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers={
@@ -746,8 +748,8 @@ class WemPortalExpertClient:
                 "Accept-Language": WEB_ACCEPT_LANGUAGE,
             },
         )
-        self._check_response(r, "security-code dialog")
-        fields = self._hidden_fields(r.text)
+        self._check_response(dialog_page, "security-code dialog")
+        fields = self._hidden_fields(dialog_page.text)
         _LOGGER.debug(
             "Expert navigation: security-code dialog fetched, %d hidden fields, "
             "pagestate=%s, __VIEWSTATE len=%d, __EVENTVALIDATION len=%d",
@@ -766,7 +768,7 @@ class WemPortalExpertClient:
         fields[EXPERT_DIALOG_TSM_ID_FIELD] = EXPERT_DIALOG_TSM_ID_VALUE
         fields[EXPERT_DIALOG_RTS_STATE_FIELD] = EXPERT_DIALOG_RTS_STATE_VALUE
         self._check_cooldown()
-        sec_headers = {
+        security_headers = {
             "X-MicrosoftAjax": "Delta=true",
             "Referer": dialog_url,
             "Origin": WEB_PORTAL_ORIGIN,
@@ -779,20 +781,20 @@ class WemPortalExpertClient:
                 "security_code",
                 dialog_url,
                 dict(fields),
-                dict(sec_headers),
+                dict(security_headers),
                 self.session,
             )
-        r2 = self.session.post(
+        code_response = self.session.post(
             dialog_url,
             data=fields,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-            headers=sec_headers,
+            headers=security_headers,
         )
-        self._check_response(r2, "security-code POST")
+        self._check_response(code_response, "security-code POST")
         _LOGGER.debug(
             "Expert navigation: security-code POST -> %d bytes, delta=%s",
-            len(r2.text),
-            "|hiddenField|" in r2.text,
+            len(code_response.text),
+            "|hiddenField|" in code_response.text,
         )
 
     # --- ASP.NET postback helpers ------------------------------------
@@ -821,18 +823,18 @@ class WemPortalExpertClient:
         # Delta response: pipe-delimited, carries hiddenField segments.
         if "|hiddenField|" in content:
             parts = content.split("|")
-            for i, token in enumerate(parts):
-                if token == "hiddenField" and i + 2 < len(parts):
-                    fields[parts[i + 1]] = parts[i + 2]
+            for position, token in enumerate(parts):
+                if token == "hiddenField" and position + 2 < len(parts):
+                    fields[parts[position + 1]] = parts[position + 2]
             if fields:
                 return fields
         # Otherwise parse as HTML.
         try:
             tree = html.fromstring(content)
-            for inp in tree.xpath("//input[@type='hidden']"):
-                name = inp.get("name")
+            for hidden_input in tree.xpath("//input[@type='hidden']"):
+                name = hidden_input.get("name")
                 if name:
-                    fields[name] = inp.get("value", "")
+                    fields[name] = hidden_input.get("value", "")
         except Exception as exc:  # pylint: disable=broad-except
             # Malformed/unparseable response: return whatever was collected
             # so the caller degrades gracefully instead of crashing. Logged
@@ -922,7 +924,7 @@ class WemPortalExpertClient:
                 event_target, url, dict(fields), dict(headers), self.session
             )
         if async_postback:
-            resp = self.session.post(
+            response = self.session.post(
                 url,
                 data=fields,
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
@@ -931,25 +933,25 @@ class WemPortalExpertClient:
         else:
             # Full postback ending in a 302 -> follow it to the reloaded
             # page, whose HTML carries the fresh state for the next step.
-            resp = self.session.post(
+            response = self.session.post(
                 url,
                 data=fields,
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
                 allow_redirects=True,
                 headers=headers,
             )
-        self._check_response(resp, "navigation postback")
-        if WEB_LOGIN_URL.lower() in resp.url.lower():
+        self._check_response(response, "navigation postback")
+        if WEB_LOGIN_URL.lower() in response.url.lower():
             raise AuthError("Expert client: session expired during navigation.")
         _LOGGER.debug(
             "Expert navigation: postback %s (async=%s) -> %d bytes, delta=%s, pagestate=%s",
             event_target,
             async_postback,
-            len(resp.text),
-            "|hiddenField|" in resp.text,
-            self._has_viewstate(self._hidden_fields(resp.text)),
+            len(response.text),
+            "|hiddenField|" in response.text,
+            self._has_viewstate(self._hidden_fields(response.text)),
         )
-        return resp.text
+        return response.text
 
     def close(self):
         """Close the session; never raises."""
@@ -981,15 +983,15 @@ class WemPortalExpertClient:
 
         options = []
         current = None
-        for opt in select[0].xpath(".//option"):
-            raw = (opt.get("value") or "").strip()
+        for option in select[0].xpath(".//option"):
+            raw = (option.get("value") or "").strip()
             try:
-                val = float(raw.replace(",", "."))
+                value = float(raw.replace(",", "."))
             except ValueError:
                 continue
-            options.append(val)
-            if opt.get("selected") is not None:
-                current = val
+            options.append(value)
+            if option.get("selected") is not None:
+                current = value
 
         if not options:
             # Dropdown present but empty: the session has no active
@@ -1010,10 +1012,10 @@ class WemPortalExpertClient:
 
         # Hidden ASP.NET fields, needed later for the (not yet built) write POST.
         hidden_fields = {}
-        for inp in tree.xpath("//input[@type='hidden']"):
-            name = inp.get("name")
+        for hidden_input in tree.xpath("//input[@type='hidden']"):
+            name = hidden_input.get("name")
             if name:
-                hidden_fields[name] = inp.get("value", "")
+                hidden_fields[name] = hidden_input.get("value", "")
 
         return ExpertParameterState(current, options, hidden_fields)
 
@@ -1043,18 +1045,20 @@ class WemPortalExpertClient:
         swallowed - it propagates so the shared cooldown engages.
         """
         result = {}
-        ids = [e for e in (entityvalues or []) if e]
+        ids = [candidate for candidate in (entityvalues or []) if candidate]
         # Skip entityvalues that can't be a real ID (too short / non-hex) -
         # e.g. a stale "0" from a pre-1.8.1 config. Polling them would only
         # hit an empty dialog and log a misleading failure every cycle.
-        skipped = [e for e in ids if not _is_valid_entityvalue(e)]
-        for e in skipped:
+        skipped = [
+            candidate for candidate in ids if not _is_valid_entityvalue(candidate)
+        ]
+        for candidate in skipped:
             _LOGGER.debug(
                 "Expert auto-poll: skipping invalid entityvalue %s "
                 "(not a readable ID); fix or clear it in the options.",
-                short_ev(e),
+                short_entityvalue(candidate),
             )
-        ids = [e for e in ids if _is_valid_entityvalue(e)]
+        ids = [candidate for candidate in ids if _is_valid_entityvalue(candidate)]
         if not ids:
             return result
         self._check_cooldown()
@@ -1076,7 +1080,7 @@ class WemPortalExpertClient:
                 except Exception as exc:  # pylint: disable=broad-except
                     _LOGGER.warning(
                         "Expert auto-poll: reading %s failed: %s",
-                        short_ev(entityvalue),
+                        short_entityvalue(entityvalue),
                         exc,
                     )
                     result[entityvalue] = None
@@ -1125,12 +1129,12 @@ class WemPortalExpertClient:
                         exc,
                     )
                     continue
-                for param in parse_parameter_list(html_text):
-                    ev = param["entityvalue"]
-                    if ev in seen:
+                for parameter in parse_parameter_list(html_text):
+                    entityvalue = parameter["entityvalue"]
+                    if entityvalue in seen:
                         continue
-                    seen.add(ev)
-                    result.append(param)
+                    seen.add(entityvalue)
+                    result.append(parameter)
         finally:
             self.close()
         return result
@@ -1168,7 +1172,7 @@ class WemPortalExpertClient:
             return self._nav_html
 
         self._check_cooldown()
-        resp = self.session.get(
+        response = self.session.get(
             WEB_MAIN_URL,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers={
@@ -1177,7 +1181,7 @@ class WemPortalExpertClient:
                 "Accept-Language": WEB_ACCEPT_LANGUAGE,
             },
         )
-        self._check_response(resp, "module page")
+        self._check_response(response, "module page")
         # Log both sources' yield: if discovery still comes up empty, this
         # says immediately whether the postback or the follow-up GET is the
         # one that fails to deliver the module - no guesswork needed.
@@ -1187,10 +1191,10 @@ class WemPortalExpertClient:
             "(%d bytes).",
             module.get("label"),
             len(self._nav_html or ""),
-            len(parse_parameter_list(resp.text)),
-            len(resp.text),
+            len(parse_parameter_list(response.text)),
+            len(response.text),
         )
-        return resp.text
+        return response.text
 
     def write_parameter(self, entityvalue: str, value) -> ExpertParameterState:
         """Login, set a new value via the edit form, verify, close session.
@@ -1242,7 +1246,7 @@ class WemPortalExpertClient:
             # The last gate before the request that actually CHANGES a
             # heating parameter. Everything up to here is reads.
             self._check_abort()
-            resp = self.session.post(
+            response = self.session.post(
                 EXPERT_PARAMETER_URL,
                 params={
                     "entityvalue": entityvalue,
@@ -1260,7 +1264,7 @@ class WemPortalExpertClient:
                     "Accept-Language": WEB_ACCEPT_LANGUAGE,
                 },
             )
-            self._check_response(resp, "parameter write")
+            self._check_response(response, "parameter write")
 
             # Verify by re-reading the form: the device/portal must now
             # report the new value as selected. The value is applied
@@ -1274,7 +1278,7 @@ class WemPortalExpertClient:
                 )
             _LOGGER.info(
                 "Expert parameter %s written and verified: %s",
-                short_ev(entityvalue),
+                short_entityvalue(entityvalue),
                 value_f,
             )
             return verify
@@ -1293,7 +1297,7 @@ class WemPortalExpertClient:
         # nearly-correct id would otherwise appear there almost in full.
         if not _is_valid_entityvalue(entityvalue):
             raise ValueError(
-                f"Invalid entityvalue: {short_ev((entityvalue or '').strip())!r} "
+                f"Invalid entityvalue: {short_entityvalue((entityvalue or '').strip())!r} "
                 "(must be a long hex string; check the configured ID)"
             )
 
@@ -1323,7 +1327,7 @@ class WemPortalExpertClient:
         last_error = None
         for attempt in range(max_attempts):
             self._check_cooldown()
-            resp = self.session.get(
+            response = self.session.get(
                 EXPERT_PARAMETER_URL,
                 params={
                     "entityvalue": entityvalue,
@@ -1337,8 +1341,8 @@ class WemPortalExpertClient:
                     "Accept-Language": WEB_ACCEPT_LANGUAGE,
                 },
             )
-            self._check_response(resp, "parameter dialog")
-            if WEB_LOGIN_URL.lower() in resp.url.lower():
+            self._check_response(response, "parameter dialog")
+            if WEB_LOGIN_URL.lower() in response.url.lower():
                 raise AuthError(
                     "Expert client: redirected to login when fetching the form."
                 )
@@ -1346,12 +1350,12 @@ class WemPortalExpertClient:
             # following write POST can reference it as Referer (confirmed
             # via HAR: the write's Referer is the same URL - including
             # rwndrnd - that rendered the form being submitted).
-            self._last_dialog_url = resp.url
+            self._last_dialog_url = response.url
             try:
-                state = self.parse_parameter_form(resp.text)
+                state = self.parse_parameter_form(response.text)
                 _LOGGER.debug(
                     "Expert parameter %s: current=%s range=%s..%s (attempt %d)",
-                    short_ev(entityvalue),
+                    short_entityvalue(entityvalue),
                     state.current,
                     state.min_value,
                     state.max_value,
@@ -1366,7 +1370,7 @@ class WemPortalExpertClient:
                 last_error = exc
                 _LOGGER.debug(
                     "Expert parameter %s not ready on attempt %d/%d: %s",
-                    short_ev(entityvalue),
+                    short_entityvalue(entityvalue),
                     attempt + 1,
                     max_attempts,
                     exc,
@@ -1397,16 +1401,16 @@ def create_expert_number_entities(config_entry):
         _LOGGER.error("Expert number entities unavailable: HA imports missing.")
         return []
 
-    opts = config_entry.options
+    options = config_entry.options
     # Collect (name, entityvalue) pairs from the generic slots. A slot with
     # an id but no name gets a default name.
     specs = []
-    for i in range(1, EXPERT_SLOT_COUNT + 1):
-        entityvalue = (opts.get(CONF_EXPERT_SLOT_ID_TEMPLATE % i) or "").strip()
+    for slot in range(1, EXPERT_SLOT_COUNT + 1):
+        entityvalue = (options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot) or "").strip()
         if not entityvalue:
             continue
-        name = (opts.get(CONF_EXPERT_SLOT_NAME_TEMPLATE % i) or "").strip()
-        specs.append((name or f"expert_parameter_{i}", entityvalue))
+        name = (options.get(CONF_EXPERT_SLOT_NAME_TEMPLATE % slot) or "").strip()
+        specs.append((name or f"expert_parameter_{slot}", entityvalue))
 
     entities = []
     seen = set()
@@ -1462,7 +1466,7 @@ try:
             # people share for debugging. number.py migrates entities from
             # the old raw-id format on setup, preserving entity_id/history.
             self._attr_unique_id = (
-                f"{config_entry.entry_id}:expert:{ev_digest(entityvalue)}"
+                f"{config_entry.entry_id}:expert:{entityvalue_digest(entityvalue)}"
             )
             self._attr_native_value = None
             # Guards against starting a second write while one is still
@@ -1588,7 +1592,7 @@ try:
             """Perform the actual (slow) write off the service-call path."""
             from .expert_options import expert_client_options
 
-            client_opts = expert_client_options(self._config_entry.options)
+            client_options = expert_client_options(self._config_entry.options)
 
             def _do_write():
                 # Checked here AND handed to the client, which re-checks it
@@ -1615,7 +1619,7 @@ try:
                         cooldown_activate=self._cooldown_activate(),
                         cookie_jar=self._cookie_jar(),
                         abort_check=self._raise_if_removed,
-                        **client_opts,
+                        **client_options,
                     )
                     return client.write_parameter(self._entityvalue, value)
                 finally:

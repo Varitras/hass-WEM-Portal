@@ -465,7 +465,11 @@ def _async_register_expert_service(
     # Function-local, like every other expert_writer import in this file:
     # the module pulls curl_cffi and lxml (~140 ms, measured) and this
     # file is imported whenever Home Assistant loads the integration.
-    from .expert_writer import WemPortalExpertClient, ev_digest, short_ev
+    from .expert_writer import (
+        WemPortalExpertClient,
+        entityvalue_digest,
+        short_entityvalue,
+    )
 
     if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
         return
@@ -496,7 +500,7 @@ def _async_register_expert_service(
         allowed.discard("")
         if entityvalue not in allowed:
             raise HomeAssistantError(
-                f"WEM Portal expert write: {short_ev(entityvalue)} is not one of "
+                f"WEM Portal expert write: {short_entityvalue(entityvalue)} is not one of "
                 "the parameters configured in this integration's options. Add it "
                 "to a slot first."
             )
@@ -507,7 +511,7 @@ def _async_register_expert_service(
                 "WEM Portal expert write: the integration is not loaded."
             )
         lock = data.expert.lock
-        ev_short = short_ev(entityvalue)
+        ev_short = short_entityvalue(entityvalue)
 
         def _raise_if_unloaded():
             """Abort gate for a write whose entry is going away.
@@ -584,7 +588,7 @@ def _async_register_expert_service(
                 {
                     "title": "WEM Portal expert write",
                     "message": f"{ev_short} set to {state.current}.",
-                    "notification_id": f"wemportal_expert_{ev_digest(entityvalue)}",
+                    "notification_id": f"wemportal_expert_{entityvalue_digest(entityvalue)}",
                 },
                 blocking=False,
             )

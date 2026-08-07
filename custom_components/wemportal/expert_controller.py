@@ -331,7 +331,7 @@ class ExpertController:
         can be that OR the portal, and asserting the first sent people to
         check a setting that was correct.
         """
-        from .expert_writer import ev_digest
+        from .expert_writer import entityvalue_digest
 
         ev = entity.entityvalue
         if unreadable_id:
@@ -354,7 +354,7 @@ class ExpertController:
                 {
                     "title": "WEM Portal expert auto-poll",
                     "message": reason,
-                    "notification_id": f"wemportal_poll_fail_{ev_digest(ev)}",
+                    "notification_id": f"wemportal_poll_fail_{entityvalue_digest(ev)}",
                 },
                 blocking=False,
             )

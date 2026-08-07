@@ -12,7 +12,7 @@ from custom_components.wemportal.wemportalapi import WemPortalApi
 from custom_components.wemportal import exceptions
 from custom_components.wemportal.expert_writer import (
     WemPortalExpertClient,
-    ev_digest,
+    entityvalue_digest,
 )
 
 
@@ -34,12 +34,12 @@ def test_valid_entityvalue_passes_unchanged():
 
 def test_ev_digest_is_stable_and_opaque():
     ev = "3A7F91C2E0B48D5619F2A0C7B4E83D105C2A"
-    d1 = ev_digest(ev)
-    assert d1 == ev_digest(ev)
+    d1 = entityvalue_digest(ev)
+    assert d1 == entityvalue_digest(ev)
     assert len(d1) == 16
     assert d1 not in ev and ev not in d1
-    assert ev_digest(f"  {ev}  ") == d1
-    assert ev_digest(ev[:-1] + "B") != d1
+    assert entityvalue_digest(f"  {ev}  ") == d1
+    assert entityvalue_digest(ev[:-1] + "B") != d1
 
 
 class FakeResponse:
