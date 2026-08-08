@@ -3213,6 +3213,38 @@ def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
     )
 
 
+def test_a_shared_row_ages_once_the_scrape_has_given_up_too():
+    """The gap the scraped-row exemption left: BOTH sources dead.
+
+    _forget_scraped_values fires on exactly the third scrape failure, not from
+    then on. So a shared row is cleared once, the API refills it through the
+    merge, and every later scrape failure leaves it alone - while the
+    exemption added for a working scrape goes on protecting it from the API's
+    own ageing. An old reading then sits there as current with nothing behind
+    it at all.
+
+    The exemption has to mean "the scrape is keeping this fresh", and
+    _previous_scraper_keys cannot say that: it is only refreshed by a
+    SUCCESSFUL scrape, so after a failure it still names every key the last
+    good one wrote. spider_retry_count is what knows.
+    """
+    api = _api()
+    api.data = {"1234": {"shared_reading": {"value": 21.0, "unit": "°C"}}}
+    api._previous_scraper_keys = {"shared_reading"}
+    # Past the point where _forget_scraped_values stopped acting: it fires on
+    # the third failure only, so from the fourth on nobody ages this row.
+    api.spider_retry_count = wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE + 1
+    api._last_device_read["1234"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+
+    api._forget_stale_device_values("1234")
+
+    assert api.data["1234"]["shared_reading"]["value"] is None, (
+        "both sources had stopped answering and the reading was still shown as current"
+    )
+
+
 def test_a_device_that_is_busy_forever_still_stops_showing_old_values():
     """A device that never says "online" never reaches the freshness check.
 

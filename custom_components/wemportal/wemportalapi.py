@@ -453,10 +453,24 @@ class WemPortalApi:
         # quiet for hours. They are not left unwatched: _forget_scraped_values
         # ages them on the scrape's own terms, after three failures in a row.
         status_rows = {f"{device_id}-{row_name}" for row_name in DEVICE_STATUS_ROWS}
+        # Only while the scrape is actually keeping them fresh.
+        # _previous_scraper_keys cannot answer that on its own: it is
+        # refreshed by a SUCCESSFUL scrape, so after a failure it still names
+        # every key the last good one wrote. And _forget_scraped_values fires
+        # on exactly the third failure, not from then on - so a shared row is
+        # cleared once, refilled by the merge from the API side, and then
+        # aged by nobody: not by the scrape, which has stopped acting, and
+        # not here, because the exemption still covered it. An old reading
+        # sat there as current with both sources dead behind it.
+        scrape_is_keeping_up = (
+            self.spider_retry_count < SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
+        )
         scraped_rows = self._previous_scraper_keys or set()
         forgotten = []
         for key, row in (self.data.get(device_id) or {}).items():
-            if key in status_rows or key in scraped_rows:
+            if key in status_rows:
+                continue
+            if scrape_is_keeping_up and key in scraped_rows:
                 continue
             if isinstance(row, dict) and row.get("value") is not None:
                 row["value"] = None

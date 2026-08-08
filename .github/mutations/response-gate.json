@@ -1654,8 +1654,8 @@
   {
     "label": "freshness: forgetting a reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows or key in scraped_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
-    "new": "            if key in status_rows or key in scraped_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
+    "old": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up and key in scraped_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
+    "new": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up and key in scraped_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -1899,8 +1899,8 @@
   {
     "label": "freshness: the rows explaining the silence blanked with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows or key in scraped_rows:\n                continue\n",
-    "new": "            if key in scraped_rows:\n                continue\n",
+    "old": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up",
+    "new": "            if scrape_is_keeping_up",
     "tests": "the_rows_that_explain_the_silence_are_not_blanked_with_it"
   },
   {
@@ -1962,8 +1962,15 @@
   {
     "label": "freshness: a fresh scrape cleared because the API half went quiet",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        scraped_rows = self._previous_scraper_keys or set()",
-    "new": "        scraped_rows = set()",
+    "old": "            if scrape_is_keeping_up and key in scraped_rows:\n                continue",
+    "new": "            if False:\n                continue",
     "tests": "a_fresh_scrape_is_not_cleared_with_a_silent_api_device"
+  },
+  {
+    "label": "freshness: a shared row protected after the scrape gave up too",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        scrape_is_keeping_up = (\n            self.spider_retry_count < SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE\n        )",
+    "new": "        scrape_is_keeping_up = True",
+    "tests": "a_shared_row_ages_once_the_scrape_has_given_up_too"
   }
 ]
