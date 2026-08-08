@@ -99,7 +99,8 @@
       "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz derzeit ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Der Modus wurde nicht geändert. Hilft nur warten: Die Sperre löst sich von selbst, und jeder Versuch verlängert sie."
     },
     "abort": {
-      "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen."
+      "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen.",
+      "discovery_aborted": "Das WEM-Portal-Konto, für das gesucht wurde, wurde neu geladen oder entfernt, deshalb wurde die Suche abgebrochen. Es wurde nichts geändert. Öffne die Optionen erneut, sobald die Integration fertig geladen ist."
     }
   },
   "services": {

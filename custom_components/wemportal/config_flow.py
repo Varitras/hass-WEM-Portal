@@ -51,7 +51,7 @@ from .const import (
     MIN_SCAN_INTERVAL_API_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
 )
-from .exceptions import AuthError, ForbiddenError
+from .exceptions import AuthError, ExpertOperationAborted, ForbiddenError
 from .expert_options import (
     discovery_option_list,
     duplicate_entityvalues,
@@ -770,7 +770,21 @@ class WemportalOptionsFlow(OptionsFlow):
                 if lock is not None:
                     lock.release()
 
-        return await self.hass.async_add_executor_job(run_locked)
+        try:
+            return await self.hass.async_add_executor_job(run_locked)
+        except ExpertOperationAborted as exc:
+            # The one boundary both discovery calls cross, which is why the
+            # translation happens here rather than at each of them.
+            #
+            # ExpertOperationAborted is a BaseException, so the `except
+            # Exception` around those calls does not see it, and the flow
+            # manager translates only AbortFlow. Left to travel, it stopped
+            # the portal work correctly and then killed the flow with a
+            # traceback where the user should get a sentence. There is
+            # nothing to fall back to either: the configuration this flow
+            # edits is being torn down.
+            _LOGGER.debug("Expert discovery stopped: %s", exc)
+            raise AbortFlow("discovery_aborted") from exc
 
     async def async_step_discover_modules(self, user_input=None):
         """Pick which modules to search. Module list is cached in options."""

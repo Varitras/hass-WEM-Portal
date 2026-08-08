@@ -99,7 +99,8 @@
       "rate_limited": "The WEM Portal is refusing requests from this network right now, which it does after too many in a short time. The mode was not changed. Waiting is the only fix: it clears by itself, and every retry makes it last longer."
     },
     "abort": {
-      "no_changes": "No changes to save - the integration was not reloaded."
+      "no_changes": "No changes to save - the integration was not reloaded.",
+      "discovery_aborted": "The WEM Portal account this was searching was reloaded or removed, so the search stopped. Nothing was changed. Open the options again once the integration has finished loading."
     }
   },
   "services": {

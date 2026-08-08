@@ -2035,5 +2035,12 @@
     "old": "            abort_check=abort_if_the_entry_is_gone,\n",
     "new": "",
     "tests": "discovery_stops_when_its_entry_goes_away"
+  },
+  {
+    "label": "discovery: an abort escaping the flow instead of ending it",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "        except ExpertOperationAborted as exc:",
+    "new": "        except _NeverRaised as exc:",
+    "tests": "an_aborted_discovery_ends_the_flow_instead_of_escaping"
   }
 ]

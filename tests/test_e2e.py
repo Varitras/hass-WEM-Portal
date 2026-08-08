@@ -718,6 +718,38 @@ async def test_the_expert_client_is_actually_buildable(hass, monkeypatch):
     assert type(client).__name__ == "WemPortalExpertClient"
 
 
+async def test_an_aborted_discovery_ends_the_flow_instead_of_escaping(
+    hass, monkeypatch
+):
+    """Stopping the worker is half of it; the flow has to end too.
+
+    ExpertOperationAborted is a BaseException, so the `except Exception`
+    around both discovery calls does not see it, and Home Assistant's flow
+    manager translates only AbortFlow. The teardown therefore stopped the
+    portal work and left the flow to die of an uncaught exception - a
+    traceback where the user should get a sentence.
+
+    Driven through _run_expert, which both discovery calls go through, rather
+    than through the gate: the gate was already covered and is not where this
+    went wrong.
+    """
+    from homeassistant.data_entry_flow import AbortFlow
+
+    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
+
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    flow = WemportalOptionsFlow()
+    flow.hass = hass
+    monkeypatch.setattr(type(flow), "config_entry", property(lambda self: entry))
+
+    def the_entry_went_away():
+        raise ExpertOperationAborted("the integration is being unloaded")
+
+    with pytest.raises(AbortFlow):
+        await flow._run_expert(the_entry_went_away)
+
+
 async def test_discovery_stops_when_its_entry_goes_away(hass, monkeypatch):
     """Discovery was the one expert client built without a way to stop.
 
