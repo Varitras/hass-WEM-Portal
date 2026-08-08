@@ -1909,5 +1909,12 @@
     "old": "                self._forget_stale_device_values(device_id)\n                continue",
     "new": "                continue",
     "tests": "a_device_that_is_busy_forever_still_stops_showing_old_values"
+  },
+  {
+    "label": "scrape: a broken main page blamed on credentials that just worked",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            raise ServerError(\n                \"Logged in, but the WEM Portal main page did not come back \"",
+    "new": "            raise AuthError(\n                \"Logged in, but the WEM Portal main page did not come back \"",
+    "tests": "a_main_page_without_its_state_after_a_login_is_not_a_wrong_password"
   }
 ]

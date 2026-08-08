@@ -443,7 +443,18 @@ class WemPortalScraper:
         # 3+4. GET Default.aspx and select the "Expert" tab
         expert_html = self._load_expert_page()
         if expert_html is None:
-            raise AuthError("Scraping Error: Could not find VIEWSTATE on main page.")
+            # NOT an AuthError, whichever of its two meanings this is. The
+            # login succeeded a few lines up, so the credentials are the one
+            # thing that has just been proven. _load_expert_page answers None
+            # both for "the session is no longer valid" and for "the page
+            # came back without its form state"; before a login that
+            # ambiguity is harmless, because the caller's answer to both is
+            # to log in fresh, and here there is no fresher login to try.
+            raise ServerError(
+                "Logged in, but the WEM Portal main page did not come back "
+                "with the expert view on it. This is a portal-side problem, "
+                "not a credential one."
+            )
 
         # 5. Extract data
         return self.parse_expert_page(expert_html, source="the expert page")

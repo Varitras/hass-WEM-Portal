@@ -1053,6 +1053,63 @@ def test_a_login_page_without_its_form_is_not_blamed_on_the_password():
         scraper.scrape()
 
 
+class _LoginForm:
+    """The login page, complete with the fields the POST needs."""
+
+    status_code = 200
+    text = (
+        '<html><body><input id="__VIEWSTATE" value="vs"/>'
+        '<input id="__EVENTVALIDATION" value="ev"/></body></html>'
+    )
+    url = "https://www.wemportal.com/Web/Login.aspx"
+
+
+class _PageWithoutTheExpertView:
+    """A main page the portal served without its form state."""
+
+    status_code = 200
+    text = "<html><body>nothing here</body></html>"
+    url = "https://www.wemportal.com/Web/Default.aspx"
+
+
+def test_a_main_page_without_its_state_after_a_login_is_not_a_wrong_password(
+    monkeypatch,
+):
+    """Whatever this is, the credentials are not it - they just worked.
+
+    `_load_expert_page` answers None for two different things: the session is
+    no longer valid, and the page came back without the form state. Before
+    the login that ambiguity is harmless, because the caller's answer to both
+    is "log in fresh". After one it is not: the login has just succeeded, so
+    reporting an AuthError blames credentials the portal accepted seconds
+    ago - and feeds the counter that eventually asks the user to re-enter
+    them.
+    """
+    import types
+
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    class _Session:
+        cookies = types.SimpleNamespace(clear=lambda: None)
+
+        def get(self, url, **_kwargs):
+            if "Login" in url:
+                return _LoginForm()
+            return _PageWithoutTheExpertView()
+
+        def post(self, *_args, **_kwargs):
+            return _PageWithoutTheExpertView()
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _Session()
+    monkeypatch.setattr(
+        "custom_components.wemportal.scraper.time.sleep", lambda _seconds: None
+    )
+
+    with pytest.raises(exceptions.ServerError):
+        scraper.scrape()
+
+
 def test_an_operation_outside_a_poll_is_not_deadlined():
     """Only fetch_data sets a deadline. An on-demand write has a user waiting
     on it and no coordinator timeout behind it, so it must run even when the
