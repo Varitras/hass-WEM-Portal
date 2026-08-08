@@ -276,6 +276,18 @@ def parse_module_list(html_content) -> list:
     ]
 
 
+def _as_number(text):
+    """The number a dropdown label carries, or None if it carries none.
+
+    Labels are decimal ("1.5", "1,5") on a scaled parameter and plain on the
+    rest; an enum reads "Aus" and has no number at all.
+    """
+    try:
+        return float((text or "").strip().replace(",", "."))
+    except ValueError:
+        return None
+
+
 def _smallest_gap(options):
     """The distance between the two closest allowed values, or None.
 
@@ -302,9 +314,14 @@ def _smallest_gap(options):
 class ExpertParameterState:
     """Parsed state of one expert parameter's edit form."""
 
-    def __init__(self, current, options, hidden_fields):
+    def __init__(self, current, options, hidden_fields, post_values=None):
         self.current = current  # currently selected value (float)
         self.options = options  # all allowed values (list of float)
+        # What the form has to be given back for each of those values. Kept
+        # apart from the value itself because the portal scales some
+        # parameters: 1.5 is offered as the string "15". Defaults to the value
+        # written out, which is what every unscaled parameter needs.
+        self.post_values = post_values or {}
         self.min_value = min(options) if options else None
         self.max_value = max(options) if options else None
         # The gap between two neighbouring options, which is what the entity
@@ -315,6 +332,21 @@ class ExpertParameterState:
         self.step = _smallest_gap(options)
         # Hidden ASP.NET fields (VIEWSTATE etc.), kept for a later write step.
         self.hidden_fields = hidden_fields
+
+    def post_value_for(self, value):
+        """The exact string the form expects back for `value`.
+
+        The portal's own option string rather than one rebuilt from the float,
+        so a scaled parameter posts "15" for 1.5 and an integer-like one posts
+        "30" rather than "30.0". Falls back to writing the number out for a
+        state assembled without the mapping - the tests do that, and every
+        parameter whose label equals its value attribute is unaffected either
+        way.
+        """
+        attribute = self.post_values.get(value)
+        if attribute is not None:
+            return attribute
+        return str(int(value)) if value == int(value) else str(value)
 
 
 class WemPortalExpertClient:
@@ -1043,16 +1075,46 @@ class WemPortalExpertClient:
                 )
             raise ValueError("Expert parameter form: value field not found.")
 
-        options = []
-        current = None
+        # Two numbers per option, and they are not always the same one. The
+        # label is what the parameter IS; the value attribute is what the form
+        # posts back. They part company where the portal encodes fractions as
+        # whole numbers: a range of 1.0 to 30.0 in halves arrives as 10 to 300
+        # in fives. Reading only the attribute published that scaled number as
+        # the parameter's range, so a value copied from the portal was written
+        # ten times too small - and the same installation's parameter list,
+        # which reads the label, disagreed with the entity about the same
+        # parameter.
+        pairs = []
         for option in select[0].xpath(".//option"):
-            raw = (option.get("value") or "").strip()
+            attribute = (option.get("value") or "").strip()
             try:
-                value = float(raw.replace(",", "."))
+                posted = float(attribute.replace(",", "."))
             except ValueError:
                 continue
+            pairs.append(
+                (
+                    _as_number(option.text),
+                    posted,
+                    attribute,
+                    option.get("selected") is not None,
+                )
+            )
+
+        # All or nothing: a list mixing labels and attributes would be neither.
+        # Enum parameters ("Aus", "Auto") have no numeric label, and for them
+        # the attribute is the only number there is.
+        labels_are_numbers = bool(pairs) and all(
+            shown is not None for shown, *_ in pairs
+        )
+
+        options = []
+        current = None
+        post_values = {}
+        for shown, posted, attribute, selected in pairs:
+            value = shown if labels_are_numbers else posted
             options.append(value)
-            if option.get("selected") is not None:
+            post_values[value] = attribute
+            if selected:
                 current = value
 
         if not options:
@@ -1094,7 +1156,7 @@ class WemPortalExpertClient:
             if name:
                 hidden_fields[name] = hidden_input.get("value", "")
 
-        return ExpertParameterState(current, options, hidden_fields)
+        return ExpertParameterState(current, options, hidden_fields, post_values)
 
     # ------------------------------------------------------------------
     def read_parameter(self, entityvalue: str) -> ExpertParameterState:
@@ -1310,8 +1372,7 @@ class WemPortalExpertClient:
                     f"{state.min_value}..{state.max_value} "
                     f"({len(state.options)} discrete options)."
                 )
-            # Integer-like options are rendered without decimals ("30").
-            value_str = str(int(value_f)) if value_f == int(value_f) else str(value_f)
+            value_str = state.post_value_for(value_f)
 
             # The Senden button is type=button and submits via a JS
             # __doPostBack('ctl00$DialogContent$BtnSave', '') - replicate

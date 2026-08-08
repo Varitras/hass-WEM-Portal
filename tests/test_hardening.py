@@ -516,6 +516,109 @@ def test_a_postback_asks_the_portal_for_a_delta_not_a_whole_page():
     assert headers["Referer"] == "https://www.wemportal.com/Web/Main.aspx"
 
 
+def _dialog_html(options):
+    """A parameter dialog offering `options` as (value attribute, label)."""
+    rendered = "".join(
+        f'<option value="{attribute}"{" selected" if selected else ""}>{label}</option>'
+        for attribute, label, selected in options
+    )
+    return (
+        "<html><body>"
+        f'<select id="ctl00_DialogContent_ddlNewValue">{rendered}</select>'
+        '<input type="hidden" name="__VIEWSTATE" value="vs" />'
+        "</body></html>"
+    )
+
+
+def test_a_scaled_parameter_reads_as_the_portal_shows_it_not_ten_times_over():
+    """The portal offers 1.5 as the string "15", and only the string was read.
+
+    A parameter whose form said 1.0 to 30.0 in halves was published as 10 to
+    300 in fives, so the value copied from the portal went in ten times too
+    small - at a heating parameter. The same installation's parameter list,
+    which reads the label, disagreed with the entity about the same parameter.
+    """
+    from custom_components.wemportal import expert_writer
+
+    state = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html([("10", "1.0", False), ("15", "1.5", True), ("20", "2.0", False)])
+    )
+
+    assert state.current == 1.5
+    assert (state.min_value, state.max_value) == (1.0, 2.0)
+    assert state.step == 0.5
+    assert state.post_value_for(1.5) == "15", "the form takes back its own string"
+
+
+def test_a_parameter_whose_label_matches_its_value_is_unchanged():
+    """The common case, and the one that must not move: both columns agree."""
+    from custom_components.wemportal import expert_writer
+
+    state = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html([("10", "10", False), ("11", "11", True), ("12", "12", False)])
+    )
+
+    assert state.current == 11.0
+    assert (state.min_value, state.max_value) == (10.0, 12.0)
+    assert state.post_value_for(11.0) == "11"
+
+
+def test_a_dropdown_whose_labels_are_words_falls_back_to_its_values():
+    """An enum labels its options "Aus"/"Auto", where the attribute is the
+    only number there is. Taking labels then would leave no range at all."""
+    from custom_components.wemportal import expert_writer
+
+    state = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html([("0", "Aus", True), ("1", "Auto", False)])
+    )
+
+    assert state.current == 0.0
+    assert state.options == [0.0, 1.0]
+
+
+def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
+    """The one line where a number reaches the heating system.
+
+    Rebuilding the string from the float posts "1.5" where the form expects
+    "15" - the portal answers that with the value unchanged, and the write is
+    reported as refused. Every test of this path mocked write_parameter out,
+    so nothing watched what was actually sent.
+    """
+    from custom_components.wemportal import expert_writer
+
+    before = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html([("10", "1.0", True), ("15", "1.5", False)])
+    )
+    after = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html([("10", "1.0", False), ("15", "1.5", True)])
+    )
+
+    sent = {}
+
+    class _Session:
+        def post(self, *_args, **kwargs):
+            sent.update(kwargs.get("data") or {})
+            return _WrittenResponse()
+
+        def close(self):
+            pass
+
+    class _WrittenResponse:
+        status_code = 200
+        text = "<html><body>ok</body></html>"
+        url = "https://www.wemportal.com/Web/UControls/Weishaupt/ExpertParameter.aspx"
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "pw")
+    client.session = _Session()
+    forms = iter([before, after])
+    monkeypatch.setattr(client, "_login", lambda: None)
+    monkeypatch.setattr(client, "_fetch_form", lambda *_a, **_k: next(forms))
+
+    client.write_parameter("A" * 36, 1.5)
+
+    assert sent["ctl00$DialogContent$ddlNewValue"] == "15"
+
+
 class _DialogNotReady:
     """A parameter dialog whose dropdown has not been filled in yet."""
 

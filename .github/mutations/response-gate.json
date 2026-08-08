@@ -2126,5 +2126,26 @@
     "old": "            return NumberMode.AUTO if bounds_are_known else NumberMode.BOX",
     "new": "            return NumberMode.BOX",
     "tests": "a_parameter_whose_range_is_known_is_a_slider_again"
+  },
+  {
+    "label": "expert: a scaled parameter read from the value attribute again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            value = shown if labels_are_numbers else posted",
+    "new": "            value = posted",
+    "tests": "a_scaled_parameter_reads_as_the_portal_shows_it_not_ten_times_over"
+  },
+  {
+    "label": "expert: a write that rebuilds the string instead of using the form's",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        attribute = self.post_values.get(value)",
+    "new": "        attribute = None",
+    "tests": "a_scaled_parameter_posts_the_string_the_form_offered"
+  },
+  {
+    "label": "expert: word labels taken for numbers, leaving no range",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        labels_are_numbers = bool(pairs) and all(\n            shown is not None for shown, *_ in pairs\n        )",
+    "new": "        labels_are_numbers = True",
+    "tests": "a_dropdown_whose_labels_are_words_falls_back_to_its_values"
   }
 ]

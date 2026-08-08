@@ -7,6 +7,21 @@ versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **A parameter the portal scales is read the way the portal shows it.** The
+  edit form carries each allowed value twice: as the label it displays and as
+  the string it wants posted back. For some parameters those differ - 1.5 is
+  offered as `15` - and only the string was ever read. A parameter whose form
+  says 1.0 to 30.0 in halves was therefore published as 10 to 300 in fives,
+  and a value copied from the portal into Home Assistant was written to the
+  heating system ten times too small. The label now decides what the parameter
+  is; the string is still what goes back to the form, exactly as the form
+  offered it. Two parts of this integration already read that label - the
+  parameter list behind discovery and the scraped sensors - so they and the
+  entity disagreed about the same parameter.
+
+  Parameters whose two columns agree are unaffected, and a dropdown labelled
+  with words rather than numbers still reads its values: for an enum the
+  string is the only number there is.
 - **An expert parameter is a slider again once its range is known.** Until the
   portal has stated a range the entity publishes a placeholder spanning
   200000, and a slider over that is useless - so it was set to a typed box.
