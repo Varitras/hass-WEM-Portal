@@ -315,6 +315,7 @@ class WemPortalScraper:
             else:
                 try:
                     reused_html = self._load_expert_page()
+                # skipcq: PYL-W0706 - shields the catch-all, not redundant
                 except (ForbiddenError, PortalMaintenanceError, ServerError):
                     # All three are answers, not reuse failures. Falling
                     # through to the full login would fire two MORE requests

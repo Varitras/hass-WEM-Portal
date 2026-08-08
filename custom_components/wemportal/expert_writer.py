@@ -507,6 +507,7 @@ class WemPortalExpertClient:
 
         try:
             self._establish_context()
+        # skipcq: PYL-W0706 - shields the catch-all, not redundant
         except (ForbiddenError, PortalMaintenanceError, ServerError):
             # All three are ANSWERS, not signs that the cached session went
             # stale, so none of them is a reason to log in again. Falling
@@ -1123,6 +1124,9 @@ class WemPortalExpertClient:
                 self._check_gates()
                 try:
                     result[entityvalue] = self._fetch_form(entityvalue)
+                # A 403 is about the connection, not this id: it has to reach
+                # the caller so the shared cooldown engages.
+                # skipcq: PYL-W0706 - shields the catch-all, not redundant
                 except ForbiddenError:
                     raise
                 except Exception as exc:  # noqa: BLE001
@@ -1168,6 +1172,9 @@ class WemPortalExpertClient:
             for module in modules or []:
                 try:
                     html_text = self._fetch_module_page(module)
+                # A 403 is about the connection, not this module: it has to
+                # reach the caller so the shared cooldown engages.
+                # skipcq: PYL-W0706 - shields the catch-all, not redundant
                 except ForbiddenError:
                     raise
                 except Exception as exc:  # noqa: BLE001
@@ -1703,6 +1710,7 @@ try:
                 # tell and nothing went wrong that needs reporting.
                 _LOGGER.debug("Expert write for %s stopped: %s", self._attr_name, exc)
                 return
+            # skipcq: PYL-W0706 - shields the catch-all, not redundant
             except HomeAssistantError:
                 # Already the right kind and already worded for the user -
                 # the busy-lock refusal comes through here.

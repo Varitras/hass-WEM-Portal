@@ -206,6 +206,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     },
                 )
 
+            # skipcq: PYL-W0706 - shields the catch-all, not redundant
             except AbortFlow:
                 # How Home Assistant ENDS a flow, not an error in it:
                 # _abort_if_unique_id_configured and async_set_unique_id both

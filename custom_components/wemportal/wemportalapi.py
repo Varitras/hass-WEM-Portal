@@ -2952,6 +2952,7 @@ class WemPortalApi:
                 )
                 read += 1
 
+            # skipcq: PYL-W0706 - shields the catch-all, not redundant
             except ForbiddenError:
                 # The portal is refusing this IP, which is not a fact about
                 # this group. Every remaining group would take the same
