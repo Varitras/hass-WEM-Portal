@@ -2112,5 +2112,12 @@
     "old": "        if not logged_in and WEB_LOGIN_FORM_MARKER in login_response.text:",
     "new": "        if False:",
     "tests": "the_expert_login_form_coming_back_is_still_a_wrong_password"
+  },
+  {
+    "label": "expert: a postback that no longer asks the portal for a delta",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        \"X-MicrosoftAjax\": \"Delta=true\",",
+    "new": "",
+    "tests": "a_postback_asks_the_portal_for_a_delta_not_a_whole_page"
   }
 ]

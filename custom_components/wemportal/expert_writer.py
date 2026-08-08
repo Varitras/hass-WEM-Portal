@@ -170,6 +170,27 @@ def _is_valid_entityvalue(entityvalue) -> bool:
     )
 
 
+def _ajax_headers(referer: str) -> dict[str, str]:
+    """The headers a Telerik async postback is answered with a delta for.
+
+    Three call sites sent the same six and differed in the referer alone.
+    Without the first two the portal replies with a whole page instead of the
+    delta the parser expects, so they belong together rather than next to
+    whichever request happens to need them.
+
+    Navigation requests deliberately send a SMALLER set - no postback headers
+    and WEB_ACCEPT_NAV - because they do want a whole page back.
+    """
+    return {
+        "X-MicrosoftAjax": "Delta=true",
+        "Referer": referer,
+        "Origin": WEB_PORTAL_ORIGIN,
+        "X-Requested-With": "XMLHttpRequest",
+        "Accept": WEB_ACCEPT_AJAX,
+        "Accept-Language": WEB_ACCEPT_LANGUAGE,
+    }
+
+
 # Matches the edit-icon onclick that opens the parameter dialog. lxml returns
 # the attribute with the entity decoded, so it reads `&readdata`, not
 # `&amp;readdata`.
@@ -835,14 +856,7 @@ class WemPortalExpertClient:
         fields[EXPERT_DIALOG_TSM_ID_FIELD] = EXPERT_DIALOG_TSM_ID_VALUE
         fields[EXPERT_DIALOG_RTS_STATE_FIELD] = EXPERT_DIALOG_RTS_STATE_VALUE
         self._check_gates()
-        security_headers = {
-            "X-MicrosoftAjax": "Delta=true",
-            "Referer": dialog_url,
-            "Origin": WEB_PORTAL_ORIGIN,
-            "X-Requested-With": "XMLHttpRequest",
-            "Accept": WEB_ACCEPT_AJAX,
-            "Accept-Language": WEB_ACCEPT_LANGUAGE,
-        }
+        security_headers = _ajax_headers(dialog_url)
         code_response = self.session.post(
             dialog_url,
             data=fields,
@@ -963,14 +977,7 @@ class WemPortalExpertClient:
             panel = EXPERT_PAGE_TSM_PANEL_BY_TARGET.get(event_target)
             if panel is not None:
                 fields[EXPERT_PAGE_TSM_FIELD] = f"{panel}|{event_target}"
-            headers = {
-                "X-MicrosoftAjax": "Delta=true",
-                "Referer": WEB_MAIN_URL,
-                "Origin": WEB_PORTAL_ORIGIN,
-                "X-Requested-With": "XMLHttpRequest",
-                "Accept": WEB_ACCEPT_AJAX,
-                "Accept-Language": WEB_ACCEPT_LANGUAGE,
-            }
+            headers = _ajax_headers(WEB_MAIN_URL)
         else:
             headers = {
                 "Referer": WEB_MAIN_URL,
@@ -1313,14 +1320,7 @@ class WemPortalExpertClient:
                 },
                 data=post_data,
                 timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-                headers={
-                    "X-MicrosoftAjax": "Delta=true",
-                    "Referer": self._last_dialog_url or WEB_MAIN_URL,
-                    "Origin": WEB_PORTAL_ORIGIN,
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Accept": WEB_ACCEPT_AJAX,
-                    "Accept-Language": WEB_ACCEPT_LANGUAGE,
-                },
+                headers=_ajax_headers(self._last_dialog_url or WEB_MAIN_URL),
             )
             self._check_response(response, "parameter write")
 

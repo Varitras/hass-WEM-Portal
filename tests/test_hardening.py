@@ -481,6 +481,23 @@ def _read_state(current, options):
     return expert_writer.ExpertParameterState(current, options, {})
 
 
+def test_a_postback_asks_the_portal_for_a_delta_not_a_whole_page():
+    """Two headers decide what the portal sends back.
+
+    Without them it answers a postback with a complete page, and the parser
+    behind every expert read and write is handed HTML where it expects a
+    Telerik delta. Three call sites spelled the same six headers out; nothing
+    checked any of them.
+    """
+    from custom_components.wemportal import expert_writer
+
+    headers = expert_writer._ajax_headers("https://www.wemportal.com/Web/Main.aspx")
+
+    assert headers["X-MicrosoftAjax"] == "Delta=true"
+    assert headers["X-Requested-With"] == "XMLHttpRequest"
+    assert headers["Referer"] == "https://www.wemportal.com/Web/Main.aspx"
+
+
 class _DialogNotReady:
     """A parameter dialog whose dropdown has not been filled in yet."""
 
