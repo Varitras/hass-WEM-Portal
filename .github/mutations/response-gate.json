@@ -2042,5 +2042,19 @@
     "old": "        except ExpertOperationAborted as exc:",
     "new": "        except _NeverRaised as exc:",
     "tests": "an_aborted_discovery_ends_the_flow_instead_of_escaping"
+  },
+  {
+    "label": "expert: a pre-fix stored range reinstating the lock after an upgrade",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if self._is_the_old_assumption(last):",
+    "new": "            if False:",
+    "tests": "a_restore_from_before_the_fix_does_not_bring_the_lock_back"
+  },
+  {
+    "label": "expert: a real 0-100 range discarded as if it were the old guess",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                last.native_value is None\n                and last.native_min_value == LEGACY_ASSUMED_MIN",
+    "new": "                last.native_min_value == LEGACY_ASSUMED_MIN",
+    "tests": "a_restored_range_that_was_really_read_is_kept"
   }
 ]

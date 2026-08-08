@@ -1477,6 +1477,13 @@ def create_expert_number_entities(config_entry):
 EXPERT_UNKNOWN_BOUND = 100000.0
 EXPERT_UNKNOWN_STEP = 0.5
 
+# What every slot claimed before the placeholders existed. Kept only to
+# recognise such a record on the first start after an upgrade - see
+# WemPortalExpertNumber._is_the_old_assumption.
+LEGACY_ASSUMED_MIN = 0
+LEGACY_ASSUMED_MAX = 100
+LEGACY_ASSUMED_STEP = 1
+
 try:
     from homeassistant.components.number import NumberMode, RestoreNumber
     from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -1581,15 +1588,46 @@ try:
             whose real range is 200-800 sat at its stored value inside the
             assumed 0-100 and could not be set at all until the next
             successful read - which, with the auto-poll off, may be never.
+
+            Except when what is stored is the assumption itself. RestoreNumber
+            persists min, max and step with or without a value, so a slot that
+            existed before the placeholders did has 0/100/1 on disk although
+            it was never read - and taking that back on the first start after
+            an upgrade would reinstate the lock for exactly the installations
+            the placeholders are for.
             """
             if last.native_value is not None:
                 self._attr_native_value = last.native_value
+            if self._is_the_old_assumption(last):
+                _LOGGER.debug(
+                    "%s: ignoring a stored range that predates the portal "
+                    "ever being asked; keeping the placeholders.",
+                    self._attr_name,
+                )
+                return
             if last.native_min_value is not None:
                 self._attr_native_min_value = last.native_min_value
             if last.native_max_value is not None:
                 self._attr_native_max_value = last.native_max_value
             if last.native_step is not None:
                 self._attr_native_step = last.native_step
+
+        @staticmethod
+        def _is_the_old_assumption(last) -> bool:
+            """Whether a stored range is the pre-fix guess rather than a fact.
+
+            Both halves are needed. 0 to 100 in steps of 1 is a plausible real
+            range - a percentage - so the numbers alone do not say. What says
+            it is that there is no value with them: a real range can only have
+            been learnt by reading or writing the parameter, and either would
+            have stored the value too.
+            """
+            return (
+                last.native_value is None
+                and last.native_min_value == LEGACY_ASSUMED_MIN
+                and last.native_max_value == LEGACY_ASSUMED_MAX
+                and last.native_step == LEGACY_ASSUMED_STEP
+            )
 
         @property
         def entityvalue(self):

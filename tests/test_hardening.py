@@ -755,6 +755,60 @@ def test_a_single_option_leaves_the_step_alone():
     assert entity.native_step == before
 
 
+def test_a_restore_from_before_the_fix_does_not_bring_the_lock_back():
+    """The upgrade path the wide placeholders would otherwise miss.
+
+    RestoreNumber persists min, max and step whether or not there is a value,
+    so a slot that existed before this was fixed has 0/100/1 in storage even
+    though it was never read. Taking that back on the first start after the
+    upgrade would overwrite the placeholders and lock the parameter out
+    again - for exactly the installations the fix is for.
+
+    Recognised by what it is: bounds that ARE the old made-up ones, on an
+    entity that has no value to go with them. A real range that happens to be
+    0 to 100 comes with a value, because it can only have been learnt by
+    reading or writing one.
+    """
+    import types
+
+    entity = _expert_entity(_api())
+
+    entity._restore_from(
+        types.SimpleNamespace(
+            native_value=None,
+            native_min_value=0,
+            native_max_value=100,
+            native_step=1,
+        )
+    )
+
+    assert entity.native_min_value <= 350 <= entity.native_max_value, (
+        "the pre-fix bounds came back and locked the parameter out again"
+    )
+    assert entity.native_step <= 0.5
+
+
+def test_a_restored_range_that_was_really_read_is_kept():
+    """The counter-test. 0 to 100 IS a plausible range - a percentage - and
+    a stored one that came with a value was learnt from the portal."""
+    import types
+
+    entity = _expert_entity(_api())
+
+    entity._restore_from(
+        types.SimpleNamespace(
+            native_value=42.0,
+            native_min_value=0,
+            native_max_value=100,
+            native_step=1,
+        )
+    )
+
+    assert entity.native_min_value == 0
+    assert entity.native_max_value == 100
+    assert entity.native_step == 1
+
+
 def test_the_restored_range_comes_back_with_the_value():
     """Restore took the value and left the range behind, so after a restart a
     parameter whose real range is 200-800 sat at its stored value inside the
