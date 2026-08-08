@@ -146,7 +146,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # Fingerprint of the last-written module cache, so an unchanged one
         # is not rewritten on every successful cycle (~288 writes a day at a
         # five-minute interval, for data that changes almost never).
-        self._saved_modules_snapshot = None
+        self._saved_modules_snapshot: dict | None = None
 
     async def _async_save_scraper_device_id(self) -> None:
         """Persist the stable scraper device id once it has been decided.

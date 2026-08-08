@@ -1106,7 +1106,7 @@ class WemPortalExpertClient:
         one bad id doesn't lose the others. A ForbiddenError (403) is NOT
         swallowed - it propagates so the shared cooldown engages.
         """
-        result = {}
+        result: dict[str, ExpertParameterState | None] = {}
         ids = [candidate for candidate in (entityvalues or []) if candidate]
         # Skip entityvalues that can't be a real ID (too short / non-hex) -
         # e.g. a stale "0" from a pre-1.8.1 config. Polling them would only
