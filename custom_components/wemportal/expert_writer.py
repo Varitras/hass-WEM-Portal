@@ -253,6 +253,29 @@ def parse_module_list(html_content) -> list:
     ]
 
 
+def _smallest_gap(options):
+    """The distance between the two closest allowed values, or None.
+
+    The portal's edit form is a dropdown of the values it accepts, so the
+    spacing is stated rather than declared: halves for a temperature, whole
+    numbers for a percentage, tens for a delay. The smallest gap rather than
+    the first one because the list need not be evenly spaced, and a step
+    larger than the true one makes values unreachable.
+
+    No guard for a short list: one option produces no pair to subtract, so
+    the comprehension is empty and the answer is already None. The guard that
+    stood here said the same thing twice, which a mutation demonstrated by
+    removing it with nothing changing.
+    """
+    ordered = sorted(options or [])
+    gaps = [
+        later - earlier
+        for earlier, later in zip(ordered, ordered[1:])
+        if later > earlier
+    ]
+    return min(gaps) if gaps else None
+
+
 class ExpertParameterState:
     """Parsed state of one expert parameter's edit form."""
 
@@ -261,6 +284,12 @@ class ExpertParameterState:
         self.options = options  # all allowed values (list of float)
         self.min_value = min(options) if options else None
         self.max_value = max(options) if options else None
+        # The gap between two neighbouring options, which is what the entity
+        # needs as its step. Alongside min/max because it comes from the same
+        # place and answers the same kind of question. None when the list is
+        # too short to measure one - a single option says nothing about
+        # spacing, and assuming from it would be guessing in a new place.
+        self.step = _smallest_gap(options)
         # Hidden ASP.NET fields (VIEWSTATE etc.), kept for a later write step.
         self.hidden_fields = hidden_fields
 
@@ -1442,10 +1471,16 @@ try:
 
         _attr_should_poll = False
         _attr_has_entity_name = True
-        _attr_native_unit_of_measurement = "%"
+        # No unit. The portal's edit form carries a list of allowed values and
+        # nothing else - it never says what they measure. Every slot used to
+        # be published as a percentage, so a flow temperature, a curve slope
+        # and a delay all read as `%` and were recorded under that unit.
+        #
+        # Step, min and max below are only what holds until the parameter has
+        # been read or restored once; both then replace all three with what
+        # the portal actually offers. The real range is enforced live in
+        # write_parameter() against the form's option list either way.
         _attr_native_step = 1
-        # Display bounds; the real device range is enforced live in
-        # write_parameter() against the form's option list.
         _attr_native_min_value = 0
         _attr_native_max_value = 100
         _attr_icon = "mdi:speedometer"
@@ -1480,11 +1515,44 @@ try:
             self._removed = False
 
         async def async_added_to_hass(self):
-            """Restore the last known value after a restart."""
+            """Restore what the last run knew about this parameter."""
             await super().async_added_to_hass()
             last = await self.async_get_last_number_data()
-            if last is not None and last.native_value is not None:
+            if last is not None:
+                self._restore_from(last)
+
+        def _apply_state(self, state):
+            """Take value, range and step from a form the portal just showed.
+
+            Both callers land here - the periodic read and the verify after a
+            write - and each carried its own copy of this before. That is how
+            the step came to be updated by neither: it was added to the class
+            as a fixed 1 and there were two places to remember it in.
+            """
+            self._attr_native_value = state.current
+            if state.min_value is not None:
+                self._attr_native_min_value = state.min_value
+            if state.max_value is not None:
+                self._attr_native_max_value = state.max_value
+            if state.step is not None:
+                self._attr_native_step = state.step
+
+        def _restore_from(self, last):
+            """Take back the stored range as well as the stored value.
+
+            Only the value came back before, so after a restart a parameter
+            whose real range is 200-800 sat at its stored value inside the
+            assumed 0-100 and could not be set at all until the next
+            successful read - which, with the auto-poll off, may be never.
+            """
+            if last.native_value is not None:
                 self._attr_native_value = last.native_value
+            if last.native_min_value is not None:
+                self._attr_native_min_value = last.native_min_value
+            if last.native_max_value is not None:
+                self._attr_native_max_value = last.native_max_value
+            if last.native_step is not None:
+                self._attr_native_step = last.native_step
 
         @property
         def entityvalue(self):
@@ -1510,11 +1578,7 @@ try:
                     self._attr_name,
                 )
                 return
-            self._attr_native_value = state.current
-            if state.min_value is not None:
-                self._attr_native_min_value = state.min_value
-            if state.max_value is not None:
-                self._attr_native_max_value = state.max_value
+            self._apply_state(state)
             self.async_write_ha_state()
 
         async def async_set_native_value(self, value: float) -> None:
@@ -1646,11 +1710,7 @@ try:
                 self._write_in_progress = False
 
             # Verified value from the portal, plus the real device range.
-            self._attr_native_value = state.current
-            if state.min_value is not None:
-                self._attr_native_min_value = state.min_value
-            if state.max_value is not None:
-                self._attr_native_max_value = state.max_value
+            self._apply_state(state)
             self.async_write_ha_state()
             _LOGGER.info(
                 "Expert parameter %s set and verified: %s",

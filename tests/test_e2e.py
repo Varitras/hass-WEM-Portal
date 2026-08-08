@@ -11,7 +11,6 @@ everyday run deselects them (see pytest.ini), CI runs them with `-m ""`.
 """
 
 import threading
-import types
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -1245,11 +1244,7 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
         return (
             {}
             if state["fail"]
-            else {
-                EV_A: types.SimpleNamespace(
-                    current=21.0, min_value=0.0, max_value=100.0
-                )
-            }
+            else {EV_A: expert_writer.ExpertParameterState(21.0, [0.0, 100.0], {})}
         )
 
     entry, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, sometimes)

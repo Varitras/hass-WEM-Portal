@@ -474,6 +474,99 @@ def _expert_entity(api, entry_id="e1"):
     return entity
 
 
+def _read_state(current, options):
+    from custom_components.wemportal import expert_writer
+
+    return expert_writer.ExpertParameterState(current, options, {})
+
+
+def test_an_expert_parameter_does_not_claim_to_be_a_percentage():
+    """Every slot was modelled as a percentage. The portal says no such thing
+    - the edit form carries a list of allowed values and no unit at all - so
+    a flow temperature, a curve slope and a delay all read as `%`, and Home
+    Assistant records their history under that unit."""
+    entity = _expert_entity(_api())
+
+    assert entity.native_unit_of_measurement is None, (
+        "a unit the portal never sent is still being published"
+    )
+
+
+def test_a_half_step_parameter_is_not_forced_to_whole_numbers():
+    """Step was fixed at 1, so a parameter the portal offers in halves could
+    only be set to half of its values - the other half was unreachable from
+    the UI."""
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+
+    entity.apply_read_state(_read_state(21.5, [20.0, 20.5, 21.0, 21.5, 22.0]))
+
+    assert entity.native_step == 0.5, (
+        "the step is still the assumed 1, so half-step values cannot be set"
+    )
+
+
+def test_the_step_of_a_whole_number_parameter_stays_whole():
+    """The counter-test: deriving the step must not turn every parameter into
+    a half-step one."""
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+
+    entity.apply_read_state(_read_state(60.0, [40.0, 50.0, 60.0, 70.0]))
+
+    assert entity.native_step == 10.0
+
+
+def test_an_unevenly_spaced_option_list_takes_its_smallest_gap():
+    """The closest pair decides, not the first one.
+
+    A step larger than the true one makes the values in between unreachable
+    from the UI, which is the failure this is here to avoid; a smaller one
+    only offers a value the portal then rejects, which the write path already
+    checks against the form's own option list.
+    """
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+
+    entity.apply_read_state(_read_state(30.0, [0.0, 10.0, 20.0, 20.5, 30.0]))
+
+    assert entity.native_step == 0.5
+
+
+def test_a_single_option_leaves_the_step_alone():
+    """One option gives nothing to measure a step from. Guessing from a list
+    of one would be the same mistake in a new place."""
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+    before = entity.native_step
+
+    entity.apply_read_state(_read_state(5.0, [5.0]))
+
+    assert entity.native_step == before
+
+
+def test_the_restored_range_comes_back_with_the_value():
+    """Restore took the value and left the range behind, so after a restart a
+    parameter whose real range is 200-800 sat at its stored value inside the
+    assumed 0-100 - unsettable until the next successful read."""
+    import types
+
+    entity = _expert_entity(_api())
+    entity._restore_from(
+        types.SimpleNamespace(
+            native_value=350.0,
+            native_min_value=200.0,
+            native_max_value=800.0,
+            native_step=10.0,
+        )
+    )
+
+    assert entity.native_value == 350.0
+    assert entity.native_min_value == 200.0, "the restored range was dropped"
+    assert entity.native_max_value == 800.0
+    assert entity.native_step == 10.0
+
+
 def test_entity_write_uses_the_expert_gate_not_the_global_one():
     """A rejected slider write must back off the EXPERT path only.
 
@@ -2328,8 +2421,6 @@ def test_the_scrape_backoff_survives_a_fresh_api_instance():
 def _write_entity(api, monkeypatch):
     """An expert entity whose executor runs inline and whose portal client
     records that it was constructed at all."""
-    import types
-
     from custom_components.wemportal import expert_writer
 
     entity = _expert_entity(api)
@@ -2340,7 +2431,10 @@ def _write_entity(api, monkeypatch):
             built.append(True)
 
         def write_parameter(self, *_args, **_kwargs):
-            return types.SimpleNamespace(current=21.0, min_value=None, max_value=None)
+            # The real type, not a stand-in with the fields this test happens
+            # to need: a stand-in silently goes out of date when the state
+            # grows one, and the entity reads whatever it grew.
+            return expert_writer.ExpertParameterState(21.0, [], {})
 
     monkeypatch.setattr(expert_writer, "WemPortalExpertClient", _Client)
 

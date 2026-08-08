@@ -1804,5 +1804,40 @@
     "old": "            if key in controls:",
     "new": "            if sensor[\"IsWriteable\"] and key in api_data.get(device_id, {}):",
     "tests": "a_writeable_value_that_fell_back_to_a_sensor_still_updates"
+  },
+  {
+    "label": "expert: every slot published as a percentage again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        _attr_native_step = 1\n        _attr_native_min_value = 0",
+    "new": "        _attr_native_step = 1\n        _attr_native_unit_of_measurement = \"%\"\n        _attr_native_min_value = 0",
+    "tests": "an_expert_parameter_does_not_claim_to_be_a_percentage"
+  },
+  {
+    "label": "expert: the step no longer read off the allowed values",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self.step = _smallest_gap(options)",
+    "new": "        self.step = None",
+    "tests": "a_half_step_parameter_is_not_forced_to_whole_numbers"
+  },
+  {
+    "label": "expert: the widest gap taken as the step, hiding values between",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "    return min(gaps) if gaps else None",
+    "new": "    return max(gaps) if gaps else None",
+    "tests": "an_unevenly_spaced_option_list_takes_its_smallest_gap"
+  },
+  {
+    "label": "expert: the read applying its step to neither caller",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if state.step is not None:\n                self._attr_native_step = state.step",
+    "new": "",
+    "tests": "a_half_step_parameter_is_not_forced_to_whole_numbers"
+  },
+  {
+    "label": "expert: restore taking the value and dropping the range again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if last.native_min_value is not None:\n                self._attr_native_min_value = last.native_min_value",
+    "new": "",
+    "tests": "the_restored_range_comes_back_with_the_value"
   }
 ]

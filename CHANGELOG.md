@@ -568,6 +568,19 @@ to ask the user for new credentials.
   read that came back empty) had to be picked out of the log and matched up
   by timestamp. The reason now travels with the failure and names the device
   it belongs to; with several devices failing, every one of them is listed.
+- **An expert parameter no longer claims to be a percentage.** Every slot was
+  published with the unit `%`, a range of 0 to 100 and a step of 1 - none of
+  which the portal states. Its edit form carries a list of the values it
+  accepts and no unit at all, so a flow temperature, a heating-curve slope
+  and a delay were all shown, and recorded, as percentages, and a parameter
+  the portal offers in halves could only be set to half of its values.
+
+  The unit is gone, and the step now comes from the spacing of the values the
+  portal offers. So do the minimum and maximum, which were read already - but
+  only until a restart: they were not restored with the value, so a parameter
+  whose real range is 200 to 800 came back sitting inside the assumed 0 to
+  100, where it could not be set at all until the next successful read. With
+  the hourly auto-poll switched off, that was never.
 
 ### Removed
 - **The `beautifulsoup4` dependency.** It was installed for three lines: the
