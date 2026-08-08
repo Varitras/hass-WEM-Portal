@@ -1072,6 +1072,21 @@ class WemPortalExpertClient:
                 "entityvalue does not match a readable parameter."
             )
 
+        # An option's value attribute is what gets posted back, and it is the
+        # only thing read above - but it need not equal the label the portal
+        # shows. A parameter the portal reports as 5 in a range of 1 to 30
+        # arrived here as 50 in 10 to 300, which is what a scaled value
+        # attribute over a decimal label looks like. Logged as pairs so the
+        # next read says which of the two an entity should be built from,
+        # rather than leaving it to be inferred from the factor.
+        _LOGGER.debug(
+            "Expert parameter form: first options as value/label: %s",
+            [
+                (option.get("value"), (option.text or "").strip())
+                for option in select[0].xpath(".//option")[:5]
+            ],
+        )
+
         # Hidden ASP.NET fields, needed later for the (not yet built) write POST.
         hidden_fields = {}
         for hidden_input in tree.xpath("//input[@type='hidden']"):
