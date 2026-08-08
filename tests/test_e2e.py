@@ -718,6 +718,30 @@ async def test_the_expert_client_is_actually_buildable(hass, monkeypatch):
     assert type(client).__name__ == "WemPortalExpertClient"
 
 
+async def test_discovery_stops_when_its_entry_goes_away(hass, monkeypatch):
+    """Discovery was the one expert client built without a way to stop.
+
+    It is also the longest sequence there is - a login, the module navigation
+    and a form read per module - so an entry unloaded or reloaded while it ran
+    had it navigate the portal to the end on credentials and options that were
+    no longer current. Every other expert caller had this gate.
+    """
+    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
+
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    flow = WemportalOptionsFlow()
+    monkeypatch.setattr(type(flow), "config_entry", property(lambda self: entry))
+    client = flow._expert_client()
+
+    client._check_gates()  # still loaded: the gate has to let this through
+
+    entry.runtime_data.begin_unload()
+
+    with pytest.raises(ExpertOperationAborted):
+        client._check_gates()
+
+
 def test_the_auto_poll_stops_at_the_START_of_an_unload():
     """The two teardown flags sit at opposite ends of the unload.
 

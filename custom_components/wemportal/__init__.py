@@ -574,6 +574,17 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
         # action. Only a SHORTENED entityvalue appears in any user-facing text.
         try:
             state = await hass.async_add_executor_job(_do_write)
+        except ExpertOperationAborted as exc:
+            # The configuration went away mid-write. Nothing reached the
+            # portal - and the caller is still waiting on this call, so it
+            # has to be told, in the kind of error Home Assistant surfaces.
+            # It used to arrive here as an ordinary Exception and be wrapped
+            # by the handler below; now that it travels as a control-flow
+            # signal it needs saying explicitly, which is clearer anyway.
+            _LOGGER.debug("Expert write for %s stopped: %s", ev_short, exc)
+            raise HomeAssistantError(
+                f"WEM Portal expert write for {ev_short} was stopped: {exc}"
+            ) from exc
         except Exception as exc:
             _LOGGER.error("Expert write failed for %s: %s", ev_short, exc)
             raise HomeAssistantError(

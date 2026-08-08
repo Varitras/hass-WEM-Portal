@@ -1862,11 +1862,11 @@
     "tests": "a_write_that_fails_with_a_plain_error_still_reaches_the_caller"
   },
   {
-    "label": "expert: an orderly teardown reported to the user as a failure",
+    "label": "expert: a teardown reported to the caller as a successful write",
     "path": "custom_components/wemportal/expert_writer.py",
     "old": "            except ExpertOperationAborted as exc:",
     "new": "            except _NeverRaised as exc:",
-    "tests": "a_write_stopped_by_a_teardown_is_not_an_error"
+    "tests": "a_write_stopped_by_a_teardown_reaches_the_caller_too"
   },
   {
     "label": "date: an unconfirmed day published as if the portal had stored it",
@@ -2007,5 +2007,33 @@
     "old": "    async_register_admin_service(\n        hass,\n        DOMAIN,",
     "new": "    hass.services.async_register(\n        DOMAIN,",
     "tests": "the_holiday_service_refuses_a_non_admin"
+  },
+  {
+    "label": "expert: an abort catchable by every broad handler again",
+    "path": "custom_components/wemportal/exceptions.py",
+    "old": "class ExpertOperationAborted(BaseException):",
+    "new": "class ExpertOperationAborted(Exception):",
+    "tests": "a_batch_read_stops_rather_than_noting_a_failure_per_id"
+  },
+  {
+    "label": "expert: the fresh login sending credentials after a teardown",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self._check_gates()\n        login_response = self.session.post(",
+    "new": "        login_response = self.session.post(",
+    "tests": "a_fresh_login_stops_between_its_two_requests"
+  },
+  {
+    "label": "expert: downtime answering the expert login POST read as a bad password",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self._check_response(login_response, \"login POST\", check_maintenance=True)",
+    "new": "        self._check_response(login_response, \"login POST\")",
+    "tests": "maintenance_answering_the_expert_login_post_is_not_a_wrong_password"
+  },
+  {
+    "label": "expert: discovery left without a way to stop",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            abort_check=abort_if_the_entry_is_gone,\n",
+    "new": "",
+    "tests": "discovery_stops_when_its_entry_goes_away"
   }
 ]

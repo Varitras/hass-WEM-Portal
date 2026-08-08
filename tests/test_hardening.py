@@ -488,6 +488,111 @@ class _DialogNotReady:
     url = "https://www.wemportal.com/Web/UControls/Weishaupt/ExpertParameter.aspx"
 
 
+def _expert_login_session(monkeypatch, post_body, on_get=None):
+    """A session for _full_login: a healthy form, then `post_body`."""
+    from custom_components.wemportal import expert_writer
+
+    posts = []
+
+    class _Response:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Login.aspx"
+
+        def __init__(self, text):
+            self.text = text
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            if on_get is not None:
+                on_get()
+            return _Response(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            posts.append(True)
+            return _Response(post_body)
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_k: _Session())
+    return posts
+
+
+def test_a_fresh_login_stops_between_its_two_requests(monkeypatch):
+    """The gate is asked before the login, and the login is two requests.
+
+    An unload arriving while the first is in flight was not noticed until the
+    whole sequence had run, so the credentials went out to a portal on behalf
+    of a configuration that no longer existed - the one request in this module
+    most worth not making.
+    """
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
+
+    torn_down = []
+
+    def abort_check():
+        if torn_down:
+            raise ExpertOperationAborted("the entry is being unloaded")
+
+    posts = _expert_login_session(
+        monkeypatch, NORMAL_LOGIN_PAGE, on_get=lambda: torn_down.append(True)
+    )
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", abort_check=abort_check
+    )
+
+    with pytest.raises(ExpertOperationAborted):
+        client._full_login()
+
+    assert posts == [], "the credentials went out after the entry had gone away"
+
+
+def test_maintenance_answering_the_expert_login_post_is_not_a_wrong_password(
+    monkeypatch,
+):
+    """The same gap the scraper had, in the other client.
+
+    Its login GET checks for the maintenance notice; the answer to the
+    credential POST did not, and a response on the login URL is what counts
+    as "the portal rejected these credentials". Announced downtime therefore
+    read as a wrong password here too.
+    """
+    from custom_components.wemportal import expert_writer
+
+    _expert_login_session(monkeypatch, MAINTENANCE_PAGE)
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+
+    with pytest.raises(exceptions.PortalMaintenanceError):
+        client._full_login()
+
+
+def test_a_batch_read_stops_rather_than_noting_a_failure_per_id():
+    """An abort is not "this parameter could not be read".
+
+    read_many catches per id so one bad parameter does not lose the others,
+    which is right - but the teardown is not about a parameter. Recorded as
+    one, the loop carried on to the next id and the next, each opening more
+    portal navigation for a configuration that is already gone, and handed
+    back a result full of None as though the reads had simply failed.
+    """
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client._login = lambda: None
+    client.close = lambda: None
+    attempted = []
+
+    def gone(entityvalue):
+        attempted.append(entityvalue)
+        raise ExpertOperationAborted("the entry is being unloaded")
+
+    client._fetch_form = gone
+
+    with pytest.raises(ExpertOperationAborted):
+        client.read_many(["A" * 36, "B" * 36, "C" * 36])
+
+    assert len(attempted) == 1, "it kept reading after the entry had gone away"
+
+
 def test_a_form_retry_stops_when_the_entry_went_away_meanwhile(monkeypatch):
     """The abort gate has to be inside the retry loop, not only around it.
 
@@ -2859,11 +2964,18 @@ def test_a_successful_write_leaves_the_verified_value_behind(monkeypatch):
     assert entity._write_in_progress is False
 
 
-def test_a_write_stopped_by_a_teardown_is_not_an_error(monkeypatch):
-    """Aborting because the entry is going away is not a failure the caller
-    needs to hear about - nobody is waiting on that outcome any more, and
-    raising would put a red error in the log for an orderly shutdown."""
+def test_a_write_stopped_by_a_teardown_reaches_the_caller_too(monkeypatch):
+    """Reversed today, and the earlier reasoning was wrong.
+
+    It said nobody was waiting on the outcome. Somebody is: the write is
+    awaited now, so the service call or automation that asked for it is still
+    holding on, and returning quietly told it the heating had been set when
+    nothing reached the portal. That the configuration went away is a reason
+    for the write not to happen, not a reason to report that it did.
+    """
     import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
 
     from custom_components.wemportal import exceptions as wem_exceptions
 
@@ -2872,7 +2984,8 @@ def test_a_write_stopped_by_a_teardown_is_not_an_error(monkeypatch):
         api, monkeypatch, wem_exceptions.ExpertOperationAborted("entry is unloading")
     )
 
-    asyncio.run(entity.async_set_native_value(21.0))
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(entity.async_set_native_value(21.0))
 
     assert entity._write_in_progress is False
 
@@ -2888,11 +3001,17 @@ def test_a_removed_entity_does_not_open_a_portal_session(monkeypatch):
     """
     import asyncio
 
+    from homeassistant.exceptions import HomeAssistantError
+
     api = _api()
     entity, built = _write_entity(api, monkeypatch)
     entity._removed = True
 
-    asyncio.run(entity._async_write(21.0))
+    # Raising is the point of the abort, not a side effect of it: whoever is
+    # waiting on the call must not be told the heating was set. What this
+    # test is about is the line below it - no session was opened at all.
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(entity._async_write(21.0))
 
     assert built == [], "a write opened a portal session after removal"
     assert entity._write_in_progress is False

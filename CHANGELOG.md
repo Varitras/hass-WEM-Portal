@@ -628,6 +628,11 @@ to ask the user for new credentials.
   refused outright rather than queued. Failure notifications are gone - a
   failure is raised instead. The optional notification on SUCCESS is
   unchanged.
+
+  That includes a write stopped because the integration was reloaded or
+  unloaded underneath it. Nothing reaches the portal in that case, and the
+  call now says so rather than returning as though the setting had been
+  made - whoever asked is still waiting on the answer.
 - **The minimum supported Home Assistant version is 2024.12.0.** The options
   flow relies on an attribute that does not exist in 2024.11, so the declared
   minimum was wrong rather than merely conservative.

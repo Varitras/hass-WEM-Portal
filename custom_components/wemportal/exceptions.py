@@ -79,11 +79,23 @@ class PollDeadlineExceeded(BaseException):
     """
 
 
-class ExpertOperationAborted(Exception):
+class ExpertOperationAborted(BaseException):
     """Raised when the configuration a portal operation belongs to is gone.
 
     Its own type so the caller can tell "we deliberately stopped" apart from
     "the portal rejected the write" and skip the user-facing notification.
+
+    NOT an Exception subclass, for the same reason as PollDeadlineExceeded:
+    it is a control-flow signal that has to travel out through code whose job
+    is to keep going. read_many catches per id so one unreadable parameter
+    does not lose the others - correctly - and swallowed this with it, so a
+    teardown was recorded as "that parameter failed" and the loop moved on to
+    the next id, opening more portal navigation for a configuration that was
+    already gone.
+
+    `finally` still runs, so the sessions those paths close are still closed,
+    and the two handlers that DO want it - expert_controller and the entity
+    write - catch it by name.
 
     Lives here rather than beside the expert client because three modules now
     need to catch it, and importing that client pulls curl_cffi and lxml onto

@@ -562,13 +562,23 @@ class WemPortalExpertClient:
             "ctl00$content$tbxPassword": self.password,
             "ctl00$content$btnLogin": "Anmelden",
         }
+        # A login is two requests, and the gate was only asked before the
+        # first. An unload arriving while that one was in flight went
+        # unnoticed until the whole sequence had run, so the credentials went
+        # to the portal for a configuration that no longer existed.
+        self._check_gates()
         login_response = self.session.post(
             WEB_LOGIN_URL,
             data=login_data,
             allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
-        self._check_response(login_response, "login POST")
+        # check_maintenance, as on the GET above: what comes back is the login
+        # page or the main page, and both carry the notice. Without it,
+        # announced downtime arrives on the login URL - which is exactly the
+        # test for "these credentials were rejected" just below - and was
+        # reported as a wrong password. Same gap the scraper had.
+        self._check_response(login_response, "login POST", check_maintenance=True)
         # Redirect back to login page means the login did not succeed.
         if (
             "AspxAutoDetectCookieSupport" in login_response.url
@@ -1708,11 +1718,16 @@ try:
             try:
                 state = await self.hass.async_add_executor_job(_do_write)
             except ExpertOperationAborted as exc:
-                # Not a failure anybody is waiting on: the configuration this
-                # write belonged to is gone, so there is no caller left to
-                # tell and nothing went wrong that needs reporting.
+                # Somebody IS waiting on this. The write is awaited now, so
+                # the service call or automation that asked for it is still
+                # holding on - and returning quietly told it the heating had
+                # been set when nothing reached the portal at all. That the
+                # configuration went away is a reason for the write not to
+                # happen, not a reason to say it did.
                 _LOGGER.debug("Expert write for %s stopped: %s", self._attr_name, exc)
-                return
+                raise HomeAssistantError(
+                    f"Setting {self._attr_name} was stopped: {exc}"
+                ) from exc
             # skipcq: PYL-W0706 - shields the catch-all, not redundant
             except HomeAssistantError:
                 # Already the right kind and already worded for the user -

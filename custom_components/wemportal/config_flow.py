@@ -712,18 +712,36 @@ class WemportalOptionsFlow(OptionsFlow):
         during a normal entry setup, and expert_writer pulls curl_cffi and
         lxml (~140 ms, measured). Only discovery ever needs the client.
         """
+        from .exceptions import ExpertOperationAborted
         from .expert_writer import WemPortalExpertClient
 
         entry = self.config_entry
         client_options = expert_client_options(entry.options)
         data = getattr(entry, "runtime_data", None)
         api = data.api if data is not None else None
+
+        def abort_if_the_entry_is_gone():
+            """The gate every other expert caller already had.
+
+            Discovery is the longest expert sequence there is - a login, the
+            module navigation and a form read per module - and it was the one
+            client built without a way to stop. An entry unloaded or reloaded
+            while it ran had it navigate the portal to the end on credentials
+            and options that were no longer current.
+            """
+            if data is None:
+                return
+            reason = data.why_not_current(entry)
+            if reason is not None:
+                raise ExpertOperationAborted(f"expert discovery: {reason}")
+
         return WemPortalExpertClient(
             entry.data.get(CONF_USERNAME),
             entry.data.get(CONF_PASSWORD),
             cooldown_check=api.check_expert_cooldown if api is not None else None,
             cooldown_activate=api.activate_expert_cooldown if api is not None else None,
             cookie_jar=api.expert_cookies if api is not None else None,
+            abort_check=abort_if_the_entry_is_gone,
             **client_options,
         )
 
