@@ -176,6 +176,13 @@ The integration is built around that:
 - Parameter lists are discovered once and re-read daily, not every cycle.
 - Weekly programmes refresh hourly, statistics hourly.
 
+A single failed cycle does not take the entities with it. The portal answers a
+poll with an error now and then and the next one succeeds; at a 30-minute
+interval, going unavailable for that would cost half an hour of every graph.
+The second consecutive failure does show as unavailable. A device that stops
+answering while others still respond is handled separately: its readings are
+shown as unknown after half an hour, so nothing old is presented as current.
+
 **What this means for your settings:** the intervals below are floors, not
 recommendations. Halving an interval doubles the requests. If you run several
 Home Assistant instances, or the WEM app on your phone, from the same
@@ -315,6 +322,11 @@ If it cannot run, the form says which of four things happened: another expert
 operation is in progress, portal access is backing off after a 403, the search
 failed, or it ran and found nothing.
 
+Every editable parameter of the module is offered, including the ones the
+portal shows alone under their own heading — *Betriebsart*, *Heizkennlinie*,
+*So/Wi Umschaltung*, *Reset*. Earlier versions skipped those, and they had to
+be entered by hand.
+
 #### Option B: read the ID from the portal yourself
 
 Use this if discovery does not find the parameter you want — the slot ID fields
@@ -347,6 +359,41 @@ value** unless periodic read-back is enabled — otherwise the value is only rea
 as part of a write. After a successful write (or the first periodic read), the
 entity shows the verified value and its min/max tighten to the device's real
 range.
+
+#### What the number means
+
+The value, range and step are the ones the **portal displays**, not the ones it
+posts internally. Those differ on many parameters: a heating curve shown as
+`0.55` in a range of `0.05` to `1.50` is sent to the device as `55` in `5` to
+`150`, and a delay shown in minutes is sent in seconds. The entity shows what
+you see on the portal page; the translation happens underneath.
+
+Two attributes come with each entity, both read from the same dialog:
+
+| Attribute | What it is |
+|---|---|
+| `portal_value` | The portal's own wording for the current selection |
+| `factory_default` | The value the parameter left the factory with |
+
+`factory_default` is useful for spotting settings that have been changed. Home
+Assistant cannot colour a number that differs from its default — a number
+entity has no such option — but a dashboard card can compare against this
+attribute and do it.
+
+#### Parameters with an "off" position
+
+Some parameters offer a special value beside their numbers: a heating curve can
+be set to *Aus*, a frost protection likewise. That is not a point on the scale
+— the portal encodes it as `0` on one parameter and as `-32768` on the next —
+so it is left out of the entity's range.
+
+Two consequences:
+
+- **You cannot set such a parameter to "off" from Home Assistant.** The
+  numeric values work as usual; use the portal for the off position.
+- **When the portal has the special value selected, the entity reads
+  `unknown`** and `portal_value` says which one (`Aus`). That is not a failed
+  read — a number entity simply cannot show a word.
 
 Two limits worth knowing before you build on this:
 
