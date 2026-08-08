@@ -1478,8 +1478,15 @@ def create_expert_number_entities(config_entry):
 
 # HA imports are only needed for the entity class below; kept at the end
 # so plain use of the client (and its tests) needs no HA installed.
+# Placeholders for "the portal has not told us yet", not estimates of what a
+# parameter looks like. Wide enough and fine enough that nothing a portal
+# might offer is excluded before it has been asked - see the entity class for
+# why excluding anything here is a lock rather than a label.
+EXPERT_UNKNOWN_BOUND = 100000.0
+EXPERT_UNKNOWN_STEP = 0.5
+
 try:
-    from homeassistant.components.number import RestoreNumber
+    from homeassistant.components.number import NumberMode, RestoreNumber
     from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
     from homeassistant.core import callback
     from homeassistant.exceptions import HomeAssistantError
@@ -1501,13 +1508,27 @@ try:
         # be published as a percentage, so a flow temperature, a curve slope
         # and a delay all read as `%` and were recorded under that unit.
         #
-        # Step, min and max below are only what holds until the parameter has
-        # been read or restored once; both then replace all three with what
-        # the portal actually offers. The real range is enforced live in
-        # write_parameter() against the form's option list either way.
-        _attr_native_step = 1
-        _attr_native_min_value = 0
-        _attr_native_max_value = 100
+        # The three below hold only until the parameter has been read,
+        # written or restored once; all three are then replaced by what the
+        # portal actually offers.
+        #
+        # Until then they must EXCLUDE NOTHING, which is why they are absurd
+        # rather than plausible. Home Assistant validates a call against the
+        # published range before the integration is asked, so a slot claiming
+        # 0-100 refuses a valid 350 - and the write that would have fetched
+        # the real range is precisely what it refuses. With the hourly read
+        # off by default and nothing to restore on a fresh install, that lock
+        # never opens. A step of 1 does the same to every half-value.
+        #
+        # Nothing is lost by being permissive here: what the portal will not
+        # accept is caught where it is known, in write_parameter, against the
+        # form's own option list.
+        _attr_native_step = EXPERT_UNKNOWN_STEP
+        _attr_native_min_value = -EXPERT_UNKNOWN_BOUND
+        _attr_native_max_value = EXPERT_UNKNOWN_BOUND
+        # A slider over that range is unusable, and an expert parameter is
+        # typed in rather than dragged to anyway.
+        _attr_mode = NumberMode.BOX
         _attr_icon = "mdi:speedometer"
 
         def __init__(self, config_entry, name, entityvalue):

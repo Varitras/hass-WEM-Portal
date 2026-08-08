@@ -1808,8 +1808,8 @@
   {
     "label": "expert: every slot published as a percentage again",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "        _attr_native_step = 1\n        _attr_native_min_value = 0",
-    "new": "        _attr_native_step = 1\n        _attr_native_unit_of_measurement = \"%\"\n        _attr_native_min_value = 0",
+    "old": "        _attr_native_step = EXPERT_UNKNOWN_STEP",
+    "new": "        _attr_native_unit_of_measurement = \"%\"\n        _attr_native_step = EXPERT_UNKNOWN_STEP",
     "tests": "an_expert_parameter_does_not_claim_to_be_a_percentage"
   },
   {
@@ -1817,7 +1817,7 @@
     "path": "custom_components/wemportal/expert_writer.py",
     "old": "        self.step = _smallest_gap(options)",
     "new": "        self.step = None",
-    "tests": "a_half_step_parameter_is_not_forced_to_whole_numbers"
+    "tests": "the_step_of_a_whole_number_parameter_stays_whole"
   },
   {
     "label": "expert: the widest gap taken as the step, hiding values between",
@@ -1831,7 +1831,7 @@
     "path": "custom_components/wemportal/expert_writer.py",
     "old": "            if state.step is not None:\n                self._attr_native_step = state.step",
     "new": "",
-    "tests": "a_half_step_parameter_is_not_forced_to_whole_numbers"
+    "tests": "the_step_of_a_whole_number_parameter_stays_whole"
   },
   {
     "label": "expert: restore taking the value and dropping the range again",
@@ -1986,5 +1986,19 @@
     "old": "        self.check_deadline()\n        payload = {",
     "new": "        payload = {",
     "tests": "a_login_without_budget_left_sends_nothing"
+  },
+  {
+    "label": "expert: a never-read slot locking out the values it cannot know",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        _attr_native_min_value = -EXPERT_UNKNOWN_BOUND\n        _attr_native_max_value = EXPERT_UNKNOWN_BOUND",
+    "new": "        _attr_native_min_value = 0\n        _attr_native_max_value = 100",
+    "tests": "a_slot_that_has_never_been_read_forbids_nothing"
+  },
+  {
+    "label": "expert: a never-read slot forcing whole numbers",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        _attr_native_step = EXPERT_UNKNOWN_STEP",
+    "new": "        _attr_native_step = 1",
+    "tests": "a_slot_that_has_never_been_read_allows_a_half_step"
   }
 ]

@@ -589,6 +589,17 @@ to ask the user for new credentials.
   100, where it could not be set at all until the next successful read. With
   the hourly auto-poll switched off, that was never.
 
+  A slot that has never been read publishes no opinion at all now. Home
+  Assistant checks a call against the published range before this integration
+  is asked, so the assumed 0 to 100 did not merely mislabel a parameter - it
+  locked it, and the write that would have fetched the real range was exactly
+  what it refused. Until the portal has said what it accepts, the range is
+  deliberately far wider than any parameter and the step far finer, so
+  nothing is excluded before it is known; the value is entered rather than
+  dragged for the same reason. What the portal will not take is still caught,
+  where it is actually known: the write checks against the form's own list of
+  allowed values and names it in the error.
+
 ### Removed
 - **The `beautifulsoup4` dependency.** It was installed for three lines: the
   hidden fields of the web login form. `lxml` is already required and already

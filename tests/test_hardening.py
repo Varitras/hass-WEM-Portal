@@ -530,6 +530,52 @@ def test_a_form_retry_stops_when_the_entry_went_away_meanwhile(monkeypatch):
     )
 
 
+def test_a_slot_that_has_never_been_read_forbids_nothing():
+    """Made-up bounds do not just mislabel - they lock the parameter out.
+
+    Home Assistant validates against the published range BEFORE the
+    integration is asked (components/number: it raises ServiceValidationError
+    and never calls async_set_native_value). So a slot still showing the
+    assumed 0-100 refuses a perfectly valid 350 - and the write that would
+    have fetched the real range is exactly what it refuses. With the hourly
+    read off by default, and nothing restored on a fresh install, that is
+    permanent.
+
+    The bounds cannot be right before the portal has been asked. They can
+    stop being wrong: whatever the entity claims here must not exclude a
+    value the portal might accept. What the portal will NOT accept is caught
+    where it is actually known - write_parameter checks the value against the
+    form's own option list and refuses with a message naming it.
+    """
+    entity = _expert_entity(_api())
+
+    for plausible in (-40.0, 0.5, 350.0, 1440.0):
+        assert entity.native_min_value <= plausible <= entity.native_max_value, (
+            f"{plausible} is refused before the portal is ever asked"
+        )
+
+
+def test_a_slot_that_has_never_been_read_allows_a_half_step():
+    """Same defect in the other axis: a step of 1 makes every half-value
+    unreachable from the UI, including on the parameters that have them."""
+    entity = _expert_entity(_api())
+
+    assert entity.native_step <= 0.5
+
+
+def test_a_read_replaces_the_placeholder_bounds_with_real_ones():
+    """The counter-test: the wide range is a placeholder, not a new default.
+    Once the portal has said what it accepts, that is what shows."""
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+
+    entity.apply_read_state(_read_state(21.5, [20.0, 20.5, 21.0, 21.5, 22.0]))
+
+    assert entity.native_min_value == 20.0
+    assert entity.native_max_value == 22.0
+    assert entity.native_step == 0.5
+
+
 def test_an_expert_parameter_does_not_claim_to_be_a_percentage():
     """Every slot was modelled as a percentage. The portal says no such thing
     - the edit form carries a list of allowed values and no unit at all - so
@@ -545,7 +591,13 @@ def test_an_expert_parameter_does_not_claim_to_be_a_percentage():
 def test_a_half_step_parameter_is_not_forced_to_whole_numbers():
     """Step was fixed at 1, so a parameter the portal offers in halves could
     only be set to half of its values - the other half was unreachable from
-    the UI."""
+    the UI.
+
+    Half-steps are also what an unread slot now carries as its placeholder,
+    so this passes whether or not the step was derived. It stays as the
+    statement of intent; the tests that actually pin the derivation are the
+    two below, which assert steps the placeholder cannot produce.
+    """
     entity = _expert_entity(_api())
     entity.async_write_ha_state = lambda: None
 
@@ -578,9 +630,12 @@ def test_an_unevenly_spaced_option_list_takes_its_smallest_gap():
     entity = _expert_entity(_api())
     entity.async_write_ha_state = lambda: None
 
-    entity.apply_read_state(_read_state(30.0, [0.0, 10.0, 20.0, 20.5, 30.0]))
+    # 0.25 rather than 0.5: 0.5 is the placeholder step a slot carries before
+    # it has been read, so a test asserting it cannot tell a derived step from
+    # a derivation that never ran. Two mutations survived on exactly that.
+    entity.apply_read_state(_read_state(30.0, [0.0, 10.0, 20.0, 20.25, 30.0]))
 
-    assert entity.native_step == 0.5
+    assert entity.native_step == 0.25
 
 
 def test_a_single_option_leaves_the_step_alone():
