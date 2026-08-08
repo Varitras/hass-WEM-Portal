@@ -3010,6 +3010,69 @@ def test_a_brief_gap_does_not_throw_a_device_away():
     assert api.data["5678"]["flow"]["value"] == 42.0
 
 
+def _two_device_api_with_status(failing_device):
+    """As above, plus the three diagnostic rows a status read writes."""
+    api = _two_device_api(failing_device)
+    for device_id in ("1234", "5678"):
+        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_CONNECTION}"] = {
+            "value": "online"
+        }
+        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_HAS_ERRORS}"] = {
+            "value": "No"
+        }
+    return api
+
+
+def test_the_rows_that_explain_the_silence_are_not_blanked_with_it():
+    """The diagnostic rows must survive the clear-out that follows them.
+
+    Their whole purpose is to stay available and say WHY a device's readings
+    went unknown - that is what the entities promise. They are also the
+    freshest thing about that device: the status read succeeded in this very
+    cycle, which is the only reason the parameter read was attempted at all.
+    Blanking them said "no idea" about the one thing that was known.
+    """
+    api = _two_device_api_with_status("5678")
+    api.get_data(enabled_devices=["1234", "5678"])
+    api._last_device_read["5678"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+
+    api.get_data(enabled_devices=["1234", "5678"])
+
+    connection = f"5678-{wemportalapi.DEVICE_STATUS_CONNECTION}"
+    assert api.data["5678"]["flow"]["value"] is None, "the stale reading was kept"
+    assert api.data["5678"][connection]["value"] == "online", (
+        "the status read this cycle was thrown away with the stale readings"
+    )
+
+
+def test_a_device_that_is_busy_forever_still_stops_showing_old_values():
+    """A device that never says "online" never reaches the freshness check.
+
+    The poll skips it before the parameter read, and skipping is right - it
+    was read fine, it is simply not answering. But the readings underneath go
+    on being published as current, and `busy` is not one of the states that
+    make a device unreachable, so its entities stay available too. A device
+    stuck like that showed the same numbers indefinitely.
+    """
+    api = _two_device_api_with_status(None)
+    api.get_data(enabled_devices=["1234", "5678"])
+    assert api.data["5678"]["flow"]["value"] == 42.0, "the setup did not read"
+
+    api._fetch_device_status = lambda device_id: device_id != "5678"
+    api._last_device_read["5678"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+
+    api.get_data(enabled_devices=["1234", "5678"])
+
+    assert api.data["5678"]["flow"]["value"] is None, (
+        "a device that has been busy for half an hour still showed its old "
+        "readings as current"
+    )
+
+
 def test_a_device_that_answers_again_starts_its_clock_over():
     """Without this the window would be measured from the first success ever,
     so a device answering fine could still be cleared once it had been

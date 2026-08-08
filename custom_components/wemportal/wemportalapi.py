@@ -435,8 +435,17 @@ class WemPortalApi:
         if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:
             return
 
+        # Everything except the three rows a status read owns. Those are the
+        # freshest thing about this device - the status read succeeded in
+        # this very cycle, which is the only reason a parameter read was
+        # attempted - and they are what the entities promise will stay
+        # available to explain the silence. Blanking them answered "no idea"
+        # about the one thing that WAS known.
+        status_rows = {f"{device_id}-{row_name}" for row_name in DEVICE_STATUS_ROWS}
         forgotten = []
         for key, row in (self.data.get(device_id) or {}).items():
+            if key in status_rows:
+                continue
             if isinstance(row, dict) and row.get("value") is not None:
                 row["value"] = None
                 forgotten.append(key)
@@ -2251,6 +2260,13 @@ class WemPortalApi:
                 # in `both` mode, and put the coordinator into a backoff of
                 # up to six hours, so the device coming back would be noticed
                 # late.
+                #
+                # Its readings still have to age, though. Skipping the poll
+                # used to skip this too, so a device reporting `busy` cycle
+                # after cycle kept publishing the same numbers as current -
+                # and `busy` is not one of the states that make a device
+                # unreachable, so its entities stayed available saying them.
+                self._forget_stale_device_values(device_id)
                 continue
             # `is None`, never a truth test: the reason for a FAILURE is what
             # comes back, so a truthy answer is the bad one.

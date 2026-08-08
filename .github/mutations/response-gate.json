@@ -1654,8 +1654,8 @@
   {
     "label": "freshness: forgetting a reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        for key, row in (self.data.get(device_id) or {}).items():\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
-    "new": "        for key, row in (self.data.get(device_id) or {}).items():\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
+    "old": "            if key in status_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
+    "new": "            if key in status_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -1895,5 +1895,19 @@
     "old": "            results = list(pool.map(one, cases))",
     "new": "            results = sorted(pool.map(one, cases))",
     "tests": "results_are_reported_in_plan_order"
+  },
+  {
+    "label": "freshness: the rows explaining the silence blanked with it",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if key in status_rows:\n                continue\n",
+    "new": "",
+    "tests": "the_rows_that_explain_the_silence_are_not_blanked_with_it"
+  },
+  {
+    "label": "freshness: a device busy forever never ageing its readings",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                self._forget_stale_device_values(device_id)\n                continue",
+    "new": "                continue",
+    "tests": "a_device_that_is_busy_forever_still_stops_showing_old_values"
   }
 ]
