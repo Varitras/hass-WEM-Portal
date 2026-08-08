@@ -1867,5 +1867,12 @@
     "old": "            except ExpertOperationAborted as exc:",
     "new": "            except _NeverRaised as exc:",
     "tests": "a_write_stopped_by_a_teardown_is_not_an_error"
+  },
+  {
+    "label": "date: an unconfirmed day published as if the portal had stored it",
+    "path": "custom_components/wemportal/date.py",
+    "old": "            self._forget_written_value()",
+    "new": "            pass",
+    "tests": "a_day_that_could_not_be_read_back_is_not_shown_as_set"
   }
 ]

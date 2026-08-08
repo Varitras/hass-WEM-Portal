@@ -97,10 +97,39 @@ class WemPortalEntity(CoordinatorEntity):
         make the integration certain of something the heating system never
         accepted.
         """
+        row = self._coordinator_row()
+        if row is not None:
+            row["value"] = value
+
+    def _forget_written_value(self) -> None:
+        """Take back a value nobody could confirm was kept.
+
+        The counterpart to the above, for the case the read-back exists to
+        catch and then cannot: the portal ACCEPTED the write, so the value
+        was recorded, but the read that checks whether it was actually stored
+        did not come back. Leaving the written value in the row would publish
+        it as verified, which is the one claim the read-back is there to
+        avoid - and the row is what the entity reads on every update, so it
+        would return at the next poll even if the entity blanked itself.
+
+        Only the value goes, as on every other path that does this: unit,
+        name and icon stay, so the entity keeps its identity.
+        """
+        row = self._coordinator_row()
+        if row is not None:
+            row["value"] = None
+
+    def _coordinator_row(self):
+        """This parameter's row in the coordinator's data, or None.
+
+        Three callers ask the same two-step question - the device, then the
+        parameter - and each guards against the answer not being a dict,
+        because a malformed or half-built update must not raise into a write
+        path.
+        """
         device = (self.coordinator.data or {}).get(self._device_id)
         row = device.get(self._data_key) if isinstance(device, dict) else None
-        if isinstance(row, dict):
-            row["value"] = value
+        return row if isinstance(row, dict) else None
 
     @property
     def device_info(self) -> DeviceInfo:

@@ -163,22 +163,26 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         )
         if failure is not None:
             # The write itself went through, so this must not be raised as a
-            # failed service call. What is unknown is whether it was kept.
+            # failed service call. What is unknown is whether it was KEPT -
+            # and an unknown answer is not the written day. Forgetting the
+            # recorded value leaves the entity showing nothing until the next
+            # poll answers the question properly.
             _LOGGER.warning(
                 'Wrote %s to "%s" but could not read the value back (%s). '
-                "The next update will show what the portal actually stored.",
+                "It is shown as unknown until the next update says what the "
+                "portal actually stored.",
                 value,
                 self._attr_name,
                 failure,
             )
+            self._forget_written_value()
         self._attr_native_value = epoch_to_date(self._current_value())
         self.coordinator.async_update_listeners()
 
     def _current_value(self):
         """This parameter's value as the coordinator now holds it."""
-        device = (self.coordinator.data or {}).get(self._device_id)
-        row = device.get(self._data_key) if isinstance(device, dict) else None
-        return row.get("value") if isinstance(row, dict) else None
+        row = self._coordinator_row()
+        return row.get("value") if row is not None else None
 
     @callback
     def _handle_coordinator_update(self) -> None:

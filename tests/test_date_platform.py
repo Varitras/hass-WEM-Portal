@@ -223,6 +223,50 @@ async def test_a_failed_read_back_does_not_fail_the_write(caplog):
     assert "could not read the value back" in caplog.text
 
 
+async def test_a_day_that_could_not_be_read_back_is_not_shown_as_set():
+    """An unverified write must not be displayed as a verified one.
+
+    The whole reason for the read-back is that `Status: 0` says the request
+    was accepted, not that the value was stored. When the read-back itself
+    fails, that question is simply unanswered - and the entity showed the
+    written day anyway, which is the exact claim the read-back exists to
+    avoid making.
+
+    The coordinator row matters more than the displayed value here: the row
+    is what the entity reads on every update, so leaving the written day in
+    it would put the unconfirmed value straight back at the next poll.
+    """
+    entity, data = _entity()
+    _wired(entity)
+
+    entity.coordinator.api.reread_device_values = lambda _d: "the portal timed out"
+
+    await entity.async_set_value(date(2026, 12, 24))
+
+    assert entity.native_value is None, (
+        "a day nobody could confirm was displayed as if it had been set"
+    )
+    assert data["1234"]["Heat pump-U_Beginn"]["value"] is None, (
+        "the unconfirmed day stayed in the coordinator row, so the next "
+        "update puts it back on display"
+    )
+
+
+async def test_a_day_that_was_read_back_is_still_shown():
+    """The counter-test: a successful read-back must still display."""
+    entity, data = _entity()
+    _wired(entity)
+
+    def portal_kept_it(_device_id):
+        data["1234"]["Heat pump-U_Beginn"]["value"] = date_to_epoch(date(2026, 12, 24))
+
+    entity.coordinator.api.reread_device_values = portal_kept_it
+
+    await entity.async_set_value(date(2026, 12, 24))
+
+    assert entity.native_value == date(2026, 12, 24)
+
+
 async def test_a_write_is_not_reported_before_the_portal_took_it():
     """If the write raises, the entity must not show the new day: it would
     claim a holiday the heating system never got."""
