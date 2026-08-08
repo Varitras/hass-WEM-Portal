@@ -1,6 +1,6 @@
-# Name and description live in strings.json / translations (services.<name>),
-# which is where Home Assistant reads them from and the only way they can be
-# translated. Selectors, examples and `required` stay here.
+# Name and description live in translations/*.json (services.<name>), which is
+# where Home Assistant reads them from and the only way they can be translated.
+# Selectors, examples and `required` stay here.
 set_expert_parameter:
   fields:
     entityvalue:
