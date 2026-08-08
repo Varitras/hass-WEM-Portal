@@ -22,6 +22,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
   Parameters whose two columns agree are unaffected, and a dropdown labelled
   with words rather than numbers still reads its values: for an enum the
   string is the only number there is.
+- **A refused write corrects the range that refused it.** A slot stored before
+  the fix above holds the scaled range, so the value the portal would accept
+  is outside what the entity offers - and Home Assistant checks the published
+  range before this integration is asked, which leaves the entity refusing the
+  only values that would work. Nothing on its own path could break that
+  circle: the hourly read is off by default, and a write was the one thing
+  left. The refusal carries the form it was refused against now, so the first
+  attempt after an upgrade puts the entity right even though it fails.
 - **An expert parameter is a slider again once its range is known.** Until the
   portal has stated a range the entity publishes a placeholder spanning
   200000, and a slider over that is useless - so it was set to a typed box.

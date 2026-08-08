@@ -2147,5 +2147,26 @@
     "old": "        labels_are_numbers = bool(pairs) and all(\n            shown is not None for shown, *_ in pairs\n        )",
     "new": "        labels_are_numbers = True",
     "tests": "a_dropdown_whose_labels_are_words_falls_back_to_its_values"
+  },
+  {
+    "label": "expert: a refusal that throws the fresh range away",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                    f\"({len(state.options)} discrete options).\",\n                    state=state,",
+    "new": "                    f\"({len(state.options)} discrete options).\",",
+    "tests": "a_refused_value_carries_the_range_that_refused_it"
+  },
+  {
+    "label": "expert: an entity that keeps the range its write was refused by",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                if exc.state is not None:\n                    self._apply_state(exc.state)\n                    self.async_write_ha_state()\n                raise",
+    "new": "                raise",
+    "tests": "a_refusal_corrects_the_range_that_caused_it"
+  },
+  {
+    "label": "expert: the refusal clause behind the one that already catches it",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            except ParameterWriteError as exc:",
+    "new": "            except ValueError as exc:",
+    "tests": "a_refusal_corrects_the_range_that_caused_it"
   }
 ]

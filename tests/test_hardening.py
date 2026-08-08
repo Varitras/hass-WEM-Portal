@@ -619,6 +619,31 @@ def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
     assert sent["ctl00$DialogContent$ddlNewValue"] == "15"
 
 
+def test_a_refused_value_carries_the_range_that_refused_it(monkeypatch):
+    """The refusal is the one failure that knows what the portal offers.
+
+    An entity holding a stale range is exactly the caller that lands here, so
+    reporting the failure and dropping the freshly read form leaves it stuck:
+    Home Assistant checks the published range before this integration is
+    asked, and the value that would be accepted is outside it.
+    """
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import ParameterWriteError
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "pw")
+    form = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html([("10", "1.0", True), ("15", "1.5", False)])
+    )
+    monkeypatch.setattr(client, "_login", lambda: None)
+    monkeypatch.setattr(client, "_fetch_form", lambda *_a, **_k: form)
+
+    with pytest.raises(ParameterWriteError) as excinfo:
+        client.write_parameter("A" * 36, 50.0)
+
+    assert excinfo.value.state is not None, "the refusal threw the form away"
+    assert excinfo.value.state.max_value == 1.5
+
+
 class _DialogNotReady:
     """A parameter dialog whose dropdown has not been filled in yet."""
 
@@ -3311,6 +3336,37 @@ def test_a_failed_write_reaches_whoever_asked_for_it(monkeypatch):
 
     with pytest.raises(HomeAssistantError):
         asyncio.run(entity.async_set_native_value(21.0))
+
+
+def test_a_refusal_corrects_the_range_that_caused_it(monkeypatch):
+    """Otherwise the entity keeps refusing the only values that would work.
+
+    A slot stored before the scaling fix holds 10 to 300 for a parameter that
+    accepts 1.0 to 30.0, and nothing on the entity's own path can correct
+    that: the auto-poll is off by default, and a write is the one thing left -
+    which Home Assistant refuses first, against the stale range.
+    """
+    import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.wemportal import exceptions as wem_exceptions
+
+    entity = _refusing_write_entity(
+        _api(),
+        monkeypatch,
+        wem_exceptions.ParameterWriteError(
+            "value not allowed", state=_read_state(5.0, [1.0, 1.5, 2.0])
+        ),
+    )
+    entity._apply_state(_read_state(50.0, [10.0, 15.0, 20.0]))
+
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(entity.async_set_native_value(50.0))
+
+    assert entity.native_min_value == 1.0
+    assert entity.native_max_value == 2.0
+    assert entity.native_value == 5.0
 
 
 def test_a_write_that_fails_with_a_plain_error_still_reaches_the_caller(monkeypatch):

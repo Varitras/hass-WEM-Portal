@@ -1367,10 +1367,13 @@ class WemPortalExpertClient:
             # exact strings the server expects back.
             value_f = float(value)
             if value_f not in state.options:
-                raise ValueError(
+                # Carries the state: a caller whose idea of the range is out
+                # of date is precisely the caller that lands here.
+                raise ParameterWriteError(
                     f"Value {value} not allowed; device accepts "
                     f"{state.min_value}..{state.max_value} "
-                    f"({len(state.options)} discrete options)."
+                    f"({len(state.options)} discrete options).",
+                    state=state,
                 )
             value_str = state.post_value_for(value_f)
 
@@ -1408,7 +1411,8 @@ class WemPortalExpertClient:
             if verify.current != value_f:
                 raise ParameterWriteError(
                     f"Write not confirmed: form still shows {verify.current}, "
-                    f"expected {value_f}. The portal may have rejected the value."
+                    f"expected {value_f}. The portal may have rejected the value.",
+                    state=verify,
                 )
             _LOGGER.info(
                 "Expert parameter %s written and verified: %s",
@@ -1871,6 +1875,24 @@ try:
                 raise HomeAssistantError(
                     f"Setting {self._attr_name} was stopped: {exc}"
                 ) from exc
+            # skipcq: PYL-W0706 - takes the range on board, then re-raises
+            except ParameterWriteError as exc:
+                # The write failed, and this failure knows what the portal
+                # currently offers. Taking that on board is what stops the
+                # next attempt failing the same way: a range stored before the
+                # scaling fix is off by the portal's own factor, so the value
+                # that WOULD be accepted is outside what this entity lets
+                # anyone enter - and Home Assistant checks the published range
+                # before the integration is asked. Nothing else on this path
+                # can break that circle, with the auto-poll off by default.
+                #
+                # Before the catch-all below, but also before HomeAssistantError:
+                # WemPortalError derives from it, so the shorter clause would
+                # take this one first and leave the range where it was.
+                if exc.state is not None:
+                    self._apply_state(exc.state)
+                    self.async_write_ha_state()
+                raise
             # skipcq: PYL-W0706 - shields the catch-all, not redundant
             except HomeAssistantError:
                 # Already the right kind and already worded for the user -

@@ -38,7 +38,21 @@ class ParameterChangeError(WemPortalError):
 
 
 class ParameterWriteError(WemPortalError):
-    """Raised when an expert-parameter write is not confirmed by the portal."""
+    """Raised when an expert-parameter write is not confirmed by the portal.
+
+    Carries the form state read during the attempt, where the attempt got far
+    enough to read one. A refusal is the one failure that still knows exactly
+    what the portal currently offers, and an entity holding a stale range is
+    the reason a value gets refused in the first place: it published 10 to 300
+    for a parameter that accepts 1.0 to 30.0, so the value the user needs is
+    the one Home Assistant will not let them enter. Reporting the failure
+    while throwing that knowledge away leaves the entity stuck exactly where
+    it was.
+    """
+
+    def __init__(self, message, state=None):
+        super().__init__(message)
+        self.state = state
 
 
 class ApiBusyError(WemPortalError):
