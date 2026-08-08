@@ -167,6 +167,13 @@ to ask the user for new credentials.
   without the ASP.NET state the portal demands echoed back - and the request
   could only be refused. Same rule as the maintenance check: nothing is handed
   to a page that cannot process it.
+
+  It is no longer reported as a credential problem either. Not sending the
+  password was only half of it: the failure was still raised as an
+  authentication error, so it counted towards re-authentication and three
+  such portal hiccups in a row could ask for a password that was correct all
+  along. A login page without its form fields is a portal-side problem and
+  now says so.
 - **A weekly programme is no longer blanked by the value read on the portals
   that actually have one.** Schedules are exempt from the "stop showing what
   the portal did not send" rule, because they are fetched on their own path

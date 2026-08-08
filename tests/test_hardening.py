@@ -981,6 +981,28 @@ def test_the_scrape_is_built_with_the_cycles_budget(monkeypatch):
     assert 41 < api._scraper._budget() <= 42
 
 
+def test_a_login_page_without_its_form_is_not_blamed_on_the_password():
+    """A 200 that is not the login form says nothing about the credentials.
+
+    The password has not even been sent at this point - the fields being
+    extracted are what it would be sent WITH. Reported as an AuthError it fed
+    the reauth counter, so three such portal hiccups in a row could ask the
+    user to re-enter a password that was correct all along.
+
+    The transport half of this was already fixed one screen above (a timeout
+    or a reset raises ServerError for exactly this reason). The structural
+    half was left, which is why the release note claiming an unreadable login
+    page no longer costs the password was too broadly worded.
+    """
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _TimeoutRecordingSession()
+
+    with pytest.raises(exceptions.ServerError):
+        scraper.scrape()
+
+
 def test_an_operation_outside_a_poll_is_not_deadlined():
     """Only fetch_data sets a deadline. An on-demand write has a user waiting
     on it and no coordinator timeout behind it, so it must run even when the

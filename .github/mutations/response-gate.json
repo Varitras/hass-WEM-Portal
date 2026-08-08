@@ -1839,5 +1839,12 @@
     "old": "            if last.native_min_value is not None:\n                self._attr_native_min_value = last.native_min_value",
     "new": "",
     "tests": "the_restored_range_comes_back_with_the_value"
+  },
+  {
+    "label": "scrape: a login page without its form blamed on the password again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            raise ServerError(\n                \"The WEM Portal login page came back without its form fields, \"",
+    "new": "            raise AuthError(\n                \"The WEM Portal login page came back without its form fields, \"",
+    "tests": "a_login_page_without_its_form_is_not_blamed_on_the_password"
   }
 ]

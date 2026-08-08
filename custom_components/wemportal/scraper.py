@@ -395,8 +395,17 @@ class WemPortalScraper:
         eventval_elem = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
 
         if not viewstate_elem or not eventval_elem:
-            raise AuthError(
-                "Authentication Error: Could not find VIEWSTATE or EVENTVALIDATION."
+            # NOT an AuthError: the password has not been sent yet - these
+            # fields are what it would be sent WITH. A 200 that is not the
+            # login form is the portal misbehaving, and blaming the
+            # credentials for it fed the reauth counter, so three such
+            # hiccups in a row could ask for a password that was correct all
+            # along. Same reasoning as the transport handler above; this was
+            # the half of it that got left behind.
+            raise ServerError(
+                "The WEM Portal login page came back without its form fields, "
+                "so there was nothing to log in with. This is a portal-side "
+                "problem, not a credential one."
             )
 
         viewstate = viewstate_elem[0]
