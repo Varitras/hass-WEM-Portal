@@ -135,8 +135,8 @@
   {
     "label": "net: an entity already placed on its own platform must not be overwritten",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if sensor[\"IsWriteable\"] and key in api_data.get(device_id, {}):\n                continue",
-    "new": "            if False:\n                continue",
+    "old": "            if key in controls:\n                continue",
+    "new": "",
     "tests": "mapper_output_is_unchanged"
   },
   {
@@ -1797,5 +1797,12 @@
     "old": "                budget=self.remaining_budget,\n",
     "new": "",
     "tests": "the_scrape_is_built_with_the_cycles_budget"
+  },
+  {
+    "label": "mapper: asking api_data instead of this pass, freezing the fallback sensors",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if key in controls:",
+    "new": "            if sensor[\"IsWriteable\"] and key in api_data.get(device_id, {}):",
+    "tests": "a_writeable_value_that_fell_back_to_a_sensor_still_updates"
   }
 ]

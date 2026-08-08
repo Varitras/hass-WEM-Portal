@@ -280,10 +280,17 @@ def _described_parameter(value, device_module):
     return parameter_id, device_module["parameters"][parameter_id]
 
 
-def _read_modules(device_id, values_json, modules_dict, language, api_data) -> dict:
+def _read_modules(device_id, values_json, modules_dict, language, api_data) -> tuple:
     """Every value the portal returned, flattened - and every writeable one
-    already placed on the platform its data type calls for."""
+    already placed on the platform its data type calls for.
+
+    Returns the values and, separately, the keys that actually BECAME a
+    control in this pass. The caller needs the second to leave those alone,
+    and cannot derive it from api_data: that dict is built once per session,
+    so a key being in it says nothing about which cycle put it there.
+    """
     parsed_sensors = {}
+    controls = set()
 
     for module in values_json.get("Modules", []):
         device_module = _described_module(device_id, module, modules_dict)
@@ -309,6 +316,7 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> d
                 entity = _writeable_entity(sensor, parameter, value)
                 if entity is not None:
                     api_data[device_id][name] = entity
+                    controls.add(name)
             except Exception as exc:  # noqa: BLE001
                 # A single malformed/unexpected data point should never
                 # cost us the rest of this device's update - log and
@@ -321,7 +329,7 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> d
                 )
                 continue
 
-    return parsed_sensors
+    return parsed_sensors, controls
 
 
 def _merge_into_scraped(
@@ -481,13 +489,21 @@ class WemPortalDataMapper:
     ):
         """Processes the read values JSON and maps it to api_data."""
 
-        parsed_sensors = _read_modules(
+        parsed_sensors, controls = _read_modules(
             device_id, values_json, modules_dict, language, api_data
         )
 
         # Process read-only sensors and fallback for unknown writeable datatypes
         for key, sensor in parsed_sensors.items():
-            if sensor["IsWriteable"] and key in api_data.get(device_id, {}):
+            # The keys this cycle turned into a control, not the keys present
+            # in api_data. Those two look the same on the first poll and stop
+            # being the same on the second: api_data is built once per session
+            # and keeps whatever earlier cycles wrote, including the fallback
+            # sensor of a writeable value that has no control. Asking api_data
+            # therefore skipped that sensor from the second poll on, and it
+            # showed its first reading for as long as the session lasted -
+            # weekly programmes being the ones this happens to.
+            if key in controls:
                 continue
 
             # Merge an API sensor into its scraped counterpart only for

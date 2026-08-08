@@ -589,6 +589,79 @@ def test_an_unbounded_schedule_stays_a_sensor():
     assert data["Heat pump-Heizprogramm1"]["platform"] == "sensor"
 
 
+def _schedule_modules():
+    return _modules(
+        _parameter(
+            "Heizprogramm1",
+            IsWriteable=True,
+            DataType=WemDataType.SWITCH,
+            MinValue=None,
+            MaxValue=None,
+            EnumValues=None,
+        )
+    )
+
+
+def test_a_writeable_value_that_fell_back_to_a_sensor_still_updates():
+    """The second poll must show the second reading.
+
+    api_data is built once per session and every cycle writes into it, so by
+    the second poll the fallback sensor from the first is already there. The
+    skip asked "is this writeable AND already present", which is true of that
+    sensor - and cannot tell it from a control this cycle just created. The
+    value then never changed again for as long as the session lasted.
+
+    Weekly programmes are the ones that hit this: they are writeable, and
+    they fall back to a sensor because their value is JSON.
+    """
+    modules = _schedule_modules()
+    first = _process(
+        modules, _values(_value("Heizprogramm1", string='{"MO-1":"00:00-24:00"}'))
+    )
+    assert first["Heat pump-Heizprogramm1"]["value"] == '{"MO-1":"00:00-24:00"}', (
+        "the setup did not read"
+    )
+
+    second = _process(
+        modules,
+        _values(_value("Heizprogramm1", string='{"MO-1":"06:00-22:00"}')),
+        existing=first,
+    )
+
+    assert second["Heat pump-Heizprogramm1"]["value"] == '{"MO-1":"06:00-22:00"}', (
+        "the programme froze on the value it had in the first poll"
+    )
+
+
+def test_a_real_control_is_still_left_alone_on_the_second_poll():
+    """The counter-test, and the reason the skip exists at all.
+
+    A parameter that DOES become a control is written by the first pass; the
+    second pass must not overwrite it with a plain sensor, or the entity
+    loses its platform and its bounds on every cycle.
+    """
+    modules = _modules(
+        _parameter(
+            "Raumsolltemperatur",
+            IsWriteable=True,
+            DataType=WemDataType.NUMBER_STEP_HALF,
+            MinValue=5,
+            MaxValue=30,
+        )
+    )
+    first = _process(modules, _values(_value("Raumsolltemperatur", numeric=21.0)))
+    assert first["Heat pump-Raumsolltemperatur"]["platform"] == "number"
+
+    second = _process(
+        modules, _values(_value("Raumsolltemperatur", numeric=22.0)), existing=first
+    )
+
+    assert second["Heat pump-Raumsolltemperatur"]["platform"] == "number", (
+        "the control was demoted to a plain sensor on the second poll"
+    )
+    assert second["Heat pump-Raumsolltemperatur"]["value"] == 22.0
+
+
 def test_an_optionless_dropdown_stays_a_sensor():
     """The portal sends EnumValues as an explicit null, so .get()'s default
     never applied and the option comprehension iterated None. That raised into
