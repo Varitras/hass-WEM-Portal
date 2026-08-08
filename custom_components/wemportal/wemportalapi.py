@@ -435,16 +435,28 @@ class WemPortalApi:
         if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:
             return
 
-        # Everything except the three rows a status read owns. Those are the
-        # freshest thing about this device - the status read succeeded in
-        # this very cycle, which is the only reason a parameter read was
-        # attempted - and they are what the entities promise will stay
-        # available to explain the silence. Blanking them answered "no idea"
-        # about the one thing that WAS known.
+        # Only the rows this device's API half actually owns.
+        #
+        # The three a status read owns are excluded because they are the
+        # freshest thing here - the status read succeeded in this very cycle,
+        # which is the only reason a parameter read was attempted - and they
+        # are what the entities promise will stay available to explain the
+        # silence. Blanking them answered "no idea" about the one thing that
+        # WAS known.
+        #
+        # The scraped rows are excluded because "this device has not
+        # answered" is a statement about the API only. In `both` mode both
+        # sources write into one device's dict on purpose - see
+        # resolve_scraper_device_id, which files scraped sensors under a real
+        # device so they share its history - and the scrape runs on its own
+        # schedule, so it can be minutes old while the API side has been
+        # quiet for hours. They are not left unwatched: _forget_scraped_values
+        # ages them on the scrape's own terms, after three failures in a row.
         status_rows = {f"{device_id}-{row_name}" for row_name in DEVICE_STATUS_ROWS}
+        scraped_rows = self._previous_scraper_keys or set()
         forgotten = []
         for key, row in (self.data.get(device_id) or {}).items():
-            if key in status_rows:
+            if key in status_rows or key in scraped_rows:
                 continue
             if isinstance(row, dict) and row.get("value") is not None:
                 row["value"] = None

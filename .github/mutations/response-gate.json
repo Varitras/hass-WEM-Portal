@@ -1654,8 +1654,8 @@
   {
     "label": "freshness: forgetting a reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
-    "new": "            if key in status_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
+    "old": "            if key in status_rows or key in scraped_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
+    "new": "            if key in status_rows or key in scraped_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -1899,8 +1899,8 @@
   {
     "label": "freshness: the rows explaining the silence blanked with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows:\n                continue\n",
-    "new": "",
+    "old": "            if key in status_rows or key in scraped_rows:\n                continue\n",
+    "new": "            if key in scraped_rows:\n                continue\n",
     "tests": "the_rows_that_explain_the_silence_are_not_blanked_with_it"
   },
   {
@@ -1958,5 +1958,12 @@
     "old": "class ForbiddenError(WemPortalError):",
     "new": "class ForbiddenError(HomeAssistantError):",
     "tests": "a_forbidden_error_is_a_wemportal_error"
+  },
+  {
+    "label": "freshness: a fresh scrape cleared because the API half went quiet",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        scraped_rows = self._previous_scraper_keys or set()",
+    "new": "        scraped_rows = set()",
+    "tests": "a_fresh_scrape_is_not_cleared_with_a_silent_api_device"
   }
 ]

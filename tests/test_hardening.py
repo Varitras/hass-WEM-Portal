@@ -3174,6 +3174,45 @@ def test_the_rows_that_explain_the_silence_are_not_blanked_with_it():
     )
 
 
+def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
+    """In `both` mode the two sources share one device's dict.
+
+    resolve_scraper_device_id deliberately files scraped sensors under a real
+    API-discovered device, so they share its history. The consequence is that
+    "this device has not answered" is only ever true of the API half - the
+    scrape has its own schedule and its own failures, and can be minutes old
+    while the API side has been silent for hours.
+
+    Clearing the lot took the fresh scrape with it, and the cycle reported
+    success while doing so, because a skipped device counts as neither a
+    success nor a failure. Nothing said the web sensors had gone unknown.
+
+    Scraped rows are not left unwatched by this: _forget_scraped_values ages
+    them on the scrape's own terms, after three failed attempts in a row.
+    """
+    api = _api()
+    api.data = {
+        "1234": {
+            "Heat pump-T1": {"value": 21.0, "unit": "°C"},
+            "heating_circuit_flow": {"value": 42.0, "unit": "°C"},
+        }
+    }
+    api._previous_scraper_keys = {"heating_circuit_flow"}
+    api._last_device_read["1234"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+
+    api._forget_stale_device_values("1234")
+
+    assert api.data["1234"]["Heat pump-T1"]["value"] is None, (
+        "the API reading that really was stale was kept"
+    )
+    assert api.data["1234"]["heating_circuit_flow"]["value"] == 42.0, (
+        "a scrape from minutes ago was cleared because the API half of the "
+        "same device had gone quiet"
+    )
+
+
 def test_a_device_that_is_busy_forever_still_stops_showing_old_values():
     """A device that never says "online" never reaches the freshness check.
 
