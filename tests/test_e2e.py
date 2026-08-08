@@ -303,6 +303,40 @@ async def test_the_holiday_service_follows_the_loaded_entries(hass):
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY)
 
 
+async def test_the_holiday_service_refuses_a_non_admin(hass, hass_read_only_user):
+    """It writes a real setting on a heating system, same as the expert one.
+
+    The registration is admin-only and always has been, but nothing checked
+    it from the outside: every other test here calls the private handler
+    directly, which skips the permission layer entirely. Swapping
+    async_register_admin_service for a plain registration would have kept
+    them all green while opening the service to any authenticated user.
+
+    Rejected before the schema is applied, so the payload only has to be
+    shaped right, not point at anything real.
+    """
+    from homeassistant.core import Context
+    from homeassistant.exceptions import Unauthorized
+
+    from custom_components.wemportal.const import SERVICE_SET_HOLIDAY
+
+    await _setup(hass, _entry(hass))
+
+    with pytest.raises(Unauthorized):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_HOLIDAY,
+            {
+                "begin_entity": "date.holiday_begin",
+                "begin": "2026-12-24",
+                "end_entity": "date.holiday_end",
+                "end": "2026-12-31",
+            },
+            blocking=True,
+            context=Context(user_id=hass_read_only_user.id),
+        )
+
+
 async def test_the_expert_module_is_only_loaded_when_it_is_enabled(hass, monkeypatch):
     """The expert module pulls curl_cffi and lxml at import time (~140 ms,
     measured), on the event loop, during platform setup.

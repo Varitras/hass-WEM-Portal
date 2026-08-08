@@ -2000,5 +2000,12 @@
     "old": "        _attr_native_step = EXPERT_UNKNOWN_STEP",
     "new": "        _attr_native_step = 1",
     "tests": "a_slot_that_has_never_been_read_allows_a_half_step"
+  },
+  {
+    "label": "holiday: the admin-only service registered as a plain one",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    async_register_admin_service(\n        hass,\n        DOMAIN,",
+    "new": "    hass.services.async_register(\n        DOMAIN,",
+    "tests": "the_holiday_service_refuses_a_non_admin"
   }
 ]
