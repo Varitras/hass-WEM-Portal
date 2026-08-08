@@ -1,0 +1,34 @@
+# What DeepSource analyses here, and how.
+#
+# Both analyzers have to be listed once this file exists: without it they run
+# on defaults, with it only what is named here runs. The secrets analyzer is
+# named for that reason alone - it has never reported anything and should keep
+# running.
+
+version = 1
+
+# The suite is fakes and stubs by construction: sessions that answer a canned
+# page, clients that record they were built, a `close()` that does nothing
+# because there is nothing to close. Read as ordinary code that looks like
+# dead weight - 27 of the 67 findings in the first run were exactly that, and
+# every one of them described a stub doing its job.
+#
+# This is the mechanism DeepSource offers for saying so. Whether it silences
+# all of them is not something this file can promise; the next run says.
+test_patterns = [
+  "tests/**",
+]
+
+[[analyzers]]
+name = "python"
+enabled = true
+
+  [analyzers.meta]
+  # The 88 that ruff.toml pins, so the two tools cannot disagree about where
+  # a line ends. Ruff formats this tree; a second opinion on line length would
+  # only produce findings nobody can act on without breaking the formatter.
+  max_line_length = 88
+
+[[analyzers]]
+name = "secrets"
+enabled = true
