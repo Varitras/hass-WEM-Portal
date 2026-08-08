@@ -40,10 +40,11 @@ non-zero if any mutation SURVIVED - that is, the suite stayed green while the
 code was broken, which means the test does not test it.
 
 Cases run several at a time, each in its own copy of the repository under the
-system temp directory (`--jobs`, default: cores - 2). Copies rather than
-locking, because the thing being shared is a file this script deliberately
-breaks. `--jobs 1` skips the copying and works in the repository itself, which
-is what to fall back to if a parallel run ever reports something surprising.
+system temp directory (`--jobs`, default: cores - 2, capped at 8). Copies
+rather than locking, because the thing being shared is a file this script
+deliberately breaks. `--jobs 1` skips the copying and works in the repository
+itself, which is what to fall back to if a parallel run ever reports
+something surprising.
 
 Results are printed in PLAN order regardless, so two runs of the same plan
 produce the same output.
@@ -362,8 +363,8 @@ def main() -> int:
         default=default_jobs(),
         help=(
             "mutations to run at once, each in its own copy of the repository "
-            "(default: cores - 2). 1 runs in the repository itself, unchanged "
-            "from how this always worked."
+            f"(default: cores - 2, capped at {MAX_DEFAULT_JOBS}). 1 runs in "
+            "the repository itself, unchanged from how this always worked."
         ),
     )
     args = parser.parse_args()
