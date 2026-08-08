@@ -4,6 +4,17 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **An expert parameter is a slider again once its range is known.** Until the
+  portal has stated a range the entity publishes a placeholder spanning
+  200000, and a slider over that is useless - so it was set to a typed box.
+  The box then stayed after the real range had arrived, and its spinner arrows
+  are worse than the slider they replaced: each click is a write of its own
+  that waits on the portal, where a slider sends one value when the drag ends.
+  The mode follows the bounds now instead of being fixed on the class.
+
 ## [1.11.0b3] – 2026-08-08
 
 Findings from several rounds of auditing 1.11.0b2, plus a re-audit of the

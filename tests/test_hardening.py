@@ -481,6 +481,24 @@ def _read_state(current, options):
     return expert_writer.ExpertParameterState(current, options, {})
 
 
+def test_a_parameter_whose_range_is_known_is_a_slider_again():
+    """Spinner arrows each fire their own write; a slider sends one value.
+
+    The mode was a fixed BOX on the class, correct for the placeholder range
+    that spans 200000 - and never taken back once the portal had stated the
+    real one. A 10-to-100 parameter therefore kept a box whose arrows each
+    waited on a portal write, one click at a time.
+    """
+    from homeassistant.components.number import NumberMode
+
+    entity = _expert_entity(_api())
+    assert entity.mode == NumberMode.BOX, "an unread slot has no range to slide over"
+
+    entity._apply_state(_read_state(35.0, [10.0, 35.0, 100.0]))
+
+    assert entity.mode == NumberMode.AUTO
+
+
 def test_a_postback_asks_the_portal_for_a_delta_not_a_whole_page():
     """Two headers decide what the portal sends back.
 

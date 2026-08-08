@@ -1537,9 +1537,6 @@ try:
         _attr_native_step = EXPERT_UNKNOWN_STEP
         _attr_native_min_value = -EXPERT_UNKNOWN_BOUND
         _attr_native_max_value = EXPERT_UNKNOWN_BOUND
-        # A slider over that range is unusable, and an expert parameter is
-        # typed in rather than dragged to anyway.
-        _attr_mode = NumberMode.BOX
         _attr_icon = "mdi:speedometer"
 
         def __init__(self, config_entry, name, entityvalue):
@@ -1640,6 +1637,26 @@ try:
                 and last.native_max_value == LEGACY_ASSUMED_MAX
                 and last.native_step == LEGACY_ASSUMED_STEP
             )
+
+        @property
+        def mode(self) -> NumberMode:
+            """A box while the range is a placeholder, a slider once it is real.
+
+            Derived rather than stored, because the answer is a function of the
+            bounds and those are updated in two places - a stored copy is how
+            the step came to be updated by neither.
+
+            The placeholder range spans 200000, where a slider is useless, so
+            the value is typed. Once the portal has stated the real range that
+            reverses: a box keeps its spinner arrows, and every arrow click is
+            its own write that waits on the portal. A slider sends one value
+            when the drag ends.
+            """
+            bounds_are_known = (
+                self._attr_native_min_value != -EXPERT_UNKNOWN_BOUND
+                and self._attr_native_max_value != EXPERT_UNKNOWN_BOUND
+            )
+            return NumberMode.AUTO if bounds_are_known else NumberMode.BOX
 
         @property
         def entityvalue(self):

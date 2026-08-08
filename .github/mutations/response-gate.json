@@ -2119,5 +2119,12 @@
     "old": "        \"X-MicrosoftAjax\": \"Delta=true\",",
     "new": "",
     "tests": "a_postback_asks_the_portal_for_a_delta_not_a_whole_page"
+  },
+  {
+    "label": "expert: a known range that still shows spinner arrows",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            return NumberMode.AUTO if bounds_are_known else NumberMode.BOX",
+    "new": "            return NumberMode.BOX",
+    "tests": "a_parameter_whose_range_is_known_is_a_slider_again"
   }
 ]
