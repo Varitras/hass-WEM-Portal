@@ -3519,6 +3519,28 @@ def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
     )
 
 
+def test_the_third_scrape_failure_before_any_success_is_survivable():
+    """_previous_scraper_keys is None until a scrape has succeeded.
+
+    The third failure calls _forget_scraped_values, which iterates it - so
+    three failures before the first good scrape raised TypeError instead, and
+    that replaced the actual reason (maintenance, credentials, the network)
+    on its way out. Reachable in `both` mode, where the API has already put
+    the device into self.data so the early return does not fire.
+    """
+    api = _api()
+    api.data = {"1234": {"flow": {"value": 21.0, "unit": "°C"}}}
+    api.scraper_device_id = "1234"
+    assert api._previous_scraper_keys is None, "the setup does not reproduce it"
+
+    for _attempt in range(wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE):
+        api._register_scrape_failure()
+
+    assert api.spider_retry_count == (
+        wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
+    )
+
+
 def test_a_shared_row_ages_once_the_scrape_has_given_up_too():
     """The gap the scraped-row exemption left: BOTH sources dead.
 

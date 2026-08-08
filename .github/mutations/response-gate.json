@@ -1563,8 +1563,8 @@
   {
     "label": "scrape: forgetting the reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        for key in self._previous_scraper_keys:\n            row = device.get(key)\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
-    "new": "        for key in self._previous_scraper_keys:\n            row = device.get(key)\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
+    "old": "        for key in self._previous_scraper_keys or ():\n            row = device.get(key)\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
+    "new": "        for key in self._previous_scraper_keys or ():\n            row = device.get(key)\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
     "tests": "readings_from_a_scrape_that_stopped_working_stop_being_current"
   },
   {
@@ -2056,5 +2056,12 @@
     "old": "                last.native_value is None\n                and last.native_min_value == LEGACY_ASSUMED_MIN",
     "new": "                last.native_min_value == LEGACY_ASSUMED_MIN",
     "tests": "a_restored_range_that_was_really_read_is_kept"
+  },
+  {
+    "label": "scrape: a TypeError replacing the reason three failures in",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        for key in self._previous_scraper_keys or ():",
+    "new": "        for key in self._previous_scraper_keys:",
+    "tests": "the_third_scrape_failure_before_any_success_is_survivable"
   }
 ]

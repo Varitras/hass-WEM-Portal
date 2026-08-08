@@ -512,7 +512,13 @@ class WemPortalApi:
         if not device:
             return
         forgotten = []
-        for key in self._previous_scraper_keys:
+        # `or ()`: the set is None until a scrape has SUCCEEDED once, and this
+        # runs on the third failure - so three failures before the first good
+        # scrape raised TypeError here and that replaced the actual reason
+        # (maintenance, credentials, the network) on its way out. Reachable in
+        # `both` mode, where the API has already put the device into self.data
+        # so the early return above does not fire.
+        for key in self._previous_scraper_keys or ():
             row = device.get(key)
             if isinstance(row, dict) and row.get("value") is not None:
                 row["value"] = None
