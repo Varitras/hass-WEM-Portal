@@ -1835,7 +1835,6 @@ def test_scrape_is_skipped_when_only_its_own_device_is_disabled():
 
 def _catalogue(name):
     """One shipped translation catalogue."""
-    import json
     from pathlib import Path
 
     base = Path(__file__).resolve().parent.parent / "custom_components" / "wemportal"
@@ -2033,7 +2032,6 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
     the 403 handling was written for. Reported as "could not load the page" it
     read like a hiccup, invited an immediate retry and started no cooldown, so
     the next cycle walked into the same wall."""
-    import requests as real_requests
 
     class _Refused(FakeResponse_html):
         def raise_for_status(self):
@@ -5156,8 +5154,6 @@ def test_an_unreadable_description_keeps_the_parameters_it_had():
 
 def _rejected_description():
     """A 400 from EventType/Read, as the portal delivers it."""
-    import requests as real_requests
-
     rejected = exceptions.WemPortalError("bad request")
     response = FakeResponse({}, status_code=400)
     rejected.__cause__ = real_requests.exceptions.HTTPError(response=response)

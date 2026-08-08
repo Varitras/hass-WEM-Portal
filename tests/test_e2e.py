@@ -1157,10 +1157,7 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
     it wrote the new timer into the store `_cancel` had already emptied, so
     nothing could cancel it. One immortal chain per reload.
     """
-    from custom_components.wemportal.const import (
-        CONF_EXPERT_AUTO_POLL,
-        CONF_EXPERT_WRITE,
-    )
+    from custom_components.wemportal.const import CONF_EXPERT_AUTO_POLL
 
     scheduled = []
 
@@ -1214,10 +1211,7 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
     all - with a single id there is nothing to compare it against.
     """
     from custom_components.wemportal import expert_controller
-    from custom_components.wemportal.const import (
-        CONF_EXPERT_AUTO_POLL,
-        CONF_EXPERT_WRITE,
-    )
+    from custom_components.wemportal.const import CONF_EXPERT_AUTO_POLL
 
     scheduled = []
     # Patched where it is USED, not where it is defined: the controller
@@ -1952,7 +1946,7 @@ async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     from custom_components.wemportal import coordinator as coord_mod
-    from custom_components.wemportal.exceptions import AuthError, WemPortalError
+    from custom_components.wemportal.exceptions import WemPortalError
 
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
@@ -2413,8 +2407,6 @@ async def test_the_recovery_runs_off_the_event_loop(hass, monkeypatch):
     rather than on the call: patching async_add_executor_job away would make
     a direct call look identical.
     """
-    import threading
-
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     from custom_components.wemportal.exceptions import WemPortalError
@@ -2477,8 +2469,6 @@ async def test_a_write_is_abandoned_when_its_entry_is_reloaded(hass, monkeypatch
     holds the old entry and api, and the store is removed only after the
     platforms are down - so for the whole teardown the id is still there too.
     """
-    from custom_components.wemportal import expert_writer
-
     entry = await _setup(
         hass,
         _entry(
@@ -2520,8 +2510,6 @@ async def test_a_write_is_abandoned_when_its_entry_is_reloaded(hass, monkeypatch
 async def test_a_write_is_abandoned_while_the_entry_is_unloading(hass, monkeypatch):
     """The store survives until the platforms are down, so its presence says
     nothing during a teardown. The flag is set before that starts."""
-    from custom_components.wemportal import expert_writer
-
     entry = await _setup(
         hass,
         _entry(

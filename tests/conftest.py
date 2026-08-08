@@ -49,7 +49,7 @@ def _no_real_portal(monkeypatch):
     the logic instead of the traffic. A test that installs its own fake
     session on the instance is unaffected.
     """
-    from custom_components.wemportal import expert_writer, scraper
+    from custom_components.wemportal import scraper
 
     class _NoNetworkSession:
         """Looks like a session, refuses to be one."""
