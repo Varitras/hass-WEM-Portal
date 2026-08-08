@@ -367,7 +367,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         async_register_holiday_service(hass)
 
         if entry.options.get(CONF_EXPERT_WRITE, False):
-            _async_register_expert_service(hass, entry, api)
+            _async_register_expert_service(hass)
             entry.runtime_data.expert.setup_auto_poll(hass, entry)
     except Exception:
         # Take the platforms back down FIRST, while runtime_data is still
@@ -454,14 +454,19 @@ def _resolve_expert_entry(hass: HomeAssistant):
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _async_register_expert_service(
-    hass: HomeAssistant, entry: ConfigEntry, api
-) -> None:
+def _async_register_expert_service(hass: HomeAssistant) -> None:
     """Register wemportal.set_expert_parameter (idempotent).
 
-    The handler does NOT close over `entry`/`api`; it resolves the target
-    account on each call (see _resolve_expert_entry), so the single global
-    service addresses the correct account and refuses when it can't tell.
+    Takes no entry and no api, which is the point rather than an omission:
+    the service is a single global registration shared by every configured
+    account, so binding it to the one that happened to be loaded first would
+    send every later call to that account. The handler resolves its target on
+    each call instead (see _resolve_expert_entry) and refuses when it cannot
+    tell which account is meant.
+
+    Both were parameters until they were not used by anything - the signature
+    said the registration depended on an account while the code carefully
+    made sure it did not.
     """
     # Function-local, like every other expert_writer import in this file:
     # the module pulls curl_cffi and lxml (~140 ms, measured) and this
