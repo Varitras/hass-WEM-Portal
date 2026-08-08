@@ -1972,5 +1972,12 @@
     "old": "        scrape_is_keeping_up = (\n            self.spider_retry_count < SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE\n        )",
     "new": "        scrape_is_keeping_up = True",
     "tests": "a_shared_row_ages_once_the_scrape_has_given_up_too"
+  },
+  {
+    "label": "scrape: downtime answering the login POST read as a wrong password",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        self._check_response(login_response, \"login POST\", check_maintenance=True)",
+    "new": "        self._check_response(login_response, \"login POST\")",
+    "tests": "maintenance_answering_the_login_post_is_not_a_wrong_password"
   }
 ]

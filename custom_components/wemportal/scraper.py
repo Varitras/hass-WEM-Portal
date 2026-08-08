@@ -427,7 +427,15 @@ class WemPortalScraper:
             allow_redirects=True,
             timeout=self._request_timeout(),
         )
-        self._check_response(login_response, "login POST")
+        # check_maintenance, like the GET above and the main page below. What
+        # comes back here is one of those two pages, and both are checked for
+        # the notice everywhere else - this was the only place it was not.
+        # The cost of leaving it out is specific: the response arrives on the
+        # login URL, which is also the test for "the portal rejected these
+        # credentials", so announced downtime read as a wrong password and
+        # fed the re-authentication counter. Three cycles inside one
+        # maintenance window ask the user for a password that is correct.
+        self._check_response(login_response, "login POST", check_maintenance=True)
 
         # Check if we were redirected back to login with an error (like AspxAutoDetectCookieSupport)
         if (

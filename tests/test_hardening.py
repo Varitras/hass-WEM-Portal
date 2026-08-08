@@ -1072,6 +1072,49 @@ class _PageWithoutTheExpertView:
     url = "https://www.wemportal.com/Web/Default.aspx"
 
 
+def test_maintenance_answering_the_login_post_is_not_a_wrong_password(monkeypatch):
+    """Announced downtime can start between the GET and the POST.
+
+    The login page is checked for the maintenance notice, and so is the main
+    page - both are pages that carry one. The answer to the credential POST
+    is one of those two, and it was the only one not checked. What happened
+    instead: the response comes back on the login URL, which is the test for
+    "the portal rejected these credentials", so planned downtime was reported
+    as a wrong password and counted towards re-authentication. Three cycles
+    inside one maintenance window, and Home Assistant asks for a password
+    that was right all along.
+    """
+    import types
+
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    class _Response:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Login.aspx"
+
+        def __init__(self, text):
+            self.text = text
+
+    class _Session:
+        cookies = types.SimpleNamespace(clear=lambda: None)
+
+        def get(self, *_args, **_kwargs):
+            # The GET still sees a healthy form; downtime begins after it.
+            return _Response(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return _Response(MAINTENANCE_PAGE)
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _Session()
+    monkeypatch.setattr(
+        "custom_components.wemportal.scraper.time.sleep", lambda _seconds: None
+    )
+
+    with pytest.raises(exceptions.PortalMaintenanceError):
+        scraper.scrape()
+
+
 def test_a_main_page_without_its_state_after_a_login_is_not_a_wrong_password(
     monkeypatch,
 ):
