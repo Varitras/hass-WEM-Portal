@@ -212,6 +212,57 @@ def test_no_request_site_checks_the_status_itself(module):
     )
 
 
+def _timeout_argument(call):
+    """The `timeout=` keyword of one request call, or None if it has none."""
+    for keyword in call.keywords:
+        if keyword.arg == "timeout":
+            return keyword.value
+    return None
+
+
+def test_every_scrape_request_is_capped_by_the_remaining_budget():
+    """A scrape request must take its timeout from the poll's budget.
+
+    Lives here because this module already knows how to find a request; the
+    invariant is a sibling of the one above. Both are the same shape of
+    mistake: something every request site has to get right, decided per site.
+
+    A constant timeout is how a scrape begun one second before the deadline
+    ran thirty seconds past it - six times over, for a session reuse followed
+    by a full login - while the coordinator had already given up and the
+    worker still held the shared lock.
+
+    Only the scraper. expert_writer runs outside a poll cycle, has a user
+    waiting on it and no deadline to respect, so a fixed timeout is right
+    there.
+    """
+    source = (PACKAGE / "scraper.py").read_text(encoding="utf-8")
+    uncapped = []
+    for node in ast.walk(ast.parse(source)):
+        if not _is_request(node):
+            continue
+        timeout = _timeout_argument(node)
+        capped = (
+            isinstance(timeout, ast.Call)
+            and isinstance(timeout.func, ast.Attribute)
+            and timeout.func.attr == "_request_timeout"
+        )
+        if not capped:
+            uncapped.append(node.lineno)
+
+    assert not uncapped, (
+        f"scraper.py: the request(s) at line(s) {', '.join(map(str, uncapped))} "
+        "set their own timeout instead of self._request_timeout(), so they can "
+        "outlive the poll cycle they belong to."
+    )
+
+
+def test_the_scan_would_notice_an_uncapped_request():
+    """Guards the guard: a scan that finds no requests reports perfect
+    coverage forever. The module-level scan above has the same tripwire."""
+    assert len(list(request_sites("scraper.py"))) >= 4
+
+
 class _Answer:
     """A portal answer with nothing in it but a status."""
 

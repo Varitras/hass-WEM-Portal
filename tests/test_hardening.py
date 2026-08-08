@@ -791,6 +791,103 @@ def test_the_deadline_is_not_swallowed_by_the_statistics_fetch(monkeypatch):
     assert len(calls) == 2, "the group read was never reached, so no handler was"
 
 
+class _BudgetedPage:
+    """A main page that carries no form fields, so the scrape stops after
+    one request - the timeout it was given is all this needs to see."""
+
+    status_code = 200
+    text = "<html><body>no form here</body></html>"
+    url = "https://www.wemportal.com/Web/Default.aspx"
+
+
+class _TimeoutRecordingSession:
+    def __init__(self):
+        self.timeouts = []
+
+    def get(self, *_args, **kwargs):
+        self.timeouts.append(kwargs.get("timeout"))
+        return _BudgetedPage()
+
+    def post(self, *_args, **kwargs):
+        self.timeouts.append(kwargs.get("timeout"))
+        return _BudgetedPage()
+
+
+def _scraper_with_budget(remaining):
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    scraper = WemPortalScraper("user@example.org", "secret", budget=lambda: remaining)
+    scraper.session = _TimeoutRecordingSession()
+    return scraper
+
+
+def test_a_scrape_request_may_not_outlast_what_is_left_of_the_budget():
+    """A request started near the deadline runs past it by its own timeout.
+
+    The scrape is checked once before it starts, and then does up to six
+    requests of 30s each - so a scrape begun at 329s of a 330s budget ends
+    around 509s, against a coordinator that gave up at 360s. The worker keeps
+    the shared lock for the whole overrun, which is the exact situation the
+    deadline exists to prevent.
+    """
+    scraper = _scraper_with_budget(5.0)
+
+    scraper._load_expert_page()
+
+    assert scraper.session.timeouts == [5.0], (
+        "the request was allowed its full timeout, so it can outlast the "
+        "cycle it belongs to"
+    )
+
+
+def test_a_scrape_does_not_start_a_request_it_has_no_budget_for():
+    """Checked before EVERY request, not only before the scrape: the budget
+    can run out between them, and the next one is what spends it."""
+    scraper = _scraper_with_budget(0.0)
+
+    with pytest.raises(exceptions.PollDeadlineExceeded):
+        scraper._load_expert_page()
+
+    assert scraper.session.timeouts == [], "a request was sent with no budget left"
+
+
+def test_a_scrape_outside_a_poll_keeps_its_normal_timeout():
+    """The counter-test. An on-demand scrape has no cycle behind it, so
+    capping it at a leftover budget would cut short an operation with a user
+    waiting on it."""
+    from custom_components.wemportal import scraper as scraper_module
+
+    scraper = _scraper_with_budget(None)
+
+    scraper._load_expert_page()
+
+    assert scraper.session.timeouts == [
+        scraper_module.SCRAPER_REQUEST_TIMEOUT_SECONDS
+    ], "a scrape with no poll behind it was capped anyway"
+
+
+def test_the_scrape_is_built_with_the_cycles_budget(monkeypatch):
+    """The wiring, which the three tests above take as given.
+
+    They hand the scraper a budget themselves, so all three stay green if the
+    api never passes one - and then nothing caps anything in production.
+    """
+    from custom_components.wemportal import scraper as scraper_module
+
+    monkeypatch.setattr(
+        scraper_module.WemPortalScraper, "scrape", lambda _self: [{"panel": {}}]
+    )
+    api = _api()
+    api._deadline = time.monotonic() + 42
+
+    api.fetch_webscraping_data()
+
+    assert api._scraper._budget is not None, (
+        "the scraper was built without a budget, so its requests are uncapped"
+    )
+    assert 41 < api._scraper._budget() <= 42
+
+
 def test_an_operation_outside_a_poll_is_not_deadlined():
     """Only fetch_data sets a deadline. An on-demand write has a user waiting
     on it and no coordinator timeout behind it, so it must run even when the

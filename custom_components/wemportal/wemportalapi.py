@@ -692,6 +692,20 @@ class WemPortalApi:
             self._deadline = None
             self._api_lock.release()
 
+    def remaining_budget(self):
+        """Seconds this cycle has left, or None when no poll is running.
+
+        The scrape needs the NUMBER, not just a yes/no: its requests carry
+        their own 30s timeout, so a check that only says "still time" lets a
+        request started one second before the deadline run 30 seconds past
+        it - six times over, for a scrape that reuses a session and then
+        logs in fresh. Capping each request at what is left is what keeps
+        the worker inside the budget rather than merely aware of it.
+        """
+        if self._deadline is None:
+            return None
+        return self._deadline - time.monotonic()
+
     def check_deadline(self):
         """Stop the poll cycle if it has used up its time budget.
 
@@ -699,13 +713,13 @@ class WemPortalApi:
         mobile-API request and the entry to the scrape - rather than inside
         the loops that call them. Those loops all funnel through here, so
         guarding them individually would be six places to forget instead of
-        two.
+        two. Inside the scrape the check is per request, on the remaining
+        budget: see remaining_budget.
 
         Does nothing when no poll is running: see the note on `_deadline`.
         """
-        if self._deadline is None:
-            return
-        if time.monotonic() >= self._deadline:
+        remaining = self.remaining_budget()
+        if remaining is not None and remaining <= 0:
             raise PollDeadlineExceeded(
                 f"This poll cycle passed its {POLL_DEADLINE_SECONDS}s budget "
                 f"and stopped. Home Assistant abandons the cycle at "
@@ -1134,7 +1148,10 @@ class WemPortalApi:
         # or after it was deliberately discarded (see _reset_scraper).
         if self._scraper is None:
             self._scraper = WemPortalScraper(
-                self.username, self.password, self.webscraping_cookie
+                self.username,
+                self.password,
+                self.webscraping_cookie,
+                budget=self.remaining_budget,
             )
         else:
             # Keep the scraper's cookie view in sync with ours (ours may

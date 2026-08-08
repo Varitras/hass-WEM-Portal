@@ -22,6 +22,7 @@ from .const import (
 from .exceptions import (
     AuthError,
     ForbiddenError,
+    PollDeadlineExceeded,
     PortalMaintenanceError,
     ServerError,
 )
@@ -143,11 +144,38 @@ def _report_duplicate_row(key, panel, row_name) -> None:
 class WemPortalScraper:
     """Scraper for navigating and extracting data from WEM Portal using curl_cffi."""
 
-    def __init__(self, username, password, cookie=None):
+    def __init__(self, username, password, cookie=None, budget=None):
         self.username = username
         self.password = password
         self.cookie = cookie if cookie else {}
         self.session = requests.Session(impersonate="chrome110")
+        # Optional callable returning the seconds left of the poll cycle this
+        # scrape belongs to, or None when it belongs to none - an on-demand
+        # scrape has a user waiting on it and no coordinator timeout behind
+        # it. See WemPortalApi.remaining_budget.
+        self._budget = budget
+
+    def _request_timeout(self):
+        """How long the next request may take.
+
+        The scrape's own timeout, unless the poll cycle has less than that
+        left - then that, so a request cannot outlive the cycle it is part
+        of. Checked here rather than at the four call sites because a check
+        per site is a site to forget, which is how the deadline came to be
+        checked once for a sequence of up to six requests.
+        """
+        if self._budget is None:
+            return SCRAPER_REQUEST_TIMEOUT_SECONDS
+        remaining = self._budget()
+        if remaining is None:
+            return SCRAPER_REQUEST_TIMEOUT_SECONDS
+        if remaining <= 0:
+            raise PollDeadlineExceeded(
+                "The poll cycle ran out of time mid-scrape and stopped before "
+                "its next request. Its partial readings are kept; the next "
+                "cycle continues from them."
+            )
+        return min(SCRAPER_REQUEST_TIMEOUT_SECONDS, remaining)
 
     def close(self):
         """Release the underlying HTTP session/connection.
@@ -213,7 +241,7 @@ class WemPortalScraper:
             valid" is an expected, recoverable condition for the fast
             path's caller, not necessarily a hard error.
         """
-        r_main = self.session.get(WEB_MAIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS)
+        r_main = self.session.get(WEB_MAIN_URL, timeout=self._request_timeout())
         # A 500 has no __VIEWSTATE, so without this it fell through to
         # `return None` - which the full login reports as an AuthError, i.e. a
         # server outage blamed on the credentials.
@@ -244,7 +272,7 @@ class WemPortalScraper:
             WEB_MAIN_URL,
             data=form_data,
             allow_redirects=True,
-            timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            timeout=self._request_timeout(),
         )
         self._check_response(r_expert, "expert page", check_maintenance=True)
         if WEB_LOGIN_URL.lower() in r_expert.url.lower():
@@ -341,7 +369,7 @@ class WemPortalScraper:
         # 1. GET Login page
         try:
             login_page = self.session.get(
-                WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS
+                WEB_LOGIN_URL, timeout=self._request_timeout()
             )
         except Exception as exc:
             # A transport failure (timeout, connection reset, DNS) says
@@ -387,7 +415,7 @@ class WemPortalScraper:
             WEB_LOGIN_URL,
             data=login_data,
             allow_redirects=True,
-            timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+            timeout=self._request_timeout(),
         )
         self._check_response(login_response, "login POST")
 

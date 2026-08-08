@@ -1759,8 +1759,8 @@
   {
     "label": "deadline: an operation outside a poll deadlined anyway",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if self._deadline is None:\n            return\n",
-    "new": "",
+    "old": "        if remaining is not None and remaining <= 0:",
+    "new": "        if remaining is None or remaining <= 0:",
     "tests": "an_operation_outside_a_poll_is_not_deadlined"
   },
   {
@@ -1769,13 +1769,33 @@
     "old": "                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
     "new": "                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
     "tests": "a_cycle_that_ran_out_of_time_still_counts_as_a_failure"
-  }
-,
+  },
   {
     "label": "deadline: an Exception again, so every broad handler eats it once more",
     "path": "custom_components/wemportal/exceptions.py",
     "old": "class PollDeadlineExceeded(BaseException):",
     "new": "class PollDeadlineExceeded(WemPortalError):",
     "tests": "no_broad_handler_can_swallow_the_deadline"
+  },
+  {
+    "label": "scrape: a request allowed its full timeout past the deadline",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        return min(SCRAPER_REQUEST_TIMEOUT_SECONDS, remaining)",
+    "new": "        return SCRAPER_REQUEST_TIMEOUT_SECONDS",
+    "tests": "a_scrape_request_may_not_outlast_what_is_left_of_the_budget"
+  },
+  {
+    "label": "scrape: starting one more request after the budget is gone",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        if remaining <= 0:",
+    "new": "        if False:",
+    "tests": "a_scrape_does_not_start_a_request_it_has_no_budget_for"
+  },
+  {
+    "label": "scrape: the api never handing the scraper its budget",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                budget=self.remaining_budget,\n",
+    "new": "",
+    "tests": "the_scrape_is_built_with_the_cycles_budget"
   }
 ]
