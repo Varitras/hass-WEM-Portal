@@ -1402,7 +1402,7 @@
   {
     "label": "discovery: an unreadable answer skipped without being booked",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            self._note_undescribed_module(\n                device_id,\n                key,\n                values,\n                \"its description could not be read\",\n                unsupported=True,\n            )",
+    "old": "            self._note_undescribed_module(\n                device_id,\n                values,\n                \"its description could not be read\",\n                unsupported=True,\n            )",
     "new": "            pass",
     "tests": "an_unreadable_description_is_not_asked_again_every_cycle"
   },

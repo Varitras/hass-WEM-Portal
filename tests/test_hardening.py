@@ -1702,7 +1702,7 @@ def test_an_operation_outside_a_poll_is_not_deadlined():
     session = RecordingSession()
     api.session = session
 
-    api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+    api.change_value("1234", "P1", 0, 1, 21.0)
 
     assert api._deadline is None
     assert session.post_kwargs is not None, "the write was refused without a poll"
@@ -3073,7 +3073,7 @@ def test_a_write_answered_with_a_page_is_not_a_completed_write():
     )
 
     with pytest.raises(exceptions.ParameterChangeError):
-        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+        api.change_value("1234", "P1", 0, 1, 21.0)
 
 
 def test_an_empty_write_response_is_no_longer_taken_for_success():
@@ -3088,7 +3088,7 @@ def test_an_empty_write_response_is_no_longer_taken_for_success():
     api.make_api_call = lambda *_args, **_kwargs: _BodyResponse(b"")
 
     with pytest.raises(exceptions.ParameterChangeError):
-        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+        api.change_value("1234", "P1", 0, 1, 21.0)
 
 
 # --- the scrape backoff is not skipped after a recovery ---------------
@@ -3889,7 +3889,7 @@ def test_the_real_success_response_is_accepted():
     api = _api()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(REAL_WRITE_SUCCESS)
 
-    api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+    api.change_value("1234", "P1", 0, 1, 21.0)
 
 
 @pytest.mark.parametrize(
@@ -3913,7 +3913,7 @@ def test_anything_but_an_explicit_success_is_a_rejection(payload):
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(payload)
 
     with pytest.raises(exceptions.ParameterChangeError):
-        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+        api.change_value("1234", "P1", 0, 1, 21.0)
 
 
 def test_the_rejection_message_carries_the_portal_reason():
@@ -3925,7 +3925,7 @@ def test_the_rejection_message_carries_the_portal_reason():
     )
 
     with pytest.raises(exceptions.ParameterChangeError) as excinfo:
-        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+        api.change_value("1234", "P1", 0, 1, 21.0)
 
     assert "value out of range" in str(excinfo.value)
 
@@ -3949,7 +3949,7 @@ def test_a_rejected_write_puts_the_portal_answer_in_the_log(caplog):
         caplog.at_level(logging.WARNING),
         pytest.raises(exceptions.ParameterChangeError),
     ):
-        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+        api.change_value("1234", "P1", 0, 1, 21.0)
 
     warnings = " ".join(
         record.getMessage()
@@ -3968,7 +3968,7 @@ def test_a_successful_write_records_the_answer_at_debug(caplog):
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(REAL_WRITE_SUCCESS)
 
     with caplog.at_level(logging.DEBUG):
-        api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+        api.change_value("1234", "P1", 0, 1, 21.0)
 
     assert "Write response for P1" in caplog.text
     # And nothing about the write ends up at warning level.
@@ -4856,7 +4856,7 @@ def test_a_refused_description_is_retried_within_the_hour_not_the_day():
     values = {"Index": 0, "Type": 1, "Name": "Heat pump"}
 
     api._note_undescribed_module(
-        "1234", (0, 1), values, "the portal rejected the request", unsupported=True
+        "1234", values, "the portal rejected the request", unsupported=True
     )
 
     age = time.time() - values["parameters_fetched_at"]
@@ -4879,7 +4879,7 @@ def test_a_module_that_says_it_is_empty_keeps_the_daily_round():
     values = {"Index": 0, "Type": 1, "Name": "Heat pump"}
 
     api._note_undescribed_module(
-        "1234", (0, 1), values, "it described no parameters", unsupported=False
+        "1234", values, "it described no parameters", unsupported=False
     )
 
     assert time.time() - values["parameters_fetched_at"] < 5, (
@@ -5771,7 +5771,7 @@ def test_a_refused_write_says_what_the_portal_answered():
     api.make_api_call = refuse
 
     with pytest.raises(exceptions.ParameterChangeError) as excinfo:
-        api.change_value("1234", "U_Beginn", 1, 2, 1785801600.0, login=False)
+        api.change_value("1234", "U_Beginn", 1, 2, 1785801600.0)
 
     message = str(excinfo.value)
     assert "U_Beginn" in message
@@ -5811,7 +5811,6 @@ def test_companion_parameters_travel_in_the_same_request():
         1,
         2,
         1785974400.0,
-        login=False,
         together_with={"U_Beginn": 1785715200.0},
     )
 
@@ -5840,7 +5839,6 @@ def test_the_parameter_being_changed_wins_over_a_companion():
         1,
         2,
         1785974400.0,
-        login=False,
         together_with={"U_Ende": 1785801600.0},
     )
 
@@ -5854,7 +5852,7 @@ def test_a_write_without_companions_is_unchanged():
     api = _api()
     sent = _write_recorder(api)
 
-    api.change_value("1234", "P1", 0, 1, 21.0, login=False)
+    api.change_value("1234", "P1", 0, 1, 21.0)
 
     assert sent[0] == {
         "DeviceID": 1234,

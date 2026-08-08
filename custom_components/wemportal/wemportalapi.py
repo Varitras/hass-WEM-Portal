@@ -1788,7 +1788,7 @@ class WemPortalApi:
         self.modules = new_modules
         self.data = new_data
 
-    def _note_undescribed_module(self, device_id, key, values, why, unsupported):
+    def _note_undescribed_module(self, device_id, values, why, unsupported):
         """A module the portal would not describe. Nothing is ever thrown away.
 
         This is what makes a re-scan purely ADDITIVE, and it is the condition
@@ -1983,7 +1983,6 @@ class WemPortalApi:
             if not parameters:
                 self._note_undescribed_module(
                     device_id,
-                    key,
                     values,
                     "it described no parameters",
                     unsupported=False,
@@ -2009,7 +2008,6 @@ class WemPortalApi:
             # mode the whole retry budget exists to bound.
             self._note_undescribed_module(
                 device_id,
-                key,
                 values,
                 "its description could not be read",
                 unsupported=True,
@@ -2041,7 +2039,6 @@ class WemPortalApi:
                 if status_code == 400:
                     self._note_undescribed_module(
                         device_id,
-                        key,
                         values,
                         "the portal rejected the request",
                         unsupported=True,
@@ -2071,7 +2068,6 @@ class WemPortalApi:
         module_index,
         module_type,
         numeric_value,
-        login=True,
         together_with=None,
     ):
         """Change a value under the shared API lock, so a write can't
@@ -2084,7 +2080,6 @@ class WemPortalApi:
                 module_index,
                 module_type,
                 numeric_value,
-                login=login,
                 together_with=together_with,
             )
         finally:
@@ -2118,7 +2113,6 @@ class WemPortalApi:
         module_index,
         module_type,
         numeric_value,
-        login=True,
         together_with=None,
     ):
         """POST request to API to change a specific value.
