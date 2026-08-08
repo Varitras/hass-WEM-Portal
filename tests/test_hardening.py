@@ -536,6 +536,45 @@ def _dialog_html(options, factory_default=None):
     )
 
 
+def _overview_row(group, name, value, readdata):
+    """One panel of the Fachmann overview, carrying one editable row."""
+    return f"""
+    <div class="RadPanelBar">
+      <span id="x_HeaderTemplate_lblHeaderText">{group}</span>
+      <table><tr>
+        <td><span class="simpleDataName">{name}</span></td>
+        <td><span class="simpleDataValue">{value}</span></td>
+        <td><input class="EditIcon" type="button" onclick="FnContextMenu_Handler_Ext(
+            '', 'entryedit', '', '', 'WwpsParameterDetails.aspx',
+            'entityvalue={"A" * 36}&readdata={readdata}');return false;"/></td>
+      </tr></table>
+    </div>"""
+
+
+def test_a_parameter_alone_in_its_section_is_offered_by_discovery_too():
+    """The portal marks Betriebsart and Heizkennlinie readdata=False.
+
+    Measured across a module: the flag is False on a parameter that stands
+    alone in its section and True where several share one. It says how the
+    PORTAL opens the dialog, not whether there is one - and reading it as
+    "aggregate entry with no value dialog" kept exactly those out of
+    discovery. They are among the ones most worth having, and fetched with
+    readdata=True they answer with the same dropdown as any other.
+    """
+    from custom_components.wemportal import expert_writer
+
+    page = (
+        "<html><body>"
+        + _overview_row("Heizkennlinie", "Heizkennlinie", "0.55", "False")
+        + _overview_row("Raumsolltemperatur", "Komfort", "26.5 °C", "True")
+        + "</body></html>"
+    )
+
+    found = {row["name"] for row in expert_writer.parse_parameter_list(page)}
+
+    assert found == {"Heizkennlinie", "Komfort"}
+
+
 def test_a_special_value_does_not_drag_the_range_off_the_scale():
     """A special value sits beside the scale, not on it.
 

@@ -194,7 +194,7 @@ def _ajax_headers(referer: str) -> dict[str, str]:
 # Matches the edit-icon onclick that opens the parameter dialog. lxml returns
 # the attribute with the entity decoded, so it reads `&readdata`, not
 # `&amp;readdata`.
-_EDIT_LINK_RE = re.compile(r"entityvalue=([0-9A-Fa-f]+)&readdata=(True|False)")
+_EDIT_LINK_RE = re.compile(r"entityvalue=([0-9A-Fa-f]+)&readdata=(?:True|False)")
 
 # Module id values in the icon-menu RadMenu init are long hex strings; the
 # top-menu RadMenu uses short numeric values ("100"), so a length floor tells
@@ -205,10 +205,20 @@ _MODULE_VALUE_RE = re.compile(r'"value":"([0-9A-Fa-f]{20,})"')
 def parse_parameter_list(html_content) -> list:
     """Parse a Fachmann module overview page into a list of parameters.
 
-    Returns one dict per editable (readdata=True) row:
-    {group, name, entityvalue, value}. readdata=False rows (aggregate /
-    module-level entries) are skipped - they don't open a value dialog.
+    Returns one dict per editable row: {group, name, entityvalue, value}.
     Static so it can be tested against saved pages.
+
+    BOTH values of the link's `readdata` flag are taken. Measured at the
+    portal: it is False on a parameter that stands alone in its section and
+    True where several share one - Betriebsart, Party/Pause, Heizkennlinie,
+    So/Wi Umschaltung and Reset are each alone in theirs. It says how the
+    PORTAL opens the dialog, not whether there is one.
+
+    Reading it as "aggregate entries with no value dialog" cost the discovery
+    exactly those parameters, which are among the ones most worth having. They
+    open the same dialog as any other, and fetching one with readdata=True -
+    which is what this integration does for every parameter - answers with the
+    same dropdown, current value and factory default.
     """
     results = []
     try:
@@ -221,7 +231,7 @@ def parse_parameter_list(html_content) -> list:
         group = header[0].text_content().strip() if header else ""
         for icon in panel.xpath(".//input[contains(@class, 'EditIcon')]"):
             match = _EDIT_LINK_RE.search(icon.get("onclick") or "")
-            if not match or match.group(2) != "True":
+            if not match:
                 continue
             row = icon.xpath("./ancestor::tr[1]")
             if not row:

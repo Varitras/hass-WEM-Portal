@@ -2217,5 +2217,12 @@
     "old": "    return f\"…{text[-2:]}\" if len(text) > 2 else text",
     "new": "    return text",
     "tests": "a_failed_cycle_says_why_it_failed"
+  },
+  {
+    "label": "discovery: a parameter alone in its section skipped again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            match = _EDIT_LINK_RE.search(icon.get(\"onclick\") or \"\")\n            if not match:\n                continue",
+    "new": "            match = _EDIT_LINK_RE.search(icon.get(\"onclick\") or \"\")\n            if not match or \"readdata=False\" in (icon.get(\"onclick\") or \"\"):\n                continue",
+    "tests": "a_parameter_alone_in_its_section_is_offered_by_discovery_too"
   }
 ]

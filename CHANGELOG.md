@@ -15,6 +15,16 @@ versioning follows [Semantic Versioning](https://semver.org/).
   one account apart and all the message needs it for.
 
 ### Fixed
+- **Discovery offers the parameters that stand alone in their section.** The
+  edit link carries a `readdata` flag, and it was read as "False means an
+  aggregate entry with no value dialog" - so every parameter the portal shows
+  alone under its own heading was skipped, among them *Betriebsart*,
+  *Heizkennlinie*, *So/Wi Umschaltung* and *Reset*. Measured at the portal,
+  the flag says something else: False where a parameter is alone in its
+  section, True where several share one. It describes how the portal opens
+  the dialog, not whether there is one - those parameters open the same dialog
+  as any other and read and write like any other. They had to be typed in by
+  hand until now.
 - **One failed cycle no longer takes every entity of the account with it.** The
   portal answers a poll with "Unbekannter Fehler" now and then and the next one
   succeeds. Every entity went unavailable for that single cycle - half an hour
