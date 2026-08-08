@@ -2091,5 +2091,26 @@
     "old": "            budget_is_spent = remaining is not None and remaining <= 0",
     "new": "            budget_is_spent = True",
     "tests": "a_plain_network_failure_is_still_a_server_error"
+  },
+  {
+    "label": "expert: navigating on after a teardown during the login POST",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self._check_gates()\n        main_page = self.session.get(",
+    "new": "        main_page = self.session.get(",
+    "tests": "a_login_that_succeeded_does_not_navigate_on_after_a_teardown"
+  },
+  {
+    "label": "expert: a portal error page on the login URL read as a wrong password",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if not logged_in:\n            raise ServerError(",
+    "new": "        if not logged_in:\n            raise AuthError(",
+    "tests": "a_portal_error_page_on_the_expert_login_url_is_not_a_wrong_password"
+  },
+  {
+    "label": "expert: a real refusal no longer reaching the reauth flow",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if not logged_in and WEB_LOGIN_FORM_MARKER in login_response.text:",
+    "new": "        if False:",
+    "tests": "the_expert_login_form_coming_back_is_still_a_wrong_password"
   }
 ]

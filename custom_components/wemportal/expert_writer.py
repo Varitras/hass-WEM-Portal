@@ -68,6 +68,8 @@ from .const import (
     WEB_ACCEPT_LANGUAGE,
     WEB_ACCEPT_NAV,
     WEB_CODE_EXPERTS_URL,
+    WEB_LOGGED_IN_MARKER,
+    WEB_LOGIN_FORM_MARKER,
     WEB_LOGIN_URL,
     WEB_MAIN_URL,
     WEB_PORTAL_ORIGIN,
@@ -579,12 +581,19 @@ class WemPortalExpertClient:
         # test for "these credentials were rejected" just below - and was
         # reported as a wrong password. Same gap the scraper had.
         self._check_response(login_response, "login POST", check_maintenance=True)
-        # Redirect back to login page means the login did not succeed.
-        if (
-            "AspxAutoDetectCookieSupport" in login_response.url
-            or WEB_LOGIN_URL.lower() in login_response.url.lower()
-        ):
-            raise AuthError("Expert client: login failed.")
+        # Three outcomes, not two, same as the scraper and web_login: staying
+        # on the login URL was the whole test, and a portal error or
+        # interstitial does that too while answering 200. Only the login FORM
+        # is evidence that credentials were seen and refused.
+        logged_in = WEB_LOGGED_IN_MARKER in login_response.text
+        if not logged_in and WEB_LOGIN_FORM_MARKER in login_response.text:
+            raise AuthError("Expert client: invalid username or password.")
+        if not logged_in:
+            raise ServerError(
+                "The WEM Portal answered the expert login with a page that is "
+                "neither a session nor the login form. This can also mean the "
+                f"portal did not accept our cookies. URL: {login_response.url}"
+            )
 
         self._establish_context()
         # Only cache once the full navigation succeeded: cookies from a
@@ -613,6 +622,10 @@ class WemPortalExpertClient:
         runs solely on explicit, on-demand read/write operations.
         """
         # Step 1: main page (also captures the base VIEWSTATE we need).
+        # Gated like every other request: this runs straight after the login
+        # POST, so a teardown arriving during that one would otherwise be
+        # answered with another authenticated request.
+        self._check_gates()
         main_page = self.session.get(
             WEB_MAIN_URL,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
@@ -791,6 +804,7 @@ class WemPortalExpertClient:
         """
         # The dialog is a RadWindow served from its own URL; fetch it to
         # get its VIEWSTATE, then post the code via the dialog's save button.
+        self._check_gates()
         dialog_url = f"{WEB_CODE_EXPERTS_URL}?rwndrnd={random.random()}"
         dialog_page = self.session.get(
             dialog_url,
@@ -1102,7 +1116,6 @@ class WemPortalExpertClient:
         ids = [candidate for candidate in ids if _is_valid_entityvalue(candidate)]
         if not ids:
             return result
-        self._check_gates()
         # Same cooperative stop the write path has. Cancelling the auto-poll
         # cancels the AWAIT, not this thread, so an unload halfway through a
         # batch kept navigating the portal with the credentials of an entry
@@ -1288,7 +1301,6 @@ class WemPortalExpertClient:
             post_data["__EVENTARGUMENT"] = ""
             post_data["ctl00$DialogContent$ddlNewValue"] = value_str
 
-            self._check_gates()
             # The last gate before the request that actually CHANGES a
             # heating parameter. Everything up to here is reads.
             self._check_gates()

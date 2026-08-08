@@ -546,6 +546,87 @@ def test_a_fresh_login_stops_between_its_two_requests(monkeypatch):
     assert posts == [], "the credentials went out after the entry had gone away"
 
 
+def test_a_login_that_succeeded_does_not_navigate_on_after_a_teardown(monkeypatch):
+    """The gate closed after the login POST, before the navigation.
+
+    _establish_context runs straight after the POST and opened with an
+    unguarded GET, so an unload arriving during the credential exchange was
+    answered with one more authenticated request. The write itself was never
+    at risk - this is about not talking to the portal on behalf of a
+    configuration that is gone.
+    """
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
+
+    torn_down = []
+
+    def abort_check():
+        if torn_down:
+            raise ExpertOperationAborted("the entry is being unloaded")
+
+    gets = []
+
+    class _Response:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Login.aspx"
+
+        def __init__(self, text):
+            self.text = text
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            gets.append(True)
+            return _Response(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            # The unload lands while the credentials are on the wire.
+            torn_down.append(True)
+            return _Response(
+                f"<html><body><div id='{WEB_LOGGED_IN_MARKER}'></div></body></html>"
+            )
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_k: _Session())
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", abort_check=abort_check
+    )
+
+    with pytest.raises(ExpertOperationAborted):
+        client._full_login()
+
+    assert gets == [True], "the navigation went on after the entry had gone away"
+
+
+def test_a_portal_error_page_on_the_expert_login_url_is_not_a_wrong_password(
+    monkeypatch,
+):
+    """The same URL-only test the scraper had, in the other client.
+
+    Found by a test for something else: the gate check below could not reach
+    its own subject because the login classified an error page as refused
+    credentials first.
+    """
+    from custom_components.wemportal import expert_writer
+
+    _expert_login_session(
+        monkeypatch, "<html><body>Service temporarily busy</body></html>"
+    )
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+
+    with pytest.raises(exceptions.ServerError):
+        client._full_login()
+
+
+def test_the_expert_login_form_coming_back_is_still_a_wrong_password(monkeypatch):
+    """The counter-test: the form means the credentials really were refused."""
+    from custom_components.wemportal import expert_writer
+
+    _expert_login_session(monkeypatch, NORMAL_LOGIN_PAGE)
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+
+    with pytest.raises(exceptions.AuthError):
+        client._full_login()
+
+
 def test_maintenance_answering_the_expert_login_post_is_not_a_wrong_password(
     monkeypatch,
 ):
