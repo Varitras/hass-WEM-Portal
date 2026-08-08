@@ -9,6 +9,7 @@ import pytest
 import requests as real_requests
 
 from custom_components.wemportal import exceptions, wemportalapi
+from custom_components.wemportal.const import WEB_LOGGED_IN_MARKER
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
 
@@ -1314,10 +1315,17 @@ class _LoginForm:
 
 
 class _PageWithoutTheExpertView:
-    """A main page the portal served without its form state."""
+    """A main page the portal served without its form state.
+
+    Carries the logged-in marker on purpose. The login POST is classified by
+    those markers now, so a page with neither is refused there - and a test
+    aiming at what happens AFTER a successful login would never get past it.
+    A mutation caught this: it stayed green while the line it targets was
+    unreachable.
+    """
 
     status_code = 200
-    text = "<html><body>nothing here</body></html>"
+    text = f"<html><body><div id='{WEB_LOGGED_IN_MARKER}'></div></body></html>"
     url = "https://www.wemportal.com/Web/Default.aspx"
 
 
@@ -1361,6 +1369,81 @@ def test_maintenance_answering_the_login_post_is_not_a_wrong_password(monkeypatc
     )
 
     with pytest.raises(exceptions.PortalMaintenanceError):
+        scraper.scrape()
+
+
+def test_a_portal_error_page_on_the_login_url_is_not_a_wrong_password(monkeypatch):
+    """The URL alone does not say the credentials were refused.
+
+    A portal error or interstitial answers with HTTP 200 and stays on
+    Login.aspx, which was the whole test - so three of those in web mode walk
+    into a re-authentication prompt. web_login in wemportalapi has had the
+    right answer all along: look for the logged-in marker, then the
+    maintenance notice, then the login FORM. Only the form is evidence that
+    credentials were seen and rejected.
+    """
+    import types
+
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    class _Response:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Login.aspx"
+
+        def __init__(self, text):
+            self.text = text
+
+    class _Session:
+        cookies = types.SimpleNamespace(clear=lambda: None)
+
+        def get(self, *_args, **_kwargs):
+            return _Response(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            # Neither logged in, nor maintenance, nor the login form: an
+            # error page the portal happened to serve on this URL.
+            return _Response("<html><body>Service temporarily busy</body></html>")
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _Session()
+    monkeypatch.setattr(
+        "custom_components.wemportal.scraper.time.sleep", lambda _seconds: None
+    )
+
+    with pytest.raises(exceptions.ServerError):
+        scraper.scrape()
+
+
+def test_the_login_form_coming_back_is_still_a_wrong_password(monkeypatch):
+    """The counter-test: when the portal DOES show the form again, the
+    credentials really were refused and reauth is the right escalation."""
+    import types
+
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    class _Response:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Login.aspx"
+
+        def __init__(self, text):
+            self.text = text
+
+    class _Session:
+        cookies = types.SimpleNamespace(clear=lambda: None)
+
+        def get(self, *_args, **_kwargs):
+            return _Response(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return _Response(NORMAL_LOGIN_PAGE)
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _Session()
+    monkeypatch.setattr(
+        "custom_components.wemportal.scraper.time.sleep", lambda _seconds: None
+    )
+
+    with pytest.raises(exceptions.AuthError):
         scraper.scrape()
 
 
@@ -1847,18 +1930,6 @@ def test_a_page_that_is_neither_login_nor_session_is_not_a_wrong_password(monkey
     )
 
     with pytest.raises(exceptions.UnknownAuthError):
-        api.web_login()
-
-
-def test_the_login_form_coming_back_is_still_a_wrong_password(monkeypatch):
-    """The other half of the same decision: the portal re-rendering its login
-    form IS the rejection, and must keep reaching the reauth flow."""
-    api = _web_login_answering(
-        FakeResponse_html('<input name="ctl00$content$tbxPassword" type="password">'),
-        monkeypatch=monkeypatch,
-    )
-
-    with pytest.raises(exceptions.AuthError):
         api.web_login()
 
 

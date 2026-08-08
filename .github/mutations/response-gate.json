@@ -2063,5 +2063,19 @@
     "old": "        for key in self._previous_scraper_keys or ():",
     "new": "        for key in self._previous_scraper_keys:",
     "tests": "the_third_scrape_failure_before_any_success_is_survivable"
+  },
+  {
+    "label": "scrape: a portal error page on the login URL read as a wrong password",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        if not logged_in:\n            raise ServerError(",
+    "new": "        if not logged_in:\n            raise AuthError(",
+    "tests": "a_portal_error_page_on_the_login_url_is_not_a_wrong_password"
+  },
+  {
+    "label": "scrape: a real refusal no longer reaching the reauth flow",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        if not logged_in and WEB_LOGIN_FORM_MARKER in login_response.text:",
+    "new": "        if False:",
+    "tests": "the_login_form_coming_back_is_still_a_wrong_password"
   }
 ]

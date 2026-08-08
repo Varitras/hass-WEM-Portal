@@ -12,6 +12,8 @@ from .const import (
     PERCENTAGE_KEYWORDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
     TEMPERATURE_KEYWORDS,
+    WEB_LOGGED_IN_MARKER,
+    WEB_LOGIN_FORM_MARKER,
     WEB_LOGIN_URL,
     WEB_MAIN_URL,
 )
@@ -437,13 +439,21 @@ class WemPortalScraper:
         # maintenance window ask the user for a password that is correct.
         self._check_response(login_response, "login POST", check_maintenance=True)
 
-        # Check if we were redirected back to login with an error (like AspxAutoDetectCookieSupport)
-        if (
-            "AspxAutoDetectCookieSupport" in login_response.url
-            or WEB_LOGIN_URL.lower() in login_response.url.lower()
-        ):
-            raise AuthError(
-                f"Authentication Error: Login failed or cookies not detected. URL: {login_response.url}"
+        # Three outcomes, not two - the classification web_login has used all
+        # along. Staying on the login URL was the whole test before, and a
+        # portal error or interstitial does that too while answering HTTP 200,
+        # so anything of that kind counted as "wrong password" and three in a
+        # row walked into a re-authentication prompt. Only the login FORM is
+        # evidence that credentials were seen and refused.
+        logged_in = WEB_LOGGED_IN_MARKER in login_response.text
+        if not logged_in and WEB_LOGIN_FORM_MARKER in login_response.text:
+            raise AuthError("Authentication Error: Invalid username or password.")
+        if not logged_in:
+            raise ServerError(
+                "The WEM Portal answered the login with a page that is neither "
+                "a session nor the login form, so there is nothing to read and "
+                "nothing to say about the credentials. This can also mean the "
+                f"portal did not accept our cookies. URL: {login_response.url}"
             )
 
         # Wait a moment
