@@ -1409,8 +1409,8 @@
   {
     "label": "login: the api login sends before asking the cooldown",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        self.check_cooldown()\n        payload = {",
-    "new": "        payload = {",
+    "old": "        self.check_cooldown()\n        # And the deadline, for the same reason",
+    "new": "        # And the deadline, for the same reason",
     "tests": "a_login_is_not_attempted_during_a_cooldown"
   },
   {
@@ -1724,8 +1724,8 @@
   {
     "label": "deadline: starting a scrape with no budget left",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "\n        self.check_deadline()",
-    "new": "\n        pass",
+    "old": "        # coordinator abandons it half-way.\n        self.check_deadline()",
+    "new": "        # coordinator abandons it half-way.\n        pass",
     "tests": "the_scrape_is_not_started_without_budget_left"
   },
   {
@@ -1979,5 +1979,12 @@
     "old": "        self._check_response(login_response, \"login POST\", check_maintenance=True)",
     "new": "        self._check_response(login_response, \"login POST\")",
     "tests": "maintenance_answering_the_login_post_is_not_a_wrong_password"
+  },
+  {
+    "label": "deadline: a fresh login started with no budget left",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.check_deadline()\n        payload = {",
+    "new": "        payload = {",
+    "tests": "a_login_without_budget_left_sends_nothing"
   }
 ]

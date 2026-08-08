@@ -1286,6 +1286,14 @@ class WemPortalApi:
         # somebody lands after deleting and re-adding the integration to
         # "fix" a blockade. Every one of those attempts extended it.
         self.check_cooldown()
+        # And the deadline, for the same reason: this is a request, and it is
+        # reached without passing make_api_call - from _ensure_api_session
+        # after a long wait for the lock, and again on the reauth retry after
+        # a request came back expired. A cycle with nothing left could start
+        # a fresh login from either and run past the coordinator's timeout
+        # still holding the lock. A no-op outside a poll, so the config and
+        # reauth flows are unaffected.
+        self.check_deadline()
         payload = {
             "Name": self.username,
             "PasswordUTF8": self.password,

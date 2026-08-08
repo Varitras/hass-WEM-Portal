@@ -768,6 +768,41 @@ def test_a_cycle_out_of_time_makes_no_further_request(monkeypatch):
     assert session.post_kwargs is None, "a request was sent after the deadline"
 
 
+def test_a_login_without_budget_left_sends_nothing(monkeypatch):
+    """The login is a request too, and the one most worth not sending late.
+
+    make_api_call asks the deadline before every call, so the ordinary poll
+    traffic was covered. api_login is reached without going through it - from
+    _ensure_api_session after a long wait for the lock, and again on the
+    reauth retry after a request came back expired - and it only asked the
+    cooldown. A cycle with nothing left could still start a fresh login and
+    run past the coordinator's timeout holding the lock, which is the whole
+    thing the deadline exists to stop.
+    """
+    api = _api()
+    session = RecordingSession()
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    api._deadline = time.monotonic() - 1
+
+    with pytest.raises(exceptions.PollDeadlineExceeded):
+        api.api_login()
+
+    assert session.post_kwargs is None, "credentials went out after the deadline"
+
+
+def test_a_login_outside_a_poll_is_not_deadlined(monkeypatch):
+    """The counter-test. The config flow and the reauth flow call api_login
+    directly, with a user waiting and no cycle behind it - there is no budget
+    to be out of, and refusing there would break setup."""
+    api = _api()
+    session = RecordingSession()
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+
+    api.api_login()
+
+    assert api.valid_login is True
+
+
 def test_the_scrape_is_not_started_without_budget_left():
     """The scrape has its own session and never passes through
     make_api_call, so the cycle's deadline has to be checked here too. It is
