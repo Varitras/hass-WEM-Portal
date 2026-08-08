@@ -53,13 +53,24 @@ class ApiBusyError(WemPortalError):
     """
 
 
-class PollDeadlineExceeded(WemPortalError):
+class PollDeadlineExceeded(BaseException):
     """The poll cycle used up its time budget and stopped itself.
 
-    Its own type for the same reason ApiBusyError is: the connection is not
-    broken, so the WemPortalError recovery - which resets the transport after
-    two failures - would throw away a warm session over a portal that is
-    merely slow, and make the next cycle start from a cold login.
+    NOT an Exception subclass, and that is the point rather than a detail.
+    This is a control-flow signal that has to travel out through code whose
+    entire job is to keep a poll going: wemportalapi has twelve
+    `except Exception` handlers, each right on its own terms - one device
+    failing must not take the others down, one heating programme failing must
+    not skip the rest - and every one of them swallowed this. The cycle then
+    reported success, the worker ran on holding the shared lock, and the
+    coordinator handler written for exactly this was never reached.
+
+    Making each of the twelve re-raise it works until somebody writes the
+    thirteenth. Python's own control-flow signals - KeyboardInterrupt,
+    SystemExit, asyncio.CancelledError - are BaseException for this reason.
+
+    `finally` still runs, so fetch_data releases the API lock as before, and
+    coordinator catches this type by name and turns it into UpdateFailed.
 
     Raised rather than returned so a half-finished cycle fails honestly. The
     partial readings are still in api.data and the next cycle builds on them;

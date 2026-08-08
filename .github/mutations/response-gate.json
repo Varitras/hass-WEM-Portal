@@ -1770,4 +1770,12 @@
     "new": "                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
     "tests": "a_cycle_that_ran_out_of_time_still_counts_as_a_failure"
   }
+,
+  {
+    "label": "deadline: an Exception again, so every broad handler eats it once more",
+    "path": "custom_components/wemportal/exceptions.py",
+    "old": "class PollDeadlineExceeded(BaseException):",
+    "new": "class PollDeadlineExceeded(WemPortalError):",
+    "tests": "no_broad_handler_can_swallow_the_deadline"
+  }
 ]

@@ -688,6 +688,109 @@ def test_the_deadline_is_cleared_after_a_failing_poll():
     assert api._deadline is None
 
 
+def _out_of_time(*_args, **_kwargs):
+    """Stand-in for make_api_call once the budget is gone."""
+    raise exceptions.PollDeadlineExceeded("passed its 330s budget and stopped")
+
+
+def test_no_broad_handler_can_swallow_the_deadline():
+    """The invariant the four tests below are each one instance of.
+
+    wemportalapi has twelve `except Exception` handlers and every one of them
+    is right on its own terms, so the fix cannot be "remember to re-raise in
+    each" - that holds until the thirteenth is written. Stating it once here
+    says what the type is FOR, where four failing handler tests would only
+    say that something broke.
+    """
+    try:
+        raise exceptions.PollDeadlineExceeded("out of time")
+    except Exception:  # noqa: BLE001
+        pytest.fail(
+            "the deadline was caught by a plain `except Exception`, so every "
+            "broad handler in the poll path swallows it again"
+        )
+    except exceptions.PollDeadlineExceeded:
+        pass
+
+
+def test_the_deadline_is_not_reported_as_one_device_failing():
+    """The per-device handler must let the deadline past.
+
+    It catches Exception so one device's failure does not take the others
+    with it, which is right - but the deadline is not a device failing. Caught
+    here it becomes a returned string, the caller counts a failure, and a
+    cycle where any OTHER device answered is then reported as a success. The
+    worker keeps running, the lock stays held, and coordinator's handler for
+    exactly this never sees it.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"p1": {}}}}}
+    api.make_api_call = _out_of_time
+
+    with pytest.raises(exceptions.PollDeadlineExceeded):
+        api._fetch_parameter_values("1234")
+
+
+def test_the_deadline_is_not_reported_as_an_unreadable_status():
+    """Same handler shape, one step earlier: an unreadable status must not
+    stop the poll, but a spent budget must."""
+    api = _offline_api(0)
+    api.make_api_call = _out_of_time
+
+    with pytest.raises(exceptions.PollDeadlineExceeded):
+        api._fetch_device_status("1234")
+
+
+def test_the_deadline_is_not_swallowed_by_the_schedule_fetch():
+    """One heating programme failing is not a reason to skip the rest - but
+    running out of time is a reason to stop all of them.
+
+    The recognition and throttle steps are stubbed past on purpose: what is
+    under test is the handler around the read, and building a module the real
+    ones accept would put the test's own setup between it and the handler.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"p1": {}}}}}
+    api._is_schedule_parameter = lambda *_args: True
+    api._schedule_is_due = lambda *_args: True
+    api._record_schedule_attempt = lambda *_args: None
+    api._read_one_schedule = _out_of_time
+
+    with pytest.raises(exceptions.PollDeadlineExceeded):
+        api._fetch_circuit_times("1234")
+
+
+def test_the_deadline_is_not_swallowed_by_the_statistics_fetch(monkeypatch):
+    """The statistics path already lets ForbiddenError past its catch-all for
+    the same reason. The deadline was not given the same treatment.
+
+    The refresh call has to SUCCEED for this to mean anything: it sits outside
+    every try block, so a stub that fails on the first call reaches no handler
+    at all and the test passes while proving nothing. Written that way first,
+    and it was green before the fix.
+    """
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _seconds: None)
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    calls = []
+
+    def refresh_then_run_out(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            return FakeResponse({"GroupTypeDescriptions": [{"GroupType": 1}]})
+        raise exceptions.PollDeadlineExceeded("passed its 330s budget and stopped")
+
+    api.make_api_call = refresh_then_run_out
+
+    with pytest.raises(exceptions.PollDeadlineExceeded):
+        api._fetch_device_statistics("1234")
+
+    assert len(calls) == 2, "the group read was never reached, so no handler was"
+
+
 def test_an_operation_outside_a_poll_is_not_deadlined():
     """Only fetch_data sets a deadline. An on-demand write has a user waiting
     on it and no coordinator timeout behind it, so it must run even when the
