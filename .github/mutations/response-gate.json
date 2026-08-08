@@ -1888,5 +1888,12 @@
     "old": "        self._check_abort()\n        self._check_cooldown()",
     "new": "        self._check_cooldown()",
     "tests": "a_form_retry_stops_when_the_entry_went_away_meanwhile"
+  },
+  {
+    "label": "harness: results detached from the cases they belong to",
+    "path": ".github/scripts/mutate.py",
+    "old": "            results = list(pool.map(one, cases))",
+    "new": "            results = sorted(pool.map(one, cases))",
+    "tests": "results_are_reported_in_plan_order"
   }
 ]

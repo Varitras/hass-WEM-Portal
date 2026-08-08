@@ -99,15 +99,22 @@ def test_the_original_comes_back_byte_for_byte(tmp_path, monkeypatch):
 def test_restoring_leaves_nothing_behind(tmp_path, monkeypatch):
     """One temp directory per case was created and never removed - a full run
     left as many as the plan has entries, each holding a copy of a source
-    file. The original is kept in memory instead."""
+    file. The original is kept in memory instead.
+
+    Pointed at a temp directory of its own rather than the machine's: the
+    system one belongs to every process on the box, so any of them creating a
+    file while this runs failed a test about this code.
+    """
     target = tmp_path / "module.py"
     target.write_text("value = 1\n", encoding="utf-8")
     monkeypatch.setattr(mutate, "REPO", tmp_path)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
 
-    before = set(Path(tempfile.gettempdir()).iterdir())
     mutate.apply_mutation({"path": "module.py", "old": "value = 1", "new": "value = 2"})
 
-    assert set(Path(tempfile.gettempdir()).iterdir()) == before
+    assert list(Path(tempfile.gettempdir()).iterdir()) == []
 
 
 def test_a_selector_matching_no_tests_is_an_error(monkeypatch):
@@ -504,25 +511,35 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
     )
 
     def slowest_first(selector, paths=None, root=None):
+        # WHICH case this is comes from the mutated file in this worker's own
+        # tree, not from the worker's number: the pool hands cases to whatever
+        # worker is free, so the two are only incidentally the same.
+        mutated = (root / "module.py").read_text(encoding="utf-8")
+        index = next(number for number in range(3) if f"value{number} = 2" in mutated)
         # case0 takes longest, so finishing order is the reverse of plan order.
-        index = int(root.name.removeprefix("worker"))
         time.sleep(0.05 * (3 - index))
-        return True
+        # A DIFFERENT answer per case, which is the point. With every case
+        # answering the same, a result attached to the wrong case produces
+        # identical output and the assertion below cannot see it - the whole
+        # thing passed while proving only that three lines were printed.
+        return index != 1
 
     monkeypatch.setattr(mutate, "run_tests", slowest_first)
     plan = _plan_of(3, tmp_path)
     monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "3"])
 
-    assert mutate.main() == 0
+    assert mutate.main() == 1, "a surviving case must fail the run"
 
     reported = [
-        line.split()[-1]
+        (line.split()[0], line.split()[-1])
         for line in capsys.readouterr().out.splitlines()
-        if line.startswith("caught")
+        if line.startswith(("caught", "SURVIVED"))
     ]
-    assert reported == ["case0", "case1", "case2"], (
-        "results were reported in finishing order, not plan order"
-    )
+    assert reported == [
+        ("caught", "case0"),
+        ("SURVIVED", "case1"),
+        ("caught", "case2"),
+    ], "results were reported in finishing order, or attached to the wrong case"
 
 
 def test_a_copy_missing_a_mutated_file_is_an_error(tmp_path, monkeypatch):
