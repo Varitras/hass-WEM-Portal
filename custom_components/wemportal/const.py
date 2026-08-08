@@ -280,6 +280,19 @@ STATISTICS_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
 # alone; nothing was asked, so nothing was refused.
 SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE: Final = 3
 
+# The same thought on the API side, which had none: one failed cycle used to
+# take every entity of the account unavailable at once. The portal answers a
+# cycle with "Unbekannter Fehler" now and then and the next one succeeds, so a
+# single failure says nothing - but at the default interval it costs half an
+# hour of every graph and sends automations a state change on the way out and
+# back.
+#
+# One rather than the scrape's three, because an API cycle is the expensive
+# one: at the default interval three failures is an hour and a half of
+# readings presented as current. The counter is the coordinator's own, reset
+# by any successful cycle.
+API_FAILURES_TOLERATED: Final = 1
+
 # Backoff after a 403 on the EXPERT (Fachmann) path only.
 #
 # A 403 does not necessarily mean the portal is rate-limiting our IP: it can

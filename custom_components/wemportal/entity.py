@@ -7,6 +7,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import get_wemportal_unique_id
+from .const import API_FAILURES_TOLERATED
 from .models import raise_if_not_writable
 from .utils import build_device_info, device_is_reachable, device_model
 
@@ -142,7 +143,23 @@ class WemPortalEntity(CoordinatorEntity):
 
     @property
     def available(self):
-        """Return if entity is available."""
-        return self.coordinator.last_update_success and device_is_reachable(
+        """Return if entity is available.
+
+        One failed cycle is not an outage. The portal answers with
+        "Unbekannter Fehler" now and then and the next cycle succeeds, and
+        taking every entity of the account unavailable for that costs half an
+        hour of every graph at the default interval - plus a state change out
+        and back for anything automating on it. The web scrape already worked
+        this way; the API side did not.
+
+        The readings themselves are unaffected: a device that stops answering
+        still has its values aged out, and the count resets on any successful
+        cycle, so a real outage still shows within two.
+        """
+        readings_are_worth_showing = (
+            self.coordinator.last_update_success
+            or self.coordinator.num_failed <= API_FAILURES_TOLERATED
+        )
+        return readings_are_worth_showing and device_is_reachable(
             self.coordinator.data, self._device_id
         )

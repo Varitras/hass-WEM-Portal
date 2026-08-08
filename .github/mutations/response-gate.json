@@ -282,8 +282,8 @@
   {
     "label": "base: an unreachable device must still take its entities offline",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        return self.coordinator.last_update_success and device_is_reachable(\n            self.coordinator.data, self._device_id\n        )",
-    "new": "        return self.coordinator.last_update_success",
+    "old": "        return readings_are_worth_showing and device_is_reachable(\n            self.coordinator.data, self._device_id\n        )",
+    "new": "        return readings_are_worth_showing",
     "tests": "unreachable_device_takes_its_entities"
   },
   {
@@ -1633,8 +1633,8 @@
   {
     "label": "freshness: a silent device left publishing its last values",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                failures.append(f\"device {device_id}: {failure}\")\n                self._forget_stale_device_values(device_id)",
-    "new": "                failures.append(f\"device {device_id}: {failure}\")",
+    "old": "                failures.append(f\"device {short_device_id(device_id)}: {failure}\")\n                self._forget_stale_device_values(device_id)",
+    "new": "                failures.append(f\"device {short_device_id(device_id)}: {failure}\")",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -2196,5 +2196,26 @@
     "old": "        factory_default = delivered[0].text_content().strip() if delivered else None",
     "new": "        factory_default = None",
     "tests": "the_factory_default_is_read_from_the_dialog"
+  },
+  {
+    "label": "base: a single failed cycle taking every entity with it again",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "            or self.coordinator.num_failed <= API_FAILURES_TOLERATED",
+    "new": "            or False",
+    "tests": "one_failed_cycle_does_not_take_every_entity_with_it"
+  },
+  {
+    "label": "base: an open licence to show readings from a dead portal",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        readings_are_worth_showing = (\n            self.coordinator.last_update_success\n            or self.coordinator.num_failed <= API_FAILURES_TOLERATED\n        )",
+    "new": "        readings_are_worth_showing = True",
+    "tests": "a_second_failed_cycle_does_take_them"
+  },
+  {
+    "label": "privacy: the full device id back in a message written to be shared",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return f\"…{text[-2:]}\" if len(text) > 2 else text",
+    "new": "    return text",
+    "tests": "a_failed_cycle_says_why_it_failed"
   }
 ]

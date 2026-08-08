@@ -31,7 +31,7 @@ SHARED = ("device_info", "available")
 ALLOWED_OVERRIDES = {"sensor"}
 
 
-def _entity(cls, reachable=True, **overrides):
+def _entity(cls, reachable=True, last_update_success=True, num_failed=0, **overrides):
     """One entity of `cls`, built without Home Assistant."""
     row = {
         "value": 1.0,
@@ -53,7 +53,8 @@ def _entity(cls, reachable=True, **overrides):
     coordinator = types.SimpleNamespace(
         data={"1234": {"Pump": row, "1234-ConnectionStatus": status}},
         api=types.SimpleNamespace(api_version="2.0", modules={}),
-        last_update_success=True,
+        last_update_success=last_update_success,
+        num_failed=num_failed,
         async_add_listener=lambda *_args, **_kwargs: None,
     )
     entry = types.SimpleNamespace(entry_id="e1")
@@ -175,6 +176,37 @@ def test_an_unreachable_device_takes_its_entities_with_it():
     doing its job for a platform that no longer carries its own copy."""
     assert _entity(WemPortalNumber, reachable=True).available is True
     assert _entity(WemPortalNumber, reachable=False).available is False
+
+
+def test_one_failed_cycle_does_not_take_every_entity_with_it():
+    """The portal answers a cycle with "Unbekannter Fehler" and the next one
+    works.
+
+    Every entity of the account went unavailable for that - half an hour of
+    every graph at the default interval, plus a state change out and back for
+    anything automating on it. The web scrape already tolerated three failures
+    before ageing its values; the API side tolerated none.
+    """
+    survives = _entity(WemPortalNumber, last_update_success=False, num_failed=1)
+
+    assert survives.available is True
+
+
+def test_a_second_failed_cycle_does_take_them():
+    """The tolerance is one cycle, not an open licence to show old numbers."""
+    gone = _entity(WemPortalNumber, last_update_success=False, num_failed=2)
+
+    assert gone.available is False
+
+
+def test_an_unreachable_device_stays_gone_through_a_tolerated_failure():
+    """The two rules are independent: a device that is off does not come back
+    just because the cycle it missed was the first one to fail."""
+    still_gone = _entity(
+        WemPortalNumber, reachable=False, last_update_success=False, num_failed=1
+    )
+
+    assert still_gone.available is False
 
 
 # --- the one write path, and its gate ----------------------------------

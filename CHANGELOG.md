@@ -6,7 +6,23 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- **A device id no longer travels in the message that asks you to report it.**
+  When every device's parameter fetch fails, the reason Home Assistant shows
+  ends with "open an issue at <tracker>" - so the whole string is written to be
+  pasted somewhere public, and it carried the installation's device id
+  verbatim. Only its last two digits remain, which is what tells two devices of
+  one account apart and all the message needs it for.
+
 ### Fixed
+- **One failed cycle no longer takes every entity of the account with it.** The
+  portal answers a poll with "Unbekannter Fehler" now and then and the next one
+  succeeds. Every entity went unavailable for that single cycle - half an hour
+  of every graph at the default interval, plus a state change out and back for
+  anything automating on it. The web scrape already tolerated failures before
+  ageing its values; the API side tolerated none. One cycle is tolerated now,
+  the second still reports the outage, and a device that stops answering has
+  its readings aged out exactly as before.
 - **A parameter the portal scales is read the way the portal shows it.** The
   edit form carries each allowed value twice: as the label it displays and as
   the string it wants posted back. For some parameters those differ - 1.5 is

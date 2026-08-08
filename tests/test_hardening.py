@@ -2914,7 +2914,10 @@ def test_a_failed_cycle_says_why_it_failed():
 
     message = str(excinfo.value)
     assert "Read timed out" in message, "the cycle failed without saying why"
-    assert "1234" in message, "which device failed is not named"
+    assert "…34" in message, "which device failed is not named"
+    # The message ends with "open an issue at <tracker>", so it is written to
+    # be pasted somewhere public - and a device id belongs to one installation.
+    assert "1234" not in message, "the full device id went into a shareable message"
 
 
 def test_every_failing_device_is_named_not_just_the_first():

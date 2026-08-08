@@ -85,6 +85,7 @@ from .utils import (
     latest_statistics_entry,
     looks_like_schedule,
     maintenance_notice,
+    short_device_id,
 )
 
 # The three rows a device status read owns. Named once because they are
@@ -2309,7 +2310,7 @@ class WemPortalApi:
                 successes += 1
                 self._last_device_read[device_id] = time.monotonic()
             else:
-                failures.append(f"device {device_id}: {failure}")
+                failures.append(f"device {short_device_id(device_id)}: {failure}")
                 self._forget_stale_device_values(device_id)
             self._fetch_circuit_times(device_id)
 

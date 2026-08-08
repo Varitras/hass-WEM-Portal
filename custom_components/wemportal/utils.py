@@ -73,6 +73,19 @@ def device_identifier(entry_id, device_id):
     return (DOMAIN, f"{entry_id}:{device_id}")
 
 
+def short_device_id(device_id) -> str:
+    """A device id shortened for text the user is invited to publish.
+
+    The failure it appears in ends with "open an issue at <tracker>", so the
+    whole string gets pasted into a public tracker as it stands - and a device
+    id belongs to one installation. The TAIL rather than the head, because the
+    ids of one account share their leading digits and the tail is what tells
+    two of them apart, which is all the message needs it for.
+    """
+    text = str(device_id or "")
+    return f"…{text[-2:]}" if len(text) > 2 else text
+
+
 def close_api_sessions(api) -> None:
     """Close a WemPortalApi's HTTP sessions, under its own lock.
 
