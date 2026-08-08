@@ -179,6 +179,30 @@ class WemPortalScraper:
             )
         return min(SCRAPER_REQUEST_TIMEOUT_SECONDS, remaining)
 
+    def _transport_failure(self, exc, what):
+        """The right exception for a request that never came back.
+
+        A timeout is normally the portal's problem. But the timeout handed to
+        the request may have been the cycle's REMAINING BUDGET rather than the
+        scrape's own - and then running out of it is the cycle stopping
+        itself, which the coordinator treats differently on purpose: its
+        deadline branch keeps the warm session, while two ordinary failures
+        discard it and send the next cycle through a cold login.
+
+        Returns the exception rather than raising it, so the `raise` stays at
+        the call site where the control flow is visible.
+        """
+        budget_is_spent = False
+        if self._budget is not None:
+            remaining = self._budget()
+            budget_is_spent = remaining is not None and remaining <= 0
+        if budget_is_spent:
+            return PollDeadlineExceeded(
+                f"The poll cycle ran out of time while trying to {what}. Its "
+                "partial readings are kept; the next cycle continues from them."
+            )
+        return ServerError(f"Could not {what}: {exc}")
+
     def close(self):
         """Release the underlying HTTP session/connection.
 
@@ -379,8 +403,8 @@ class WemPortalScraper:
             # nothing about the credentials. Reported as AuthError it fed the
             # reauth counter, so three network hiccups in a row could ask the
             # user to re-enter a working password.
-            raise ServerError(
-                f"Could not reach the WEM Portal login page: {exc}"
+            raise self._transport_failure(
+                exc, "reach the WEM Portal login page"
             ) from exc
         # Deliberately outside the try block: our own ForbiddenError /
         # AuthError below must propagate as-is instead of being caught by

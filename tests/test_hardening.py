@@ -1233,6 +1233,47 @@ def test_a_scrape_request_may_not_outlast_what_is_left_of_the_budget():
     )
 
 
+def test_a_request_that_ran_out_the_budget_is_reported_as_the_deadline():
+    """The other end of capping a request at the remaining budget.
+
+    Capped, the request times out ON that budget - and reported as an
+    ordinary transport failure it is the coordinator's second failure, which
+    discards the warm session and sends the next cycle through a cold login.
+    Its deadline branch exists to avoid exactly that.
+    """
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    spent = [5.0]
+
+    class _TimesOutSession:
+        def get(self, *_args, **_kwargs):
+            # The budget is gone by the time the request gives up.
+            spent[0] = 0.0
+            raise TimeoutError("timed out")
+
+    scraper = WemPortalScraper("user@example.org", "secret", budget=lambda: spent[0])
+    scraper.session = _TimesOutSession()
+
+    with pytest.raises(exceptions.PollDeadlineExceeded):
+        scraper.scrape()
+
+
+def test_a_plain_network_failure_is_still_a_server_error():
+    """The counter-test: with budget left, a timeout is the portal's problem
+    and must keep its own classification."""
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    class _TimesOutSession:
+        def get(self, *_args, **_kwargs):
+            raise TimeoutError("timed out")
+
+    scraper = WemPortalScraper("user@example.org", "secret", budget=lambda: 30.0)
+    scraper.session = _TimesOutSession()
+
+    with pytest.raises(exceptions.ServerError):
+        scraper.scrape()
+
+
 def test_a_scrape_does_not_start_a_request_it_has_no_budget_for():
     """Checked before EVERY request, not only before the scrape: the budget
     can run out between them, and the next one is what spends it."""
