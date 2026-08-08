@@ -367,12 +367,6 @@ class WemPortalExpertClient:
         # the old fixed pre-poll loop with a demand-driven one (early exit
         # as soon as the dropdown is populated). Updated as polls advance.
         self._nav_html = None
-        # Optional hook for standalone debugging (set by wem_debug.py, never
-        # used by the real integration): if set, called as
-        # hook(step_name, url, fields, session) right before every POST,
-        # letting an external tool export the exact computed field values
-        # for a manual replay test. Never invoked/needed in normal operation.
-        self._export_hook = None
 
     # ------------------------------------------------------------------
     def _check_gates(self):
@@ -825,14 +819,6 @@ class WemPortalExpertClient:
             "Accept": WEB_ACCEPT_AJAX,
             "Accept-Language": WEB_ACCEPT_LANGUAGE,
         }
-        if self._export_hook is not None:
-            self._export_hook(
-                "security_code",
-                dialog_url,
-                dict(fields),
-                dict(security_headers),
-                self.session,
-            )
         code_response = self.session.post(
             dialog_url,
             data=fields,
@@ -968,10 +954,6 @@ class WemPortalExpertClient:
                 "Accept": WEB_ACCEPT_NAV,
                 "Accept-Language": WEB_ACCEPT_LANGUAGE,
             }
-        if self._export_hook is not None:
-            self._export_hook(
-                event_target, url, dict(fields), dict(headers), self.session
-            )
         if async_postback:
             response = self.session.post(
                 url,

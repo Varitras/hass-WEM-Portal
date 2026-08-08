@@ -294,11 +294,11 @@ def test_a_reloaded_entry_invalidates_an_operation_holding_the_old_state():
     entity = _writeable(WemPortalNumber)
     old_state = entity._config_entry.runtime_data
 
-    assert old_state.is_current_for(entity._config_entry) is True
+    assert old_state.why_not_current(entity._config_entry) is None
 
     entity._config_entry.runtime_data = WemPortalData(api=None, coordinator=None)
 
-    assert old_state.is_current_for(entity._config_entry) is False
+    assert old_state.why_not_current(entity._config_entry) is not None
     assert "reloaded" in old_state.why_not_current(entity._config_entry)
 
 
@@ -311,9 +311,9 @@ def test_the_teardown_is_announced_as_an_operation():
     entry = types.SimpleNamespace(entry_id="e1")
     entry.runtime_data = data
 
-    assert data.is_current_for(entry) is True
+    assert data.why_not_current(entry) is None
 
     data.begin_unload()
 
-    assert data.is_current_for(entry) is False
+    assert data.why_not_current(entry) is not None
     assert "unload" in data.why_not_current(entry)

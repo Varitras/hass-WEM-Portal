@@ -90,10 +90,6 @@ class WemPortalData:
             return "the integration is being unloaded"
         return None
 
-    def is_current_for(self, config_entry) -> bool:
-        """Whether an operation holding this state may still act."""
-        return self.why_not_current(config_entry) is None
-
 
 # The entry type carrying the above, so `entry.runtime_data` is typed at every
 # use instead of being an untyped dict lookup.
