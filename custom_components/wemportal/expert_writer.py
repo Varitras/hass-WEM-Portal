@@ -375,6 +375,25 @@ class WemPortalExpertClient:
         self._export_hook = None
 
     # ------------------------------------------------------------------
+    def _check_gates(self):
+        """Both reasons not to make the next portal request, in one place.
+
+        They are asked at the same moments and mean the same thing to the
+        caller - do not send this. Kept apart, they drifted: the cooldown was
+        checked at thirteen points and the abort at five, so a teardown that
+        landed inside the four form attempts went unnoticed until the whole
+        sequence had run, and the executor kept navigating the portal with
+        the credentials of an entry that was gone.
+
+        Abort before cooldown: an operation whose configuration has been torn
+        down should say that, not report a portal refusal - the latter starts
+        a cooldown over a request nobody was going to make.
+
+        Both are no-ops when their callable was not supplied.
+        """
+        self._check_abort()
+        self._check_cooldown()
+
     def _check_cooldown(self):
         if self._cooldown_check is not None:
             self._cooldown_check()
@@ -644,7 +663,7 @@ class WemPortalExpertClient:
             # without error but never materialised the unlock (empty
             # parameter dropdown afterwards). A single postback, NOT the
             # generic poll loop, keeps the added server load minimal.
-            self._check_cooldown()
+            self._check_gates()
             current_html = self._postback(
                 WEB_MAIN_URL,
                 current_html,
@@ -748,7 +767,7 @@ class WemPortalExpertClient:
         """
         if not self._nav_html:
             return
-        self._check_cooldown()
+        self._check_gates()
         self._nav_html = self._postback(
             WEB_MAIN_URL,
             self._nav_html,
@@ -796,7 +815,7 @@ class WemPortalExpertClient:
         fields[EXPERT_DIALOG_TSM_FIELD] = EXPERT_DIALOG_TSM_VALUE
         fields[EXPERT_DIALOG_TSM_ID_FIELD] = EXPERT_DIALOG_TSM_ID_VALUE
         fields[EXPERT_DIALOG_RTS_STATE_FIELD] = EXPERT_DIALOG_RTS_STATE_VALUE
-        self._check_cooldown()
+        self._check_gates()
         security_headers = {
             "X-MicrosoftAjax": "Delta=true",
             "Referer": dialog_url,
@@ -920,7 +939,7 @@ class WemPortalExpertClient:
         # async postback, which doesn't apply to a full postback.
         fields[EXPERT_PAGE_TSM_ID_FIELD] = EXPERT_PAGE_TSM_VALUE
 
-        self._check_cooldown()
+        self._check_gates()
         if async_postback:
             # Telerik async postback: marker field + header, response is a
             # delta stream we keep parsing for the next state.
@@ -1056,7 +1075,7 @@ class WemPortalExpertClient:
         only when explicitly invoked - never periodically.
         """
         self._validate_entityvalue(entityvalue)
-        self._check_cooldown()
+        self._check_gates()
         try:
             self._login()
             return self._fetch_form(entityvalue)
@@ -1090,18 +1109,18 @@ class WemPortalExpertClient:
         ids = [candidate for candidate in ids if _is_valid_entityvalue(candidate)]
         if not ids:
             return result
-        self._check_cooldown()
+        self._check_gates()
         # Same cooperative stop the write path has. Cancelling the auto-poll
         # cancels the AWAIT, not this thread, so an unload halfway through a
         # batch kept navigating the portal with the credentials of an entry
         # being torn down - and the longer the batch, the longer that lasted.
         # Outside the per-id try below, which turns an exception into "this
         # id could not be read" and would swallow the stop.
-        self._check_abort()
+        self._check_gates()
         try:
             self._login()
             for entityvalue in ids:
-                self._check_abort()
+                self._check_gates()
                 try:
                     result[entityvalue] = self._fetch_form(entityvalue)
                 except ForbiddenError:
@@ -1125,7 +1144,7 @@ class WemPortalExpertClient:
         session). _establish_context leaves the Fachmann main page in
         self._nav_html, which carries the icon menu we parse.
         """
-        self._check_cooldown()
+        self._check_gates()
         try:
             self._login()
             return parse_module_list(self._nav_html or "")
@@ -1143,7 +1162,7 @@ class WemPortalExpertClient:
         """
         result = []
         seen = set()
-        self._check_cooldown()
+        self._check_gates()
         try:
             self._login()
             for module in modules or []:
@@ -1200,7 +1219,7 @@ class WemPortalExpertClient:
             )
             return self._nav_html
 
-        self._check_cooldown()
+        self._check_gates()
         response = self.session.get(
             WEB_MAIN_URL,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
@@ -1239,14 +1258,13 @@ class WemPortalExpertClient:
         if the server did not accept the value.
         """
         self._validate_entityvalue(entityvalue)
-        self._check_cooldown()
-        self._check_abort()
+        self._check_gates()
         try:
             self._login()
             # Again after the login: it is the slow part (several requests),
             # and an unload during it used to be noticed only after the write
             # had already happened.
-            self._check_abort()
+            self._check_gates()
             state = self._fetch_form(entityvalue)
 
             # Validate against the live option list; option values are the
@@ -1271,10 +1289,10 @@ class WemPortalExpertClient:
             post_data["__EVENTARGUMENT"] = ""
             post_data["ctl00$DialogContent$ddlNewValue"] = value_str
 
-            self._check_cooldown()
+            self._check_gates()
             # The last gate before the request that actually CHANGES a
             # heating parameter. Everything up to here is reads.
-            self._check_abort()
+            self._check_gates()
             response = self.session.post(
                 EXPERT_PARAMETER_URL,
                 params={
@@ -1355,7 +1373,7 @@ class WemPortalExpertClient:
             max_attempts = EXPERT_FORM_MAX_ATTEMPTS
         last_error = None
         for attempt in range(max_attempts):
-            self._check_cooldown()
+            self._check_gates()
             response = self.session.get(
                 EXPERT_PARAMETER_URL,
                 params={

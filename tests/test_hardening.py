@@ -480,6 +480,56 @@ def _read_state(current, options):
     return expert_writer.ExpertParameterState(current, options, {})
 
 
+class _DialogNotReady:
+    """A parameter dialog whose dropdown has not been filled in yet."""
+
+    status_code = 200
+    text = "<html><body>not ready</body></html>"
+    url = "https://www.wemportal.com/Web/UControls/Weishaupt/ExpertParameter.aspx"
+
+
+def test_a_form_retry_stops_when_the_entry_went_away_meanwhile(monkeypatch):
+    """The abort gate has to be inside the retry loop, not only around it.
+
+    Reading one parameter can take four attempts with a three-second pause
+    and a live-value postback between them. The gate was checked before the
+    login and between parameters, so a teardown landing inside those attempts
+    was not noticed until the whole sequence had finished - the executor kept
+    navigating the portal with the credentials of an entry that was gone.
+    """
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
+
+    torn_down = []
+
+    def abort_check():
+        if torn_down:
+            raise ExpertOperationAborted("the entry is being unloaded")
+
+    requests = []
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            requests.append(1)
+            # The unload lands while this request is in flight.
+            torn_down.append(True)
+            return _DialogNotReady()
+
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", abort_check=abort_check
+    )
+    client.session = _Session()
+    client._poll_live_values_once = lambda: None
+    monkeypatch.setattr(expert_writer.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(ExpertOperationAborted):
+        client._fetch_form("A" * 36)
+
+    assert len(requests) == 1, (
+        "a second request went to the portal after the entry was torn down"
+    )
+
+
 def test_an_expert_parameter_does_not_claim_to_be_a_percentage():
     """Every slot was modelled as a percentage. The portal says no such thing
     - the edit form carries a list of allowed values and no unit at all - so
