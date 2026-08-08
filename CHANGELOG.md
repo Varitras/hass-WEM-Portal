@@ -15,6 +15,19 @@ versioning follows [Semantic Versioning](https://semver.org/).
   one account apart and all the message needs it for.
 
 ### Fixed
+- **A teardown during discovery ends the flow, for real this time.** The abort
+  was translated into Home Assistant's own flow abort, but both callers wrap
+  the discovery call in `except Exception` - and that abort reaches `Exception`
+  through two base classes. So it was caught one frame above where it was
+  raised and shown as "the search failed", the exact wording the translation
+  exists to avoid. The previous test called the translating helper directly,
+  which is precisely where the problem was not.
+- **The single-failed-cycle tolerance reaches the sensors too.** They are most
+  of the entities on an installation, and they were the ones it did not reach:
+  the sensor platform overrides availability for its three diagnostic entities
+  and spelled the cycle rule out again alongside. The rule now lives in one
+  place that the override asks, and the test covers every platform rather than
+  one.
 - **Discovery offers the parameters that stand alone in their section.** The
   edit link carries a `readdata` flag, and it was read as "False means an
   aggregate entry with no value dialog" - so every parameter the portal shows

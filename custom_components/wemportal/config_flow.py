@@ -801,6 +801,12 @@ class WemportalOptionsFlow(OptionsFlow):
             client = self._expert_client()
             try:
                 modules = await self._run_expert(client.list_modules)
+            # Before the catch-all below: AbortFlow reaches Exception through
+            # FlowError and HomeAssistantError, so the broad clause turned the
+            # deliberate stop back into "discovery_failed" - the exact wording
+            # _run_expert translates it away from.
+            except AbortFlow:
+                raise
             except ExpertBusy:
                 _LOGGER.debug("Expert discovery: another operation holds the lock.")
                 errors["base"] = "discovery_busy"
@@ -859,6 +865,9 @@ class WemportalOptionsFlow(OptionsFlow):
             client = self._expert_client()
             try:
                 self._discovered = await self._run_expert(client.discover, modules)
+            # See the module list above: the catch-all swallows AbortFlow.
+            except AbortFlow:
+                raise
             except ExpertBusy:
                 _LOGGER.debug("Expert discovery: another operation holds the lock.")
                 self._discovery_error = "discovery_busy"

@@ -42,12 +42,18 @@ class ParameterWriteError(WemPortalError):
 
     Carries the form state read during the attempt, where the attempt got far
     enough to read one. A refusal is the one failure that still knows exactly
-    what the portal currently offers, and an entity holding a stale range is
-    the reason a value gets refused in the first place: it published 10 to 300
-    for a parameter that accepts 1.0 to 30.0, so the value the user needs is
-    the one Home Assistant will not let them enter. Reporting the failure
-    while throwing that knowledge away leaves the entity stuck exactly where
-    it was.
+    what the portal currently offers, and a caller whose idea of the range has
+    gone stale is the one that lands here - a heating parameter's limits can
+    depend on other settings, so a range read weeks ago need not still hold.
+    Reporting the failure while throwing that knowledge away leaves the entity
+    on the range that caused it.
+
+    What this does NOT reach: a published range so far off that Home Assistant
+    refuses the value first. It validates against min/max before the entity is
+    asked, so the write that would correct the range never arrives. Only a
+    value the published range still admits gets far enough to be refused by
+    the portal - which is the case where the two ranges overlap, and that is
+    the case this is for.
     """
 
     def __init__(self, message, state=None):

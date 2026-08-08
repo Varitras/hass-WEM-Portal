@@ -3480,12 +3480,17 @@ def test_a_failed_write_reaches_whoever_asked_for_it(monkeypatch):
 
 
 def test_a_refusal_corrects_the_range_that_caused_it(monkeypatch):
-    """Otherwise the entity keeps refusing the only values that would work.
+    """Otherwise the entity keeps offering a range the portal has moved past.
 
-    A slot stored before the scaling fix holds 10 to 300 for a parameter that
-    accepts 1.0 to 30.0, and nothing on the entity's own path can correct
-    that: the auto-poll is off by default, and a write is the one thing left -
-    which Home Assistant refuses first, against the stale range.
+    A heating parameter's limits can depend on other settings, so a range read
+    weeks ago need not still hold - and the auto-poll that would notice is off
+    by default.
+
+    Calls the entity method directly, which is NOT the full path: Home
+    Assistant validates a value against the published min/max before asking
+    the entity, so a value outside the published range never reaches this
+    code. What is covered here is the case that does reach it - a value the
+    published range still admits and the portal refuses.
     """
     import asyncio
 

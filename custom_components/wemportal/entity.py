@@ -156,10 +156,20 @@ class WemPortalEntity(CoordinatorEntity):
         still has its values aged out, and the count resets on any successful
         cycle, so a real outage still shows within two.
         """
-        readings_are_worth_showing = (
+        return self._cycle_is_worth_showing() and device_is_reachable(
+            self.coordinator.data, self._device_id
+        )
+
+    def _cycle_is_worth_showing(self) -> bool:
+        """Whether the last cycle's outcome allows showing anything at all.
+
+        Its own method because `available` is overridden where a platform has
+        a second rule of its own - the sensor platform keeps its three
+        diagnostic entities alive for an unreachable device - and an override
+        that reimplements this half is how the tolerance came to apply to
+        numbers but not to sensors.
+        """
+        return (
             self.coordinator.last_update_success
             or self.coordinator.num_failed <= API_FAILURES_TOLERATED
-        )
-        return readings_are_worth_showing and device_is_reachable(
-            self.coordinator.data, self._device_id
         )

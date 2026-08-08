@@ -487,8 +487,14 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
 
     @property
     def available(self):
-        """Return if entity is available."""
-        if not self.coordinator.last_update_success:
+        """Return if entity is available.
+
+        Overrides the base for the second rule below, and asks the base for
+        the first: the tolerance of a single failed cycle lives there, and
+        spelling it out again here is how it came to apply to every platform
+        except this one - which is most of the entities on an installation.
+        """
+        if not self._cycle_is_worth_showing():
             return False
         # The diagnostic sensors stay available even for an unreachable
         # device: they are what explains WHY everything else went away.

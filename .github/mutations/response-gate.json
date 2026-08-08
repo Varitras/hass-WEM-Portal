@@ -282,8 +282,8 @@
   {
     "label": "base: an unreachable device must still take its entities offline",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        return readings_are_worth_showing and device_is_reachable(\n            self.coordinator.data, self._device_id\n        )",
-    "new": "        return readings_are_worth_showing",
+    "old": "        return self._cycle_is_worth_showing() and device_is_reachable(\n            self.coordinator.data, self._device_id\n        )",
+    "new": "        return self._cycle_is_worth_showing()",
     "tests": "unreachable_device_takes_its_entities"
   },
   {
@@ -2207,8 +2207,8 @@
   {
     "label": "base: an open licence to show readings from a dead portal",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        readings_are_worth_showing = (\n            self.coordinator.last_update_success\n            or self.coordinator.num_failed <= API_FAILURES_TOLERATED\n        )",
-    "new": "        readings_are_worth_showing = True",
+    "old": "        return (\n            self.coordinator.last_update_success\n            or self.coordinator.num_failed <= API_FAILURES_TOLERATED\n        )",
+    "new": "        return True",
     "tests": "a_second_failed_cycle_does_take_them"
   },
   {
@@ -2224,5 +2224,19 @@
     "old": "            match = _EDIT_LINK_RE.search(icon.get(\"onclick\") or \"\")\n            if not match:\n                continue",
     "new": "            match = _EDIT_LINK_RE.search(icon.get(\"onclick\") or \"\")\n            if not match or \"readdata=False\" in (icon.get(\"onclick\") or \"\"):\n                continue",
     "tests": "a_parameter_alone_in_its_section_is_offered_by_discovery_too"
+  },
+  {
+    "label": "flow: the module step swallowing the abort again",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            except AbortFlow:\n                raise\n            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                errors[\"base\"] = \"discovery_busy\"",
+    "new": "            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                errors[\"base\"] = \"discovery_busy\"",
+    "tests": "the_abort_survives_the_step_that_calls_it"
+  },
+  {
+    "label": "flow: the discovery step swallowing the abort again",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            except AbortFlow:\n                raise\n            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                self._discovery_error = \"discovery_busy\"",
+    "new": "            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                self._discovery_error = \"discovery_busy\"",
+    "tests": "the_abort_survives_the_step_that_calls_it"
   }
 ]

@@ -750,6 +750,60 @@ async def test_an_aborted_discovery_ends_the_flow_instead_of_escaping(
         await flow._run_expert(the_entry_went_away)
 
 
+@pytest.mark.parametrize(
+    "step, user_input",
+    [
+        # A refresh is what makes the module step fetch the list at all; the
+        # discovery step calls the portal on any input.
+        ("async_step_discover_modules", {"refresh": True}),
+        ("async_step_run_discovery", {"modules": ["1"]}),
+    ],
+)
+async def test_the_abort_survives_the_step_that_calls_it(
+    hass, monkeypatch, step, user_input
+):
+    """The translation above is only half the journey - it has to arrive.
+
+    Driven through the FLOW STEP, not through _run_expert: both callers wrap
+    it in `except Exception`, and AbortFlow reaches Exception through
+    FlowError and HomeAssistantError. So the deliberate stop was caught one
+    frame above where it was raised and shown as "discovery_failed" - the
+    exact wording the translation exists to avoid. The test that called
+    _run_expert directly could not see that, because the swallowing happens
+    in the caller.
+    """
+    from homeassistant.data_entry_flow import AbortFlow
+
+    from custom_components.wemportal import config_flow as flow_module
+    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
+
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    flow = WemportalOptionsFlow()
+    flow.hass = hass
+    monkeypatch.setattr(type(flow), "config_entry", property(lambda self: entry))
+    flow._modules = ["1"]
+    flow._selected_modules = ["1"]
+
+    class _AbortingClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __getattr__(self, _name):
+            def stop(*_args, **_kwargs):
+                raise ExpertOperationAborted("the integration is being unloaded")
+
+            return stop
+
+    monkeypatch.setattr(
+        flow_module, "WemPortalExpertClient", _AbortingClient, raising=False
+    )
+    monkeypatch.setattr(flow, "_expert_client", lambda: _AbortingClient())
+
+    with pytest.raises(AbortFlow):
+        await getattr(flow, step)(user_input)
+
+
 async def test_discovery_stops_when_its_entry_goes_away(hass, monkeypatch):
     """Discovery was the one expert client built without a way to stop.
 

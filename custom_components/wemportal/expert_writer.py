@@ -1945,12 +1945,16 @@ try:
             except ParameterWriteError as exc:
                 # The write failed, and this failure knows what the portal
                 # currently offers. Taking that on board is what stops the
-                # next attempt failing the same way: a range stored before the
-                # scaling fix is off by the portal's own factor, so the value
-                # that WOULD be accepted is outside what this entity lets
-                # anyone enter - and Home Assistant checks the published range
-                # before the integration is asked. Nothing else on this path
-                # can break that circle, with the auto-poll off by default.
+                # next attempt failing the same way - a heating parameter's
+                # limits can depend on other settings, so a range read weeks
+                # ago need not still hold, and the auto-poll that would notice
+                # is off by default.
+                #
+                # It cannot rescue a range that is wildly wrong: Home
+                # Assistant validates against min/max before this entity is
+                # asked, so a value outside the PUBLISHED range never gets
+                # here. This corrects the overlapping case, which is the one
+                # that occurs.
                 #
                 # Before the catch-all below, but also before HomeAssistantError:
                 # WemPortalError derives from it, so the shorter clause would

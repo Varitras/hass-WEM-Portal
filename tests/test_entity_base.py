@@ -178,7 +178,8 @@ def test_an_unreachable_device_takes_its_entities_with_it():
     assert _entity(WemPortalNumber, reachable=False).available is False
 
 
-def test_one_failed_cycle_does_not_take_every_entity_with_it():
+@pytest.mark.parametrize("name", sorted(PLATFORMS))
+def test_one_failed_cycle_does_not_take_every_entity_with_it(name):
     """The portal answers a cycle with "Unbekannter Fehler" and the next one
     works.
 
@@ -186,15 +187,22 @@ def test_one_failed_cycle_does_not_take_every_entity_with_it():
     every graph at the default interval, plus a state change out and back for
     anything automating on it. The web scrape already tolerated three failures
     before ageing its values; the API side tolerated none.
+
+    Every platform, not just one: sensor.py overrides `available` for its
+    diagnostic entities and spelled the cycle rule out again, so the tolerance
+    reached numbers, selects and switches but not the sensors - which are most
+    of the entities on an installation. A test on one platform could not see
+    that.
     """
-    survives = _entity(WemPortalNumber, last_update_success=False, num_failed=1)
+    survives = _entity(PLATFORMS[name], last_update_success=False, num_failed=1)
 
     assert survives.available is True
 
 
-def test_a_second_failed_cycle_does_take_them():
+@pytest.mark.parametrize("name", sorted(PLATFORMS))
+def test_a_second_failed_cycle_does_take_them(name):
     """The tolerance is one cycle, not an open licence to show old numbers."""
-    gone = _entity(WemPortalNumber, last_update_success=False, num_failed=2)
+    gone = _entity(PLATFORMS[name], last_update_success=False, num_failed=2)
 
     assert gone.available is False
 
