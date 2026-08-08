@@ -25,7 +25,6 @@ from .const import (
 from .exceptions import (
     ApiBusyError,
     AuthError,
-    ForbiddenError,
     PollDeadlineExceeded,
     PortalMaintenanceError,
     WemPortalError,
@@ -352,7 +351,11 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # portal that was already too slow to answer in time.
                 _LOGGER.debug("Skipping this cycle: %s", exc)
                 raise UpdateFailed(str(exc)) from exc
-            except (WemPortalError, ForbiddenError) as exc:
+            # ForbiddenError was named here as well, which reads as two
+            # separate cases and is one: it derives from WemPortalError, so
+            # this clause always covered it. test_a_forbidden_error_is_a_
+            # wemportal_error keeps that true.
+            except WemPortalError as exc:
                 self.num_failed += 1
                 self._reset_auth_failures()
                 if self.num_failed >= 2:

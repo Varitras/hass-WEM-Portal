@@ -1167,6 +1167,19 @@ def test_a_device_is_still_found_on_the_minimum_supported_version():
     assert registry.asked == [{("wemportal", "e1:1234")}]
 
 
+def test_a_forbidden_error_is_a_wemportal_error():
+    """What the coordinator's single WemPortalError clause rests on.
+
+    It used to name `(WemPortalError, ForbiddenError)`, which reads as two
+    cases and is one - the second derives from the first. Naming only the
+    parent is correct exactly as long as that holds. Should the inheritance
+    ever change, a 403 would fall past that clause into the generic handler,
+    which resets the transport after two failures: a cold login forced by a
+    rate limit, which is the one response guaranteed to make it worse.
+    """
+    assert issubclass(exceptions.ForbiddenError, exceptions.WemPortalError)
+
+
 def test_an_operation_outside_a_poll_is_not_deadlined():
     """Only fetch_data sets a deadline. An on-demand write has a user waiting
     on it and no coordinator timeout behind it, so it must run even when the

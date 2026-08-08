@@ -1951,5 +1951,12 @@
     "old": "    return registry.async_get_device(identifiers={identifier})",
     "new": "    return None",
     "tests": "a_device_is_still_found_on_the_minimum_supported_version"
+  },
+  {
+    "label": "coordinator: a 403 falling past the clause that was left to cover it",
+    "path": "custom_components/wemportal/exceptions.py",
+    "old": "class ForbiddenError(WemPortalError):",
+    "new": "class ForbiddenError(HomeAssistantError):",
+    "tests": "a_forbidden_error_is_a_wemportal_error"
   }
 ]
