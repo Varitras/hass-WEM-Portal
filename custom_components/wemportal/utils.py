@@ -118,7 +118,7 @@ def build_device_info(entry_id, device_id, sw_version=None, model=None):
     return info
 
 
-def sanitize_value(value_str, unit=None, name=""):
+def sanitize_value(value_str):
     """Sanitize typical German/English WEM Portal strings into numeric values.
 
     This is the single, shared implementation used by both the API mapper
@@ -128,15 +128,16 @@ def sanitize_value(value_str, unit=None, name=""):
     one code path but not the other. Consolidating it here fixes that
     inconsistency once, for both paths.
 
+    It took a `unit` and a `name` until neither was read any more. `name`
+    was how energy and power sensors were told apart, back when only they
+    turned a missing-data placeholder into None; that now applies to every
+    sensor, so there is nothing left to tell apart. `unit` had already
+    stopped deciding anything when boolean values became always-numeric -
+    see the note below.
+
     Args:
         value_str: The raw string value coming from the portal (or already
             a non-string value, in which case it is returned unchanged).
-        unit: Currently unused for the boolean branches below (see note),
-            kept for call-site/signature stability.
-        name: The (internal) sensor name, used to detect energy/power
-            sensors so that a "missing data" placeholder becomes None
-            instead of a misleading 0.0 (which would show up as a false
-            reading/spike on the Home Assistant Energy Dashboard).
 
     Returns:
         A float for numeric/boolean values; None for empty or "missing

@@ -23,11 +23,8 @@ def friendly_name_mapper(value: str) -> str:
         "komfort": "komforttemperatur",
         "normal": "normaltemperatur",
     }
-    try:
-        out = friendly_name_dict[value.casefold()]
-    except KeyError:
-        out = value.casefold()
-    return out
+    normalised = value.casefold()
+    return friendly_name_dict.get(normalised, normalised)
 
 
 def translate(language: str, value: str) -> str:

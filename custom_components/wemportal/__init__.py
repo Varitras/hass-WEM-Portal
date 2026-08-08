@@ -457,16 +457,9 @@ def _resolve_expert_entry(hass: HomeAssistant):
 def _async_register_expert_service(hass: HomeAssistant) -> None:
     """Register wemportal.set_expert_parameter (idempotent).
 
-    Takes no entry and no api, which is the point rather than an omission:
-    the service is a single global registration shared by every configured
-    account, so binding it to the one that happened to be loaded first would
-    send every later call to that account. The handler resolves its target on
-    each call instead (see _resolve_expert_entry) and refuses when it cannot
-    tell which account is meant.
-
-    Both were parameters until they were not used by anything - the signature
-    said the registration depended on an account while the code carefully
-    made sure it did not.
+    Takes no entry and no api on purpose: one global registration serves every
+    configured account, so the handler resolves its target per call (see
+    _resolve_expert_entry) and refuses when it cannot tell which is meant.
     """
     # Function-local, like every other expert_writer import in this file:
     # the module pulls curl_cffi and lxml (~140 ms, measured) and this

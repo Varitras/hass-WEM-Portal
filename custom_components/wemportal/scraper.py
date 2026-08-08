@@ -573,7 +573,7 @@ class WemPortalScraper:
         # Handle missing or boolean values (shared, language-independent
         # logic - see utils.sanitize_value for details/rationale).
         if isinstance(value, str):
-            value = sanitize_value(value, unit, name)
+            value = sanitize_value(value)
 
         return (
             name,

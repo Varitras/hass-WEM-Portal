@@ -80,12 +80,12 @@ def _describe_value(
             # (select.py matches the raw value against those
             # names verbatim). Rewriting "Aus" to "Off"/0.0
             # here would silently break that match.
-            final_value = sanitize_value(string_value, value.get("Unit"), name)
+            final_value = sanitize_value(string_value)
         else:
             final_value = string_value
     else:
         if isinstance(final_value, str):
-            final_value = sanitize_value(final_value, value.get("Unit"), name)
+            final_value = sanitize_value(final_value)
 
     return name, {
         "friendlyName": _friendly_name(language, parameter_id, device_module["Name"]),
