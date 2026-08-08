@@ -61,7 +61,8 @@ def scraper():
 
 def _parse(scraper, html):
     result = scraper.parse_expert_page(html)
-    assert isinstance(result, list) and len(result) == 1
+    assert isinstance(result, list)
+    assert len(result) == 1
     data = result[0]
     # The cookie jar is appended under a reserved key, not a sensor.
     assert "cookie" in data

@@ -1877,11 +1877,13 @@ def test_service_texts_exist_in_every_translation_file():
     for name in ("translations/en.json", "translations/de.json"):
         data = _catalogue(name)
         service = data["services"]["set_expert_parameter"]
-        assert service["name"] and service["description"], name
+        assert service["name"], name
+        assert service["description"], name
         fields = service["fields"]
         assert set(fields) == {"entityvalue", "value"}, name
         for field in fields.values():
-            assert field["name"] and field["description"], name
+            assert field["name"], name
+            assert field["description"], name
         # The entityvalue is installation-specific; the warning is part of
         # the contract with the user, not decoration.
         warning = fields["entityvalue"]["description"].lower()
@@ -2463,7 +2465,8 @@ def test_one_fault_too_long_on_its_own_is_cut_and_says_so():
     state, detail = error_state_and_detail(faults)
 
     assert len(state) <= MAX_LENGTH_STATE_STATE
-    assert "..." in state and "(+1 more)" in state
+    assert "..." in state
+    assert "(+1 more)" in state
     assert detail == faults
 
 
@@ -2684,7 +2687,8 @@ def test_every_failing_device_is_named_not_just_the_first():
         api.get_data(enabled_devices=["1234", "5678"])
 
     message = str(excinfo.value)
-    assert "1234" in message and "5678" in message, message
+    assert "1234" in message, message
+    assert "5678" in message, message
 
 
 def test_one_device_that_worked_still_keeps_the_cycle_green():
@@ -2909,7 +2913,8 @@ def test_the_service_value_field_does_not_impose_a_percent_range():
     spec = yaml.safe_load((p / "services.yaml").read_text(encoding="utf-8"))
     number = spec["set_expert_parameter"]["fields"]["value"]["selector"]["number"]
 
-    assert "min" not in number and "max" not in number
+    assert "min" not in number
+    assert "max" not in number
     assert number.get("step") == "any", "a step of 1 rules out half-step values"
 
 

@@ -36,7 +36,8 @@ def test_the_entityvalue_digest_is_stable_and_opaque():
     digest = entityvalue_digest(entityvalue)
     assert digest == entityvalue_digest(entityvalue)
     assert len(digest) == 16
-    assert digest not in entityvalue and entityvalue not in digest
+    assert digest not in entityvalue
+    assert entityvalue not in digest
     assert entityvalue_digest(f"  {entityvalue}  ") == digest
     assert entityvalue_digest(entityvalue[:-1] + "B") != digest
 
@@ -91,7 +92,8 @@ def test_login_error_message_excludes_response_body(monkeypatch, caplog):
 
     message = str(excinfo.value)
     assert "SECRET-SERVER-PAGE" not in message
-    assert "400" in message and "bad credentials" in message
+    assert "400" in message
+    assert "bad credentials" in message
     warning_text = " ".join(
         rec.getMessage() for rec in caplog.records if rec.levelno >= logging.WARNING
     )
