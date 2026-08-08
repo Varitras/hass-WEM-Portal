@@ -106,7 +106,7 @@
   "services": {
     "set_expert_parameter": {
       "name": "Fachmann-Parameter setzen",
-      "description": "Schreibt einen Fachmann-Parameter über das Web-Frontend des WEM Portals. Nur verfügbar, solange die Option „Fachmann-Schreibzugriff (Web)“ aktiv ist. Der Wert wird gegen den vom Gerät erlaubten Bereich geprüft und der Schreibvorgang anschließend durch erneutes Lesen bestätigt. Zwei Grenzen, die der Dienst durchsetzt: Er akzeptiert nur Parameter-IDs, die in einem der zehn Fachmann-Slots eingetragen sind, und er verweigert, sobald mehr als ein Konto den Fachmann-Schreibzugriff aktiviert hat – ein einzelner Dienst kann nicht sagen, welches Konto gemeint ist, und Raten würde eine Einstellung an der falschen Heizung ändern.",
+      "description": "Schreibt einen Fachmann-Parameter über das Web-Frontend des WEM Portals. Nur verfügbar, solange die Option „Fachmann-Schreibzugriff (Web)“ aktiv ist. Der Wert wird gegen den vom Gerät erlaubten Bereich geprüft und der Schreibvorgang anschließend durch erneutes Lesen bestätigt. Zwei Grenzen, die der Dienst durchsetzt: Er akzeptiert nur Parameter-IDs, die in einem der zehn Fachmann-Slots eingetragen sind, und er verweigert, sobald mehr als ein Konto den Fachmann-Schreibzugriff aktiviert hat – ein einzelner Dienst kann nicht sagen, welches Konto gemeint ist, und Raten würde eine Einstellung an der falschen Heizung ändern. Erfordert einen Administrator: Ein Service-Aufruf fällt nicht unter die nutzerbezogenen Entity-Berechtigungen, die Home Assistant auf die Entities selbst anwendet.",
       "fields": {
         "entityvalue": {
           "name": "Entity-Value",
@@ -120,7 +120,7 @@
     },
     "set_holiday": {
       "name": "Urlaub setzen",
-      "description": "Schreibt Beginn und Ende eines Urlaubs in einer Anfrage. Home Assistant setzt immer nur eine Entität, das Portal nimmt diese beiden Parameter aber nur gemeinsam an - und nur, wenn der Zeitraum in sich stimmig ist. Ein Schreibvorgang mit nur einem der beiden wird abgelehnt, und ein Paar, dessen Beginn nach dem Ende liegt, wird als erfolgreich gemeldet und trotzdem nicht gespeichert. Wer die beiden Datums-Entitäten nacheinander setzt, beschreibt also zwischendurch einen halben Zeitraum, den das Portal verwerfen darf - genau das vermeidet dieser Dienst. Beide Entitäten müssen zum selben Modul gehören, und ein Zeitraum, der vor seinem Beginn endet, wird abgelehnt statt als Einstellung gemeldet, die nie stattgefunden hat.",
+      "description": "Schreibt Beginn und Ende eines Urlaubs in einer Anfrage. Home Assistant setzt immer nur eine Entität, das Portal nimmt diese beiden Parameter aber nur gemeinsam an - und nur, wenn der Zeitraum in sich stimmig ist. Ein Schreibvorgang mit nur einem der beiden wird abgelehnt, und ein Paar, dessen Beginn nach dem Ende liegt, wird als erfolgreich gemeldet und trotzdem nicht gespeichert. Wer die beiden Datums-Entitäten nacheinander setzt, beschreibt also zwischendurch einen halben Zeitraum, den das Portal verwerfen darf - genau das vermeidet dieser Dienst. Beide Entitäten müssen zum selben Modul gehören, und ein Zeitraum, der vor seinem Beginn endet, wird abgelehnt statt als Einstellung gemeldet, die nie stattgefunden hat. Erfordert einen Administrator: Ein Service-Aufruf fällt nicht unter die nutzerbezogenen Entity-Berechtigungen, die Home Assistant auf die Entities selbst anwendet.",
       "fields": {
         "begin_entity": {
           "name": "Entität für den Beginn",

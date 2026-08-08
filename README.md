@@ -224,6 +224,10 @@ Sets a holiday period. **Use this rather than the two date entities
 separately** — the portal accepts a single date write and then quietly
 discards it; only the pair is stored.
 
+Administrator only, like the expert service and for the same reason: it
+changes a real setting on a heating system, and a service call is not covered
+by the per-user entity permissions Home Assistant applies to the entities.
+
 ```yaml
 action: wemportal.set_holiday
 data:

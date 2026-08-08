@@ -106,7 +106,7 @@
   "services": {
     "set_expert_parameter": {
       "name": "Set expert parameter",
-      "description": "Writes a Fachmann/expert parameter via the WEM Portal web frontend. Only available while the \"Expert write access (web)\" option is enabled. The value is validated against the device's own allowed range and the write is verified by re-reading the parameter afterwards. Two limits the service enforces: it only accepts a parameter ID that is configured in one of the ten expert slots, and it refuses when more than one account has expert write enabled - a single service cannot say which account a write is meant for, and guessing would change a setting on the wrong heating system.",
+      "description": "Writes a Fachmann/expert parameter via the WEM Portal web frontend. Only available while the \"Expert write access (web)\" option is enabled. The value is validated against the device's own allowed range and the write is verified by re-reading the parameter afterwards. Two limits the service enforces: it only accepts a parameter ID that is configured in one of the ten expert slots, and it refuses when more than one account has expert write enabled - a single service cannot say which account a write is meant for, and guessing would change a setting on the wrong heating system. Requires an administrator: a service call is not covered by the per-user entity permissions Home Assistant applies to the entities themselves.",
       "fields": {
         "entityvalue": {
           "name": "Entity value",
@@ -120,7 +120,7 @@
     },
     "set_holiday": {
       "name": "Set holiday",
-      "description": "Writes the beginning and the end of a holiday in one request. Home Assistant sets one entity at a time, and the portal takes these two parameters only together and only when the range they describe makes sense - a write carrying one of them alone is refused, and a pair whose begin falls after its end is reported as successful and stores nothing. So whichever of the two date entities is set first describes half a range that the portal may discard, which is what this service avoids. Both entities must belong to the same module, and the service refuses a range that ends before it starts rather than reporting a setting that never happened.",
+      "description": "Writes the beginning and the end of a holiday in one request. Home Assistant sets one entity at a time, and the portal takes these two parameters only together and only when the range they describe makes sense - a write carrying one of them alone is refused, and a pair whose begin falls after its end is reported as successful and stores nothing. So whichever of the two date entities is set first describes half a range that the portal may discard, which is what this service avoids. Both entities must belong to the same module, and the service refuses a range that ends before it starts rather than reporting a setting that never happened. Requires an administrator: a service call is not covered by the per-user entity permissions Home Assistant applies to the entities themselves.",
       "fields": {
         "begin_entity": {
           "name": "Begin entity",
