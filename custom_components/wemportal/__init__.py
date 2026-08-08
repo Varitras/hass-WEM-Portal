@@ -228,11 +228,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     _backfill_account_unique_id(hass, entry)
 
     registry = device_registry.async_get(hass)
-    devices = [
-        device
-        for device in registry.devices.values()
-        if entry.entry_id in device.config_entries
-    ]
+    # DeviceEntry.config_entries is deprecated in Home Assistant 2026.8 and
+    # goes in 2027.8; the registry's own index answers the same question, has
+    # been there since well before the 2024.12 minimum, and does not scan
+    # every device of every integration to do it.
+    devices = registry.devices.get_devices_for_config_entry_id(entry.entry_id)
     device_ids = [device.name for device in devices]
     if not device_ids:
         _LOGGER.warning(

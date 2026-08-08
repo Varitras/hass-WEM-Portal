@@ -2120,11 +2120,13 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(
     assert entry.runtime_data.api is api
 
 
-DEPRECATED_DEVICE_REGISTRY_APIS = (
-    "config_entries",
-    "async_get_device",
-    "via_device",
-)
+# What this integration STILL uses of the three that Home Assistant 2026.8
+# announced. DeviceEntry.config_entries and async_get_device() are gone from
+# it now - the registry's own index answers the first on every supported
+# version, and the second goes through coordinator.device_by_identifier,
+# which uses the entry-aware lookup where there is one. Listing an API nobody
+# calls any more only invites a false alarm on somebody else's warning.
+DEPRECATED_DEVICE_REGISTRY_APIS = ("via_device",)
 
 
 def _deprecation_reports(records):
@@ -2154,21 +2156,26 @@ def _deprecation_reports(records):
 
 
 async def test_the_device_registry_apis_are_not_deprecated_yet(hass, caplog):
-    """A tripwire, not a fix.
+    """A tripwire for the one that is left.
 
-    Three device-registry APIs this integration uses are announced as
-    deprecated in Home Assistant 2026.8 and removed in 2027.8:
-    DeviceEntry.config_entries, async_get_device() and DeviceInfo.via_device.
-    Measured against the installed 2026.7.2, none of them reports yet - and
-    their replacements cannot be written against an API that is not there to
-    read. Guessing the replacement is how the last two wrong claims in this
-    repository were made.
+    Three device-registry APIs were announced as deprecated in Home Assistant
+    2026.8, for removal in 2027.8. Two of them are no longer used here:
+    DeviceEntry.config_entries gave way to the registry's own index, which
+    exists on every supported version, and async_get_device() to the
+    entry-aware lookup where the installed Home Assistant has one - see
+    coordinator.device_by_identifier.
 
-    So this fails on the day CI's floating "current HA" reaches the release
-    that deprecates them, and points at the call. That is the moment the
-    adapters can be written against something real, with feature detection
-    rather than a version comparison - the minimum supported version is
-    2024.12, so both shapes have to work.
+    DeviceInfo.via_device is still in use. Its replacement, via_device_id,
+    wants the hub's registry id, which build_device_info does not have and
+    cannot look up: it is called from an entity property, synchronously, on
+    every state write. Changing that is a design question rather than a
+    substitution, so it waits - and measured against the installed 2026.8,
+    Home Assistant does not report our use of it yet.
+
+    So this fails on the day it does, and points at the call. Guessing a
+    replacement is how the last two wrong claims in this repository were
+    made; feature detection over a version comparison, since 2024.12 stays
+    supported.
 
     Two things had to be true for it to be able to fail at all, and neither
     was. It listened on `warnings`, while report_usage writes to a logger.
@@ -2224,17 +2231,22 @@ def test_the_tripwire_watches_the_channel_the_report_arrives_on():
         return logging.LogRecord("x", logging.WARNING, __file__, 0, message, None, None)
 
     assert not _deprecation_reports([_record("something else")])
-    # The false positive this collector produced on its first run: asyncio's
-    # slow-task warning quotes a path through config_entries.py, and
-    # "config_entries" is one of the names being watched for.
-    assert not _deprecation_reports(
-        [
-            _record(
-                "Executing <Task finished ... defined at "
-                ".../homeassistant/config_entries.py:951> took 0.2 seconds"
-            )
-        ]
-    )
+
+    # Naming a watched API is not enough - the line has to announce a
+    # deprecation as well. The real case that produced this: asyncio's
+    # slow-task warning quotes a code path, and back when config_entries was
+    # on the list, "homeassistant/config_entries.py:951" in that warning fired
+    # the tripwire.
+    #
+    # Driven off the tuple rather than off that one message, because the
+    # message stopped mattering the moment config_entries left the list -
+    # and this assertion silently stopped testing anything. A mutation
+    # removing the deprecation filter went unnoticed until it was written
+    # this way.
+    for api_name in DEPRECATED_DEVICE_REGISTRY_APIS:
+        assert not _deprecation_reports(
+            [_record(f"Executing <Task ... {api_name} ...> took 0.2 seconds")]
+        ), f"a line merely naming {api_name} was reported as a deprecation"
 
 
 async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatch):

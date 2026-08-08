@@ -1937,5 +1937,19 @@
     "old": "    try:\n        shutil.rmtree(holding)\n    except OSError as exc:",
     "new": "    try:\n        shutil.rmtree(holding, ignore_errors=True)\n    except OSError as exc:",
     "tests": "a_worktree_that_will_not_go_away_is_reported"
+  },
+  {
+    "label": "registry: the entry-aware lookup never used, even where it exists",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "    unambiguous_lookup = getattr(registry, \"async_get_device_by_identifier\", None)",
+    "new": "    unambiguous_lookup = None",
+    "tests": "a_device_is_looked_up_by_entry_where_that_is_possible"
+  },
+  {
+    "label": "registry: the minimum supported version left without a lookup",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "    return registry.async_get_device(identifiers={identifier})",
+    "new": "    return None",
+    "tests": "a_device_is_still_found_on_the_minimum_supported_version"
   }
 ]

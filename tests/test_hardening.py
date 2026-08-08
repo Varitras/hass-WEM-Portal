@@ -1110,6 +1110,63 @@ def test_a_main_page_without_its_state_after_a_login_is_not_a_wrong_password(
         scraper.scrape()
 
 
+class _NewRegistry:
+    """A device registry of the generation that has the unambiguous lookup."""
+
+    def __init__(self, answer=None):
+        self.answer = answer
+        self.asked = []
+
+    def async_get_device_by_identifier(self, identifier, config_entry_id):
+        self.asked.append((identifier, config_entry_id))
+        return self.answer
+
+    def async_get_device(self, identifiers=None):
+        raise AssertionError(
+            "the deprecated lookup was used on a registry that offers the replacement"
+        )
+
+
+class _OldRegistry:
+    """A 2024.12 registry, which has only the ambiguous one."""
+
+    def __init__(self, answer=None):
+        self.answer = answer
+        self.asked = []
+
+    def async_get_device(self, identifiers=None):
+        self.asked.append(identifiers)
+        return self.answer
+
+
+def test_a_device_is_looked_up_by_entry_where_that_is_possible():
+    """async_get_device matches on the identifier alone, so two integrations
+    registering the same one are indistinguishable - which is why Home
+    Assistant deprecates it. The replacement takes the config entry too."""
+    from custom_components.wemportal.coordinator import device_by_identifier
+
+    registry = _NewRegistry(answer="the device")
+
+    found = device_by_identifier(registry, ("wemportal", "e1:1234"), "e1")
+
+    assert found == "the device"
+    assert registry.asked == [(("wemportal", "e1:1234"), "e1")]
+
+
+def test_a_device_is_still_found_on_the_minimum_supported_version():
+    """2024.12 has no such method, and the minimum stays supported. Detected
+    by asking the registry rather than by comparing versions - a version
+    number says what release this is, not what this object can do."""
+    from custom_components.wemportal.coordinator import device_by_identifier
+
+    registry = _OldRegistry(answer="the device")
+
+    found = device_by_identifier(registry, ("wemportal", "e1:1234"), "e1")
+
+    assert found == "the device"
+    assert registry.asked == [{("wemportal", "e1:1234")}]
+
+
 def test_an_operation_outside_a_poll_is_not_deadlined():
     """Only fetch_data sets a deadline. An on-demand write has a user waiting
     on it and no coordinator timeout behind it, so it must run even when the

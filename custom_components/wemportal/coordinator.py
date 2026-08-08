@@ -86,6 +86,26 @@ def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store:
     )
 
 
+def device_by_identifier(registry, identifier, config_entry_id):
+    """One registered device, looked up the way this Home Assistant allows.
+
+    `async_get_device(identifiers=...)` matches on the identifier alone, so
+    two integrations that register the same one are indistinguishable - which
+    is why Home Assistant deprecated it in 2026.8 (removal in 2027.8) in
+    favour of a lookup that takes the config entry as well.
+
+    That replacement arrived after 2024.12, the minimum this integration
+    supports, so both shapes have to work. Detected by asking the registry
+    what it can do rather than by comparing version numbers: a version says
+    which release this is, not which methods the object in hand has - and a
+    backport or a patched install would make the comparison wrong.
+    """
+    unambiguous_lookup = getattr(registry, "async_get_device_by_identifier", None)
+    if unambiguous_lookup is not None:
+        return unambiguous_lookup(identifier, config_entry_id)
+    return registry.async_get_device(identifiers={identifier})
+
+
 class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
     """DataUpdateCoordinator for wemportal component"""
 
@@ -203,10 +223,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             # platforms register (utils.device_identifier); previously this
             # used a bare (DOMAIN, device_id), which never matched, so a
             # disabled device kept being polled.
-            device_entry = registry.async_get_device(
-                identifiers={
-                    device_identifier(self.config_entry.entry_id, str(device_id))
-                }
+            device_entry = device_by_identifier(
+                registry,
+                device_identifier(self.config_entry.entry_id, str(device_id)),
+                self.config_entry.entry_id,
             )
             if device_entry is not None and device_entry.disabled_by is not None:
                 _LOGGER.debug("Skipping disabled device %s", device_id)
