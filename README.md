@@ -359,13 +359,18 @@ Two limits worth knowing before you build on this:
 
 |  | Number entity | `set_expert_parameter` |
 |---|---|---|
-| Runs | In the background, returns at once | Synchronously |
-| Failure | Log + persistent notification | Raises, so an automation sees it |
+| Runs | Synchronously | Synchronously |
+| Failure | Raises, so an automation sees it | Raises, so an automation sees it |
 | Permission | Home Assistant's normal entity permissions | Administrator only |
+
+Both wait for the portal to confirm the write, which takes a few seconds — the
+call returns when the new value has been read back. Only the caller waits;
+polling, the other entities and the rest of Home Assistant are unaffected.
 
 Successful writes do **not** notify by default (that gets noisy when setting
 several values). Enable **`Notify on successful expert write`** if you want a
-confirmation on success too.
+confirmation on success too. Failures are not notified: they are raised, so
+whoever asked for the write hears about it.
 
 > **Note on permissions:** the service is admin-only, but the same parameter is
 > also a number entity, and Home Assistant has no way for an integration to

@@ -603,6 +603,20 @@ to ask the user for new credentials.
   the same keys, which is the check that was missing all along.
 
 ### Changed
+- **An expert number entity now waits for the portal and fails if the write
+  did.** It used to start the write in the background and return at once, so
+  every caller was told the write had succeeded whatever happened - an
+  automation could carry on as if the heating had been set, with the actual
+  outcome going only to the log and a notification. The domain service was
+  changed to work this way in 1.10.0; the entity was not, so the two
+  disagreed about the same write.
+
+  Setting one now takes a few seconds, until the portal has confirmed the new
+  value. Only the caller waits: polling, the other entities and the rest of
+  Home Assistant are unaffected, and a second expert operation is still
+  refused outright rather than queued. Failure notifications are gone - a
+  failure is raised instead. The optional notification on SUCCESS is
+  unchanged.
 - **The minimum supported Home Assistant version is 2024.12.0.** The options
   flow relies on an attribute that does not exist in 2024.11, so the declared
   minimum was wrong rather than merely conservative.

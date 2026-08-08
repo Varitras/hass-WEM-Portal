@@ -1822,36 +1822,33 @@ async def test_a_duplicate_account_is_not_given_a_second_unique_id(hass):
     )
 
 
-async def test_an_in_flight_expert_write_is_cancelled_on_unload(hass, monkeypatch):
-    """The write runs as a background task so the UI does not block for the
-    5-15s it takes. Untracked, it kept running against the portal after the
-    entry was unloaded - using the credentials and options of a
-    configuration that no longer exists."""
-    import asyncio
+async def test_an_unload_stops_an_expert_write_before_it_reaches_the_portal(hass):
+    """A write in flight when the entry goes away must not reach the portal.
+
+    Nothing here can cancel it: the portal call runs in an executor thread,
+    and a thread cannot be killed from outside. What stops it is the abort
+    gate the client is handed and checks after the login and again directly
+    before the writing request. This is that gate, seen from the outside -
+    the entity was removed, so the next check must refuse.
+
+    Used to be phrased as "the background task is cancelled". The write is
+    awaited by its caller now, so there is no task to cancel and never was
+    the thing that stopped it.
+    """
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
 
     entry = await _setup(hass, _entry(hass, _expert_options()))
     entities = entry.runtime_data.expert.entities
     assert entities, "no expert entity was created"
     entity = entities[0]
 
-    started = asyncio.Event()
-
-    async def never_finishes(_value):
-        started.set()
-        await asyncio.sleep(3600)
-
-    monkeypatch.setattr(entity, "_async_write_in_background", never_finishes)
-
-    await entity.async_set_native_value(42)
-    await started.wait()
-    assert not entity._write_task.done()
+    entity._raise_if_removed()  # not removed yet: the gate must let this pass
 
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entity._write_task.cancelled() or entity._write_task.done(), (
-        "an unloaded entry left a write running against the portal"
-    )
+    with pytest.raises(ExpertOperationAborted):
+        entity._raise_if_removed()
 
 
 async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):

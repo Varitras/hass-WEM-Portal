@@ -1846,5 +1846,26 @@
     "old": "            raise ServerError(\n                \"The WEM Portal login page came back without its form fields, \"",
     "new": "            raise AuthError(\n                \"The WEM Portal login page came back without its form fields, \"",
     "tests": "a_login_page_without_its_form_is_not_blamed_on_the_password"
+  },
+  {
+    "label": "expert: the write going back to fire-and-forget",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            await self._async_write(value)",
+    "new": "            self.hass.async_create_background_task(self._async_write(value), name=\"w\")",
+    "tests": "a_failed_write_reaches_whoever_asked_for_it"
+  },
+  {
+    "label": "expert: an unexpected failure swallowed instead of wrapped",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                raise HomeAssistantError(\n                    f\"Setting {self._attr_name} to {value} failed: {exc}\"\n                ) from exc",
+    "new": "                return",
+    "tests": "a_write_that_fails_with_a_plain_error_still_reaches_the_caller"
+  },
+  {
+    "label": "expert: an orderly teardown reported to the user as a failure",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            except ExpertOperationAborted as exc:",
+    "new": "            except _NeverRaised as exc:",
+    "tests": "a_write_stopped_by_a_teardown_is_not_an_error"
   }
 ]

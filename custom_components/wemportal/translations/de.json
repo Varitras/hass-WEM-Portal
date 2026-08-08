@@ -74,7 +74,7 @@
           "expert_slot_10_id": "Experten-Parameter 10: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
           "expert_enable_module_nav": "⚠ Modul-Auswahl aktivieren (Standard = aus). Hinweis: normalerweise nicht nötig – nur aktivieren, wenn du weißt, was du tust.",
           "expert_enable_security_code": "⚠ Sicherheitscode-Schritt aktivieren (Standard = aus). Hinweis: normalerweise nicht nötig – nur aktivieren, wenn du weißt, was du tust.",
-          "expert_notify_on_success": "Bei erfolgreichem Experten-Schreibvorgang eine Benachrichtigung anzeigen (Standard = aus; Fehler werden immer gemeldet)"
+          "expert_notify_on_success": "Bei erfolgreichem Experten-Schreibvorgang eine Benachrichtigung anzeigen (Standard = aus; Fehler werden als Fehler gemeldet, nicht als Benachrichtigung)"
         }
       },
       "discover_modules": {

@@ -1505,9 +1505,8 @@ try:
                 f"{config_entry.entry_id}:expert:{entityvalue_digest(entityvalue)}"
             )
             self._attr_native_value = None
-            # Guards against starting a second write while one is still
-            # running in the background (the write takes roughly 5-15s).
-            self._write_task = None
+            # Guards against a second write starting while one is still
+            # running - the frontend can send two in quick succession.
             self._write_in_progress = False
             # Set once the entity is on its way out, so a queued write can
             # bail out before it opens a portal session. See
@@ -1582,14 +1581,21 @@ try:
             self.async_write_ha_state()
 
         async def async_set_native_value(self, value: float) -> None:
-            """Start the write in the background and return immediately.
+            """Write the value and wait for the portal to confirm it.
 
-            An expert write logs in, does the minimal Fachmann navigation,
-            writes and verifies - roughly 5-15s, still longer than a
-            frontend service call comfortably waits. Running it as a
-            background task lets the call return at once; the outcome is
-            reported via a persistent notification and the log. The entity
-            value updates once the write is verified.
+            The write used to run as a background task so the call returned
+            at once, with the outcome going to a notification and the log.
+            That told every caller the write had succeeded, whatever
+            happened: an automation could carry on as if the heating had been
+            set. Home Assistant's rule for entity methods is the opposite -
+            a communication failure raises HomeAssistantError - and the
+            domain service already worked that way, so the two disagreed
+            about the same write.
+
+            Nothing blocks but the caller. The portal work runs in an
+            executor thread either way, so the event loop, the sensor poll
+            and every other entity are unaffected; a second expert operation
+            is refused outright rather than queued, as before.
             """
             from .models import raise_if_not_writable
 
@@ -1599,46 +1605,26 @@ try:
                     f"{self._attr_name}: a write is already in progress, please wait."
                 )
             self._write_in_progress = True
-            # Tracked so it can be cancelled when the entity goes away. An
-            # untracked background task kept running against the portal after
-            # the entry was unloaded, using the credentials and options of a
-            # configuration that no longer exists.
-            self._write_task = self.hass.async_create_background_task(
-                self._async_write_in_background(value),
-                name=f"wemportal_expert_write_{self._attr_unique_id}",
-            )
+            await self._async_write(value)
 
         async def async_will_remove_from_hass(self) -> None:
             """Stop an in-flight write as far as that is actually possible.
 
-            Cancelling the task alone does NOT stop the write: the portal
-            call runs in an executor thread (async_add_executor_job below),
-            and cancelling cancels the AWAIT, not the thread - the same
-            distinction API_LOCK_TIMEOUT_SECONDS documents for the poll lock.
-            A request already on the wire therefore finishes, writing a
-            heating parameter with the credentials of an entry that is being
-            torn down. Python cannot kill a thread, so what is left is a
-            cooperative stop:
+            The portal call runs in an executor thread, and nothing here can
+            cancel a thread - the same distinction API_LOCK_TIMEOUT_SECONDS
+            documents for the poll lock. A request already on the wire
+            finishes, writing a heating parameter with the credentials of an
+            entry being torn down. What is left is a cooperative stop:
+            `_removed` is checked before the portal session is opened and
+            again by the client after the login and before the writing
+            request, so a write that has not reached the portal yet - the
+            realistic case, since teardown and the executor race - gives up.
 
-            - `_removed` is checked before the portal session is opened,
-              which covers the job the thread pool has not picked up yet -
-              the realistic case, since teardown and the executor race.
-            - the task is still cancelled so the awaiting coroutine does not
-              outlive the entity.
-
-            Deliberately NOT awaited: that would hold up the whole unload for
-            as long as the portal takes (5-15s), and the request cannot be
-            aborted by waiting for it either.
+            Deliberately does not wait for a write in flight: that would hold
+            the whole unload for as long as the portal takes, and waiting
+            cannot abort the request anyway.
             """
             self._removed = True
-            task = getattr(self, "_write_task", None)
-            if task is not None and not task.done():
-                _LOGGER.debug(
-                    "Expert write for %s is still running; it will stop before "
-                    "contacting the portal if it has not started yet.",
-                    self._attr_name,
-                )
-                task.cancel()
             await super().async_will_remove_from_hass()
 
         def _raise_if_removed(self) -> None:
@@ -1653,8 +1639,8 @@ try:
                     "write reached the portal"
                 )
 
-        async def _async_write_in_background(self, value: float) -> None:
-            """Perform the actual (slow) write off the service-call path."""
+        async def _async_write(self, value: float) -> None:
+            """Do the write and wait for the portal to confirm it."""
             from .expert_options import expert_client_options
 
             client_options = expert_client_options(self._config_entry.options)
@@ -1694,18 +1680,20 @@ try:
             try:
                 state = await self.hass.async_add_executor_job(_do_write)
             except ExpertOperationAborted as exc:
-                # Not a failure the user needs a notification about - the
-                # configuration this write belonged to is gone.
+                # Not a failure anybody is waiting on: the configuration this
+                # write belonged to is gone, so there is no caller left to
+                # tell and nothing went wrong that needs reporting.
                 _LOGGER.debug("Expert write for %s stopped: %s", self._attr_name, exc)
-                self._write_in_progress = False
                 return
-            except Exception as exc:  # noqa: BLE001
+            except HomeAssistantError:
+                # Already the right kind and already worded for the user -
+                # the busy-lock refusal comes through here.
+                raise
+            except Exception as exc:
                 _LOGGER.error("Expert write failed for %s: %s", self._attr_name, exc)
-                self._notify(
-                    f"Setting {self._attr_name} to {value} failed: {exc}",
-                    success=False,
-                )
-                return
+                raise HomeAssistantError(
+                    f"Setting {self._attr_name} to {value} failed: {exc}"
+                ) from exc
             finally:
                 self._write_in_progress = False
 
@@ -1717,26 +1705,24 @@ try:
                 self._attr_name,
                 state.current,
             )
-            self._notify(f"{self._attr_name} set to {state.current}.", success=True)
+            self._notify_success(f"{self._attr_name} set to {state.current}.")
 
-        def _notify(self, message: str, success: bool) -> None:
-            """Report the background write outcome via a persistent notification.
+        def _notify_success(self, message: str) -> None:
+            """Report a successful write, if the user asked to be told.
 
-            Failures always notify. Success only notifies when the user
-            enabled CONF_EXPERT_NOTIFY_ON_SUCCESS (off by default) - the
-            success is logged regardless.
+            Off by default (CONF_EXPERT_NOTIFY_ON_SUCCESS); the success is
+            logged regardless. There is no failure counterpart any more: a
+            failed write raises, so the caller hears about it where it can
+            act on it rather than in a notification nobody is watching.
             """
-            if success and not self._config_entry.options.get(
-                CONF_EXPERT_NOTIFY_ON_SUCCESS, False
-            ):
+            if not self._config_entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
                 return
             self.hass.async_create_task(
                 self.hass.services.async_call(
                     "persistent_notification",
                     "create",
                     {
-                        "title": "WEM Portal expert write"
-                        + ("" if success else " failed"),
+                        "title": "WEM Portal expert write",
                         "message": message,
                         "notification_id": f"wemportal_expert_{self._attr_unique_id}",
                     },

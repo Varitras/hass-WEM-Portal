@@ -2469,6 +2469,104 @@ def _write_entity(api, monkeypatch):
     return entity, built
 
 
+def _refusing_write_entity(api, monkeypatch, error):
+    """The same entity, with a portal that refuses the write."""
+    from custom_components.wemportal import expert_writer
+
+    entity, built = _write_entity(api, monkeypatch)
+
+    class _RefusingClient:
+        def __init__(self, *_args, **_kwargs):
+            built.append(True)
+
+        def write_parameter(self, *_args, **_kwargs):
+            raise error
+
+    monkeypatch.setattr(expert_writer, "WemPortalExpertClient", _RefusingClient)
+    return entity
+
+
+def test_a_failed_write_reaches_whoever_asked_for_it(monkeypatch):
+    """A write that the portal refused must fail the service call.
+
+    The write ran as a background task and the call returned at once, so the
+    outcome only ever reached the log and a notification. An automation was
+    told its write succeeded whatever happened, and could carry on as if the
+    heating had been set. Home Assistant's own rule for entity methods is
+    that a communication failure raises HomeAssistantError.
+    """
+    import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.wemportal import exceptions as wem_exceptions
+
+    api = _api()
+    entity = _refusing_write_entity(
+        api, monkeypatch, wem_exceptions.ParameterWriteError("the portal refused it")
+    )
+
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(entity.async_set_native_value(21.0))
+
+
+def test_a_write_that_fails_with_a_plain_error_still_reaches_the_caller(monkeypatch):
+    """Not every failure arrives as a HomeAssistantError.
+
+    A socket timeout, a parse error, anything the portal client did not
+    anticipate - Home Assistant only surfaces HomeAssistantError to the
+    caller, so those have to be wrapped rather than passed on as they are.
+
+    Its own test because the one above cannot cover it: ParameterWriteError
+    IS a HomeAssistantError, via WemPortalError, so it exercises only the
+    pass-through branch. A mutation turning the wrapping branch into a bare
+    `return` stayed green until this existed.
+    """
+    import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    api = _api()
+    entity = _refusing_write_entity(
+        api, monkeypatch, TimeoutError("the portal did not answer")
+    )
+
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(entity.async_set_native_value(21.0))
+
+
+def test_a_successful_write_leaves_the_verified_value_behind(monkeypatch):
+    """The counter-test: awaiting the write must not lose what it returns."""
+    import asyncio
+
+    api = _api()
+    entity, built = _write_entity(api, monkeypatch)
+
+    asyncio.run(entity.async_set_native_value(21.0))
+
+    assert built == [True]
+    assert entity.native_value == 21.0
+    assert entity._write_in_progress is False
+
+
+def test_a_write_stopped_by_a_teardown_is_not_an_error(monkeypatch):
+    """Aborting because the entry is going away is not a failure the caller
+    needs to hear about - nobody is waiting on that outcome any more, and
+    raising would put a red error in the log for an orderly shutdown."""
+    import asyncio
+
+    from custom_components.wemportal import exceptions as wem_exceptions
+
+    api = _api()
+    entity = _refusing_write_entity(
+        api, monkeypatch, wem_exceptions.ExpertOperationAborted("entry is unloading")
+    )
+
+    asyncio.run(entity.async_set_native_value(21.0))
+
+    assert entity._write_in_progress is False
+
+
 def test_a_removed_entity_does_not_open_a_portal_session(monkeypatch):
     """Cancelling the task cannot stop the write.
 
@@ -2484,7 +2582,7 @@ def test_a_removed_entity_does_not_open_a_portal_session(monkeypatch):
     entity, built = _write_entity(api, monkeypatch)
     entity._removed = True
 
-    asyncio.run(entity._async_write_in_background(21.0))
+    asyncio.run(entity._async_write(21.0))
 
     assert built == [], "a write opened a portal session after removal"
     assert entity._write_in_progress is False
@@ -2497,7 +2595,7 @@ def test_a_normal_write_still_reaches_the_portal(monkeypatch):
     api = _api()
     entity, built = _write_entity(api, monkeypatch)
 
-    asyncio.run(entity._async_write_in_background(21.0))
+    asyncio.run(entity._async_write(21.0))
 
     assert built == [True]
     assert entity.native_value == 21.0
