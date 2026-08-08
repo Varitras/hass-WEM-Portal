@@ -22,6 +22,23 @@ versioning follows [Semantic Versioning](https://semver.org/).
   Parameters whose two columns agree are unaffected, and a dropdown labelled
   with words rather than numbers still reads its values: for an enum the
   string is the only number there is.
+
+  A special value among the numbers no longer drags the range off the scale
+  either. The portal offers "Aus" as `0` on the heating curve but as `-32768`
+  on the frost protection, so it cannot be placed on the scale by dividing -
+  and reading the whole parameter by its value attributes instead published
+  `-32768` as the minimum of a range that runs -20.0 to 17.5. Such a value now
+  sits beside the scale rather than on it: the range is the numbers, and where
+  the portal has the special value selected the state reads unknown, with the
+  portal's own wording in `portal_value` to say which one.
+- **Every expert parameter carries what the portal states beside it.** Two new
+  attributes, both read from the dialog the integration already fetches, so
+  they cost no request: `portal_value` is the wording shown for the current
+  selection, and `factory_default` is the value the parameter left the factory
+  with. A number entity cannot be coloured when it differs from its default -
+  Home Assistant has no such option - but a dashboard card can compare against
+  the attribute and do it. Both are text, because the same dialog reads "0.75"
+  on one parameter and "Aus" or "Mittel" on the next.
 - **A refused write corrects the range that refused it.** A slot stored before
   the fix above holds the scaled range, so the value the portal would accept
   is outside what the entity offers - and Home Assistant checks the published

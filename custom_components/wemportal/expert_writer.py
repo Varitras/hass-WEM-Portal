@@ -314,8 +314,22 @@ def _smallest_gap(options):
 class ExpertParameterState:
     """Parsed state of one expert parameter's edit form."""
 
-    def __init__(self, current, options, hidden_fields, post_values=None):
-        self.current = current  # currently selected value (float)
+    def __init__(
+        self,
+        current,
+        options,
+        hidden_fields,
+        post_values=None,
+        portal_text=None,
+        factory_default=None,
+    ):
+        self.current = current  # currently selected value (float), or None
+        # What the portal displays for the current selection, and what it says
+        # the parameter left the factory with. Both are text: a scaled
+        # parameter reads "0.55" but the same dialog reads "Aus" where a
+        # special value is set, and a number cannot carry that.
+        self.portal_text = portal_text
+        self.factory_default = factory_default
         self.options = options  # all allowed values (list of float)
         # What the form has to be given back for each of those values. Kept
         # apart from the value itself because the portal scales some
@@ -1091,31 +1105,44 @@ class WemPortalExpertClient:
                 posted = float(attribute.replace(",", "."))
             except ValueError:
                 continue
+            label = (option.text or "").strip()
             pairs.append(
                 (
-                    _as_number(option.text),
+                    _as_number(label),
                     posted,
                     attribute,
                     option.get("selected") is not None,
+                    label,
                 )
             )
 
-        # All or nothing: a list mixing labels and attributes would be neither.
-        # Enum parameters ("Aus", "Auto") have no numeric label, and for them
-        # the attribute is the only number there is.
-        labels_are_numbers = bool(pairs) and all(
-            shown is not None for shown, *_ in pairs
-        )
+        # A parameter offering ANY numeric label is measured in those labels,
+        # and the odd word among them is a special value beside that scale
+        # rather than a point on it: "Aus" is offered as 0 on the heating
+        # curve but as -32768 on the frost protection, so it cannot be placed
+        # on the scale by dividing - and taking the attributes instead would
+        # publish -32768 as the minimum of a range that runs -20.0 to 17.5.
+        #
+        # Only a dropdown with no numeric label at all is read by its
+        # attributes: on an enum ("Automatik", "Party 2.5 h") they are the
+        # only number there is, and they are an index rather than a scale.
+        by_label = any(shown is not None for shown, *_ in pairs)
 
         options = []
         current = None
+        selected_text = None
         post_values = {}
-        for shown, posted, attribute, selected in pairs:
-            value = shown if labels_are_numbers else posted
-            options.append(value)
-            post_values[value] = attribute
+        for shown, posted, attribute, selected, label in pairs:
+            on_scale = shown is not None or not by_label
+            value = (shown if by_label else posted) if on_scale else None
+            if on_scale:
+                options.append(value)
+                post_values[value] = attribute
             if selected:
+                # None where the portal has a special value selected: a number
+                # entity cannot show "Aus", and the attribute below says so.
                 current = value
+                selected_text = label or attribute
 
         if not options:
             # Dropdown present but empty: the session has no active
@@ -1134,20 +1161,12 @@ class WemPortalExpertClient:
                 "entityvalue does not match a readable parameter."
             )
 
-        # An option's value attribute is what gets posted back, and it is the
-        # only thing read above - but it need not equal the label the portal
-        # shows. A parameter the portal reports as 5 in a range of 1 to 30
-        # arrived here as 50 in 10 to 300, which is what a scaled value
-        # attribute over a decimal label looks like. Logged as pairs so the
-        # next read says which of the two an entity should be built from,
-        # rather than leaving it to be inferred from the factor.
-        _LOGGER.debug(
-            "Expert parameter form: first options as value/label: %s",
-            [
-                (option.get("value"), (option.text or "").strip())
-                for option in select[0].xpath(".//option")[:5]
-            ],
-        )
+        # The value the parameter left the factory with, which the dialog
+        # shows beside the dropdown. Kept as the portal's own text: it reads
+        # "0.75" on a scaled parameter but "Aus" or "Mittel" on others, and
+        # rewriting either into a number would lose one of them.
+        delivered = tree.xpath("//*[contains(@id, 'ltDeliveryStatusData')]")
+        factory_default = delivered[0].text_content().strip() if delivered else None
 
         # Hidden ASP.NET fields, needed later for the (not yet built) write POST.
         hidden_fields = {}
@@ -1156,7 +1175,14 @@ class WemPortalExpertClient:
             if name:
                 hidden_fields[name] = hidden_input.get("value", "")
 
-        return ExpertParameterState(current, options, hidden_fields, post_values)
+        return ExpertParameterState(
+            current,
+            options,
+            hidden_fields,
+            post_values,
+            portal_text=selected_text,
+            factory_default=factory_default or None,
+        )
 
     # ------------------------------------------------------------------
     def read_parameter(self, entityvalue: str) -> ExpertParameterState:
@@ -1622,6 +1648,11 @@ try:
         def __init__(self, config_entry, name, entityvalue):
             self._config_entry = config_entry
             self._entityvalue = entityvalue
+            # Both are only known once the portal has been read; neither is
+            # restored, because a stored copy would outlive the reading that
+            # produced it and there is nothing to check it against.
+            self._portal_text = None
+            self._factory_default = None
             # `name` comes from the slot's name field (or a default like
             # "expert_parameter_3"); use it as the stable object_id source
             # but show a readable friendly name, consistent with
@@ -1669,6 +1700,10 @@ try:
                 self._attr_native_max_value = state.max_value
             if state.step is not None:
                 self._attr_native_step = state.step
+            if state.portal_text is not None:
+                self._portal_text = state.portal_text
+            if state.factory_default is not None:
+                self._factory_default = state.factory_default
 
         def _restore_from(self, last):
             """Take back the stored range as well as the stored value.
@@ -1717,6 +1752,27 @@ try:
                 and last.native_max_value == LEGACY_ASSUMED_MAX
                 and last.native_step == LEGACY_ASSUMED_STEP
             )
+
+        @property
+        def extra_state_attributes(self):
+            """What the portal says that a number on its own cannot.
+
+            `portal_value` is the dialog's own wording for the current
+            selection. It repeats the value on an ordinary parameter, but it
+            is the only readable answer where a special value is set: "Aus" is
+            not a point on the scale, so the state itself goes unknown.
+
+            `factory_default` is what the parameter left the factory with, as
+            the portal states it. Home Assistant cannot colour a number that
+            differs from its default - a number entity has no such option -
+            but a dashboard card can compare against this and do it.
+            """
+            attributes = {}
+            if self._portal_text is not None:
+                attributes["portal_value"] = self._portal_text
+            if self._factory_default is not None:
+                attributes["factory_default"] = self._factory_default
+            return attributes or None
 
         @property
         def mode(self) -> NumberMode:

@@ -516,18 +516,117 @@ def test_a_postback_asks_the_portal_for_a_delta_not_a_whole_page():
     assert headers["Referer"] == "https://www.wemportal.com/Web/Main.aspx"
 
 
-def _dialog_html(options):
+def _dialog_html(options, factory_default=None):
     """A parameter dialog offering `options` as (value attribute, label)."""
     rendered = "".join(
         f'<option value="{attribute}"{" selected" if selected else ""}>{label}</option>'
         for attribute, label, selected in options
     )
+    delivered = (
+        ""
+        if factory_default is None
+        else f'<span id="ctl00_DialogContent_ltDeliveryStatusData">{factory_default}</span>'
+    )
     return (
         "<html><body>"
         f'<select id="ctl00_DialogContent_ddlNewValue">{rendered}</select>'
+        f"{delivered}"
         '<input type="hidden" name="__VIEWSTATE" value="vs" />'
         "</body></html>"
     )
+
+
+def test_a_special_value_does_not_drag_the_range_off_the_scale():
+    """A special value sits beside the scale, not on it.
+
+    Measured at the portal: the heating curve offers it as 0 among 0.05 to
+    1.50, the frost protection as -32768 among -20.0 to 17.5. Requiring EVERY
+    label to be a number sent both back to the value attributes - so the frost
+    protection published -32768 as its minimum, and the curve 0 to 150 instead
+    of 0.05 to 1.50.
+    """
+    from custom_components.wemportal import expert_writer
+
+    state = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html(
+            [
+                ("-32768", "Aus", False),
+                ("-200", "-20.0", False),
+                ("-195", "-19.5", True),
+                ("175", "17.5", False),
+            ]
+        )
+    )
+
+    assert (state.min_value, state.max_value) == (-20.0, 17.5)
+    assert state.current == -19.5
+    assert state.post_value_for(-19.5) == "-195"
+
+
+def test_a_selected_special_value_reads_as_unknown_and_says_why():
+    """The portal had "Aus" selected on the heat pump's manual mode.
+
+    A number entity cannot show a word, so the state is unknown - but silently
+    unknown is indistinguishable from a failed read, and the portal's own
+    wording is the only thing that tells them apart.
+    """
+    from custom_components.wemportal import expert_writer
+
+    state = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html(
+            [("-32768", "Aus", True), ("200", "20.0", False), ("680", "68.0", False)]
+        )
+    )
+
+    assert state.current is None
+    assert state.portal_text == "Aus"
+    assert (state.min_value, state.max_value) == (20.0, 68.0)
+
+
+def test_labels_that_are_numbers_win_even_where_the_attributes_are_an_index():
+    """The quiet mode offers 0=Aus, 1=80, 2=60, 3=40.
+
+    The attributes are an index and run the other way, so no factor relates
+    them to the labels - which is why the mapping is kept per option rather
+    than derived. Read by attribute this parameter would be a 1-to-3 slider.
+    """
+    from custom_components.wemportal import expert_writer
+
+    state = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html(
+            [
+                ("0", "Aus", True),
+                ("1", "80", False),
+                ("2", "60", False),
+                ("3", "40", False),
+            ]
+        )
+    )
+
+    assert sorted(state.options) == [40.0, 60.0, 80.0]
+    assert state.post_value_for(80.0) == "1"
+    assert state.post_value_for(40.0) == "3"
+
+
+def test_the_factory_default_is_read_from_the_dialog():
+    """The dialog states it beside the dropdown, so it costs no extra request.
+
+    Kept as text: it reads "0.75" on the heating curve but "Aus" on the manual
+    mode and "Mittel" on the building type.
+    """
+    from custom_components.wemportal import expert_writer
+
+    scaled = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html(
+            [("55", "0.55", True), ("75", "0.75", False)], factory_default="0.75"
+        )
+    )
+    worded = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html([("0", "Aus", True), ("1", "Ein", False)], factory_default="Aus")
+    )
+
+    assert scaled.factory_default == "0.75"
+    assert worded.factory_default == "Aus"
 
 
 def test_a_scaled_parameter_reads_as_the_portal_shows_it_not_ten_times_over():

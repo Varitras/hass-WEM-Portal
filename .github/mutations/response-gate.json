@@ -2130,7 +2130,7 @@
   {
     "label": "expert: a scaled parameter read from the value attribute again",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            value = shown if labels_are_numbers else posted",
+    "old": "            value = (shown if by_label else posted) if on_scale else None",
     "new": "            value = posted",
     "tests": "a_scaled_parameter_reads_as_the_portal_shows_it_not_ten_times_over"
   },
@@ -2142,11 +2142,11 @@
     "tests": "a_scaled_parameter_posts_the_string_the_form_offered"
   },
   {
-    "label": "expert: word labels taken for numbers, leaving no range",
+    "label": "expert: every parameter read by its value attribute again",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "        labels_are_numbers = bool(pairs) and all(\n            shown is not None for shown, *_ in pairs\n        )",
-    "new": "        labels_are_numbers = True",
-    "tests": "a_dropdown_whose_labels_are_words_falls_back_to_its_values"
+    "old": "        by_label = any(shown is not None for shown, *_ in pairs)",
+    "new": "        by_label = False",
+    "tests": "a_scaled_parameter_reads_as_the_portal_shows_it_not_ten_times_over"
   },
   {
     "label": "expert: a refusal that throws the fresh range away",
@@ -2168,5 +2168,33 @@
     "old": "            except ParameterWriteError as exc:",
     "new": "            except ValueError as exc:",
     "tests": "a_refusal_corrects_the_range_that_caused_it"
+  },
+  {
+    "label": "expert: one word among the numbers sending the scale back to the attributes",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        by_label = any(shown is not None for shown, *_ in pairs)",
+    "new": "        by_label = all(shown is not None for shown, *_ in pairs)",
+    "tests": "a_special_value_does_not_drag_the_range_off_the_scale"
+  },
+  {
+    "label": "expert: a special value dragged onto the scale",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            on_scale = shown is not None or not by_label",
+    "new": "            on_scale = True",
+    "tests": "a_special_value_does_not_drag_the_range_off_the_scale"
+  },
+  {
+    "label": "expert: a selected special value reported as a number anyway",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                current = value\n                selected_text = label or attribute",
+    "new": "                current = posted\n                selected_text = label or attribute",
+    "tests": "a_selected_special_value_reads_as_unknown_and_says_why"
+  },
+  {
+    "label": "expert: the factory default dropped on the way out of the dialog",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        factory_default = delivered[0].text_content().strip() if delivered else None",
+    "new": "        factory_default = None",
+    "tests": "the_factory_default_is_read_from_the_dialog"
   }
 ]
