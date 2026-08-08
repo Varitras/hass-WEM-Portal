@@ -239,6 +239,14 @@ def apply_mutation(case: dict, root: Path | None = None) -> tuple[Path, bytes]:
     return target, original
 
 
+# Every worker is a full pytest process with Home Assistant imported, so what
+# runs out first is memory, not cores. The measurement below stops at six, and
+# above it nobody has shown a gain - while cores-2 on a 64-core build machine
+# would start 62 interpreters at once and each a copy of the tree. --jobs
+# overrides this for anyone who has measured otherwise.
+MAX_DEFAULT_JOBS = 8
+
+
 def default_jobs() -> int:
     """Workers to use when nobody says. Two cores are left for everything else.
 
@@ -247,7 +255,7 @@ def default_jobs() -> int:
     by per-process startup - which is exactly the shape that parallelises.
     Six workers on eight cores came out at 5.3x.
     """
-    return max(1, (os.cpu_count() or 2) - 2)
+    return max(1, min((os.cpu_count() or 2) - 2, MAX_DEFAULT_JOBS))
 
 
 def build_worktrees(count: int, into: Path, cases: list) -> list:
@@ -323,7 +331,26 @@ def run_in_parallel(cases: list, targets: dict, jobs: int) -> list:
             print("", file=sys.stderr)
         return results
     finally:
-        shutil.rmtree(holding, ignore_errors=True)
+        _remove_worktrees(holding)
+
+
+def _remove_worktrees(holding: Path) -> None:
+    """Delete the worker copies, and say so when they will not go.
+
+    Removed with errors ignored before, which is how a run that could not
+    clean up left several megabytes of checkout under the temp directory with
+    nothing anywhere pointing at the cause - once per run, quietly. The run
+    itself still succeeds: the results are in, and leftover copies are a
+    housekeeping problem, not a wrong answer.
+    """
+    try:
+        shutil.rmtree(holding)
+    except OSError as exc:
+        print(
+            f"warning: the worker copies could not be removed ({exc}). "
+            f"They are still in {holding} and can go by hand.",
+            file=sys.stderr,
+        )
 
 
 def main() -> int:

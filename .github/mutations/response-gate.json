@@ -1916,5 +1916,26 @@
     "old": "            raise ServerError(\n                \"Logged in, but the WEM Portal main page did not come back \"",
     "new": "            raise AuthError(\n                \"Logged in, but the WEM Portal main page did not come back \"",
     "tests": "a_main_page_without_its_state_after_a_login_is_not_a_wrong_password"
+  },
+  {
+    "label": "harness: the worker count unbounded again",
+    "path": ".github/scripts/mutate.py",
+    "old": "    return max(1, min((os.cpu_count() or 2) - 2, MAX_DEFAULT_JOBS))",
+    "new": "    return max(1, (os.cpu_count() or 2) - 2)",
+    "tests": "the_default_worker_count_is_bounded"
+  },
+  {
+    "label": "harness: the cap taken as the number, starving small machines",
+    "path": ".github/scripts/mutate.py",
+    "old": "    return max(1, min((os.cpu_count() or 2) - 2, MAX_DEFAULT_JOBS))",
+    "new": "    return MAX_DEFAULT_JOBS",
+    "tests": "a_small_machine_still_gets_its_cores"
+  },
+  {
+    "label": "harness: a cleanup failure swallowed again",
+    "path": ".github/scripts/mutate.py",
+    "old": "    try:\n        shutil.rmtree(holding)\n    except OSError as exc:",
+    "new": "    try:\n        shutil.rmtree(holding, ignore_errors=True)\n    except OSError as exc:",
+    "tests": "a_worktree_that_will_not_go_away_is_reported"
   }
 ]

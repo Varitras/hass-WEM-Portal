@@ -498,6 +498,57 @@ def test_one_job_runs_in_the_repository_itself(tmp_path, monkeypatch):
     assert copies == [], "worker copies were built for a serial run"
 
 
+def test_the_default_worker_count_is_bounded(monkeypatch):
+    """Every worker is a full pytest process with Home Assistant imported.
+
+    cores-2 is fine on a laptop and not on a build machine: on 64 cores it
+    asks for 62 of them at once, each a few hundred megabytes of interpreter,
+    and nobody has shown that is faster - the measurement behind this
+    stops at six.
+    """
+    monkeypatch.setattr(mutate.os, "cpu_count", lambda: 64)
+
+    assert mutate.default_jobs() <= mutate.MAX_DEFAULT_JOBS
+
+
+def test_a_small_machine_still_gets_its_cores(monkeypatch):
+    """The counter-test: the cap must not become the number."""
+    monkeypatch.setattr(mutate.os, "cpu_count", lambda: 8)
+
+    assert mutate.default_jobs() == 6
+
+
+def test_a_worktree_that_will_not_go_away_is_reported(tmp_path, monkeypatch, capsys):
+    """Silently ignoring the cleanup leaves copies of the repository behind.
+
+    Each is a few megabytes and a full checkout, and a run that cannot remove
+    them says so nowhere - so they accumulate under the system temp directory
+    with nothing pointing at the cause.
+    """
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    monkeypatch.setattr(
+        mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
+    )
+    monkeypatch.setattr(mutate, "run_tests", lambda *_args, **_kwargs: True)
+
+    def refuse_to_remove(path, ignore_errors=False, **_kwargs):
+        # Behaves like the real one, INCLUDING ignore_errors - which is the
+        # whole point here. A stand-in that raises whatever it is asked
+        # cannot tell the two versions apart: it was written that way first
+        # and the mutation that puts ignore_errors back stayed green.
+        if ignore_errors:
+            return
+        raise OSError(f"cannot remove {path}")
+
+    monkeypatch.setattr(mutate.shutil, "rmtree", refuse_to_remove)
+    plan = _plan_of(1, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "2"])
+
+    mutate.main()
+
+    assert "could not be removed" in capsys.readouterr().err
+
+
 def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
     """Workers finish in whatever order they finish.
 
