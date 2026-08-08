@@ -4,7 +4,7 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.11.0b3] – 2026-08-08
 
 Findings from several rounds of auditing 1.11.0b2, plus a re-audit of the
 fixes themselves. Mostly correctness and safety: who may write a heating
@@ -599,6 +599,48 @@ to ask the user for new credentials.
   dragged for the same reason. What the portal will not take is still caught,
   where it is actually known: the write checks against the form's own list of
   allowed values and names it in the error.
+- **The same rule decides every login answer now, not only the one it was
+  written for.** Staying on the login URL was the whole test on the web scrape
+  and in the expert client, and a portal error page or an interstitial does
+  that too while answering 200 - so anything of that kind counted as refused
+  credentials, and three in a row reached the re-authentication prompt. Only
+  the portal rendering its login form is evidence that credentials were seen
+  and refused; anything else is a portal problem and is reported as one. Both
+  paths carried their own copy of the check, and both now go by the markers
+  the API login has used all along.
+- **A request cut short by the poll deadline is reported as the deadline, not
+  as a portal that stopped answering.** Each scrape request is capped at what
+  is left of the cycle's budget, so the last one before the deadline times out
+  ON that cap - and an ordinary timeout is the coordinator's second failure,
+  which discards the warm session and forces a cold login. Which is what the
+  deadline's own branch exists to avoid.
+- **A web scrape that fails three times before it has ever succeeded says
+  why.** Ageing the rows of a scrape that has given up iterates the keys of
+  the last successful one, and before the first there are none - so the third
+  failure raised a TypeError that replaced the real reason on its way out,
+  whether that was maintenance, credentials or the network. Reachable in
+  `both` mode, where the API half has already filled the device.
+- **An expert slot restored from before the range fix no longer locks
+  itself.** Home Assistant persists a number entity's minimum, maximum and
+  step with or without a value, so a slot stored by an earlier version comes
+  back carrying the assumed 0 to 100 although it was never read - and taking
+  that back on the first start after the upgrade would reinstate exactly the
+  lock the fix removes. Such a range is recognised by its missing value: a
+  real one can only have been learnt by reading or writing, and either would
+  have stored a value with it.
+- **A teardown during parameter discovery ends the options flow with a
+  sentence instead of a traceback.** The abort signal has to cross the broad
+  handlers between the portal work and the flow, which is why it is not an
+  ordinary exception - but that also carried it past the handler the options
+  flow relies on, and Home Assistant's flow manager translates only its own
+  abort. Discovery interrupted by a reload or an unload now closes the flow
+  with a message in both catalogues. There is nothing to fall back to: the
+  configuration being edited is going away.
+- **The expert login stops at an unload too.** The two steps that follow the
+  credentials - establishing the session context and the security-code
+  dialog - opened with unguarded requests, so an unload during the credential
+  exchange was answered with one more authenticated request at a portal that
+  counts them. Every other step of that path already checked.
 
 ### Removed
 - **The `beautifulsoup4` dependency.** It was installed for three lines: the
@@ -650,6 +692,10 @@ to ask the user for new credentials.
   error log, sixteen entries in sixteen hours on one installation. On that
   path it is a debug message now. After a full login, where nothing else can
   recover, it stays a warning.
+- **Both services state that they require an administrator.** The holiday
+  service has been admin-only since it was written and said so nowhere; the
+  expert service said it in the README but not in the description Home
+  Assistant shows next to the action.
 
 ## [1.11.0b2] – 2026-07-28
 
