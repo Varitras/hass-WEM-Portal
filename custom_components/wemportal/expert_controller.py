@@ -296,11 +296,10 @@ class ExpertController:
         installations off the air. One id keeps being counted, and the
         message below says plainly that the portal is the other candidate.
         """
-        requested = {entityvalue: state for entityvalue, state in results.items()}
         failed = [
-            entityvalue for entityvalue, state in requested.items() if state is None
+            entityvalue for entityvalue, state in results.items() if state is None
         ]
-        whole_batch_failed = len(requested) >= 2 and len(failed) == len(requested)
+        whole_batch_failed = len(results) >= 2 and len(failed) == len(results)
         if whole_batch_failed:
             _LOGGER.warning(
                 "Expert auto-poll: all %d configured parameter(s) failed to "

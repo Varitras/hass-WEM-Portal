@@ -712,7 +712,6 @@ class WemportalOptionsFlow(OptionsFlow):
         during a normal entry setup, and expert_writer pulls curl_cffi and
         lxml (~140 ms, measured). Only discovery ever needs the client.
         """
-        from .exceptions import ExpertOperationAborted
         from .expert_writer import WemPortalExpertClient
 
         entry = self.config_entry

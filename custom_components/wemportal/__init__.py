@@ -434,7 +434,9 @@ def _async_release_expert_service(hass: HomeAssistant, config_entry) -> None:
         hass.services.async_remove(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
 
 
-def _resolve_expert_entry(hass: HomeAssistant):
+def _resolve_expert_entry(
+    hass: HomeAssistant,
+) -> tuple[WemPortalConfigEntry, WemPortalApi] | None:
     """Return (entry, api) of the single expert-write-enabled, loaded entry.
 
     Returns None if none - or MORE THAN ONE - entry currently has expert
