@@ -233,7 +233,15 @@ def serialize_modules(modules: dict) -> dict:
     serialized = {}
     for device_id, device_modules in modules.items():
         serialized[device_id] = {
-            ModuleRef(*module_key).as_storage_key(): module_data
+            # values_answered_at stays in memory: it is MONOTONIC time,
+            # meaningless across restarts - and it changes every cycle, so
+            # persisting it would defeat the fingerprint that keeps this
+            # cache from being rewritten on every successful poll.
+            ModuleRef(*module_key).as_storage_key(): {
+                field: value
+                for field, value in module_data.items()
+                if field != "values_answered_at"
+            }
             for module_key, module_data in device_modules.items()
         }
     return serialized

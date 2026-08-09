@@ -16,6 +16,19 @@ versioning follows [Semantic Versioning](https://semver.org/).
   hand-picking log lines.
 
 ### Fixed
+- **A module the portal stops answering for ages out - its siblings stay.**
+  Freshness was tracked per device, so as long as module A kept answering,
+  the readings of a module B missing from every answer were presented as
+  current indefinitely - the only symptom was a number that never changed.
+  Each module now carries its own freshness; after the same 30-minute
+  tolerance the silent module's readings go unknown, with one warning naming
+  the module, while everything that answers is untouched.
+- **A weekly programme whose refresh keeps failing shows the current raw
+  plan, not last week's detail.** The schedule sensor prefers the fetched
+  detail (`CircuitTimesDay`) over the raw value, and a failed refresh kept
+  that stale detail on display over a newer plan the ordinary read had long
+  delivered. A failed attempt of a due refresh now drops the stale detail;
+  the existing raw-plan fallback takes over until a refresh succeeds again.
 - **An answer outside the portal's own contract no longer detonates mid-code.**
   Valid JSON is not the same as the expected shape: `{"Parameters": null}`
   aborted the rest of a device's discovery with a TypeError and left the

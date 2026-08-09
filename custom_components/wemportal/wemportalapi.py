@@ -2749,6 +2749,14 @@ class WemPortalApi:
                     self.resolve_scraper_device_id() if self.mode == "both" else None
                 ),
             )
+            # Freshness lives on the MODULE, not only on the device: a
+            # successful answer naming module A refreshes the device-level
+            # stamp, and module B - missing from the very same answer - kept
+            # presenting its last readings indefinitely. _clear_unanswered
+            # cannot see B (it walks the answer), _forget_stale_device_values
+            # cannot either (the device did answer).
+            self._stamp_answered_modules(device_id, values)
+            self._forget_unanswered_module_values(device_id)
             return None
         except Exception as exc:  # noqa: BLE001
             # Broad: one device's parameter read failing must not take
@@ -2786,7 +2794,84 @@ class WemPortalApi:
         last_fetch = self._last_circuit_times_fetch.get((device_id, parameter_id), 0)
         return time.time() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
 
-    def _record_schedule_attempt(self, device_id, parameter_id, attempted_at, fetched):
+    def _stamp_answered_modules(self, device_id, values) -> None:
+        """Note WHEN each module last appeared in a values answer.
+
+        Monotonic like the device-level stamp, and deliberately kept out of
+        the persisted cache (see serialize_modules): it is meaningless
+        across restarts and changes every cycle, which would defeat the
+        fingerprint that keeps the cache from being rewritten daily.
+        """
+        known_modules = self.modules.get(device_id, {})
+        for module in values.get("Modules") or []:
+            if not isinstance(module, dict):
+                continue
+            module_key = ModuleRef(
+                module_index=module.get("ModuleIndex"),
+                module_type=module.get("ModuleType"),
+            )
+            module_entry = known_modules.get(module_key)
+            if module_entry is not None:
+                module_entry["values_answered_at"] = time.monotonic()
+
+    def _forget_unanswered_module_values(self, device_id) -> None:
+        """Stop presenting a module's readings once IT has stopped answering.
+
+        The per-module half of _forget_stale_device_values, for the case
+        that one cannot see: the device answers - with module A - and module
+        B is simply absent from every answer. Same TTL, same rule (only the
+        value goes, identity stays), same no-evidence exemption: a module
+        never stamped this session has nothing on display this could be
+        about.
+
+        Weekly programmes are exempt like in _clear_unanswered - the
+        schedule fetch owns their staleness and drops its own detail when a
+        due refresh fails.
+        """
+        now = time.monotonic()
+        device_rows = self.data.get(device_id) or {}
+        for module_key, module_entry in self.modules.get(device_id, {}).items():
+            answered_at = module_entry.get("values_answered_at")
+            if answered_at is None:
+                continue
+            stale_for = now - answered_at
+            if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:
+                continue
+
+            forgotten = []
+            for row_name, row in device_rows.items():
+                if not isinstance(row, dict):
+                    continue
+                if (row.get("ModuleIndex"), row.get("ModuleType")) != module_key:
+                    continue
+                is_programme = row.get(
+                    "DataType"
+                ) == WemDataType.PROGRAM or looks_like_schedule(row.get("value"))
+                if is_programme:
+                    continue
+                if row.get("value") is not None:
+                    row["value"] = None
+                    forgotten.append(row_name)
+            if not forgotten:
+                continue
+            # Reset, so the next silence is measured from here rather than
+            # repeating this warning every cycle - same as the device level.
+            module_entry["values_answered_at"] = now
+            _LOGGER.warning(
+                "Device %s module %d/%d has not been in an answer for %d "
+                "minutes. Its %d reading(s) are no longer current and are "
+                "now shown as unknown rather than as the values they had "
+                "then.",
+                short_device_id(device_id),
+                module_key.module_index,
+                module_key.module_type,
+                int(stale_for // 60),
+                len(forgotten),
+            )
+
+    def _record_schedule_attempt(
+        self, device_id, module, parameter_id, attempted_at, fetched
+    ):
         """Book the ATTEMPT, however it ended.
 
         Written only after a SUCCESS, as it once was, the interval guard never
@@ -2796,6 +2881,12 @@ class WemPortalApi:
         Back-dated rather than blocked outright when it did not work out, so
         one bad cycle does not cost a full hour either. Same shape and same
         reasoning as get_statistics().
+
+        A failure also DROPS the row's stale detail attributes. The sensor
+        prefers CircuitTimesDay over the raw value, so detail fetched last
+        week kept overruling a newer raw plan for as long as the refresh
+        failed - the existing JSON fallback takes over once the detail is
+        gone, and the next successful refresh puts it back.
         """
         if fetched:
             self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at
@@ -2805,6 +2896,15 @@ class WemPortalApi:
             CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
             - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
         )
+        row = self.data.get(device_id, {}).get(f"{module['Name']}-{parameter_id}")
+        if isinstance(row, dict) and "CircuitTimesDay" in row:
+            row.pop("CircuitTimesDay", None)
+            row.pop("PossibleValues", None)
+            _LOGGER.debug(
+                "Schedule %s: refresh failed, dropping the stale detail so "
+                "the raw plan shows instead.",
+                parameter_id,
+            )
 
     def _read_one_schedule(self, device_id, module, parameter_id) -> bool:
         """Ask the device for one programme and store what it reports.
@@ -2895,7 +2995,7 @@ class WemPortalApi:
                         )
                     finally:
                         self._record_schedule_attempt(
-                            device_id, parameter_id, attempted_at, fetched
+                            device_id, module, parameter_id, attempted_at, fetched
                         )
         except Exception as exc:  # noqa: BLE001
             # Broad: heating programs are extra detail on top of the
