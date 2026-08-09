@@ -15,7 +15,7 @@ framework answers rather than one this integration tracks by hand.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from homeassistant.config_entries import ConfigEntry
 
@@ -24,6 +24,39 @@ from .expert_controller import ExpertController
 if TYPE_CHECKING:
     from .coordinator import WemPortalDataUpdateCoordinator
     from .wemportalapi import WemPortalApi
+
+
+class ModuleRef(NamedTuple):
+    """One module of one device, as the portal addresses it.
+
+    The pair travelled as a bare `(index, type)` tuple in memory and as an
+    "index:type" string in the persisted module cache, both assembled by
+    hand wherever needed. A NamedTuple gives the two numbers their names
+    back while every existing tuple comparison, unpacking and dict lookup
+    keeps working - which is what lets the migration happen in slices.
+    """
+
+    module_index: int
+    module_type: int
+
+    @classmethod
+    def from_storage_key(cls, key: str) -> ModuleRef:
+        """The reference a persisted "index:type" cache key names.
+
+        Raises ValueError on anything else: an unreadable key means the
+        store is not ours to guess about.
+        """
+        index_text, type_text = key.split(":", 1)
+        return cls(module_index=int(index_text), module_type=int(type_text))
+
+    def as_storage_key(self) -> str:
+        """The "index:type" spelling the persisted module cache uses.
+
+        Pinned by test: existing installations have these strings on disk,
+        so order and separator are a compatibility contract, not a style
+        choice.
+        """
+        return f"{self.module_index}:{self.module_type}"
 
 
 @dataclass
@@ -75,7 +108,7 @@ class WemPortalData:
         """
         self.unloading = False
 
-    def why_not_current(self, config_entry) -> str | None:
+    def why_not_current(self, config_entry: ConfigEntry) -> str | None:
         """Why an operation holding THIS state may no longer act, or None.
 
         The entry id answers neither of the two ways it can happen. Home
@@ -96,7 +129,7 @@ class WemPortalData:
 WemPortalConfigEntry = ConfigEntry[WemPortalData]
 
 
-def raise_if_not_writable(config_entry, what: str) -> WemPortalData:
+def raise_if_not_writable(config_entry: ConfigEntry, what: str) -> WemPortalData:
     """The gate every write from an entity passes through.
 
     `unloading` is set at the very top of async_unload_entry, before the
@@ -110,7 +143,7 @@ def raise_if_not_writable(config_entry, what: str) -> WemPortalData:
     """
     from homeassistant.exceptions import HomeAssistantError
 
-    data = getattr(config_entry, "runtime_data", None)
+    data: WemPortalData | None = getattr(config_entry, "runtime_data", None)
     if data is None:
         raise HomeAssistantError(f"{what}: this WEM Portal account is not loaded.")
     reason = data.why_not_current(config_entry)

@@ -3,6 +3,7 @@
 import re
 
 from .const import _LOGGER, WemDataType
+from .models import ModuleRef
 from .translations import friendly_name_mapper, translate
 from .utils import looks_like_schedule, sanitize_value, unit_to_icon
 
@@ -260,11 +261,13 @@ def _described_module(device_id, module, modules_dict):
     or it is one this integration never discovered.
     """
     try:
-        module_tuple = (module["ModuleIndex"], module["ModuleType"])
+        module_key = ModuleRef(
+            module_index=module["ModuleIndex"], module_type=module["ModuleType"]
+        )
     except (KeyError, TypeError) as exc:
         _LOGGER.warning("Skipping malformed module entry in API response: %s", exc)
         return None
-    return modules_dict[device_id].get(module_tuple)
+    return modules_dict[device_id].get(module_key)
 
 
 def _described_parameter(value, device_module):
@@ -468,7 +471,9 @@ def _clear_unanswered(
 
     for module in values_json.get("Modules", []):
         try:
-            module_key = (module["ModuleIndex"], module["ModuleType"])
+            module_key = ModuleRef(
+                module_index=module["ModuleIndex"], module_type=module["ModuleType"]
+            )
         except (KeyError, TypeError):
             continue
         device_module = modules_dict.get(device_id, {}).get(module_key)
@@ -499,8 +504,8 @@ def _clear_unanswered(
                 "Device %s module %s/%s: the portal sent no value for %s; "
                 "their last reading is not current any more.",
                 device_id,
-                module_key[0],
-                module_key[1],
+                module_key.module_index,
+                module_key.module_type,
                 ", ".join(sorted(cleared)),
             )
 

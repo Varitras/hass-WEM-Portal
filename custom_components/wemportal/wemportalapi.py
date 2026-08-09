@@ -60,6 +60,7 @@ from .const import (
     WEM_INVALID_PARAMETER_STATUS,
     WemDataType,
 )
+from .models import ModuleRef
 from .exceptions import (
     ApiBusyError,
     AuthError,
@@ -1808,7 +1809,9 @@ class WemPortalApi:
         )
         device_modules = {}
         for module in device["Modules"]:
-            module_key = (module["Index"], module["Type"])
+            module_key = ModuleRef(
+                module_index=module["Index"], module_type=module["Type"]
+            )
             module_entry = {
                 "Index": module["Index"],
                 "Type": module["Type"],

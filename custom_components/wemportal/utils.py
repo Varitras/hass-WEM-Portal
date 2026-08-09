@@ -12,6 +12,7 @@ from homeassistant.const import (
     UnitOfVolumeFlowRate,
 )
 
+from .models import ModuleRef
 from .const import (
     _LOGGER,
     BOOLEAN_OFF_STRINGS,
@@ -221,29 +222,29 @@ def sanitize_value(value_str):
 def serialize_modules(modules: dict) -> dict:
     """Convert the in-memory `modules` dict into a JSON-serializable dict.
 
-    `modules` is keyed as `{device_id: {(module_index, module_type): {...}}}`.
-    Tuple keys are not valid JSON object keys, so they are flattened into
-    "index:type" strings here. Used to persist discovered module/parameter
-    metadata across Home Assistant restarts (see `deserialize_modules` for
-    the inverse operation).
+    `modules` is keyed as `{device_id: {ModuleRef: {...}}}`. Tuple keys are
+    not valid JSON object keys, so ModuleRef's own storage spelling is used.
+    Built via `ModuleRef(*key)` on purpose: during the typed-model migration
+    the same dict can briefly hold bare-tuple keys from older code paths and
+    tests, and both must serialize identically.
     """
     if not modules:
         return {}
     serialized = {}
     for device_id, device_modules in modules.items():
         serialized[device_id] = {
-            f"{module_index}:{module_type}": module_data
-            for (module_index, module_type), module_data in device_modules.items()
+            ModuleRef(*module_key).as_storage_key(): module_data
+            for module_key, module_data in device_modules.items()
         }
     return serialized
 
 
 def deserialize_modules(data: dict) -> dict:
-    """Convert a persisted modules dict back into the in-memory tuple-keyed format.
+    """Convert a persisted modules dict back into the in-memory keyed format.
 
-    Inverse of `serialize_modules`. Returns an empty dict (not None) if
-    `data` is empty/None, so callers can safely treat the result as
-    "no cached data" without extra None-checks.
+    Inverse of `serialize_modules`; the keys come back as ModuleRef. Returns
+    an empty dict (not None) if `data` is empty/None, so callers can safely
+    treat the result as "no cached data" without extra None-checks.
     """
     if not data:
         return {}
@@ -251,8 +252,7 @@ def deserialize_modules(data: dict) -> dict:
     for device_id, device_modules in data.items():
         modules[device_id] = {}
         for key, module_data in device_modules.items():
-            index_str, type_str = key.split(":", 1)
-            modules[device_id][(int(index_str), int(type_str))] = module_data
+            modules[device_id][ModuleRef.from_storage_key(key)] = module_data
     return modules
 
 

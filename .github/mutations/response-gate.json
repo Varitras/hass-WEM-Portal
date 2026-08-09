@@ -765,7 +765,7 @@
   {
     "label": "freshness: clearing a module the portal never answered for must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "    for module in values_json.get(\"Modules\", []):\n        try:\n            module_key = (module[\"ModuleIndex\"], module[\"ModuleType\"])",
+    "old": "    for module in values_json.get(\"Modules\", []):\n        try:\n            module_key = ModuleRef(\n                module_index=module[\"ModuleIndex\"], module_type=module[\"ModuleType\"]\n            )",
     "new": "    for module_key in modules_dict.get(device_id, {}):\n        try:\n            module = {}",
     "tests": "module_the_portal_did_not_answer_for_is_left_alone"
   },
@@ -2385,5 +2385,19 @@
     "old": "            if values is None:\n                # `null` is valid JSON and used to die on the .get below",
     "new": "            if False:\n                # `null` is valid JSON and used to die on the .get below",
     "tests": "a_value_read_answered_with_null_fails_the_cycle_cleanly"
+  },
+  {
+    "label": "model: the storage key written back to front",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        return f\"{self.module_index}:{self.module_type}\"",
+    "new": "        return f\"{self.module_type}:{self.module_index}\"",
+    "tests": "a_module_ref_round_trips_through_its_storage_key or the_storage_key_format_is_pinned"
+  },
+  {
+    "label": "model: a persisted cache key read back to front",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        return cls(module_index=int(index_text), module_type=int(type_text))",
+    "new": "        return cls(module_index=int(type_text), module_type=int(index_text))",
+    "tests": "the_storage_key_format_is_pinned"
   }
 ]
