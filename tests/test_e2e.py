@@ -468,6 +468,118 @@ async def test_the_service_can_set_the_option_that_is_not_a_number(hass, monkeyp
     )
 
 
+def _writeable_rows(number_row=None, select_row=None):
+    """FAKE_DATA plus one writeable row, in the mapper's own shape."""
+    import copy
+
+    data = copy.deepcopy(FAKE_DATA)
+    if number_row is not None:
+        data["1234"]["Heat pump-Komfort"] = number_row
+    if select_row is not None:
+        data["1234"]["Heat pump-Betriebsart"] = select_row
+    return data
+
+
+def _number_row(value, min_value, max_value, step):
+    return {
+        "friendlyName": "Heat pump Komfort",
+        "ParameterID": "Komfort",
+        "unit": "°C",
+        "value": value,
+        "IsWriteable": True,
+        "DataType": 3,
+        "ModuleIndex": 0,
+        "ModuleType": 1,
+        "platform": "number",
+        "min_value": min_value,
+        "max_value": max_value,
+        "step": step,
+    }
+
+
+def _select_row(value, options, options_names):
+    return {
+        "friendlyName": "Heat pump Betriebsart",
+        "ParameterID": "Betriebsart",
+        "unit": None,
+        "value": value,
+        "IsWriteable": True,
+        "DataType": 1,
+        "ModuleIndex": 0,
+        "ModuleType": 1,
+        "platform": "select",
+        "options": options,
+        "optionsNames": options_names,
+    }
+
+
+async def test_fresh_bounds_from_the_portal_reach_a_running_number(hass, monkeypatch):
+    """Rediscovery delivers new bounds; the entity published its
+    construction-time ones forever - so a value the device now accepts was
+    refused by Home Assistant before this integration was ever asked."""
+    monkeypatch.setattr(
+        WemPortalApi,
+        "fetch_data",
+        lambda self, *_args, **_kwargs: _writeable_rows(
+            number_row=_number_row(21.0, 0.0, 100.0, 1)
+        ),
+    )
+    entry = await _setup(hass, _entry(hass))
+    komfort = next(
+        state
+        for state in hass.states.async_all("number")
+        if "komfort" in state.entity_id
+    )
+    assert komfort.attributes["min"] == 0.0
+    assert komfort.attributes["max"] == 100.0
+
+    entry.runtime_data.coordinator.async_set_updated_data(
+        _writeable_rows(number_row=_number_row(22.0, 5.0, 35.0, 0.5))
+    )
+    await hass.async_block_till_done()
+
+    komfort = hass.states.get(komfort.entity_id)
+    assert komfort.state == "22.0"
+    assert komfort.attributes["min"] == 5.0, (
+        "the new lower bound never reached the running entity"
+    )
+    assert komfort.attributes["max"] == 35.0
+    assert komfort.attributes["step"] == 0.5
+
+
+async def test_fresh_options_from_the_portal_reach_a_running_select(hass, monkeypatch):
+    """The counterpart for selects: an option added by rediscovery was
+    missing from the entity, and a device already ON that option read as
+    unknown - indistinguishable from a failure."""
+    monkeypatch.setattr(
+        WemPortalApi,
+        "fetch_data",
+        lambda self, *_args, **_kwargs: _writeable_rows(
+            select_row=_select_row("0", ["0", "1"], ["Aus", "Ein"])
+        ),
+    )
+    entry = await _setup(hass, _entry(hass))
+    betriebsart = next(
+        state
+        for state in hass.states.async_all("select")
+        if "betriebsart" in state.entity_id
+    )
+    assert betriebsart.state == "Aus"
+
+    entry.runtime_data.coordinator.async_set_updated_data(
+        _writeable_rows(
+            select_row=_select_row("2", ["0", "1", "2"], ["Aus", "Ein", "Party"])
+        )
+    )
+    await hass.async_block_till_done()
+
+    betriebsart = hass.states.get(betriebsart.entity_id)
+    assert betriebsart.state == "Party", (
+        "the device is on the new option and the entity cannot say so"
+    )
+    assert "Party" in betriebsart.attributes["options"]
+
+
 async def test_diagnostics_carry_no_credentials_and_no_installation_ids(hass):
     """The diagnostics download is written to be attached to a public issue.
 

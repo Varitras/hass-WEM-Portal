@@ -1682,13 +1682,6 @@ EXPERT_UNKNOWN_BOUND = 100000.0
 # that would fetch the real step.
 EXPERT_UNKNOWN_STEP = 0.01
 
-# What every slot claimed before the placeholders existed. Kept only to
-# recognise such a record on the first start after an upgrade - see
-# WemPortalExpertNumber._is_the_old_assumption.
-LEGACY_ASSUMED_MIN = 0
-LEGACY_ASSUMED_MAX = 100
-LEGACY_ASSUMED_STEP = 1
-
 try:
     from homeassistant.components.number import NumberMode, RestoreNumber
     from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -1793,52 +1786,24 @@ try:
                 self._factory_default = state.factory_default
 
         def _restore_from(self, last):
-            """Take back the stored range as well as the stored value.
+            """Take back the stored VALUE and nothing else.
 
-            Only the value came back before, so after a restart a parameter
-            whose real range is 200-800 sat at its stored value inside the
-            assumed 0-100 and could not be set at all until the next
-            successful read - which, with the auto-poll off, may be never.
+            A stored range once came back too, and that is a trap in slow
+            motion: Home Assistant validates a write against the published
+            bounds before this integration is asked, and a heating
+            parameter's limits can depend on other settings - so a range
+            restored from last month can exclude exactly the value whose
+            write would have fetched the current one. The in-session refusal
+            correction cannot reach that case; it needs the write to arrive,
+            and where old and new range do not overlap, it never does.
 
-            Except when what is stored is the assumption itself. RestoreNumber
-            persists min, max and step with or without a value, so a slot that
-            existed before the placeholders did has 0/100/1 on disk although
-            it was never read - and taking that back on the first start after
-            an upgrade would reinstate the lock for exactly the installations
-            the placeholders are for.
+            The bounds therefore stay the permissive placeholders until the
+            portal itself has answered - a read, a write or the auto-poll.
+            The price, documented in the README and CHANGELOG: after a
+            restart the parameter is a typing box, not a slider, until then.
             """
             if last.native_value is not None:
                 self._attr_native_value = last.native_value
-            if self._is_the_old_assumption(last):
-                _LOGGER.debug(
-                    "%s: ignoring a stored range that predates the portal "
-                    "ever being asked; keeping the placeholders.",
-                    self._attr_name,
-                )
-                return
-            if last.native_min_value is not None:
-                self._attr_native_min_value = last.native_min_value
-            if last.native_max_value is not None:
-                self._attr_native_max_value = last.native_max_value
-            if last.native_step is not None:
-                self._attr_native_step = last.native_step
-
-        @staticmethod
-        def _is_the_old_assumption(last) -> bool:
-            """Whether a stored range is the pre-fix guess rather than a fact.
-
-            Both halves are needed. 0 to 100 in steps of 1 is a plausible real
-            range - a percentage - so the numbers alone do not say. What says
-            it is that there is no value with them: a real range can only have
-            been learnt by reading or writing the parameter, and either would
-            have stored the value too.
-            """
-            return (
-                last.native_value is None
-                and last.native_min_value == LEGACY_ASSUMED_MIN
-                and last.native_max_value == LEGACY_ASSUMED_MAX
-                and last.native_step == LEGACY_ASSUMED_STEP
-            )
 
         @property
         def extra_state_attributes(self):

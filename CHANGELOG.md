@@ -15,7 +15,24 @@ versioning follows [Semantic Versioning](https://semver.org/).
   which redaction cannot reach. Attach it to bug reports instead of
   hand-picking log lines.
 
+### Changed
+- **After a restart an expert parameter restores its value, never its range.**
+  A stored range is a copy of a reading that no longer exists, and Home
+  Assistant checks the published range before this integration is asked - so
+  a stale restored range could block exactly the write that would have
+  fetched the current one. Bounds and step now stay permissive until the
+  portal has answered once. The price: after a restart the parameter is a
+  typing box, not a slider, until the first read or write.
+
 ### Fixed
+- **New bounds and options reach entities that already exist.** Rediscovery
+  replaces the parameter descriptions once a day and every cycle delivers
+  fresh metadata - but Number published its construction-time range forever
+  (a value the device newly accepts was refused by Home Assistant before
+  this integration was asked), and Select resolved against its
+  construction-time options (a device already on a newly added option read
+  as unknown). Both now take metadata from every coordinator update, before
+  the value.
 - **A module the portal stops answering for ages out - its siblings stay.**
   Freshness was tracked per device, so as long as module A kept answering,
   the readings of a module B missing from every answer were presented as

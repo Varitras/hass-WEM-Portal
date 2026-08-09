@@ -178,7 +178,14 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
         """Handle updated data from the coordinator."""
 
         try:
-            value = self.coordinator.data[self._device_id][self._data_key]["value"]
+            entity_data = self.coordinator.data[self._device_id][self._data_key]
+            # Options BEFORE the value, for the same reason number refreshes
+            # its bounds: rediscovery can add an option, and a device already
+            # ON it read as unknown against the construction-time list -
+            # indistinguishable from a failed read.
+            self._options = entity_data.get("options", self._options)
+            self._options_names = entity_data.get("optionsNames", self._options_names)
+            value = entity_data["value"]
             self._attr_current_option = self._resolve_option(value)
         except KeyError:
             self._attr_current_option = None

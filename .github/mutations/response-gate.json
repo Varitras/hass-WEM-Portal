@@ -1834,11 +1834,11 @@
     "tests": "the_step_of_a_whole_number_parameter_stays_whole"
   },
   {
-    "label": "expert: restore taking the value and dropping the range again",
+    "label": "expert: restore taking the stored bounds back again",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            if last.native_min_value is not None:\n                self._attr_native_min_value = last.native_min_value",
-    "new": "",
-    "tests": "the_restored_range_comes_back_with_the_value"
+    "old": "            if last.native_value is not None:\n                self._attr_native_value = last.native_value",
+    "new": "            if last.native_value is not None:\n                self._attr_native_value = last.native_value\n            self._attr_native_min_value = last.native_min_value\n            self._attr_native_max_value = last.native_max_value\n            self._attr_native_step = last.native_step",
+    "tests": "restore_brings_back_the_value_and_never_the_bounds"
   },
   {
     "label": "scrape: a login page without its form blamed on the password again",
@@ -2044,18 +2044,11 @@
     "tests": "an_aborted_discovery_ends_the_flow_instead_of_escaping"
   },
   {
-    "label": "expert: a pre-fix stored range reinstating the lock after an upgrade",
+    "label": "expert: restore dropping the stored value too",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            if self._is_the_old_assumption(last):",
-    "new": "            if False:",
-    "tests": "a_restore_from_before_the_fix_does_not_bring_the_lock_back"
-  },
-  {
-    "label": "expert: a real 0-100 range discarded as if it were the old guess",
-    "path": "custom_components/wemportal/expert_writer.py",
-    "old": "                last.native_value is None\n                and last.native_min_value == LEGACY_ASSUMED_MIN",
-    "new": "                last.native_min_value == LEGACY_ASSUMED_MIN",
-    "tests": "a_restored_range_that_was_really_read_is_kept"
+    "old": "            if last.native_value is not None:\n                self._attr_native_value = last.native_value",
+    "new": "            if last.native_value is not None:\n                pass",
+    "tests": "restore_brings_back_the_value_and_never_the_bounds"
   },
   {
     "label": "scrape: a TypeError replacing the reason three failures in",

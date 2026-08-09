@@ -187,6 +187,18 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
                 entity_data.get("value"), entity_data.get("unit")
             )
 
+            # Metadata BEFORE the value. Rediscovery replaces the parameter
+            # descriptions once a day and the mapper delivers fresh bounds
+            # with every cycle - published only at construction, a value the
+            # device newly accepts was refused by Home Assistant's own range
+            # check before this integration was ever asked.
+            if "min_value" in entity_data:
+                self._attr_native_min_value = entity_data["min_value"]
+            if "max_value" in entity_data:
+                self._attr_native_max_value = entity_data["max_value"]
+            if "step" in entity_data:
+                self._attr_native_step = entity_data["step"]
+
             self._attr_native_value = self._validated_native_value(value)
 
             # set unit if it references a valid non-trivial unit of measurement

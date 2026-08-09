@@ -1286,21 +1286,54 @@ def test_a_single_option_leaves_the_step_alone():
     assert entity.native_step == before
 
 
-def test_a_restore_from_before_the_fix_does_not_bring_the_lock_back():
-    """The upgrade path the wide placeholders would otherwise miss.
+def test_restore_brings_back_the_value_and_never_the_bounds():
+    """A stored range is a copy of a reading that no longer exists.
 
-    RestoreNumber persists min, max and step whether or not there is a value,
-    so a slot that existed before this was fixed has 0/100/1 in storage even
-    though it was never read. Taking that back on the first start after the
-    upgrade would overwrite the placeholders and lock the parameter out
-    again - for exactly the installations the fix is for.
-
-    Recognised by what it is: bounds that ARE the old made-up ones, on an
-    entity that has no value to go with them. A real range that happens to be
-    0 to 100 comes with a value, because it can only have been learnt by
-    reading or writing one.
+    Home Assistant validates a write against the PUBLISHED bounds before
+    this integration is asked, and a heating parameter's limits can depend
+    on other settings - so a range restored from last month can exclude
+    exactly the value whose write would have fetched the current one. The
+    in-session refusal correction cannot reach that case: it needs the
+    write to arrive, and where old and new range do not overlap, it never
+    does. The placeholders exclude nothing; the price is a typing box
+    instead of a slider until the portal has answered once, and the price
+    is documented.
     """
     import types
+
+    from homeassistant.components.number import NumberMode
+
+    from custom_components.wemportal import expert_writer
+
+    entity = _expert_entity(_api())
+
+    entity._restore_from(
+        types.SimpleNamespace(
+            native_value=350.0,
+            native_min_value=200.0,
+            native_max_value=800.0,
+            native_step=10.0,
+        )
+    )
+
+    assert entity.native_value == 350.0, "the stored value is the one thing to keep"
+    assert entity.native_min_value == -expert_writer.EXPERT_UNKNOWN_BOUND, (
+        "a stored range came back and can lock out the correcting write"
+    )
+    assert entity.native_max_value == expert_writer.EXPERT_UNKNOWN_BOUND
+    assert entity.native_step == expert_writer.EXPERT_UNKNOWN_STEP
+    assert entity.mode == NumberMode.BOX, (
+        "a slider over placeholder bounds spans 200000 - it must be a box"
+    )
+
+
+def test_a_slot_with_no_stored_value_stays_on_the_placeholders():
+    """RestoreNumber persists bounds with or without a value, so a slot that
+    was never read still has the pre-placeholder 0/100/1 on disk. Nothing of
+    that may come back - there is no reading it could belong to."""
+    import types
+
+    from custom_components.wemportal import expert_writer
 
     entity = _expert_entity(_api())
 
@@ -1313,53 +1346,9 @@ def test_a_restore_from_before_the_fix_does_not_bring_the_lock_back():
         )
     )
 
-    assert entity.native_min_value <= 350 <= entity.native_max_value, (
-        "the pre-fix bounds came back and locked the parameter out again"
-    )
-    assert entity.native_step <= 0.5
-
-
-def test_a_restored_range_that_was_really_read_is_kept():
-    """The counter-test. 0 to 100 IS a plausible range - a percentage - and
-    a stored one that came with a value was learnt from the portal."""
-    import types
-
-    entity = _expert_entity(_api())
-
-    entity._restore_from(
-        types.SimpleNamespace(
-            native_value=42.0,
-            native_min_value=0,
-            native_max_value=100,
-            native_step=1,
-        )
-    )
-
-    assert entity.native_min_value == 0
-    assert entity.native_max_value == 100
-    assert entity.native_step == 1
-
-
-def test_the_restored_range_comes_back_with_the_value():
-    """Restore took the value and left the range behind, so after a restart a
-    parameter whose real range is 200-800 sat at its stored value inside the
-    assumed 0-100 - unsettable until the next successful read."""
-    import types
-
-    entity = _expert_entity(_api())
-    entity._restore_from(
-        types.SimpleNamespace(
-            native_value=350.0,
-            native_min_value=200.0,
-            native_max_value=800.0,
-            native_step=10.0,
-        )
-    )
-
-    assert entity.native_value == 350.0
-    assert entity.native_min_value == 200.0, "the restored range was dropped"
-    assert entity.native_max_value == 800.0
-    assert entity.native_step == 10.0
+    assert entity.native_value is None
+    assert entity.native_min_value == -expert_writer.EXPERT_UNKNOWN_BOUND
+    assert entity.native_max_value == expert_writer.EXPERT_UNKNOWN_BOUND
 
 
 def test_entity_write_uses_the_expert_gate_not_the_global_one():
