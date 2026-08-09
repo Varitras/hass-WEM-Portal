@@ -15,6 +15,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   one account apart and all the message needs it for.
 
 ### Fixed
+- **A poll that runs out of time says so from every request, not just one.**
+  A request is capped at what is left of the cycle, so timing out on that cap
+  is the cycle stopping itself — which keeps the warm session — while an
+  ordinary failure discards it. Only the login request told the two apart. In
+  the session-reuse path an unclassified timeout was worse than untidy: that
+  path retries with a full login, so a portal that had just failed to answer
+  one request was sent two more.
 - **A slot the portal has not been asked about yet accepts fine values.** The
   placeholder step was half a unit, and the heating curve is offered in
   hundredths — so four values in five could not be typed into a slot before

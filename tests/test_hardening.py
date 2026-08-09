@@ -1690,6 +1690,33 @@ def test_a_request_that_ran_out_the_budget_is_reported_as_the_deadline():
         scraper.scrape()
 
 
+def test_a_reused_session_that_runs_out_of_time_is_the_deadline_too():
+    """Only the login GET classified its transport failure; three did not.
+
+    This one does the most damage. The session-reuse fast path re-raises the
+    three answers that must not be retried and treats everything else as
+    "reuse failed, log in fresh" - so a raw timeout here fires two MORE
+    requests at a portal that just failed to answer one. The deadline is a
+    BaseException precisely so it travels past that catch-all, and it only
+    becomes one if the request site says so.
+    """
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    spent = [5.0]
+
+    class _TimesOutSession:
+        def get(self, *_args, **_kwargs):
+            # The budget is gone by the time the request gives up.
+            spent[0] = 0.0
+            raise TimeoutError("timed out")
+
+    scraper = WemPortalScraper("user@example.org", "secret", budget=lambda: spent[0])
+    scraper.session = _TimesOutSession()
+
+    with pytest.raises(exceptions.PollDeadlineExceeded):
+        scraper._load_expert_page()
+
+
 def test_a_plain_network_failure_is_still_a_server_error():
     """The counter-test: with budget left, a timeout is the portal's problem
     and must keep its own classification."""

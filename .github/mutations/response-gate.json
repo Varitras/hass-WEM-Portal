@@ -2287,5 +2287,19 @@
     "old": "EXPERT_UNKNOWN_STEP = 0.01",
     "new": "EXPERT_UNKNOWN_STEP = 0.5",
     "tests": "an_unread_slot_rasters_finely_enough_for_what_the_portal_offers"
+  },
+  {
+    "label": "scraper: a reused session's timeout arriving unclassified again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        try:\n            r_main = self.session.get(WEB_MAIN_URL, timeout=self._request_timeout())\n        except Exception as exc:\n            raise self._transport_failure(exc, \"load the WEM Portal main page\") from exc",
+    "new": "        r_main = self.session.get(WEB_MAIN_URL, timeout=self._request_timeout())",
+    "tests": "a_reused_session_that_runs_out_of_time_is_the_deadline_too"
+  },
+  {
+    "label": "scraper: the login POST losing its classification again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        try:\n            login_response = self.session.post(\n                WEB_LOGIN_URL,\n                data=login_data,\n                allow_redirects=True,\n                timeout=self._request_timeout(),\n            )\n        except Exception as exc:\n            raise self._transport_failure(exc, \"send the WEM Portal login\") from exc",
+    "new": "        login_response = self.session.post(\n            WEB_LOGIN_URL,\n            data=login_data,\n            allow_redirects=True,\n            timeout=self._request_timeout(),\n        )",
+    "tests": "every_scraper_request_classifies_its_transport_failure"
   }
 ]

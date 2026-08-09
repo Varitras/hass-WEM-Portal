@@ -178,6 +178,60 @@ def test_the_scan_actually_finds_the_requests(module):
     assert len(list(request_sites(module))) >= 4
 
 
+def _requests_classifying_their_transport_failure(tree):
+    """Every request whose own try block turns a failure into the right type."""
+    classified = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        classifies = any(
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "_transport_failure"
+            for handler in node.handlers
+            for call in ast.walk(handler)
+        )
+        if not classifies:
+            continue
+        for statement in node.body:
+            classified.update(
+                inner for inner in ast.walk(statement) if _is_request(inner)
+            )
+    return classified
+
+
+def test_every_scraper_request_classifies_its_transport_failure():
+    """A raw timeout here is not untidiness - it is the wrong exception.
+
+    The request timeout may be what is LEFT of the poll cycle, so running out
+    of it is the cycle stopping itself, which the coordinator handles by
+    keeping the warm session. Unclassified it is an ordinary failure instead:
+    the second one discards that session, and in the session-reuse path it
+    also triggers a full login against a portal that just failed to answer.
+
+    Only the login GET did this; the other three request sites did not.
+    Scanned rather than listed so a fifth site cannot be added without it.
+    """
+    tree = ast.parse((PACKAGE / "scraper.py").read_text(encoding="utf-8"))
+    classified = _requests_classifying_their_transport_failure(tree)
+
+    assert len(classified) >= 4, (
+        "the scan found fewer request sites than the module has, so it would "
+        "report perfect coverage forever"
+    )
+    unclassified = [
+        node.lineno
+        for node in ast.walk(tree)
+        if _is_request(node) and node not in classified
+    ]
+    assert not unclassified, (
+        f"scraper.py: the request(s) at line(s) {', '.join(map(str, unclassified))} "
+        "let a transport failure through as-is. Wrap them and raise "
+        "self._transport_failure(exc, '<what>'), so a spent cycle budget "
+        "arrives as the deadline it is."
+    )
+
+
 # The gate and the helper it delegates the 403 case to. Status handling lives
 # in these two and nowhere else.
 GATE_METHODS = ("_check_response", "_raise_if_forbidden")

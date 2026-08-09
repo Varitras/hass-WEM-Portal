@@ -267,7 +267,15 @@ class WemPortalScraper:
             valid" is an expected, recoverable condition for the fast
             path's caller, not necessarily a hard error.
         """
-        r_main = self.session.get(WEB_MAIN_URL, timeout=self._request_timeout())
+        # Classified like the login GET below, and for the sharper reason:
+        # this is the fast path's own request, and its caller re-raises the
+        # three answers it recognises while reading everything else as
+        # "reuse failed, log in fresh". A raw timeout therefore fired two
+        # MORE requests at a portal that had just failed to answer one.
+        try:
+            r_main = self.session.get(WEB_MAIN_URL, timeout=self._request_timeout())
+        except Exception as exc:
+            raise self._transport_failure(exc, "load the WEM Portal main page") from exc
         # A 500 has no __VIEWSTATE, so without this it fell through to
         # `return None` - which the full login reports as an AuthError, i.e. a
         # server outage blamed on the credentials.
@@ -294,12 +302,17 @@ class WemPortalScraper:
         }
 
         # 4. POST to select 'Expert' tab
-        r_expert = self.session.post(
-            WEB_MAIN_URL,
-            data=form_data,
-            allow_redirects=True,
-            timeout=self._request_timeout(),
-        )
+        try:
+            r_expert = self.session.post(
+                WEB_MAIN_URL,
+                data=form_data,
+                allow_redirects=True,
+                timeout=self._request_timeout(),
+            )
+        except Exception as exc:
+            raise self._transport_failure(
+                exc, "open the WEM Portal expert view"
+            ) from exc
         self._check_response(r_expert, "expert page", check_maintenance=True)
         if WEB_LOGIN_URL.lower() in r_expert.url.lower():
             return None
@@ -447,12 +460,15 @@ class WemPortalScraper:
             "ctl00$content$btnLogin": "Anmelden",
         }
 
-        login_response = self.session.post(
-            WEB_LOGIN_URL,
-            data=login_data,
-            allow_redirects=True,
-            timeout=self._request_timeout(),
-        )
+        try:
+            login_response = self.session.post(
+                WEB_LOGIN_URL,
+                data=login_data,
+                allow_redirects=True,
+                timeout=self._request_timeout(),
+            )
+        except Exception as exc:
+            raise self._transport_failure(exc, "send the WEM Portal login") from exc
         # check_maintenance, like the GET above and the main page below. What
         # comes back here is one of those two pages, and both are checked for
         # the notice everywhere else - this was the only place it was not.
