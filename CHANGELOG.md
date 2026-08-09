@@ -6,6 +6,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.11.0b4] – 2026-08-09
+
 ### Security
 - **A device id no longer travels in the message that asks you to report it.**
   When every device's parameter fetch fails, the reason Home Assistant shows
