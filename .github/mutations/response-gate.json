@@ -2259,5 +2259,19 @@
     "old": "            if self._portal_text is not None:\n                attributes[\"portal_value\"] = self._portal_text\n",
     "new": "",
     "tests": "the_dialog_wording_reaches_the_entity_that_has_to_show_it"
+  },
+  {
+    "label": "expert: a service write that leaves its entity on the old value",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        data.expert.apply_verified_write(entityvalue, state)\n",
+    "new": "",
+    "tests": "a_service_write_reaches_the_entity_that_shows_the_parameter"
+  },
+  {
+    "label": "expert: a verified write applied to every entity but its own",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            if entity.entityvalue == entityvalue:",
+    "new": "            if entity.entityvalue != entityvalue:",
+    "tests": "a_service_write_reaches_the_entity_that_shows_the_parameter"
   }
 ]

@@ -15,6 +15,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   one account apart and all the message needs it for.
 
 ### Fixed
+- **A parameter set through the service shows its new value right away.** Both
+  ways of writing an expert parameter end in a portal read-back, and the number
+  entity applies it - but the `set_expert_parameter` action dropped the answer,
+  so the entity for the very parameter that had just been set kept showing the
+  old value until the next automatic read, which is off by default, or a
+  restart.
 - **A teardown during discovery ends the flow, for real this time.** The abort
   was translated into Home Assistant's own flow abort, but both callers wrap
   the discovery call in `except Exception` - and that abort reaches `Exception`

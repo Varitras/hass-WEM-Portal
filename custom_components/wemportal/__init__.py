@@ -588,6 +588,9 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
         finally:
             if lock is not None:
                 lock.release()
+        # The write verified itself against the portal; that answer is exactly
+        # what the entity for this id should be showing.
+        data.expert.apply_verified_write(entityvalue, state)
         _LOGGER.info(
             "Expert parameter %s set to %s (allowed range %s..%s)",
             ev_short,

@@ -332,6 +332,24 @@ class ExpertController:
                 self.fail_notified.discard(entityvalue)
             entity.apply_read_state(state)
 
+    def apply_verified_write(self, entityvalue: str, state) -> None:
+        """Show what a write read back on the entity holding that id.
+
+        Both routes to the same parameter end in a portal read-back, and the
+        entity route applies its own. The domain service had no way back to
+        the entity and dropped the answer, so the same parameter set the same
+        way showed the new value on one route and the old one on the other -
+        until an auto-poll that is off by default, or a restart.
+
+        Deliberately NOT routed through apply_read: that one reads an id
+        MISSING from the batch as a failed read, so handing it this single
+        result would count a miss against every other configured parameter
+        and, after three writes, notify about ids that were never asked for.
+        """
+        for entity in self.entities:
+            if entity.entityvalue == entityvalue:
+                entity.apply_read_state(state)
+
     def _notify_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
         """Tell the user about a parameter that keeps not being read.
 

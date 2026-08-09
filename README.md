@@ -418,6 +418,10 @@ Both wait for the portal to confirm the write, which takes a few seconds — the
 call returns when the new value has been read back. Only the caller waits;
 polling, the other entities and the rest of Home Assistant are unaffected.
 
+Either way, the value the portal confirmed is what the number entity for that
+parameter shows from then on. The service used to leave it on the pre-write
+value until the next read.
+
 Successful writes do **not** notify by default (that gets noisy when setting
 several values). Enable **`Notify on successful expert write`** if you want a
 confirmation on success too. Failures are not notified: they are raised, so

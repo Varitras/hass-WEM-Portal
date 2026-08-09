@@ -388,6 +388,43 @@ async def test_expert_service_raises_on_write_failure(hass, monkeypatch):
         )
 
 
+async def test_a_service_write_reaches_the_entity_that_shows_the_parameter(
+    hass, monkeypatch
+):
+    """The service verifies its write and then threw the answer away.
+
+    Both ways of setting the same parameter end in a portal read-back, and
+    the entity write applies it. The service did not, so the number entity
+    kept showing the value from before the write - until the next auto-poll,
+    which is off by default, or a restart. The README puts the two side by
+    side as the same operation with different permissions.
+    """
+    await _setup(hass, _entry(hass, _expert_options()))
+
+    def written(self, entityvalue, value, **_kwargs):
+        return expert_writer.ExpertParameterState(value, [10.0, 20.0, 30.0], {})
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", written)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_EXPERT_PARAMETER,
+        {"entityvalue": EV_A, "value": 30},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    shown = [
+        state
+        for state in hass.states.async_all("number")
+        if "expert_parameter_1" in state.entity_id
+    ]
+    assert shown, "no expert number entity was created for the configured slot"
+    assert shown[0].state == "30.0", (
+        "the service wrote the parameter but the entity still shows the old value"
+    )
+
+
 async def test_expert_service_refuses_while_another_operation_runs(hass):
     """The shared per-account lock must reject a second concurrent expert
     operation instead of opening a parallel portal session."""
