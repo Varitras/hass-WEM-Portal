@@ -129,6 +129,22 @@ def test_every_guard_file_is_listed_and_present():
     )
 
 
+def test_every_guard_is_described_in_the_readme():
+    """The index says a guard exists; the README says what to do about it.
+
+    Documentation that nothing checks is documentation that quietly stops
+    being true - and this particular text exists for the person who has no
+    memory of any of this, so being wrong is worse than being absent.
+    """
+    readme = (TESTS / "README.md").read_text(encoding="utf-8")
+
+    undocumented = [name for name in GUARD_FILES if name not in readme]
+    assert not undocumented, (
+        f"guard file(s) missing from tests/README.md: {undocumented}. Add a "
+        "row to the guard table saying what each one holds."
+    )
+
+
 def test_the_local_check_runs_every_tool_ci_runs():
     """`check.sh` is only worth trusting while it is the same set of gates.
 
