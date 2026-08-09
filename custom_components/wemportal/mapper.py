@@ -296,40 +296,87 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> t
         device_module = _described_module(device_id, module, modules_dict)
         if device_module is None:
             continue
-
-        for value in module.get("Values", []):
-            described = _described_parameter(value, device_module)
-            if described is None:
-                continue
-            parameter_id, parameter = described
-
-            try:
-                name, sensor = _describe_value(
-                    parameter_id, module, device_module, parameter, value, language
-                )
-                # Recorded before the platform decision below, which can
-                # raise: a value that has no writeable platform - because
-                # its type is unknown or because building it failed - must
-                # still reach the second pass as a plain sensor.
-                parsed_sensors[name] = sensor
-
-                entity = _writeable_entity(sensor, parameter, value)
-                if entity is not None:
-                    api_data[device_id][name] = entity
-                    controls.add(name)
-            except Exception as exc:  # noqa: BLE001
-                # A single malformed/unexpected data point should never
-                # cost us the rest of this device's update - log and
-                # move on to the next value instead of letting the
-                # exception abort processing for everything after it.
-                _LOGGER.warning(
-                    "Skipping value for parameter %s due to unexpected error: %s",
-                    value.get("ParameterID", "?") if isinstance(value, dict) else "?",
-                    exc,
-                )
-                continue
+        sensors, module_controls = _read_module_values(
+            device_id, module, device_module, language, api_data
+        )
+        parsed_sensors.update(sensors)
+        controls |= module_controls
 
     return parsed_sensors, controls
+
+
+def _read_module_values(device_id, module, device_module, language, api_data) -> tuple:
+    """One module's values, flattened and placed on their platforms.
+
+    Split out from the loop above rather than left inline: three levels of
+    nesting meant every decision about a single value was read through two
+    loops it does not depend on.
+    """
+    parsed_sensors = {}
+    controls = set()
+
+    for value in module.get("Values", []):
+        described = _described_parameter(value, device_module)
+        if described is None:
+            continue
+        parameter_id, parameter = described
+
+        try:
+            name, sensor = _describe_value(
+                parameter_id, module, device_module, parameter, value, language
+            )
+            # Recorded before the platform decision below, which can
+            # raise: a value that has no writeable platform - because
+            # its type is unknown or because building it failed - must
+            # still reach the second pass as a plain sensor.
+            parsed_sensors[name] = sensor
+
+            entity = _writeable_entity(sensor, parameter, value)
+            if entity is not None:
+                api_data[device_id][name] = entity
+                controls.add(name)
+        except Exception as exc:  # noqa: BLE001
+            # A single malformed/unexpected data point should never
+            # cost us the rest of this device's update - log and
+            # move on to the next value instead of letting the
+            # exception abort processing for everything after it.
+            _LOGGER.warning(
+                "Skipping value for parameter %s due to unexpected error: %s",
+                value.get("ParameterID", "?") if isinstance(value, dict) else "?",
+                exc,
+            )
+            continue
+
+    return parsed_sensors, controls
+
+
+def _scraped_entities_naming_the_same_thing(
+    device_id, sensor, language, api_data
+) -> list:
+    """The scraped entities whose translated name this reading's name covers.
+
+    Word containment rather than equality: the API calls a reading
+    "Outside temperature" where the scraped row says "Outside", and the two
+    are the same measurement. Split out from the merge below, which is a
+    different question - this one only decides WHICH entities are meant.
+    """
+    matches = []
+    for scraped_data in api_data[device_id].values():
+        if not isinstance(scraped_data, dict):
+            continue
+        scraped_entity_id = scraped_data.get("ParameterID", "")
+        try:
+            scraped_part = scraped_entity_id.split("-")[1]
+        except IndexError:
+            # No module prefix, so nothing to compare against.
+            continue
+        translated_scraped = translate(language, friendly_name_mapper(scraped_part))
+
+        sensor_words = _tokenize(sensor["friendlyName"])
+        scraped_words = _tokenize(translated_scraped)
+        if scraped_words and scraped_words.issubset(sensor_words):
+            matches.append(scraped_entity_id)
+    return matches
 
 
 def _merge_into_scraped(
@@ -339,28 +386,13 @@ def _merge_into_scraped(
     so both sources keep one entity instead of two that drift apart."""
     parameter_id = sensor["ParameterID"]
     if parameter_id not in scraping_mapper:
-        for scraped_data in api_data[device_id].values():
-            if not isinstance(scraped_data, dict):
-                continue
-            scraped_entity_id = scraped_data.get("ParameterID", "")
-            try:
-                scraped_part = scraped_entity_id.split("-")[1]
-                translated_scraped = translate(
-                    language, friendly_name_mapper(scraped_part)
-                )
-
-                sensor_words = _tokenize(sensor["friendlyName"])
-                scraped_words = _tokenize(translated_scraped)
-
-                if scraped_words and scraped_words.issubset(sensor_words):
-                    scraping_mapper.setdefault(parameter_id, []).append(
-                        scraped_entity_id
-                    )
-            except IndexError:
-                pass
-
-        if parameter_id not in scraping_mapper:
-            scraping_mapper[parameter_id] = [key]
+        matches = _scraped_entities_naming_the_same_thing(
+            device_id, sensor, language, api_data
+        )
+        # Falls back to the reading's own key: no scraped entity showing this
+        # value means there is nothing to merge into, and the entity is its
+        # own target.
+        scraping_mapper[parameter_id] = matches or [key]
 
     for scraped_entity in scraping_mapper[parameter_id]:
         # An API read that came back empty must not erase a
