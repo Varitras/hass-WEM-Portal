@@ -6,6 +6,25 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **A diagnostics download, written to be shareable.** Home Assistant's
+  three-dot menu on the integration now offers a diagnostics report:
+  coordinator health, readings and module counts. Credentials, configured
+  expert ids and the scraped session are redacted by key; device ids are
+  replaced by positional aliases (`device_1`) - they are dictionary keys,
+  which redaction cannot reach. Attach it to bug reports instead of
+  hand-picking log lines.
+
+### Fixed
+- **A German decimal reaches the write as the number it means.** The
+  portal's own dialog accepts `1,5`; the `set_expert_parameter` action
+  refused the same spelling, and an API string value like `21,5` stayed
+  text where a scraped cell already read 21.5. Every portal number now goes
+  through one shared parser, in both spellings.
+- **The service dialog explains word values.** Home Assistant renders the
+  translations, not `services.yaml` - so the hint that "Aus" works lived
+  only where nobody saw it. Both translations now say it.
+
 ## [1.11.0b4] – 2026-08-09
 
 ### Security

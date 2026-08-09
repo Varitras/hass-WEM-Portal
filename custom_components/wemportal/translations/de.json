@@ -114,7 +114,7 @@
         },
         "value": {
           "name": "Wert",
-          "description": "Neuer Wert. Muss einer der vom Gerät angebotenen Optionen entsprechen."
+          "description": "Neuer Wert: eine Zahl oder das Wort, das das Portal für eine Option neben der Skala anzeigt (z. B. \"Aus\"; Groß-/Kleinschreibung egal). Muss einer der vom Gerät angebotenen Optionen entsprechen."
         }
       }
     },

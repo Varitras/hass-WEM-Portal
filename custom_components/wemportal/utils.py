@@ -131,6 +131,26 @@ def build_device_info(entry_id, device_id, sw_version=None, model=None):
     return info
 
 
+def parse_portal_number(value):
+    """The number a portal value carries, or None if it carries none.
+
+    The portal spells decimals with a dot in dialog labels and API strings
+    and with a comma in scraped cells and values people type ("21,5",
+    "0,55"). Every reader shares this one parser - a second one is how the
+    edit dialog came to accept "0,55" while the service refused it.
+
+    None rather than a raise: each caller has its own answer to "no number
+    here" (skip the option, keep the raw string, name the accepted words),
+    and an exception would turn every one of them into a try block.
+    """
+    if value is None:
+        return None
+    try:
+        return float(str(value).strip().replace(",", "."))
+    except ValueError:
+        return None
+
+
 def sanitize_value(value_str):
     """Sanitize typical German/English WEM Portal strings into numeric values.
 
@@ -192,10 +212,10 @@ def sanitize_value(value_str):
     if value_lower in BOOLEAN_ON_STRINGS:
         return 1.0
 
-    try:
-        return float(value_str)
-    except ValueError:
-        return value_str
+    number = parse_portal_number(value_str)
+    if number is not None:
+        return number
+    return value_str
 
 
 def serialize_modules(modules: dict) -> dict:

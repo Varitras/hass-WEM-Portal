@@ -84,6 +84,7 @@ from .exceptions import (
 )
 from .utils import (
     maintenance_notice,
+    parse_portal_number,
     report_unexpected_maintenance_marker,
 )
 
@@ -308,16 +309,9 @@ def parse_module_list(html_content) -> list:
     ]
 
 
-def _as_number(text):
-    """The number a dropdown label carries, or None if it carries none.
-
-    Labels are decimal ("1.5", "1,5") on a scaled parameter and plain on the
-    rest; an enum reads "Aus" and has no number at all.
-    """
-    try:
-        return float((text or "").strip().replace(",", "."))
-    except ValueError:
-        return None
+# Dropdown labels are decimal ("1.5", "1,5") on a scaled parameter and plain
+# on the rest; an enum reads "Aus" and has no number at all. Parsed by the
+# shared utils.parse_portal_number, like every other portal value.
 
 
 def _smallest_gap(options):
@@ -1137,14 +1131,13 @@ class WemPortalExpertClient:
         pairs = []
         for option in select[0].xpath(".//option"):
             attribute = (option.get("value") or "").strip()
-            try:
-                posted = float(attribute.replace(",", "."))
-            except ValueError:
+            posted = parse_portal_number(attribute)
+            if posted is None:
                 continue
             label = (option.text or "").strip()
             pairs.append(
                 (
-                    _as_number(label),
+                    parse_portal_number(label),
                     posted,
                     attribute,
                     option.get("selected") is not None,
@@ -1437,7 +1430,9 @@ class WemPortalExpertClient:
 
             # Validate against the live option list; option values are the
             # exact strings the server expects back.
-            value_str, expected_word = self._requested_option(state, value)
+            value_str, expected_word, expected_number = self._requested_option(
+                state, value
+            )
 
             # The Senden button is type=button and submits via a JS
             # __doPostBack('ctl00$DialogContent$BtnSave', '') - replicate
@@ -1477,8 +1472,8 @@ class WemPortalExpertClient:
                 confirmed = verify.portal_text == expected_word
                 shown, wanted = verify.portal_text, expected_word
             else:
-                confirmed = verify.current == float(value)
-                shown, wanted = verify.current, float(value)
+                confirmed = verify.current == expected_number
+                shown, wanted = verify.current, expected_number
             if not confirmed:
                 raise ParameterWriteError(
                     f"Write not confirmed: form still shows {shown}, "
@@ -1496,33 +1491,35 @@ class WemPortalExpertClient:
 
     @staticmethod
     def _requested_option(state, value):
-        """The token to post, and the word to verify against - or None.
+        """The token to post, plus what to verify against: word or number.
 
-        A word addresses an option that sits BESIDE the scale ("Aus"), and
-        naming it is the only way to reach one: it has no place on a number,
-        so neither the entity nor Home Assistant's range check - which runs
-        before this integration is asked - can carry it.
+        Exactly one of the two is not None. A word addresses an option that
+        sits BESIDE the scale ("Aus"), and naming it is the only way to
+        reach one: it has no place on a number, so neither the entity nor
+        Home Assistant's range check - which runs before this integration is
+        asked - can carry it. Matched case-insensitively: the word comes
+        from a human typing what the portal displays, and "aus" for "Aus"
+        failing would be a puzzle with no clue in it.
 
-        Matched case-insensitively. The word comes from a human typing what
-        the portal displays, and "aus" for "Aus" failing would be a puzzle
-        with no clue in it.
+        Numbers go through the shared portal parser, so "0,55" typed the way
+        the German UI writes it means the same option as "0.55" - the dialog
+        itself accepts both spellings, and the service used to refuse one.
         """
         word = str(value).strip()
         for offered, attribute in state.special_values.items():
             if offered.casefold() == word.casefold():
-                return attribute, offered
+                return attribute, offered, None
 
-        try:
-            value_f = float(value)
-        except (TypeError, ValueError) as exc:
+        value_number = parse_portal_number(value)
+        if value_number is None:
             offers = ", ".join(state.special_values) or "no non-numeric option"
             raise ParameterWriteError(
                 f"{word!r} is not a value this parameter takes. It accepts "
                 f"{state.min_value}..{state.max_value} and {offers}.",
                 state=state,
-            ) from exc
+            )
 
-        if value_f not in state.options:
+        if value_number not in state.options:
             # Carries the state: a caller whose idea of the range is out
             # of date is precisely the caller that lands here.
             raise ParameterWriteError(
@@ -1531,7 +1528,7 @@ class WemPortalExpertClient:
                 f"({len(state.options)} discrete options).",
                 state=state,
             )
-        return state.post_value_for(value_f), None
+        return state.post_value_for(value_number), None, value_number
 
     # ------------------------------------------------------------------
     @staticmethod

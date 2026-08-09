@@ -30,6 +30,7 @@ from .exceptions import (
 )
 from .utils import (
     maintenance_notice,
+    parse_portal_number,
     report_unexpected_maintenance_marker,
     sanitize_value,
     unit_to_icon,
@@ -85,10 +86,10 @@ def _reading_and_unit(raw_value: str):
     """
     parts = raw_value.split(" ", 1)
     unit = parts[1] if len(parts) >= 2 else ""
-    try:
-        return float(".".join(parts[0].split(","))), unit
-    except ValueError:
+    number = parse_portal_number(parts[0])
+    if number is None:
         return raw_value, None
+    return number, unit
 
 
 def _unit_from_name(name: str) -> str:

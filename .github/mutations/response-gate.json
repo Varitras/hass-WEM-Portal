@@ -2328,6 +2328,34 @@
     "path": "custom_components/wemportal/expert_writer.py",
     "old": "            if expected_word is not None:\n                confirmed = verify.portal_text == expected_word\n                shown, wanted = verify.portal_text, expected_word\n            else:",
     "new": "            if False:\n                confirmed = verify.portal_text == expected_word\n                shown, wanted = verify.portal_text, expected_word\n            else:",
-    "tests": "a_special_value_can_be_written_by_the_word_the_portal_shows"
+    "tests": "a_special_value_can_be_written_by_the_word_the_portal_shows or a_word_write_not_taken_by_the_portal_is_reported_as_refused"
+  },
+  {
+    "label": "values: the comma dropped from the one shared parser",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        return float(str(value).strip().replace(\",\", \".\"))",
+    "new": "        return float(str(value).strip())",
+    "tests": "a_portal_number_reads_the_same_in_both_spellings or a_german_decimal_reaches_the_write_as_the_number_it_means"
+  },
+  {
+    "label": "values: sanitize no longer asking the shared parser",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    number = parse_portal_number(value_str)\n    if number is not None:\n        return number\n    return value_str",
+    "new": "    try:\n        return float(value_str)\n    except ValueError:\n        return value_str",
+    "tests": "a_comma_decimal_from_the_api_reads_as_its_number"
+  },
+  {
+    "label": "service: a typed comma refused by the write again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        value_number = parse_portal_number(value)\n        if value_number is None:",
+    "new": "        try:\n            value_number = float(value)\n        except (TypeError, ValueError):\n            value_number = None\n        if value_number is None:",
+    "tests": "a_german_decimal_reaches_the_write_as_the_number_it_means"
+  },
+  {
+    "label": "diagnostics: the password left in the public report",
+    "path": "custom_components/wemportal/diagnostics.py",
+    "old": "TO_REDACT = {\n    CONF_USERNAME,\n    CONF_PASSWORD,",
+    "new": "TO_REDACT = {\n    CONF_USERNAME,",
+    "tests": "diagnostics_carry_no_credentials_and_no_installation_ids"
   }
 ]

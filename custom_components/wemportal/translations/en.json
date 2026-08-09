@@ -114,7 +114,7 @@
         },
         "value": {
           "name": "Value",
-          "description": "New value. Must be one of the options the device offers."
+          "description": "New value: a number, or the word the portal shows for an option that is not one (for example \"Aus\"; case does not matter). Must be one of the options the device offers."
         }
       }
     },

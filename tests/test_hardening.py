@@ -839,6 +839,47 @@ def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
     assert sent["ctl00$DialogContent$ddlNewValue"] == "15"
 
 
+def test_a_word_write_not_taken_by_the_portal_is_reported_as_refused(monkeypatch):
+    """The verify step must compare the WORD the dialog shows.
+
+    On a special write the numeric side is None on BOTH ends - `current` is
+    empty by design, and there is no expected number - so a comparison that
+    falls back to numbers confirms anything: None == None. The only real
+    evidence is the wording, and a dialog still showing the other word means
+    the portal did not take the write.
+    """
+    still_on_ein = [
+        ("-32768", "Aus", False),
+        ("-1", "Ein", True),
+        ("200", "20.0", False),
+    ]
+    client, _sent = _recording_write_client(monkeypatch, [still_on_ein, still_on_ein])
+
+    with pytest.raises(exceptions.ParameterWriteError, match="not confirmed"):
+        client.write_parameter("A" * 36, "Aus")
+
+
+def test_a_german_decimal_reaches_the_write_as_the_number_it_means(monkeypatch):
+    """The dialog itself accepts "1,5"; the service refused the same spelling.
+
+    A value typed into the service field arrives as text when it does not
+    parse as a float - which "0,55" does not, while the German UI everywhere
+    else writes exactly that. It then failed the option check although 0.55
+    is on the list. Both spellings go through the one shared parser now.
+    """
+    client, sent = _recording_write_client(
+        monkeypatch,
+        [
+            [("55", "0.55", False), ("75", "0.75", True)],
+            [("55", "0.55", True), ("75", "0.75", False)],
+        ],
+    )
+
+    client.write_parameter("A" * 36, "0,55")
+
+    assert sent["ctl00$DialogContent$ddlNewValue"] == "55"
+
+
 def test_a_special_value_can_be_written_by_the_word_the_portal_shows(monkeypatch):
     """ "Aus" is a real setting that no route could reach.
 
@@ -2827,6 +2868,17 @@ def test_both_flows_have_a_message_for_a_blocked_ip():
 
     for name in ("translations/en.json", "translations/de.json"):
         assert _catalogue(name)["config"]["error"].get("rate_limited"), name
+
+
+def test_the_service_translations_explain_word_values():
+    """services.yaml is not what the dialog shows - HA renders the
+    translations. The word-value feature lived only in the YAML text, so the
+    UI still said "one of the options" and nobody could know "Aus" works."""
+    for name in ("translations/en.json", "translations/de.json"):
+        description = _catalogue(name)["services"]["set_expert_parameter"]["fields"][
+            "value"
+        ]["description"]
+        assert "Aus" in description, f"{name} does not mention word values"
 
 
 def _offline_api(status):
