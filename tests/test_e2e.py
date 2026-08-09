@@ -1746,6 +1746,49 @@ async def test_a_busy_api_does_not_trigger_the_recovery_swap(hass, monkeypatch):
     assert coordinator.api is api_before, "a busy api was replaced as if broken"
 
 
+async def test_a_busy_api_counts_neither_for_nor_against_the_credentials(
+    hass, monkeypatch
+):
+    """A cycle that never took the lock asked the portal nothing.
+
+    Both counters answer questions this cycle has no evidence about.
+    num_failed drives the backoff and, since the tolerance, whether the
+    entities stay visible - and nothing is broken, so raising it would make a
+    busy moment look like an outage. num_auth_failed is reset by any cycle
+    that reached the portal WITHOUT an auth failure, because that is evidence
+    the credentials are fine; a cycle that sent no request is not.
+
+    Written down as a test because the code says only why this clause comes
+    before the WemPortalError one, and an audit read the two silences as
+    oversights.
+    """
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import ApiBusyError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    failures_before = coordinator.num_failed
+    coordinator.num_auth_failed = 2  # a streak that must neither grow nor end
+
+    def busy(self, *_args, **_kwargs):
+        raise ApiBusyError("Timed out waiting for the connection to become free")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", busy)
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert coordinator.num_failed == failures_before, (
+        "a cycle that sent no request was counted as a failed one, which "
+        "backs the portal off and can take the entities off the dashboard"
+    )
+    assert coordinator.num_auth_failed == 2, (
+        "a cycle that never asked the portal was taken as proof the "
+        "credentials are fine"
+    )
+
+
 async def test_a_cycle_that_ran_out_of_time_keeps_its_connection(hass, monkeypatch):
     """A worker that stopped on its own deadline says "too slow", not
     "session broken".

@@ -349,6 +349,14 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # actively using and give the next poll a fresh lock -
                 # removing the serialization and doubling the load on a
                 # portal that was already too slow to answer in time.
+                #
+                # Neither counter moves, and both silences are deliberate.
+                # This cycle failed to take the lock, so it sent no request:
+                # nothing is broken (a raised num_failed would back the
+                # portal off and, past the tolerance, empty the dashboard),
+                # and nothing was learnt about the credentials either - the
+                # auth streak is reset by cycles that REACHED the portal
+                # without an auth failure, which is evidence this one lacks.
                 _LOGGER.debug("Skipping this cycle: %s", exc)
                 raise UpdateFailed(str(exc)) from exc
             # ForbiddenError was named here as well, which reads as two

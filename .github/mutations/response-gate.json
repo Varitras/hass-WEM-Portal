@@ -2273,5 +2273,12 @@
     "old": "            if entity.entityvalue == entityvalue:",
     "new": "            if entity.entityvalue != entityvalue:",
     "tests": "a_service_write_reaches_the_entity_that_shows_the_parameter"
+  },
+  {
+    "label": "coordinator: a busy cycle counted as an outage after all",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                _LOGGER.debug(\"Skipping this cycle: %s\", exc)",
+    "new": "                self.num_failed += 1\n                self._reset_auth_failures()\n                _LOGGER.debug(\"Skipping this cycle: %s\", exc)",
+    "tests": "a_busy_api_counts_neither_for_nor_against_the_credentials"
   }
 ]
