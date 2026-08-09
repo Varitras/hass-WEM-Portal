@@ -277,8 +277,10 @@ async def test_a_write_is_not_reported_before_the_portal_took_it():
 
     entity.async_write_parameter = refuse
 
+    christmas_eve = date(2026, 12, 24)
+
     with pytest.raises(RuntimeError):
-        await entity.async_set_value(date(2026, 12, 24))
+        await entity.async_set_value(christmas_eve)
 
     assert entity.native_value == date(2026, 8, 3), "a refused write was displayed"
 

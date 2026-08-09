@@ -2,6 +2,7 @@
 survival on a failed device refresh, and str-normalisation of device ids.
 """
 
+import asyncio
 import json
 import time
 
@@ -65,6 +66,18 @@ class RecordingSession:
 
 def _api(**kwargs):
     return WemPortalApi("user@example.org", "secret", **kwargs)
+
+
+def _run(method, *args, **kwargs):
+    """Drive one coroutine to completion from a synchronous test.
+
+    Takes the method and its arguments rather than a ready-made coroutine, so
+    that a `pytest.raises` block around it contains a single call. Spelled out
+    as `asyncio.run(entity.some_method(x))` the block contains two, and the
+    one meant to raise is the inner one - a failure in the outer call would
+    satisfy the test just as well.
+    """
+    return asyncio.run(method(*args, **kwargs))
 
 
 def test_api_login_network_error_raises_clean_auth_error(monkeypatch):
@@ -2428,8 +2441,10 @@ def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
 
     monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
 
+    api = _api()
+
     with pytest.raises(exceptions.UnknownAuthError):
-        _api().web_login()
+        api.web_login()
 
     assert posted == [], "credentials were sent to a page that could not be read"
 
@@ -2707,7 +2722,6 @@ def test_web_mode_validation_does_not_accept_a_config_that_cannot_poll(monkeypat
     with a web login accepted a configuration that could never poll: setup
     succeeded, then every update failed with an API login the user was never
     told about."""
-    import asyncio
 
     from custom_components.wemportal import config_flow
     from custom_components.wemportal.const import CONF_MODE
@@ -2730,8 +2744,10 @@ def test_web_mode_validation_does_not_accept_a_config_that_cannot_poll(monkeypat
             return function(*args)
 
     data = {"username": "user@example.org", "password": "secret", CONF_MODE: "both"}
+    hass = _Hass()
+
     with pytest.raises(config_flow.InvalidAuth):
-        asyncio.run(config_flow.validate_input(_Hass(), data))
+        _run(config_flow.validate_input, hass, data)
 
     assert tried == ["api"], "a failed API login must not fall back to web"
 
@@ -2768,23 +2784,29 @@ def test_a_blocked_ip_is_not_reported_as_a_connection_problem(monkeypatch):
     end up deleting and re-adding the integration to "fix" a blockade."""
     from custom_components.wemportal import config_flow
 
+    refusal = exceptions.ForbiddenError("403")
+
     with pytest.raises(config_flow.RateLimited):
-        _validate_with(monkeypatch, exceptions.ForbiddenError("403"))
+        _validate_with(monkeypatch, refusal)
 
 
 def test_an_ordinary_failure_is_still_a_connection_problem(monkeypatch):
     """The broad handler stays for everything that is not a refusal."""
     from custom_components.wemportal import config_flow
 
+    outage = OSError("network down")
+
     with pytest.raises(config_flow.CannotConnect):
-        _validate_with(monkeypatch, OSError("network down"))
+        _validate_with(monkeypatch, outage)
 
 
 def test_wrong_credentials_are_still_wrong_credentials(monkeypatch):
     from custom_components.wemportal import config_flow
 
+    wrong_password = exceptions.AuthError("bad password")
+
     with pytest.raises(config_flow.InvalidAuth):
-        _validate_with(monkeypatch, exceptions.AuthError("bad password"))
+        _validate_with(monkeypatch, wrong_password)
 
 
 def test_both_flows_have_a_message_for_a_blocked_ip():
@@ -3593,7 +3615,6 @@ def test_a_failed_write_reaches_whoever_asked_for_it(monkeypatch):
     heating had been set. Home Assistant's own rule for entity methods is
     that a communication failure raises HomeAssistantError.
     """
-    import asyncio
 
     from homeassistant.exceptions import HomeAssistantError
 
@@ -3605,7 +3626,7 @@ def test_a_failed_write_reaches_whoever_asked_for_it(monkeypatch):
     )
 
     with pytest.raises(HomeAssistantError):
-        asyncio.run(entity.async_set_native_value(21.0))
+        _run(entity.async_set_native_value, 21.0)
 
 
 def test_a_refusal_corrects_the_range_that_caused_it(monkeypatch):
@@ -3621,7 +3642,6 @@ def test_a_refusal_corrects_the_range_that_caused_it(monkeypatch):
     code. What is covered here is the case that does reach it - a value the
     published range still admits and the portal refuses.
     """
-    import asyncio
 
     from homeassistant.exceptions import HomeAssistantError
 
@@ -3637,7 +3657,7 @@ def test_a_refusal_corrects_the_range_that_caused_it(monkeypatch):
     entity._apply_state(_read_state(50.0, [10.0, 15.0, 20.0]))
 
     with pytest.raises(HomeAssistantError):
-        asyncio.run(entity.async_set_native_value(50.0))
+        _run(entity.async_set_native_value, 50.0)
 
     assert entity.native_min_value == 1.0
     assert entity.native_max_value == 2.0
@@ -3656,7 +3676,6 @@ def test_a_write_that_fails_with_a_plain_error_still_reaches_the_caller(monkeypa
     pass-through branch. A mutation turning the wrapping branch into a bare
     `return` stayed green until this existed.
     """
-    import asyncio
 
     from homeassistant.exceptions import HomeAssistantError
 
@@ -3666,7 +3685,7 @@ def test_a_write_that_fails_with_a_plain_error_still_reaches_the_caller(monkeypa
     )
 
     with pytest.raises(HomeAssistantError):
-        asyncio.run(entity.async_set_native_value(21.0))
+        _run(entity.async_set_native_value, 21.0)
 
 
 def test_a_successful_write_leaves_the_verified_value_behind(monkeypatch):
@@ -3692,7 +3711,6 @@ def test_a_write_stopped_by_a_teardown_reaches_the_caller_too(monkeypatch):
     nothing reached the portal. That the configuration went away is a reason
     for the write not to happen, not a reason to report that it did.
     """
-    import asyncio
 
     from homeassistant.exceptions import HomeAssistantError
 
@@ -3704,7 +3722,7 @@ def test_a_write_stopped_by_a_teardown_reaches_the_caller_too(monkeypatch):
     )
 
     with pytest.raises(HomeAssistantError):
-        asyncio.run(entity.async_set_native_value(21.0))
+        _run(entity.async_set_native_value, 21.0)
 
     assert entity._write_in_progress is False
 
@@ -3718,7 +3736,6 @@ def test_a_removed_entity_does_not_open_a_portal_session(monkeypatch):
     thread; what it can do is refuse to START, which is exactly the case that
     matters (teardown races the thread pool).
     """
-    import asyncio
 
     from homeassistant.exceptions import HomeAssistantError
 
@@ -3730,7 +3747,7 @@ def test_a_removed_entity_does_not_open_a_portal_session(monkeypatch):
     # waiting on the call must not be told the heating was set. What this
     # test is about is the line below it - no session was opened at all.
     with pytest.raises(HomeAssistantError):
-        asyncio.run(entity._async_write(21.0))
+        _run(entity._async_write, 21.0)
 
     assert built == [], "a write opened a portal session after removal"
     assert entity._write_in_progress is False
@@ -4501,10 +4518,10 @@ def test_where_the_check_is_enabled_it_still_raises():
     """The probe must not have replaced the actual detection."""
     scraper = _gate_probe()
 
+    notice_page = _Page(MAINTENANCE_HTML)
+
     with pytest.raises(exceptions.PortalMaintenanceError):
-        scraper._check_response(
-            _Page(MAINTENANCE_HTML), "login page", check_maintenance=True
-        )
+        scraper._check_response(notice_page, "login page", check_maintenance=True)
 
 
 def test_a_healthy_page_is_silent(caplog):
@@ -4824,7 +4841,6 @@ def test_the_expert_entity_does_not_start_a_write_while_unloading():
     one platform whose writes take 5-15 seconds is the one that can still
     start one into a session about to be closed.
     """
-    import asyncio
 
     from homeassistant.exceptions import HomeAssistantError
 
@@ -4832,7 +4848,7 @@ def test_the_expert_entity_does_not_start_a_write_while_unloading():
     entity._config_entry.runtime_data.unloading = True
 
     with pytest.raises(HomeAssistantError) as excinfo:
-        asyncio.run(entity.async_set_native_value(21.0))
+        _run(entity.async_set_native_value, 21.0)
 
     assert "unload" in str(excinfo.value).lower()
     assert entity._write_in_progress is False, "the entity was left marked as busy"
@@ -4864,8 +4880,10 @@ def test_config_flow_validation_sees_it_too():
     and would otherwise send requests during an active rate limit."""
     _api()._activate_cooldown()
 
+    other_account = WemPortalApi("someone@example.org", "other")
+
     with pytest.raises(exceptions.ForbiddenError):
-        WemPortalApi("someone@example.org", "other").check_cooldown()
+        other_account.check_cooldown()
 
 
 def test_an_expert_backoff_does_not_spread_to_another_account():
@@ -4958,8 +4976,10 @@ def test_close_api_sessions_calls_the_api_rather_than_reaching_inside():
     utils.close_api_sessions(Api())
     assert calls == [True]
 
+    nothing_like_an_api = object()
+
     with pytest.raises(AttributeError):
-        utils.close_api_sessions(object())
+        utils.close_api_sessions(nothing_like_an_api)
 
 
 # --- a heating schedule that fails must not be re-fetched every cycle ---

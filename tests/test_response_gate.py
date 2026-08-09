@@ -361,8 +361,9 @@ def test_the_gate_is_where_the_status_is_actually_handled(module):
     # was only then told apart by class NAME. Naming both here lets the wrong
     # exception travel up as the failure it is.
     for status in (500, 502, 403, 204, 302):
+        answer = _Answer(status)
         with pytest.raises((ServerError, ForbiddenError)):
-            gate(_Answer(status), "probe")
+            gate(answer, "probe")
 
     # The one status that IS a page must still get through, or the gate could
     # satisfy the loop above by rejecting everything.

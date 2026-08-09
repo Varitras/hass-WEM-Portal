@@ -327,6 +327,8 @@ async def test_the_holiday_service_refuses_a_non_admin(hass, hass_read_only_user
 
     await _setup(hass, _entry(hass))
 
+    read_only = Context(user_id=hass_read_only_user.id)
+
     with pytest.raises(Unauthorized):
         await hass.services.async_call(
             DOMAIN,
@@ -338,7 +340,7 @@ async def test_the_holiday_service_refuses_a_non_admin(hass, hass_read_only_user
                 "end": "2026-12-31",
             },
             blocking=True,
-            context=Context(user_id=hass_read_only_user.id),
+            context=read_only,
         )
 
 
@@ -883,8 +885,10 @@ async def test_the_abort_survives_the_step_that_calls_it(
     )
     monkeypatch.setattr(flow, "_expert_client", lambda: _AbortingClient())
 
+    run_step = getattr(flow, step)
+
     with pytest.raises(AbortFlow):
-        await getattr(flow, step)(user_input)
+        await run_step(user_input)
 
 
 async def test_discovery_stops_when_its_entry_goes_away(hass, monkeypatch):
@@ -1963,13 +1967,15 @@ async def test_expert_service_refuses_a_non_admin(hass, hass_read_only_user):
 
     await _setup(hass, _entry(hass, _expert_options()))
 
+    read_only = Context(user_id=hass_read_only_user.id)
+
     with pytest.raises(Unauthorized):
         await hass.services.async_call(
             DOMAIN,
             SERVICE_SET_EXPERT_PARAMETER,
             {"entityvalue": EV_A, "value": 30},
             blocking=True,
-            context=Context(user_id=hass_read_only_user.id),
+            context=read_only,
         )
 
 

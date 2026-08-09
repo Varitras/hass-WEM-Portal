@@ -160,9 +160,10 @@ async def test_a_refused_write_changes_nothing(monkeypatch):
     """Recording a range the heating system never took would make the
     integration certain of the wrong thing."""
     hass, _api, rows = _world(monkeypatch, refuse=True)
+    call = _call()
 
     with pytest.raises(RuntimeError):
-        await holiday._write_holiday(hass, _call())
+        await holiday._write_holiday(hass, call)
 
     assert rows["Circuit-U_Beginn"]["value"] == date_to_epoch(date(2026, 8, 3))
     assert rows["Circuit-U_Ende"]["value"] == date_to_epoch(date(2026, 8, 4))
@@ -172,11 +173,10 @@ async def test_a_range_that_ends_before_it_starts_is_refused(monkeypatch):
     """The portal answers such a pair with Status 0 and stores nothing, so
     letting it through would report a setting that never happened."""
     hass, api, _rows = _world(monkeypatch)
+    backwards = _call(begin=date(2026, 8, 27), end=date(2026, 8, 20))
 
     with pytest.raises(HomeAssistantError) as excinfo:
-        await holiday._write_holiday(
-            hass, _call(begin=date(2026, 8, 27), end=date(2026, 8, 20))
-        )
+        await holiday._write_holiday(hass, backwards)
 
     assert "before it starts" in str(excinfo.value)
     assert api.calls == [], "a backwards range was put on the wire anyway"
@@ -201,9 +201,10 @@ async def test_two_dates_of_different_modules_are_refused(monkeypatch):
         "Other-U_Ende": {**END_ROW, "ModuleIndex": 2},
     }
     hass, api, _rows = _world(monkeypatch, rows=rows)
+    across_modules = _call(end_entity="date.other_module")
 
     with pytest.raises(HomeAssistantError) as excinfo:
-        await holiday._write_holiday(hass, _call(end_entity="date.other_module"))
+        await holiday._write_holiday(hass, across_modules)
 
     assert "different" in str(excinfo.value)
     assert api.calls == []
@@ -211,9 +212,10 @@ async def test_two_dates_of_different_modules_are_refused(monkeypatch):
 
 async def test_the_same_entity_twice_is_refused(monkeypatch):
     hass, api, _rows = _world(monkeypatch)
+    same_entity_twice = _call(end_entity="date.holiday_begin")
 
     with pytest.raises(HomeAssistantError):
-        await holiday._write_holiday(hass, _call(end_entity="date.holiday_begin"))
+        await holiday._write_holiday(hass, same_entity_twice)
 
     assert api.calls == []
 
@@ -243,8 +245,9 @@ async def test_a_write_into_an_unloading_entry_is_refused(monkeypatch):
     teardown, and the write would start into a session about to close."""
     hass, api, _rows = _world(monkeypatch)
     hass.config_entries.async_get_entry("e1").runtime_data.begin_unload()
+    call = _call()
 
     with pytest.raises(HomeAssistantError):
-        await holiday._write_holiday(hass, _call())
+        await holiday._write_holiday(hass, call)
 
     assert api.calls == []
