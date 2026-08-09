@@ -1544,6 +1544,116 @@ class WemPortalApi:
                 pass
         return server_status, server_message
 
+    def _send(self, url, headers, data):
+        """GET when the call carries no body, POST when it does."""
+        if not data:
+            _LOGGER.debug("Sending GET request to %s with headers: %s", url, headers)
+            return self.session.get(
+                url, headers=headers, timeout=API_REQUEST_TIMEOUT_SECONDS
+            )
+        _LOGGER.debug(
+            "Sending POST request to %s with headers: %s and data: %s",
+            url,
+            headers,
+            data,
+        )
+        return self.session.post(
+            url, headers=headers, json=data, timeout=API_REQUEST_TIMEOUT_SECONDS
+        )
+
+    def _recover_or_raise(
+        self, exc, response, url, *, last_attempt, delay, retry_transport
+    ) -> None:
+        """What a failed attempt means: returns to retry it, raises otherwise.
+
+        Returning is the signal to loop round again, so every path that is
+        NOT worth another request ends in a raise. Split out of make_api_call
+        because all of it sat two levels deep, inside a loop and a handler,
+        which put every one of these decisions at a nesting cost of three.
+        """
+        status_code = (
+            response.status_code
+            if isinstance(exc, requests.exceptions.RequestException)
+            and response is not None
+            else None
+        )
+
+        if status_code == 403:
+            # A 403 means the server is already unhappy with our request
+            # rate - immediately retrying with a fresh login (as we do for a
+            # plain expired session below) would itself be an extra request
+            # at exactly the wrong time. Back off hard instead: no retry,
+            # pause everything for a while, and surface it as ForbiddenError
+            # so callers' existing 403-handling (e.g. get_parameters()'s
+            # forbidden_count) still works.
+            self._activate_cooldown()
+            server_status, server_message = self.get_response_details(response)
+            self.valid_login = False
+            forbidden_error = ForbiddenError(
+                f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
+            )
+            forbidden_error.server_status = server_status
+            raise forbidden_error from exc
+
+        # Nothing came back at all: the request timed out, the connection was
+        # reset, DNS failed. `response` is set to None at the top of every
+        # attempt and only ever assigned by the send below, so this is exactly
+        # "no HTTP response was received" - a 403, a 401 and the login-redirect
+        # check all need a response to have been raised in the first place.
+        is_transport_error = response is None
+
+        if is_transport_error and retry_transport and not last_attempt:
+            # Deliberately no re-login: the session is fine, the network was
+            # not. Logging in again would spend an extra request at the worst
+            # possible moment and throw away a session that nothing is wrong
+            # with.
+            _LOGGER.info(
+                "Request to %s did not reach the portal (%s). Retrying once.", url, exc
+            )
+            time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)
+            return
+
+        # A genuinely expired session (401, or a stealthy redirect to the
+        # login page) is worth one immediate retry with a fresh login - unlike
+        # a 403, this isn't a sign we're sending too many requests, just that
+        # the current session is no longer valid.
+        is_session_error = isinstance(exc, ExpiredSessionError) or status_code == 401
+
+        if is_session_error and not last_attempt:
+            _LOGGER.info("Session expired for %s. Re-authenticating...", url)
+            self.api_login()
+            time.sleep(delay)
+            return
+
+        # Out of retries, or an error of a completely different kind:
+        server_status, server_message = self.get_response_details(response)
+
+        # The old logic recreated the entire API instance when this happened.
+        # To emulate that recovery mechanism without losing cached metadata,
+        # we invalidate the login state so the next cycle creates a fresh
+        # requests.Session.
+        self.valid_login = False
+
+        if is_transport_error:
+            # There was no server and no answer, so there is no status code
+            # and no message to report. Saying "Server returned status code:
+            # and message: " anyway - which is what a timeout produced - sends
+            # every reader of that line looking at the portal for a fault that
+            # is on this side of the connection. The web path already words
+            # this correctly; see scraper.py's login handler.
+            wem_error = WemPortalError(
+                f"{DATA_GATHERING_ERROR} Could not reach the WEM Portal: {exc}"
+            )
+        else:
+            wem_error = WemPortalError(
+                f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
+            )
+        # Expose the server-side status code so callers can react to specific
+        # ones (e.g. Statistics skips an invalid group) without parsing the
+        # message string.
+        wem_error.server_status = server_status
+        raise wem_error from exc
+
     def make_api_call(
         self,
         url: str,
@@ -1599,30 +1709,7 @@ class WemPortalApi:
             current_headers = {**self.headers, **(headers or {})}
 
             try:
-                if not data:
-                    _LOGGER.debug(
-                        "Sending GET request to %s with headers: %s",
-                        url,
-                        current_headers,
-                    )
-                    response = self.session.get(
-                        url,
-                        headers=current_headers,
-                        timeout=API_REQUEST_TIMEOUT_SECONDS,
-                    )
-                else:
-                    _LOGGER.debug(
-                        "Sending POST request to %s with headers: %s and data: %s",
-                        url,
-                        current_headers,
-                        data,
-                    )
-                    response = self.session.post(
-                        url,
-                        headers=current_headers,
-                        json=data,
-                        timeout=API_REQUEST_TIMEOUT_SECONDS,
-                    )
+                response = self._send(url, current_headers, data)
 
                 response.raise_for_status()
 
@@ -1638,95 +1725,14 @@ class WemPortalApi:
                 return response
 
             except (requests.exceptions.RequestException, ExpiredSessionError) as exc:
-                status_code = (
-                    response.status_code
-                    if isinstance(exc, requests.exceptions.RequestException)
-                    and response is not None
-                    else None
+                self._recover_or_raise(
+                    exc,
+                    response,
+                    url,
+                    last_attempt=attempt >= attempts - 1,
+                    delay=delay,
+                    retry_transport=retry_transport,
                 )
-
-                if status_code == 403:
-                    # A 403 means the server is already unhappy with our
-                    # request rate - immediately retrying with a fresh
-                    # login (as we do for a plain expired session below)
-                    # would itself be an extra request at exactly the
-                    # wrong time. Back off hard instead: no retry, pause
-                    # everything for a while, and surface it as
-                    # ForbiddenError so callers' existing 403-handling
-                    # (e.g. get_parameters()'s forbidden_count) still works.
-                    self._activate_cooldown()
-                    server_status, server_message = self.get_response_details(response)
-                    self.valid_login = False
-                    forbidden_error = ForbiddenError(
-                        f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
-                    )
-                    forbidden_error.server_status = server_status
-                    raise forbidden_error from exc
-
-                # Nothing came back at all: the request timed out, the
-                # connection was reset, DNS failed. `response` is set to None
-                # at the top of every attempt and only ever assigned by the
-                # get/post below, so this is exactly "no HTTP response was
-                # received" - a 403, a 401 and the login-redirect check all
-                # need a response to have been raised in the first place.
-                is_transport_error = response is None
-
-                if is_transport_error and retry_transport and attempt < attempts - 1:
-                    # Deliberately no re-login: the session is fine, the
-                    # network was not. Logging in again would spend an extra
-                    # request at the worst possible moment and throw away a
-                    # session that nothing is wrong with.
-                    _LOGGER.info(
-                        "Request to %s did not reach the portal (%s). Retrying once.",
-                        url,
-                        exc,
-                    )
-                    time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)
-                    continue
-
-                # A genuinely expired session (401, or a stealthy redirect
-                # to the login page) is worth one immediate retry with a
-                # fresh login - unlike a 403, this isn't a sign we're
-                # sending too many requests, just that the current session
-                # is no longer valid.
-                is_session_error = (
-                    isinstance(exc, ExpiredSessionError) or status_code == 401
-                )
-
-                if is_session_error and attempt < attempts - 1:
-                    _LOGGER.info("Session expired for %s. Re-authenticating...", url)
-                    self.api_login()
-                    time.sleep(delay)
-                    continue  # Loop back around and retry
-
-                # If we're out of retries or it's a completely different error:
-                server_status, server_message = self.get_response_details(response)
-
-                # The old logic recreated the entire API instance when this happened.
-                # To emulate that recovery mechanism without losing cached metadata,
-                # we invalidate the login state so the next cycle creates a fresh requests.Session.
-                self.valid_login = False
-
-                if is_transport_error:
-                    # There was no server and no answer, so there is no status
-                    # code and no message to report. Saying "Server returned
-                    # status code:  and message: " anyway - which is what a
-                    # timeout produced - sends every reader of that line
-                    # looking at the portal for a fault that is on this side
-                    # of the connection. The web path already words this
-                    # correctly; see scraper.py's login handler.
-                    wem_error = WemPortalError(
-                        f"{DATA_GATHERING_ERROR} Could not reach the WEM Portal: {exc}"
-                    )
-                else:
-                    wem_error = WemPortalError(
-                        f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
-                    )
-                # Expose the server-side status code so callers can react to
-                # specific ones (e.g. Statistics skips an invalid group)
-                # without parsing the message string.
-                wem_error.server_status = server_status
-                raise wem_error from exc
 
         return response
 

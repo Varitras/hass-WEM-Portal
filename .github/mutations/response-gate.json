@@ -443,22 +443,22 @@
   {
     "label": "transport: reporting a timeout as a server answer must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                is_transport_error = response is None",
-    "new": "                is_transport_error = False",
+    "old": "        is_transport_error = response is None",
+    "new": "        is_transport_error = False",
     "tests": "retries_a_request_that_never_arrived or does_not_claim_a_server_answer"
   },
   {
     "label": "transport: dropping the retry must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                if is_transport_error and retry_transport and attempt < attempts - 1:",
-    "new": "                if False and retry_transport and attempt < attempts - 1:",
+    "old": "        if is_transport_error and retry_transport and not last_attempt:",
+    "new": "        if False and retry_transport and not last_attempt:",
     "tests": "retries_a_request_that_never_arrived or transport_retry_does_not_need_the_session_retry"
   },
   {
     "label": "transport: re-authenticating on a network hiccup must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                    time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)",
-    "new": "                    self.api_login()\n                    time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)",
+    "old": "            time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)",
+    "new": "            self.api_login()\n            time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)",
     "tests": "does_not_re_authenticate"
   },
   {
