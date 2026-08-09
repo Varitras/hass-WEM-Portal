@@ -23,6 +23,40 @@ from __future__ import annotations
 from typing import Any, NamedTuple
 
 
+def as_answer_dict(payload: Any) -> dict | None:
+    """The payload as the object every API answer is - or None.
+
+    `null`, a bare list and a bare string are all valid JSON bodies, and
+    every one of them used to travel until some `.get` or `[key]` died far
+    from the request that earned it. None hands the site one question to
+    answer instead: what does "the portal answered outside its contract"
+    mean here.
+    """
+    return payload if isinstance(payload, dict) else None
+
+
+def described_parameters(payload: Any) -> list[dict] | None:
+    """The parameter descriptions of a module answer, or None.
+
+    None means the answer carries no readable list at all - the caller books
+    WHY. Rows that are not objects or carry no ParameterID are dropped: one
+    malformed row must not cost the module, same philosophy as the mapper.
+    An empty list is returned as such - "this module has nothing" is an
+    answer, and the caller treats it differently from an unreadable one.
+    """
+    answer = as_answer_dict(payload)
+    if answer is None:
+        return None
+    parameters = answer.get("Parameters")
+    if not isinstance(parameters, list):
+        return None
+    return [
+        parameter
+        for parameter in parameters
+        if isinstance(parameter, dict) and "ParameterID" in parameter
+    ]
+
+
 def status_is_success(status: Any) -> bool:
     """Whether the portal's `Status` field means "this worked".
 

@@ -478,8 +478,8 @@
   {
     "label": "transport: losing the retry on the value read must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                data=read_data,\n                do_retry=True,\n                retry_transport=True,",
-    "new": "                data=read_data,\n                do_retry=True,",
+    "old": "                    data=read_data,\n                    do_retry=True,\n                    retry_transport=True,",
+    "new": "                    data=read_data,\n                    do_retry=True,",
     "tests": "exactly_the_value_path_asks_for_a_transport_retry"
   },
   {
@@ -828,8 +828,8 @@
   {
     "label": "rediscovery: forgetting the timestamp across a device refresh must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                    module_entry[\"parameters_fetched_at\"] = cached_module.get(\n                        \"parameters_fetched_at\", 0\n                    )",
-    "new": "                    pass",
+    "old": "                module_entry[\"parameters_fetched_at\"] = cached_module.get(\n                    \"parameters_fetched_at\", 0\n                )",
+    "new": "                pass",
     "tests": "get_devices_carries_the_parameter_timestamp_too"
   },
   {
@@ -1404,7 +1404,7 @@
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            self._note_undescribed_module(\n                device_id,\n                values,\n                \"its description could not be read\",\n                unsupported=True,\n            )",
     "new": "            pass",
-    "tests": "an_unreadable_description_is_not_asked_again_every_cycle"
+    "tests": "an_unreadable_description_is_not_asked_again_every_cycle or an_answer_that_is_not_json_still_books_the_module"
   },
   {
     "label": "login: the api login sends before asking the cooldown",
@@ -1696,8 +1696,8 @@
   {
     "label": "rediscovery: a refusal that survives the description fixing it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                self.modules[device_id][key].pop(\"description_refused\", None)",
-    "new": "                pass",
+    "old": "        self.modules[device_id][key].pop(\"description_refused\", None)",
+    "new": "        pass",
     "tests": "a_description_that_arrives_clears_the_refusal"
   },
   {
@@ -2357,5 +2357,33 @@
     "old": "TO_REDACT = {\n    CONF_USERNAME,\n    CONF_PASSWORD,",
     "new": "TO_REDACT = {\n    CONF_USERNAME,",
     "tests": "diagnostics_carry_no_credentials_and_no_installation_ids"
+  },
+  {
+    "label": "boundary: a parameter list of any shape believed again",
+    "path": "custom_components/wemportal/mobile_protocol.py",
+    "old": "    parameters = answer.get(\"Parameters\")\n    if not isinstance(parameters, list):\n        return None",
+    "new": "    parameters = answer.get(\"Parameters\")\n    if parameters is None:\n        return None",
+    "tests": "an_unreadable_parameter_list_is_booked_like_a_refusal"
+  },
+  {
+    "label": "boundary: a device list outside the contract exploding raw again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not isinstance(device_rows, list):",
+    "new": "        if device_rows is None and False:",
+    "tests": "a_device_list_outside_the_contract_is_a_classified_failure"
+  },
+  {
+    "label": "boundary: a malformed device row taking the account with it",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            except (KeyError, TypeError) as exc:",
+    "new": "            except KeyError as exc:",
+    "tests": "a_device_row_outside_the_contract_is_skipped_not_fatal"
+  },
+  {
+    "label": "boundary: a null value read dying on .get again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if values is None:\n                # `null` is valid JSON and used to die on the .get below",
+    "new": "            if False:\n                # `null` is valid JSON and used to die on the .get below",
+    "tests": "a_value_read_answered_with_null_fails_the_cycle_cleanly"
   }
 ]

@@ -16,6 +16,16 @@ versioning follows [Semantic Versioning](https://semver.org/).
   hand-picking log lines.
 
 ### Fixed
+- **An answer outside the portal's own contract no longer detonates mid-code.**
+  Valid JSON is not the same as the expected shape: `{"Parameters": null}`
+  aborted the rest of a device's discovery with a TypeError and left the
+  module with no retry timestamp; a device list without its `Devices` array
+  surfaced as "unexpected error"; a value read answered with `null` failed
+  with `'NoneType' object has no attribute 'get'` as its reason. Each answer
+  form is now shape-checked where it arrives: the unreadable module is booked
+  like a refusal, the device list raises a classified portal-side error (one
+  malformed device row is skipped and logged, the rest of the account
+  survives), and the null read fails with a reason a person can act on.
 - **A German decimal reaches the write as the number it means.** The
   portal's own dialog accepts `1,5`; the `set_expert_parameter` action
   refused the same spelling, and an API string value like `21,5` stayed

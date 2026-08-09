@@ -74,6 +74,8 @@ from .exceptions import (
 )
 from .mapper import WemPortalDataMapper
 from .mobile_protocol import (
+    as_answer_dict,
+    described_parameters,
     read_refresh_ticket,
     read_write_ack,
     status_is_success,
@@ -1758,42 +1760,79 @@ class WemPortalApi:
         # run saw no previously-known modules - silently discarding all
         # cached parameter definitions and forcing the slow, rate-limited
         # full discovery in get_parameters() that the cache exists to avoid.
-        data = self.make_api_call(API_DEVICE_READ_URL, do_retry=True).json()
+        payload = as_answer_dict(
+            self.make_api_call(API_DEVICE_READ_URL, do_retry=True).json()
+        )
+        device_rows = payload.get("Devices") if payload is not None else None
+        if not isinstance(device_rows, list):
+            # Valid JSON outside the contract. Said as the portal-side error
+            # it is, so the coordinator classifies it like any other server
+            # fault - a raw KeyError here arrived as "unexpected error" with
+            # no hint that the portal answered at all.
+            raise ServerError(
+                "The WEM Portal answered the device list without a Devices "
+                "list - nothing to set up from."
+            )
 
         new_modules = {}
         new_data = {}
-        for device in data["Devices"]:
-            device_id_str = str(device["ID"])
-            new_data[device_id_str] = {}
-            new_modules[device_id_str] = {}
-            previously_known_device_modules = previously_known_modules.get(
-                device_id_str, {}
-            )
-            for module in device["Modules"]:
-                module_key = (module["Index"], module["Type"])
-                module_entry = {
-                    "Index": module["Index"],
-                    "Type": module["Type"],
-                    "Name": module["Name"],
-                }
-                cached_module = previously_known_device_modules.get(module_key)
-                if cached_module and "parameters" in cached_module:
-                    module_entry["parameters"] = cached_module["parameters"]
-                    # Carried across with the list it belongs to. Left behind,
-                    # every session would look like the cache had just expired
-                    # and re-read every module on the first cycle - the exact
-                    # portal load the interval exists to avoid.
-                    module_entry["parameters_fetched_at"] = cached_module.get(
-                        "parameters_fetched_at", 0
-                    )
-                new_modules[device_id_str][module_key] = module_entry
-            new_data[device_id_str]["ConnectionStatus"] = device["ConnectionStatus"]
-            # Kept out of new_data: the entity platforms iterate that dict
-            # and would try to build an entity from it.
-            if device.get("DeviceType") is not None:
-                self.device_types[device_id_str] = device["DeviceType"]
+        for device in device_rows:
+            try:
+                self._register_device(
+                    device, previously_known_modules, new_modules, new_data
+                )
+            except (KeyError, TypeError) as exc:
+                # One malformed device row must not cost the whole account.
+                _LOGGER.warning(
+                    "Skipping one device row the portal answered outside "
+                    "its contract: %s",
+                    exc,
+                )
         self.modules = new_modules
         self.data = new_data
+
+    def _register_device(
+        self, device, previously_known_modules, new_modules, new_data
+    ) -> None:
+        """Adopt one device row of the device-list answer.
+
+        Raises KeyError/TypeError on a row outside the contract; the caller
+        skips that row. Split out so the skip does not wrap thirty lines in
+        a try block. Everything is read into locals FIRST and committed only
+        at the end: a row that dies halfway must leave no half-adopted
+        device behind.
+        """
+        device_id_str = str(device["ID"])
+        previously_known_device_modules = previously_known_modules.get(
+            device_id_str, {}
+        )
+        device_modules = {}
+        for module in device["Modules"]:
+            module_key = (module["Index"], module["Type"])
+            module_entry = {
+                "Index": module["Index"],
+                "Type": module["Type"],
+                "Name": module["Name"],
+            }
+            cached_module = previously_known_device_modules.get(module_key)
+            if cached_module and "parameters" in cached_module:
+                module_entry["parameters"] = cached_module["parameters"]
+                # Carried across with the list it belongs to. Left behind,
+                # every session would look like the cache had just expired
+                # and re-read every module on the first cycle - the exact
+                # portal load the interval exists to avoid.
+                module_entry["parameters_fetched_at"] = cached_module.get(
+                    "parameters_fetched_at", 0
+                )
+            device_modules[module_key] = module_entry
+        connection_status = device["ConnectionStatus"]
+
+        new_modules[device_id_str] = device_modules
+        new_data[device_id_str] = {"ConnectionStatus": connection_status}
+        # Kept out of new_data: the entity platforms iterate that dict
+        # and would try to build an entity from it.
+        if device.get("DeviceType") is not None:
+            self.device_types[device_id_str] = device["DeviceType"]
 
     def _note_undescribed_module(self, device_id, values, why, unsupported):
         """A module the portal would not describe. Nothing is ever thrown away.
@@ -1982,43 +2021,57 @@ class WemPortalApi:
         return forbidden_count
 
     def _store_module_description(self, device_id, key, values, response) -> None:
-        """Keep what the portal said this module has, or book why it did not."""
-        parameters = {}
+        """Keep what the portal said this module has, or book why it did not.
+
+        Every unusable answer is BOOKED, never merely logged: skipping with a
+        log line left the module with no timestamp at all, so the age check
+        never held it back and a portal answering nonsense was asked again
+        every single cycle, without limit - the one failure mode the whole
+        retry budget exists to bound.
+        """
         try:
-            for parameter in response.json()["Parameters"]:
-                parameters[parameter["ParameterID"]] = parameter
-            if not parameters:
-                self._note_undescribed_module(
-                    device_id,
-                    values,
-                    "it described no parameters",
-                    unsupported=False,
-                )
-            else:
-                self.modules[device_id][key]["parameters"] = parameters
-                self.modules[device_id][key]["parameters_fetched_at"] = time.time()
-                # The portal answered this time. Clearing it here rather than
-                # only on the empty branch matters: the flag is persisted with
-                # the module cache, so a refusal that was never cleared would
-                # outlive the restart that fixed it.
-                self.modules[device_id][key].pop("description_refused", None)
-        except (KeyError, ValueError):
-            # ValueError also covers a JSON-decode failure (e.g. an HTML error
-            # page returned instead of JSON) - without it, a single malformed
-            # response here would abort discovery for every remaining module
-            # on this device, not just skip this one.
-            #
-            # Booked like every other unusable answer. Skipping with only a
-            # log line left the module with no timestamp at all, so the age
-            # check never held it back and a portal answering nonsense was
-            # asked again every single cycle, without limit - the one failure
-            # mode the whole retry budget exists to bound.
+            payload = response.json()
+        except ValueError:
+            # Not JSON at all - an HTML error page, typically.
             self._note_undescribed_module(
                 device_id,
                 values,
                 "its description could not be read",
                 unsupported=True,
             )
+            return
+
+        described = described_parameters(payload)
+        if described is None:
+            # Valid JSON outside the contract: {"Parameters": null}, a bare
+            # list, a string. This used to travel into the loop below and die
+            # as a TypeError past the KeyError handler, aborting discovery
+            # for every remaining module of the device.
+            self._note_undescribed_module(
+                device_id,
+                values,
+                "its parameter list was not readable",
+                unsupported=True,
+            )
+            return
+
+        parameters = {parameter["ParameterID"]: parameter for parameter in described}
+        if not parameters:
+            self._note_undescribed_module(
+                device_id,
+                values,
+                "it described no parameters",
+                unsupported=False,
+            )
+            return
+
+        self.modules[device_id][key]["parameters"] = parameters
+        self.modules[device_id][key]["parameters_fetched_at"] = time.time()
+        # The portal answered this time. Clearing it here rather than only on
+        # the empty branch matters: the flag is persisted with the module
+        # cache, so a refusal that was never cleared would outlive the
+        # restart that fixed it.
+        self.modules[device_id][key].pop("description_refused", None)
 
     def _discover_device_parameters(self, device_id) -> None:
         """Read every module description of one device that is due."""
@@ -2646,12 +2699,24 @@ class WemPortalApi:
             else:
                 read_data = {**data, "JobID": ticket.job_id}
             time.sleep(5)
-            values = self.make_api_call(
-                API_DATA_ACCESS_READ_URL,
-                data=read_data,
-                do_retry=True,
-                retry_transport=True,
-            ).json()
+            values = as_answer_dict(
+                self.make_api_call(
+                    API_DATA_ACCESS_READ_URL,
+                    data=read_data,
+                    do_retry=True,
+                    retry_transport=True,
+                ).json()
+            )
+            if values is None:
+                # `null` is valid JSON and used to die on the .get below
+                # instead of taking the treat-as-failed path.
+                _LOGGER.warning(
+                    "Device %s answered the value read with something that "
+                    "is not an answer object; treating the cycle as failed "
+                    "rather than keeping stale readings.",
+                    short_device_id(device_id),
+                )
+                return "the value read did not come back as an answer object"
             # An HTTP 200 with nothing in it is not a refreshed device. The
             # mapper simply finds no modules to walk, so this used to return
             # True and count as a success: the cycle was reported as good and
