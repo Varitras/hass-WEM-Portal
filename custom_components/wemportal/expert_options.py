@@ -46,7 +46,7 @@ def discovery_option_list(discovered, current_ids) -> list:
 
 def duplicate_entityvalues(id_values) -> set:
     """Return the set of entityvalues used more than once (non-empty)."""
-    counts = {}
+    counts: dict[str, int] = {}
     for raw in id_values or []:
         entityvalue = (raw or "").strip()
         if entityvalue:

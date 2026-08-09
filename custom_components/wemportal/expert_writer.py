@@ -96,6 +96,13 @@ EXPERT_PARAMETER_URL = (
 # Form field carrying the value in the edit dialog.
 VALUE_FIELD_ID = "ctl00_DialogContent_ddlNewValue"
 
+# A Telerik/MS-Ajax async postback answers with a pipe-delimited delta stream
+# instead of HTML and labels each hidden field with this token. The marker
+# form is also how a delta response is told apart from a full page, so both
+# spellings come from one place - they are the same portal concept.
+_HIDDEN_FIELD_TOKEN = "hiddenField"
+_HIDDEN_FIELD_MARKER = f"|{_HIDDEN_FIELD_TOKEN}|"
+
 
 # ASP.NET embeds a cookieless session id in the PATH - credential-equivalent,
 # so it must never reach a log or a user-facing string. The documented form is
@@ -103,6 +110,11 @@ VALUE_FIELD_ID = "ctl00_DialogContent_ddlNewValue"
 # can share one segment (/(A(..)S(..)F(..))/), so match the general shape
 # rather than the single upper-case example.
 _COOKIELESS_SESSION_RE = re.compile(r"/\((?:[A-Za-z]\([^)]*\))+\)")
+
+# What redact_url returns when there is no endpoint left to name. A fixed
+# string rather than an empty one: it goes into log lines that ask "which
+# request did the portal reject?", where a blank reads as a formatting bug.
+_UNKNOWN_URL = "unknown URL"
 
 
 def redact_url(url) -> str:
@@ -115,16 +127,16 @@ def redact_url(url) -> str:
     alone answers the diagnostic question.
     """
     if not url:
-        return "unknown URL"
+        return _UNKNOWN_URL
     try:
         parts = urlsplit(str(url))
         path = _COOKIELESS_SESSION_RE.sub("", parts.path)
         if parts.netloc:
             return f"{parts.scheme}://{parts.netloc}{path}"
-        return path or "unknown URL"
+        return path or _UNKNOWN_URL
     except Exception:  # noqa: BLE001
         # Redaction must never be the thing that breaks error handling.
-        return "unknown URL"
+        return _UNKNOWN_URL
 
 
 def short_entityvalue(entityvalue: str) -> str:
@@ -220,7 +232,7 @@ def parse_parameter_list(html_content) -> list:
     which is what this integration does for every parameter - answers with the
     same dropdown, current value and factory default.
     """
-    results = []
+    results: list[dict] = []
     try:
         tree = html.fromstring(html_content)
     except Exception as exc:  # noqa: BLE001
@@ -923,7 +935,7 @@ class WemPortalExpertClient:
         _LOGGER.debug(
             "Expert navigation: security-code POST -> %d bytes, delta=%s",
             len(code_response.text),
-            "|hiddenField|" in code_response.text,
+            _HIDDEN_FIELD_MARKER in code_response.text,
         )
 
     # --- ASP.NET postback helpers ------------------------------------
@@ -950,10 +962,10 @@ class WemPortalExpertClient:
         """
         fields = {}
         # Delta response: pipe-delimited, carries hiddenField segments.
-        if "|hiddenField|" in content:
+        if _HIDDEN_FIELD_MARKER in content:
             parts = content.split("|")
             for position, token in enumerate(parts):
-                if token == "hiddenField" and position + 2 < len(parts):
+                if token == _HIDDEN_FIELD_TOKEN and position + 2 < len(parts):
                     fields[parts[position + 1]] = parts[position + 2]
             if fields:
                 return fields
@@ -1066,7 +1078,7 @@ class WemPortalExpertClient:
             event_target,
             async_postback,
             len(response.text),
-            "|hiddenField|" in response.text,
+            _HIDDEN_FIELD_MARKER in response.text,
             self._has_viewstate(self._hidden_fields(response.text)),
         )
         return response.text

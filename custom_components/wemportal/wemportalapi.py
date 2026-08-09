@@ -105,7 +105,7 @@ DEVICE_STATUS_ROWS = (
 
 # Devices whose refresh answered without a JobID, so the warning below is
 # raised once per device instead of on every cycle.
-_MISSING_JOB_ID_REPORTED = set()
+_MISSING_JOB_ID_REPORTED: set[str] = set()
 
 
 # The 403 backoffs live here rather than on the instance, and that placement

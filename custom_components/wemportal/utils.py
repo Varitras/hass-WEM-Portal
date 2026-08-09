@@ -237,7 +237,7 @@ def deserialize_modules(data: dict) -> dict:
     """
     if not data:
         return {}
-    modules = {}
+    modules: dict = {}
     for device_id, device_modules in data.items():
         modules[device_id] = {}
         for key, module_data in device_modules.items():
