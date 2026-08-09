@@ -36,7 +36,7 @@
   },
   {
     "label": "recovery must actually drop the login",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        self.valid_login = False\n        self.api_version = None",
     "new": "        self.api_version = None",
     "tests": "recovery_resets_the_connection"
@@ -50,7 +50,7 @@
   },
   {
     "label": "recovery must not clobber the rate limits",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        # failures being recovered from may have left the module view partial.\n        self._devices_fetched_this_session = False\n",
     "new": "        # failures being recovered from may have left the module view partial.\n        self._devices_fetched_this_session = False\n        self.last_statistics_fetch = 0.0\n",
     "tests": "recovery_resets_the_connection"
@@ -316,21 +316,21 @@
   },
   {
     "label": "recovery: a transport field that stops being reset must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        # The web cookie belongs to the discarded scraper session.\n        self.webscraping_cookie = {}",
     "new": "        # The web cookie belongs to the discarded scraper session.",
     "tests": "recovery_touches_exactly_the_transport or transport_in_the_state"
   },
   {
     "label": "recovery: resetting a preserved field must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        self._close_sessions()\n        self.valid_login = False",
     "new": "        self._close_sessions()\n        self.last_statistics_fetch = 0.0\n        self.valid_login = False",
     "tests": "recovery_touches_exactly_the_transport"
   },
   {
     "label": "recovery: clearing a preserved container in place must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        self._close_sessions()\n        self.valid_login = False\n        self.api_version = None",
     "new": "        self._close_sessions()\n        self.expert_cookies.clear()\n        self.valid_login = False\n        self.api_version = None",
     "tests": "recovery_touches_exactly_the_transport or recovery_resets_the_connection"
@@ -372,14 +372,14 @@
   },
   {
     "label": "recovery: tearing down a connection in use must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        if not self._api_lock.acquire(timeout=API_LOCK_TIMEOUT_SECONDS):\n            # Best-effort by design.",
     "new": "        if False:\n            # Best-effort by design.",
     "tests": "recovery_leaves_a_busy_connection_alone"
   },
   {
     "label": "recovery: the lock must be given back afterwards",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        try:\n            self._reset_transport_locked()\n        finally:\n            self._api_lock.release()",
     "new": "        self._reset_transport_locked()",
     "tests": "recovery_on_a_free_connection_still_resets"
@@ -442,28 +442,28 @@
   },
   {
     "label": "transport: reporting a timeout as a server answer must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        is_transport_error = response is None",
     "new": "        is_transport_error = False",
     "tests": "retries_a_request_that_never_arrived or does_not_claim_a_server_answer"
   },
   {
     "label": "transport: dropping the retry must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        if is_transport_error and retry_transport and not last_attempt:",
     "new": "        if False and retry_transport and not last_attempt:",
     "tests": "retries_a_request_that_never_arrived or transport_retry_does_not_need_the_session_retry"
   },
   {
     "label": "transport: re-authenticating on a network hiccup must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "            time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)",
     "new": "            self.api_login()\n            time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)",
     "tests": "does_not_re_authenticate"
   },
   {
     "label": "transport: tying the retry to do_retry must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        attempts = 2 if (do_retry or retry_transport) else 1",
     "new": "        attempts = 2 if do_retry else 1",
     "tests": "transport_retry_does_not_need_the_session_retry"
@@ -540,21 +540,21 @@
   },
   {
     "label": "cooldown: storing the global backoff per instance again must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        return _BLOCKED_UNTIL\n",
     "new": "        return getattr(self, '_per_instance_blocked_until', 0.0)\n",
     "tests": "brand_new_api_still_sees_an_active_cooldown or config_flow_validation_sees_it_too"
   },
   {
     "label": "cooldown: letting a caller shorten a running backoff must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "    return max(current, until)",
     "new": "    return until",
     "tests": "cannot_shorten_a_running_cooldown"
   },
   {
     "label": "cooldown: spreading an expert 403 across accounts must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        return self._account_state.expert_blocked_until",
     "new": "        from .models import _ACCOUNT_STATES\n\n        return max(\n            (state.expert_blocked_until for state in _ACCOUNT_STATES.values()),\n            default=0.0,\n        )",
     "tests": "expert_backoff_does_not_spread_to_another_account"
@@ -582,14 +582,14 @@
   },
   {
     "label": "teardown: closing a session without the lock must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        acquired = self._api_lock.acquire(timeout=timeout)",
     "new": "        acquired = False",
     "tests": "closing_the_sessions_waits_for_the_operation_holding_the_lock"
   },
   {
     "label": "teardown: leaving a session open when the lock is busy must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        if not acquired:\n            _LOGGER.debug(\n                \"Closing the HTTP sessions while another operation still holds \"\n                \"the api lock; it waited %ss.\",\n                timeout,\n            )",
     "new": "        if not acquired:\n            return",
     "tests": "sessions_are_closed_even_if_the_lock_never_comes_free"
@@ -1716,7 +1716,7 @@
   },
   {
     "label": "deadline: an out-of-time cycle spending another request",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "\n            self.check_deadline()",
     "new": "\n            pass",
     "tests": "a_cycle_out_of_time_makes_no_further_request"

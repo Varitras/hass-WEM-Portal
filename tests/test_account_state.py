@@ -56,12 +56,12 @@ def test_the_test_reset_really_forgets():
 # The two sanctioned module globals, each with a reason:
 #   models._ACCOUNT_STATES     - the registry the account state survives
 #                                reloads in; everything else belongs INSIDE it.
-#   wemportalapi._BLOCKED_UNTIL - the IP-wide 403 backoff. The portal limits
+#   transport._BLOCKED_UNTIL   - the IP-wide 403 backoff. The portal limits
 #                                per IP, so this is installation state, not
 #                                account state.
 SANCTIONED_MODULE_STATE = {
     ("models.py", "_ACCOUNT_STATES"),
-    ("wemportalapi.py", "_BLOCKED_UNTIL"),
+    ("transport.py", "_BLOCKED_UNTIL"),
 }
 
 _MUTATING_METHODS = {
