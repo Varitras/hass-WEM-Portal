@@ -275,3 +275,30 @@ def test_the_scan_would_notice_an_added_opt_in():
     )
     call = tree.body[0].value
     assert any(kw.arg == "retry_transport" for kw in call.keywords)
+
+
+@pytest.mark.parametrize("body", [None, [], "text", 42])
+def test_a_non_object_error_body_does_not_replace_the_real_failure(body):
+    """The error body is read to EXPLAIN a failure, never to cause one.
+
+    Valid JSON that is not an object - `null` and a bare list have both been
+    seen from portals behind a proxy - indexed straight into `["Status"]`,
+    which raises TypeError. That is not one of the two caught types, so it
+    travelled up in place of the ForbiddenError the caller was about to
+    raise: the diagnosis replaced the diagnosis.
+    """
+    api = WemPortalApi("user@example.org", "secret")
+
+    assert api.get_response_details(FakeResponse(body)) == ("", "")
+
+
+def test_an_object_error_body_is_still_read():
+    """The counter-test: the whole point of reading the body is the server's
+    own explanation, and it must not be lost in the hardening."""
+    api = WemPortalApi("user@example.org", "secret")
+
+    details = api.get_response_details(
+        FakeResponse({"Status": 3, "Message": "Rate limited"})
+    )
+
+    assert details == (3, "Rate limited")

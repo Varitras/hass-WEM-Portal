@@ -34,6 +34,7 @@ GUARD_FILES = {
     "test_portal_boundaries.py": "every json read and html parse is a declared boundary",
     "test_portal_values.py": "comma normalisation lives in exactly one place",
     "test_reading_boundary.py": "readings are read as attributes, never as dict keys",
+    "test_reading_invariants.py": "every mapped reading carries the fields other paths read",
     "test_repairs.py": "every repair issue is translated and entry-prefixed",
     "test_transport_boundary.py": "transport imports no domain module",
     "test_transport_errors.py": "only the value path opts into a transport retry",

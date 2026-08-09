@@ -50,6 +50,7 @@ exists because the thing it prevents actually happened here.
 | `test_portal_boundaries.py` | Every `.json()` read and HTML parse sits in a declared boundary function |
 | `test_portal_values.py` | Decimal-comma normalisation lives in exactly one place |
 | `test_reading_boundary.py` | Readings are read as attributes, never as dict keys |
+| `test_reading_invariants.py` | Every reading the mapper writes carries the fields another path reads |
 | `test_repairs.py` | Every repair issue is translated in every language and prefixed with the entry id |
 | `test_transport_boundary.py` | `transport.py` imports no domain module |
 | `test_transport_errors.py` | Only the two value-path reads opt into a transport retry |
@@ -81,6 +82,22 @@ in `tests/complexity.py` and calibrated against SonarQube Cloud's own
 numbers. It counts nesting rather than paths: a flat ten-case dispatch is
 cheap, three loops inside each other are not. `COMPLEXITY_LIMIT` is 15,
 SonarSource's default.
+
+### Structure is not enough
+
+Most of the guards above check a **shape** or a **list**: no dict access,
+no module global, every boundary declared. None of them can see a write
+path that produces a perfectly valid object with one field left empty -
+a field some *other* path needs.
+
+That is how the per-module freshness came to protect nothing: the mapper
+wrote ordinary sensors without the module address, and the ageing pass
+matches on exactly that address. Controls had it, plain sensors did not,
+and the test that should have caught it filled the address in by hand.
+
+`test_reading_invariants.py` is the answer: it states invariants over the
+**data** and checks them against what the real mapper produces. When you
+add a field that one path writes and another reads, state it there.
 
 ## Adding a guard
 

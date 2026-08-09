@@ -826,11 +826,30 @@ async def test_diagnostics_carry_no_credentials_and_no_installation_ids(hass):
     """
     import json as json_module
 
+    from custom_components.wemportal.const import CONF_EXPERT_MODULE_LIST
     from custom_components.wemportal.diagnostics import (
         async_get_config_entry_diagnostics,
     )
 
-    entry = await _setup(hass, _entry(hass, _expert_options()))
+    # The discovered-module cache lives in the options and carries an
+    # entityvalue per entry - under the key "value", which is far too
+    # generic to redact by name (every reading has one).
+    options = {
+        **_expert_options(),
+        CONF_EXPERT_MODULE_LIST: [{"value": EV_B, "label": "Heating"}],
+    }
+    entry = await _setup(hass, _entry(hass, options))
+    # A row keyed the way production keys its status rows. FAKE_DATA has no
+    # such key, so without this the report simply never contains one - and
+    # the assertion below would pass while the aliasing did nothing. The
+    # mutation run is what said so: breaking the row-key aliasing left the
+    # suite green.
+    entry.runtime_data.coordinator.data["1234"]["1234-ConnectionStatus"] = Reading(
+        value="online",
+        friendly_name="Connection Status",
+        parameter_id="ConnectionStatus",
+        platform="sensor",
+    )
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -838,7 +857,10 @@ async def test_diagnostics_carry_no_credentials_and_no_installation_ids(hass):
     assert "secret" not in dump, "the password is in the report"
     assert USER not in dump, "the username is in the report"
     assert EV_A not in dump, "a configured expert id is in the report"
-    assert '"1234"' not in dump, "a device id survived as a key"
+    assert EV_B not in dump, "a cached expert id from discovery is in the report"
+    # No quotes: the device id also sits INSIDE the row keys
+    # ("1234-ConnectionStatus"), where the outer aliasing does not reach it.
+    assert "1234" not in dump, "a device id survived somewhere in the report"
     assert '"device_1"' in dump, "the aliased device data is missing entirely"
     assert "outside temperature" in dump.lower(), (
         "the readings are gone - a report without data helps nobody"

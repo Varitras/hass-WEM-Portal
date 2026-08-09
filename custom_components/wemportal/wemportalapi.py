@@ -486,24 +486,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         # quiet for hours. They are not left unwatched: _forget_scraped_values
         # ages them on the scrape's own terms, after three failures in a row.
         status_rows = {f"{device_id}-{row_name}" for row_name in DEVICE_STATUS_ROWS}
-        # Only while the scrape is actually keeping them fresh.
-        # _previous_scraper_keys cannot answer that on its own: it is
-        # refreshed by a SUCCESSFUL scrape, so after a failure it still names
-        # every key the last good one wrote. And _forget_scraped_values fires
-        # on exactly the third failure, not from then on - so a shared row is
-        # cleared once, refilled by the merge from the API side, and then
-        # aged by nobody: not by the scrape, which has stopped acting, and
-        # not here, because the exemption still covered it. An old reading
-        # sat there as current with both sources dead behind it.
-        scrape_is_keeping_up = (
-            self.spider_retry_count < SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
-        )
-        scraped_rows = self._previous_scraper_keys or set()
         forgotten = []
         for key, row in (self.data.get(device_id) or {}).items():
             if key in status_rows:
                 continue
-            if scrape_is_keeping_up and key in scraped_rows:
+            if self._kept_fresh_by_the_scrape(key):
                 continue
             if isinstance(row, Reading) and row.value is not None:
                 row.value = None
@@ -522,6 +509,53 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             int(stale_for // 60),
             len(forgotten),
         )
+
+    def _rows_this_module_owns(self, device_rows, module_key):
+        """The rows a silent module may take down with it.
+
+        Four things disqualify a row, and none of them is about the module
+        having gone quiet: it is not a reading at all (the raw status gate),
+        it belongs to another module, the scrape is still feeding it, or it
+        is a weekly programme - those are governed by the schedule fetch,
+        which drops its own detail when a due refresh fails.
+        """
+        for row_name, row in device_rows.items():
+            if not isinstance(row, Reading):
+                continue
+            if (row.module_index, row.module_type) != module_key:
+                continue
+            if self._kept_fresh_by_the_scrape(row_name):
+                continue
+            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(
+                row.value
+            )
+            if is_programme:
+                continue
+            yield row_name, row
+
+    def _kept_fresh_by_the_scrape(self, row_name) -> bool:
+        """Whether the scrape is still delivering this row.
+
+        Both ageing passes ask this - the device-level one and the
+        per-module one - because in `both` mode one row can carry an api
+        reading AND a scraped one. "The api has not answered" is a statement
+        about the api only: the scrape runs on its own schedule and can be
+        minutes old while the api side has been quiet for hours. Ageing such
+        a row would blank a value that arrived seconds ago.
+
+        The retry count is what makes this honest. `_previous_scraper_keys`
+        cannot answer it alone: it is refreshed by a SUCCESSFUL scrape, so
+        after a failure it still names every key the last good one wrote.
+        And _forget_scraped_values fires on exactly the third failure, not
+        from then on - so without the count a shared row would be cleared
+        once, refilled by the merge from the api side, and then aged by
+        nobody: not by the scrape, which has stopped acting, and not here,
+        because the exemption still covered it. An old reading sat there as
+        current with both sources dead behind it.
+        """
+        if self.spider_retry_count >= SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE:
+            return False
+        return row_name in (self._previous_scraper_keys or ())
 
     def _forget_scraped_values(self):
         """Stop presenting readings from a scrape that stopped working.
@@ -2458,17 +2492,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 continue
 
             forgotten = []
-            for row_name, row in device_rows.items():
-                if not isinstance(row, Reading):
-                    continue
-                if (row.module_index, row.module_type) != module_key:
-                    continue
-                is_programme = (
-                    row.data_type == WemDataType.PROGRAM
-                    or looks_like_schedule(row.value)
-                )
-                if is_programme:
-                    continue
+            for row_name, row in self._rows_this_module_owns(device_rows, module_key):
                 if row.value is not None:
                     row.value = None
                     forgotten.append(row_name)

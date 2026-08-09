@@ -50,11 +50,22 @@ def described_parameters(payload: Any) -> list[dict[str, Any]] | None:
     parameters = answer.get("Parameters")
     if not isinstance(parameters, list):
         return None
-    return [
-        parameter
-        for parameter in parameters
-        if isinstance(parameter, dict) and "ParameterID" in parameter
-    ]
+    return [parameter for parameter in parameters if _has_a_usable_id(parameter)]
+
+
+def _has_a_usable_id(parameter: Any) -> bool:
+    """Whether this row names a parameter the rest of the code can use.
+
+    The id becomes a DICT KEY one layer down, and that is what makes the
+    type part of the contract rather than a nicety: `null` caches an entry
+    nobody can ask for again, and a list or an object raises TypeError at
+    the moment of use - taking the remaining discovery of that module with
+    it. Checking only that the key is present let all three through.
+    """
+    if not isinstance(parameter, dict):
+        return False
+    parameter_id = parameter.get("ParameterID")
+    return isinstance(parameter_id, str) and bool(parameter_id.strip())
 
 
 def status_is_success(status: Any) -> bool:

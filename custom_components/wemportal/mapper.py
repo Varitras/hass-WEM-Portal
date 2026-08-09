@@ -417,6 +417,13 @@ def _merge_into_scraped(
                 target.value = api_value
             target.parameter_id = scraped_entity
             target.platform = "sensor"
+        # The api reading's own module, on both paths. With no scraped row
+        # to merge into, the target IS this reading's own key - and without
+        # the address it would never age out. A row the scrape also feeds is
+        # protected from the module ageing pass while the scrape is working;
+        # see _forget_unanswered_module_values.
+        target.module_index = sensor.module_index
+        target.module_type = sensor.module_type
 
 
 def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
@@ -434,6 +441,12 @@ def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
         icon=unit_to_icon(final_unit),
         friendly_name=sensor.friendly_name,
         platform="sensor",
+        # The module this reading came from. Dropping it here left every
+        # ordinary sensor unreachable for the per-module ageing pass, which
+        # matches on exactly this pair - so a module could fall silent
+        # forever and its readings stayed on display as current.
+        module_index=sensor.module_index,
+        module_type=sensor.module_type,
     )
 
 

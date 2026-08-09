@@ -1654,8 +1654,8 @@
   {
     "label": "freshness: forgetting a reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up and key in scraped_rows:\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None",
-    "new": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up and key in scraped_rows:\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.clear()",
+    "old": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None",
+    "new": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.clear()",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -1899,8 +1899,8 @@
   {
     "label": "freshness: the rows explaining the silence blanked with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up",
-    "new": "            if scrape_is_keeping_up",
+    "old": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):",
+    "new": "            if self._kept_fresh_by_the_scrape(key):",
     "tests": "the_rows_that_explain_the_silence_are_not_blanked_with_it"
   },
   {
@@ -1962,15 +1962,15 @@
   {
     "label": "freshness: a fresh scrape cleared because the API half went quiet",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if scrape_is_keeping_up and key in scraped_rows:\n                continue",
+    "old": "            if self._kept_fresh_by_the_scrape(key):\n                continue",
     "new": "            if False:\n                continue",
     "tests": "a_fresh_scrape_is_not_cleared_with_a_silent_api_device"
   },
   {
     "label": "freshness: a shared row protected after the scrape gave up too",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        scrape_is_keeping_up = (\n            self.spider_retry_count < SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE\n        )",
-    "new": "        scrape_is_keeping_up = True",
+    "old": "        if self.spider_retry_count >= SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE:\n            return False",
+    "new": "        if False:\n            return False",
     "tests": "a_shared_row_ages_once_the_scrape_has_given_up_too"
   },
   {
@@ -2417,8 +2417,8 @@
   {
     "label": "freshness: the programme exemption dropped from the module aging",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                if is_programme:\n                    continue",
-    "new": "                if False:\n                    continue",
+    "old": "            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(\n                row.value\n            )\n            if is_programme:\n                continue",
+    "new": "            pass",
     "tests": "a_weekly_programme_survives_the_module_aging"
   },
   {
@@ -2525,5 +2525,54 @@
     "old": "        if self._parameter_id in DEVICE_STATUS_ROWS:\n            return EntityCategory.DIAGNOSTIC\n        return None",
     "new": "        if any(\n            status_row in str(self._attr_unique_id)\n            for status_row in DEVICE_STATUS_ROWS\n        ):\n            return EntityCategory.DIAGNOSTIC\n        return None",
     "tests": "device_named_like_a_status_row_is_not_diagnostic"
+  },
+  {
+    "label": "freshness: a plain sensor losing its module address must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        module_index=sensor.module_index,\n        module_type=sensor.module_type,\n    )",
+    "new": "    )",
+    "tests": "every_mapped_reading_knows_its_module or reading_the_mapper_wrote_ages_out"
+  },
+  {
+    "label": "freshness: a merged reading losing its module address must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        target.module_index = sensor.module_index\n        target.module_type = sensor.module_type",
+    "new": "        pass",
+    "tests": "merged_into_a_scraped_row_knows_its_module"
+  },
+  {
+    "label": "freshness: ageing a row the scrape still feeds must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if self._kept_fresh_by_the_scrape(row_name):\n                continue",
+    "new": "            if False:\n                continue",
+    "tests": "row_the_scrape_still_feeds_is_not_aged"
+  },
+  {
+    "label": "diagnostics: a device id inside a row key must not survive",
+    "path": "custom_components/wemportal/diagnostics.py",
+    "old": "                _aliased_row_key(key, aliases): (",
+    "new": "                key: (",
+    "tests": "diagnostics_carry_no_credentials"
+  },
+  {
+    "label": "diagnostics: the cached expert module list must not be published",
+    "path": "custom_components/wemportal/diagnostics.py",
+    "old": "    CONF_EXPERT_MODULE_LIST,\n    *(CONF_EXPERT_SLOT_ID_TEMPLATE",
+    "new": "    *(CONF_EXPERT_SLOT_ID_TEMPLATE",
+    "tests": "diagnostics_carry_no_credentials"
+  },
+  {
+    "label": "protocol: a parameter id that is not a name must be dropped",
+    "path": "custom_components/wemportal/mobile_protocol.py",
+    "old": "    return isinstance(parameter_id, str) and bool(parameter_id.strip())",
+    "new": "    return \"ParameterID\" in parameter",
+    "tests": "row_whose_parameter_id_is_not_a_name_is_dropped"
+  },
+  {
+    "label": "transport: a non-object error body must not raise",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                response_data = as_answer_dict(response.json())",
+    "new": "                response_data = response.json()",
+    "tests": "non_object_error_body_does_not_replace_the_real_failure"
   }
 ]

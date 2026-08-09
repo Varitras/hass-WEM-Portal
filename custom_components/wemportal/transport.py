@@ -29,6 +29,11 @@ from .exceptions import (
     WemPortalError,
 )
 
+# Protocol, not domain: how a portal answer is READ, with no idea what a
+# device or a reading is. The import guard in tests/test_transport_boundary
+# lists the domain modules, and this is deliberately not one of them.
+from .mobile_protocol import as_answer_dict
+
 _LOGGER = logging.getLogger(__name__)
 
 # How long to wait before the single retry of a request that never reached
@@ -329,12 +334,18 @@ class WemPortalTransport:
         # in that case, discarding the server's own error details.
         if response is not None:
             try:
-                response_data = response.json()
+                response_data = as_answer_dict(response.json())
                 _LOGGER.debug(response_data)
-                # Status we get back from server
-                server_status = response_data["Status"]
-                server_message = response_data["Message"]
-            except (KeyError, ValueError):
+                if response_data is not None:
+                    # Status we get back from server
+                    server_status = response_data.get("Status", "")
+                    server_message = response_data.get("Message", "")
+            except ValueError:
+                # Not JSON at all. The body is read to EXPLAIN a failure,
+                # never to cause one - and valid JSON that is not an object
+                # (`null`, a bare list) used to raise TypeError right here,
+                # which is not a caught type, so the diagnosis travelled up
+                # in place of the failure it was diagnosing.
                 pass
         return server_status, server_message
 

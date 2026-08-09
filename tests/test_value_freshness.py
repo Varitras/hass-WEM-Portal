@@ -73,6 +73,117 @@ def _two_module_api():
     return api
 
 
+def _api_that_fills_its_own_data():
+    """The same two modules - but with `data` EMPTY.
+
+    The fixture above hands the rows to `api.data` ready-made, module
+    address included. Production does not: the mapper writes them, and
+    what it puts in each row is exactly the question. A test that fills
+    the row itself cannot ask it.
+    """
+    api = _two_module_api()
+    api.data = {"1234": {}}
+    return api
+
+
+def _answer_both_then_only_module_a(api):
+    """Cycle 1 names both modules, every cycle after that only A.
+
+    That is the shape the whole per-module freshness exists for - the
+    DEVICE keeps answering, one module stops being in the answer.
+    """
+    calls = {"values": 0}
+
+    def make_api_call(url, **_kwargs):
+        if url == wemportalapi.API_REFRESH_URL:
+            return _Answer({"Status": 0, "JobID": 7})
+        calls["values"] += 1
+        modules = [
+            {
+                "ModuleIndex": 0,
+                "ModuleType": 1,
+                "Values": [
+                    {"ParameterID": "AktRaumSoll", "NumericValue": 21.5, "Unit": "°C"}
+                ],
+            }
+        ]
+        if calls["values"] == 1:
+            modules.append(
+                {
+                    "ModuleIndex": 1,
+                    "ModuleType": 1,
+                    "Values": [
+                        {"ParameterID": "Komfort", "NumericValue": 24.0, "Unit": "°C"}
+                    ],
+                }
+            )
+        return _Answer({"Modules": modules})
+
+    api.make_api_call = make_api_call
+
+
+def test_a_reading_the_mapper_wrote_ages_out_like_any_other():
+    """The freshness has to find the rows PRODUCTION writes.
+
+    Every row in this test is written by the mapper, not by the test. That
+    is the whole point: the mapper builds an ordinary read-only sensor
+    without the module address the ageing pass matches on, so module B
+    could fall silent forever and its reading stayed on display as current
+    - while the test next door passed, because it had filled the address
+    in by hand.
+    """
+    api = _api_that_fills_its_own_data()
+    _answer_both_then_only_module_a(api)
+
+    api._fetch_parameter_values("1234")
+    assert api.data["1234"]["Circuit-Komfort"].value == 24.0, (
+        "precondition: the first cycle wrote both modules' readings"
+    )
+
+    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - AGED
+    api._fetch_parameter_values("1234")
+
+    assert api.data["1234"]["Circuit-Komfort"].value is None, (
+        "a reading of the silent module is still presented as current"
+    )
+    assert api.data["1234"]["Heat pump-AktRaumSoll"].value == 21.5, (
+        "the answering module was aged along with the silent one"
+    )
+
+
+def test_a_row_the_scrape_still_feeds_is_not_aged_by_its_module():
+    """The counterweight to the fix above.
+
+    In `both` mode one row can carry an api reading AND a scraped one. Now
+    that such a row knows its module, the ageing pass can reach it - and
+    while the scrape is still delivering, blanking it would throw away a
+    value that arrived seconds ago. Same exemption the device-level pass
+    has made all along; without it the fix for the silent module would have
+    created a fresh defect on the web path.
+    """
+    api = _two_module_api()
+    api.data["1234"]["Circuit-Komfort"].value = 24.0
+    api._previous_scraper_keys = {"Circuit-Komfort"}
+    api.spider_retry_count = 0
+    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - AGED
+
+    api._forget_unanswered_module_values("1234")
+
+    assert api.data["1234"]["Circuit-Komfort"].value == 24.0, (
+        "a row the scrape is still feeding was blanked by the module ageing"
+    )
+
+    # Once the scrape has given up too, nothing is keeping the row fresh.
+    api.spider_retry_count = wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
+    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - AGED
+
+    api._forget_unanswered_module_values("1234")
+
+    assert api.data["1234"]["Circuit-Komfort"].value is None, (
+        "with both sources dead the reading is still presented as current"
+    )
+
+
 def _answer_only_module_a(api):
     """Stub the portal: the values answer names module A and nothing else."""
 
