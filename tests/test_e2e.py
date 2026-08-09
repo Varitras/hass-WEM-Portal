@@ -27,6 +27,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wemportal import expert_writer
+from custom_components.wemportal.models import Reading
 from custom_components.wemportal.const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
@@ -66,13 +67,13 @@ BASE_OPTIONS = {
 # One device with one sensor data point, in the shape fetch_data() returns.
 FAKE_DATA = {
     "1234": {
-        "Outside temperature": {
-            "value": 12.5,
-            "unit": "°C",
-            "platform": "sensor",
-            "friendlyName": "Outside temperature",
-            "ParameterID": "P1",
-        }
+        "Outside temperature": Reading(
+            value=12.5,
+            unit="°C",
+            platform="sensor",
+            friendly_name="Outside temperature",
+            parameter_id="P1",
+        )
     }
 }
 
@@ -436,13 +437,9 @@ async def test_migrate_entry_bumps_version(hass):
 
 
 def _sensor(name="Outside temperature"):
-    return {
-        "value": 12.5,
-        "unit": "°C",
-        "platform": "sensor",
-        "friendlyName": name,
-        "ParameterID": "P1",
-    }
+    return Reading(
+        value=12.5, unit="°C", platform="sensor", friendly_name=name, parameter_id="P1"
+    )
 
 
 async def test_unique_ids_are_migrated_for_every_device(hass, monkeypatch):
@@ -720,36 +717,34 @@ def _writeable_rows(number_row=None, select_row=None):
 
 
 def _number_row(value, min_value, max_value, step):
-    return {
-        "friendlyName": "Heat pump Komfort",
-        "ParameterID": "Komfort",
-        "unit": "°C",
-        "value": value,
-        "IsWriteable": True,
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "platform": "number",
-        "min_value": min_value,
-        "max_value": max_value,
-        "step": step,
-    }
+    return Reading(
+        friendly_name="Heat pump Komfort",
+        parameter_id="Komfort",
+        unit="°C",
+        value=value,
+        data_type=3,
+        module_index=0,
+        module_type=1,
+        platform="number",
+        min_value=min_value,
+        max_value=max_value,
+        step=step,
+    )
 
 
 def _select_row(value, options, options_names):
-    return {
-        "friendlyName": "Heat pump Betriebsart",
-        "ParameterID": "Betriebsart",
-        "unit": None,
-        "value": value,
-        "IsWriteable": True,
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "platform": "select",
-        "options": options,
-        "optionsNames": options_names,
-    }
+    return Reading(
+        friendly_name="Heat pump Betriebsart",
+        parameter_id="Betriebsart",
+        unit=None,
+        value=value,
+        data_type=1,
+        module_index=0,
+        module_type=1,
+        platform="select",
+        options=options,
+        options_names=options_names,
+    )
 
 
 async def test_fresh_bounds_from_the_portal_reach_a_running_number(hass, monkeypatch):
@@ -2436,23 +2431,23 @@ async def test_entities_of_an_offline_device_go_unavailable(hass, monkeypatch):
     readings as current - while the healthy device stays untouched."""
     two_devices = {
         "1234": {
-            "1234-ConnectionStatus": {
-                "value": "online",
-                "unit": None,
-                "platform": "sensor",
-                "friendlyName": "Connection Status",
-                "ParameterID": "ConnectionStatus",
-            },
+            "1234-ConnectionStatus": Reading(
+                value="online",
+                unit=None,
+                platform="sensor",
+                friendly_name="Connection Status",
+                parameter_id="ConnectionStatus",
+            ),
             "Outside temperature": _sensor(),
         },
         "5678": {
-            "5678-ConnectionStatus": {
-                "value": "offline",
-                "unit": None,
-                "platform": "sensor",
-                "friendlyName": "Connection Status",
-                "ParameterID": "ConnectionStatus",
-            },
+            "5678-ConnectionStatus": Reading(
+                value="offline",
+                unit=None,
+                platform="sensor",
+                friendly_name="Connection Status",
+                parameter_id="ConnectionStatus",
+            ),
             "Outside temperature": _sensor(),
         },
     }

@@ -9,6 +9,7 @@ value - so the branch-by-branch mapping is worth pinning down.
 import pytest
 
 from custom_components.wemportal.const import WemDataType
+from custom_components.wemportal.models import Reading
 from custom_components.wemportal.mapper import WemPortalDataMapper, get_min_max
 
 DEVICE = "1234"
@@ -131,12 +132,12 @@ def test_read_only_parameter_becomes_a_sensor():
     )
 
     sensor = data["Heat pump-Outside"]
-    assert sensor["platform"] == "sensor"
-    assert sensor["value"] == 12.5
-    assert sensor["unit"] == "°C"
+    assert sensor.platform == "sensor"
+    assert sensor.value == 12.5
+    assert sensor.unit == "°C"
     # No icon on purpose: °C carries a temperature device class, and an
     # explicit icon would override the one Home Assistant derives from it.
-    assert sensor["icon"] is None
+    assert sensor.icon is None
 
 
 @pytest.mark.parametrize(
@@ -158,9 +159,9 @@ def test_writeable_number_carries_its_step_and_bounds(data_type, expected_step):
     )
 
     entity = data["Heat pump-Setpoint"]
-    assert entity["platform"] == "number"
-    assert entity["step"] == expected_step
-    assert (entity["min_value"], entity["max_value"]) == (10.0, 30.0)
+    assert entity.platform == "number"
+    assert entity.step == expected_step
+    assert (entity.min_value, entity.max_value) == (10.0, 30.0)
 
 
 def test_writeable_enum_becomes_a_select_with_both_option_lists():
@@ -182,10 +183,10 @@ def test_writeable_enum_becomes_a_select_with_both_option_lists():
     )
 
     entity = data["Heat pump-Mode"]
-    assert entity["platform"] == "select"
-    assert entity["options"] == ["0", "1"]
-    assert entity["optionsNames"] == ["Auto", "Manual"]
-    assert entity["value"] == "Auto"
+    assert entity.platform == "select"
+    assert entity.options == ["0", "1"]
+    assert entity.options_names == ["Auto", "Manual"]
+    assert entity.value == "Auto"
 
 
 def test_binary_switch_becomes_a_switch():
@@ -205,9 +206,9 @@ def test_binary_switch_becomes_a_switch():
     )
 
     entity = data["Heat pump-Pump"]
-    assert entity["platform"] == "switch"
+    assert entity.platform == "switch"
     # sanitize_value() normalises the German on/off wording to a number.
-    assert entity["value"] == 1.0
+    assert entity.value == 1.0
 
 
 def test_switch_with_a_wider_range_becomes_a_number():
@@ -227,8 +228,8 @@ def test_switch_with_a_wider_range_becomes_a_number():
     )
 
     entity = data["Heat pump-Push"]
-    assert entity["platform"] == "number"
-    assert (entity["min_value"], entity["max_value"]) == (0.0, 240.0)
+    assert entity.platform == "number"
+    assert (entity.min_value, entity.max_value) == (0.0, 240.0)
 
 
 def test_json_schedule_falls_back_to_a_sensor():
@@ -239,7 +240,7 @@ def test_json_schedule_falls_back_to_a_sensor():
         _values(_value("Program", string='{"Mon":[]}')),
     )
 
-    assert data["Heat pump-Program"]["platform"] == "sensor"
+    assert data["Heat pump-Program"].platform == "sensor"
 
 
 def test_unknown_writeable_data_type_falls_back_to_a_sensor():
@@ -248,7 +249,7 @@ def test_unknown_writeable_data_type_falls_back_to_a_sensor():
         _values(_value("Odd", numeric=1)),
     )
 
-    assert data["Heat pump-Odd"]["platform"] == "sensor"
+    assert data["Heat pump-Odd"].platform == "sensor"
 
 
 # --- robustness -------------------------------------------------------
@@ -290,7 +291,7 @@ def test_malformed_entries_do_not_cost_the_remaining_values():
 
     data = _process(modules, values)
 
-    assert data["Heat pump-Good"]["value"] == 42
+    assert data["Heat pump-Good"].value == 42
 
 
 def test_missing_value_becomes_none_rather_than_zero():
@@ -301,7 +302,7 @@ def test_missing_value_becomes_none_rather_than_zero():
         _values(_value("Outside", string="--", unit="°C")),
     )
 
-    assert data["Heat pump-Outside"]["value"] is None
+    assert data["Heat pump-Outside"].value is None
 
 
 def test_friendly_name_does_not_repeat_the_module_name():
@@ -319,8 +320,8 @@ def test_friendly_name_does_not_repeat_the_module_name():
         ),
     )
 
-    assert data["Heat pump-Outside"]["friendlyName"] == "Heat Pump Outside"
-    assert data["Heat pump-Heat pump status"]["friendlyName"] == "Heat Pump Status"
+    assert data["Heat pump-Outside"].friendly_name == "Heat Pump Outside"
+    assert data["Heat pump-Heat pump status"].friendly_name == "Heat Pump Status"
 
 
 # --- mode "both": API values merged onto scraped sensors --------------
@@ -329,15 +330,14 @@ def test_friendly_name_does_not_repeat_the_module_name():
 def _scraped(parameter_id, friendly_name, value=None, unit="°C"):
     """One entry as the web scraper leaves it in api_data."""
     return {
-        parameter_id: {
-            "value": value,
-            "name": parameter_id,
-            "unit": unit,
-            "icon": "mdi:thermometer",
-            "friendlyName": friendly_name,
-            "ParameterID": parameter_id,
-            "platform": "sensor",
-        }
+        parameter_id: Reading(
+            value=value,
+            unit=unit,
+            icon="mdi:thermometer",
+            friendly_name=friendly_name,
+            parameter_id=parameter_id,
+            platform="sensor",
+        )
     }
 
 
@@ -354,7 +354,7 @@ def test_both_mode_writes_the_api_value_onto_the_matching_scraped_sensor():
         existing=scraped,
     )
 
-    assert data["heat_pump-outside"]["value"] == 12.5
+    assert data["heat_pump-outside"].value == 12.5
     assert "Heat pump-Outside" not in data, "API value must not create a second sensor"
 
 
@@ -383,7 +383,7 @@ def test_both_mode_keeps_an_unmatched_api_value_under_its_own_key():
         mode="both",
     )
 
-    assert data["Heat pump-Outside"]["value"] == 12.5
+    assert data["Heat pump-Outside"].value == 12.5
 
 
 def test_both_mode_still_merges_when_a_second_device_exists():
@@ -412,7 +412,7 @@ def test_both_mode_still_merges_when_a_second_device_exists():
         DEVICE,
     )
 
-    assert api_data[DEVICE]["heat_pump-outside"]["value"] == 12.5
+    assert api_data[DEVICE]["heat_pump-outside"].value == 12.5
     assert "Heat pump-Outside" not in api_data[DEVICE], (
         "a second entity for one reading"
     )
@@ -432,10 +432,8 @@ def test_a_device_the_scraper_does_not_write_into_keeps_its_own_key():
         scraper_device_id="5678",
     )
 
-    assert data["Heat pump-Outside"]["value"] == 12.5
-    assert data["heat_pump-outside"]["value"] == 11.0, (
-        "another device's row was rewritten"
-    )
+    assert data["Heat pump-Outside"].value == 12.5
+    assert data["heat_pump-outside"].value == 11.0, "another device's row was rewritten"
 
 
 def test_a_malformed_parameter_does_not_cost_the_others(caplog):
@@ -471,10 +469,10 @@ def test_a_malformed_parameter_does_not_cost_the_others(caplog):
 
     assert "Broken" in caplog.text, "the skipped parameter went unreported"
     # The parameter after the failure still has to be processed.
-    assert data["Heat pump-Healthy"]["value"] == 12.5
+    assert data["Heat pump-Healthy"].value == 12.5
     # And the failed one still surfaces, as a plain sensor, from the entry
     # written before the exception.
-    assert data["Heat pump-Broken"]["platform"] == "sensor"
+    assert data["Heat pump-Broken"].platform == "sensor"
 
 
 def test_an_empty_api_value_does_not_erase_the_scraped_one():
@@ -492,7 +490,7 @@ def test_an_empty_api_value_does_not_erase_the_scraped_one():
         existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
     )
 
-    assert data["heat_pump-outside"]["value"] == 11.0
+    assert data["heat_pump-outside"].value == 11.0
 
 
 def test_a_real_api_value_still_wins_over_the_scraped_one():
@@ -505,7 +503,7 @@ def test_a_real_api_value_still_wins_over_the_scraped_one():
         existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
     )
 
-    assert data["heat_pump-outside"]["value"] == 12.5
+    assert data["heat_pump-outside"].value == 12.5
 
 
 # --- DataType 2 is overloaded: switch, schedule, or date ----------------
@@ -539,11 +537,11 @@ def test_an_unbounded_time_parameter_becomes_a_holiday_date():
     )
 
     entity = data["Heat pump-U_Beginn"]
-    assert entity["platform"] == "date", (
+    assert entity.platform == "date", (
         "an unbounded time parameter became a writeable toggle again - "
         "switching it writes epoch 0/1, i.e. 1970, to the heating system"
     )
-    assert entity["value"] == HOLIDAY_BEGIN_EPOCH
+    assert entity.value == HOLIDAY_BEGIN_EPOCH
 
 
 def test_an_unbounded_parameter_that_answered_with_a_word_is_not_a_date():
@@ -566,7 +564,7 @@ def test_an_unbounded_parameter_that_answered_with_a_word_is_not_a_date():
         _values(_value("Something", string="Off")),
     )
 
-    assert data["Heat pump-Something"]["platform"] == "sensor"
+    assert data["Heat pump-Something"].platform == "sensor"
 
 
 def test_an_unbounded_schedule_stays_a_sensor():
@@ -586,7 +584,7 @@ def test_an_unbounded_schedule_stays_a_sensor():
         _values(_value("Heizprogramm1", string='{"MO-1":"00:00-24:00"}')),
     )
 
-    assert data["Heat pump-Heizprogramm1"]["platform"] == "sensor"
+    assert data["Heat pump-Heizprogramm1"].platform == "sensor"
 
 
 def _schedule_modules():
@@ -618,7 +616,7 @@ def test_a_writeable_value_that_fell_back_to_a_sensor_still_updates():
     first = _process(
         modules, _values(_value("Heizprogramm1", string='{"MO-1":"00:00-24:00"}'))
     )
-    assert first["Heat pump-Heizprogramm1"]["value"] == '{"MO-1":"00:00-24:00"}', (
+    assert first["Heat pump-Heizprogramm1"].value == '{"MO-1":"00:00-24:00"}', (
         "the setup did not read"
     )
 
@@ -628,7 +626,7 @@ def test_a_writeable_value_that_fell_back_to_a_sensor_still_updates():
         existing=first,
     )
 
-    assert second["Heat pump-Heizprogramm1"]["value"] == '{"MO-1":"06:00-22:00"}', (
+    assert second["Heat pump-Heizprogramm1"].value == '{"MO-1":"06:00-22:00"}', (
         "the programme froze on the value it had in the first poll"
     )
 
@@ -650,16 +648,16 @@ def test_a_real_control_is_still_left_alone_on_the_second_poll():
         )
     )
     first = _process(modules, _values(_value("Raumsolltemperatur", numeric=21.0)))
-    assert first["Heat pump-Raumsolltemperatur"]["platform"] == "number"
+    assert first["Heat pump-Raumsolltemperatur"].platform == "number"
 
     second = _process(
         modules, _values(_value("Raumsolltemperatur", numeric=22.0)), existing=first
     )
 
-    assert second["Heat pump-Raumsolltemperatur"]["platform"] == "number", (
+    assert second["Heat pump-Raumsolltemperatur"].platform == "number", (
         "the control was demoted to a plain sensor on the second poll"
     )
-    assert second["Heat pump-Raumsolltemperatur"]["value"] == 22.0
+    assert second["Heat pump-Raumsolltemperatur"].value == 22.0
 
 
 def test_an_optionless_dropdown_stays_a_sensor():
@@ -679,7 +677,7 @@ def test_an_optionless_dropdown_stays_a_sensor():
         _values(_value("Mystery", string="whatever")),
     )
 
-    assert data["Heat pump-Mystery"]["platform"] == "sensor"
+    assert data["Heat pump-Mystery"].platform == "sensor"
 
 
 # --- a parameter the portal did not send is not current any more --------
@@ -698,18 +696,12 @@ def test_a_parameter_the_portal_left_out_stops_being_current():
     entry and went on being published as current."""
     modules = _two_parameters()
     existing = {
-        "Heat pump-AktRaumSoll": {
-            "value": 21.0,
-            "ParameterID": "AktRaumSoll",
-            "unit": "°C",
-            "platform": "sensor",
-        },
-        "Heat pump-Vorlaufsoll": {
-            "value": 50.5,
-            "ParameterID": "Vorlaufsoll",
-            "unit": "°C",
-            "platform": "sensor",
-        },
+        "Heat pump-AktRaumSoll": Reading(
+            value=21.0, parameter_id="AktRaumSoll", unit="°C", platform="sensor"
+        ),
+        "Heat pump-Vorlaufsoll": Reading(
+            value=50.5, parameter_id="Vorlaufsoll", unit="°C", platform="sensor"
+        ),
     }
 
     data = _process(
@@ -718,11 +710,11 @@ def test_a_parameter_the_portal_left_out_stops_being_current():
         existing=existing,
     )
 
-    assert data["Heat pump-AktRaumSoll"]["value"] == 22.0
-    assert data["Heat pump-Vorlaufsoll"]["value"] is None, (
+    assert data["Heat pump-AktRaumSoll"].value == 22.0
+    assert data["Heat pump-Vorlaufsoll"].value is None, (
         "a reading the portal did not send was still reported as current"
     )
-    assert data["Heat pump-Vorlaufsoll"]["unit"] == "°C", "the unit was thrown away"
+    assert data["Heat pump-Vorlaufsoll"].unit == "°C", "the unit was thrown away"
 
 
 def test_a_module_the_portal_did_not_answer_for_is_left_alone():
@@ -730,17 +722,14 @@ def test_a_module_the_portal_did_not_answer_for_is_left_alone():
     that none of its parameters has a value."""
     modules = _two_parameters()
     existing = {
-        "Heat pump-AktRaumSoll": {
-            "value": 21.0,
-            "ParameterID": "AktRaumSoll",
-            "unit": "°C",
-            "platform": "sensor",
-        },
+        "Heat pump-AktRaumSoll": Reading(
+            value=21.0, parameter_id="AktRaumSoll", unit="°C", platform="sensor"
+        ),
     }
 
     data = _process(modules, {"Modules": []}, existing=existing)
 
-    assert data["Heat pump-AktRaumSoll"]["value"] == 21.0
+    assert data["Heat pump-AktRaumSoll"].value == 21.0
 
 
 def test_a_heating_schedule_is_not_cleared_by_the_value_read():
@@ -751,21 +740,21 @@ def test_a_heating_schedule_is_not_cleared_by_the_value_read():
         _parameter("Heizprogramm1", DataType=WemDataType.PROGRAM),
     )
     existing = {
-        "Heat pump-Heizprogramm1": {
-            "value": "Active",
-            "ParameterID": "Heizprogramm1",
-            "unit": None,
-            "platform": "sensor",
-            "CircuitTimesDay": [{"day": "MO"}],
-        },
+        "Heat pump-Heizprogramm1": Reading(
+            value="Active",
+            parameter_id="Heizprogramm1",
+            unit=None,
+            platform="sensor",
+            circuit_times_day=[{"day": "MO"}],
+        ),
     }
 
     data = _process(
         modules, _values(_value("AktRaumSoll", numeric=22.0)), existing=existing
     )
 
-    assert data["Heat pump-Heizprogramm1"]["value"] == "Active"
-    assert data["Heat pump-Heizprogramm1"]["CircuitTimesDay"] == [{"day": "MO"}]
+    assert data["Heat pump-Heizprogramm1"].value == "Active"
+    assert data["Heat pump-Heizprogramm1"].circuit_times_day == [{"day": "MO"}]
 
 
 def test_a_schedule_typed_as_a_switch_is_not_cleared_either():
@@ -781,20 +770,20 @@ def test_a_schedule_typed_as_a_switch_is_not_cleared_either():
         _parameter("Heizprogramm1", DataType=WemDataType.SWITCH),
     )
     existing = {
-        "Heat pump-Heizprogramm1": {
-            "value": '{"MO-1": "06:00-22:00"}',
-            "ParameterID": "Heizprogramm1",
-            "unit": None,
-            "platform": "sensor",
-            "CircuitTimesDay": [{"day": "MO"}],
-        },
+        "Heat pump-Heizprogramm1": Reading(
+            value='{"MO-1": "06:00-22:00"}',
+            parameter_id="Heizprogramm1",
+            unit=None,
+            platform="sensor",
+            circuit_times_day=[{"day": "MO"}],
+        ),
     }
 
     data = _process(
         modules, _values(_value("AktRaumSoll", numeric=22.0)), existing=existing
     )
 
-    assert data["Heat pump-Heizprogramm1"]["value"] == '{"MO-1": "06:00-22:00"}'
+    assert data["Heat pump-Heizprogramm1"].value == '{"MO-1": "06:00-22:00"}'
 
 
 def test_an_ordinary_switch_the_portal_dropped_is_still_cleared():
@@ -805,19 +794,16 @@ def test_an_ordinary_switch_the_portal_dropped_is_still_cleared():
         _parameter("Pumpe", DataType=WemDataType.SWITCH),
     )
     existing = {
-        "Heat pump-Pumpe": {
-            "value": "on",
-            "ParameterID": "Pumpe",
-            "unit": None,
-            "platform": "switch",
-        },
+        "Heat pump-Pumpe": Reading(
+            value="on", parameter_id="Pumpe", unit=None, platform="switch"
+        ),
     }
 
     data = _process(
         modules, _values(_value("AktRaumSoll", numeric=22.0)), existing=existing
     )
 
-    assert data["Heat pump-Pumpe"]["value"] is None
+    assert data["Heat pump-Pumpe"].value is None
 
 
 def test_a_holiday_date_stops_being_current_once_the_portal_drops_it():
@@ -836,16 +822,13 @@ def test_a_holiday_date_stops_being_current_once_the_portal_drops_it():
         ),
     )
     existing = {
-        "Heat pump-U_Beginn": {
-            "value": 1785715200.0,
-            "ParameterID": "U_Beginn",
-            "unit": None,
-            "platform": "date",
-        },
+        "Heat pump-U_Beginn": Reading(
+            value=1785715200.0, parameter_id="U_Beginn", unit=None, platform="date"
+        ),
     }
 
     data = _process(
         modules, _values(_value("AktRaumSoll", numeric=22.0)), existing=existing
     )
 
-    assert data["Heat pump-U_Beginn"]["value"] is None
+    assert data["Heat pump-U_Beginn"].value is None

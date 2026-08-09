@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import GITHUB_PROJECT_URL
 from .entity import WemPortalEntity
-from .models import account_state
+from .models import Reading, account_state
 from .utils import (
     build_device_info,
     device_is_reachable,
@@ -40,14 +40,7 @@ async def async_setup_entry(
     entities: list[WemPortalSensor] = []
     for device_id, entity_data in coordinator.data.items():
         for unique_id, values in entity_data.items():
-            if isinstance(values, int):
-                continue
-            # Use .get() rather than values["platform"] here: if a single
-            # data point is ever missing this key (e.g. an unexpected API
-            # response shape), we want to skip just that one entry instead
-            # of raising a KeyError that would abort setup for every
-            # sensor on this device.
-            if values.get("platform") == "sensor":
+            if isinstance(values, Reading) and values.platform == "sensor":
                 entities.append(
                     WemPortalSensor(
                         coordinator, config_entry, device_id, unique_id, values
@@ -253,21 +246,21 @@ def _window_text(period, letter) -> str:
     return period
 
 
-def _schedule_from_circuit_times(row):
+def _schedule_from_circuit_times(row: Reading):
     """The whole week from what the DEVICE reported, or None.
 
     None whenever anything is missing or does not line up - the JSON view is
     a complete answer in its own right, so degrading to it costs detail and
     nothing else.
     """
-    days = row.get("CircuitTimesDay")
+    days = row.circuit_times_day
     if not isinstance(days, list) or not days:
         return None
-    labels = _day_labels(row.get("value"))
+    labels = _day_labels(row.value)
     if labels is None:
         return None
 
-    names = _level_names(row.get("PossibleValues"))
+    names = _level_names(row.possible_values)
     schedule = {}
     for day in days:
         if not isinstance(day, dict):
@@ -302,9 +295,11 @@ def _schedule_from_json(raw):
     }
 
 
-def _readable_schedule(row):
+def _readable_schedule(row: Reading | None):
     """Every day with its stretches, from the best source the row carries."""
-    return _schedule_from_circuit_times(row) or _schedule_from_json(row.get("value"))
+    if row is None:
+        return None
+    return _schedule_from_circuit_times(row) or _schedule_from_json(row.value)
 
 
 def _schedule_summary(row):
@@ -335,8 +330,8 @@ def _schedule_summary(row):
 class WemPortalSensor(WemPortalEntity, RestoreSensor):
     """Representation of a WEM Portal Sensor."""
 
-    def _current_row(self):
-        """The coordinator row behind this entity, or an empty one.
+    def _current_row(self) -> Reading | None:
+        """The coordinator row behind this entity, or None.
 
         A weekly programme is read from more than its value - the schedule
         fetch adds the device's own view of it to the same row - so the
@@ -345,8 +340,8 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         try:
             row = self.coordinator.data[self._device_id][self._data_key]
         except (KeyError, TypeError):
-            return {}
-        return row if isinstance(row, dict) else {}
+            return None
+        return row if isinstance(row, Reading) else None
 
     def _validated_native_value(self, value, unit):
         """Return a Home Assistant-safe native value."""
@@ -427,19 +422,15 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
-        # .get() like the other platforms: one malformed data point must not
-        # abort setup for every sensor on this device with a KeyError.
-        value, unit = fix_value_and_unit(
-            entity_data.get("value"), entity_data.get("unit")
-        )
+        value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
 
         self._attr_native_unit_of_measurement = unit
         # Set device_class/state_class BEFORE validating the native value:
         # _validated_native_value() uses them (in addition to unit) to
         # decide whether a numeric value is required, so they must already
         # be in place the first time it runs, not just on later updates.
-        self._attr_device_class = entity_data.get("device_class")
-        self._attr_state_class = entity_data.get("state_class")
+        self._attr_device_class = entity_data.device_class
+        self._attr_state_class = entity_data.state_class
         self._attr_native_value = self._validated_native_value(value, unit)
 
         _LOGGER.debug(
@@ -515,9 +506,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
 
         try:
             entity_data = self.coordinator.data[self._device_id][self._data_key]
-            value, unit = fix_value_and_unit(
-                entity_data.get("value"), entity_data.get("unit")
-            )
+            value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
             self._attr_native_value = self._validated_native_value(value, unit)
 
             # set unit if it references a valid non-trivial unit of measurement
@@ -569,25 +558,22 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         if self._last_updated is not None:
             attributes["Last Updated"] = self._last_updated
 
-        try:
-            entity_data = self.coordinator.data[self._device_id][self._data_key]
-            if "CircuitTimesDay" in entity_data:
-                attributes["CircuitTimesDay"] = entity_data["CircuitTimesDay"]
-            if "PossibleValues" in entity_data:
-                attributes["PossibleValues"] = entity_data["PossibleValues"]
-            # Every active fault, whatever the state had room for. The state
-            # is capped by Home Assistant and says how many it dropped; this
-            # is where the dropped ones are.
-            if "Errors" in entity_data:
-                attributes["Errors"] = entity_data["Errors"]
-            if isinstance(entity_data.get("value"), str) and entity_data[
-                "value"
-            ].startswith("{"):
-                attributes["Raw_JSON"] = entity_data["value"]
-                schedule = _readable_schedule(entity_data)
-                if schedule:
-                    attributes["Schedule"] = schedule
-        except KeyError:
-            pass
+        entity_data = self._current_row()
+        if entity_data is None:
+            return attributes
+        if entity_data.circuit_times_day is not None:
+            attributes["CircuitTimesDay"] = entity_data.circuit_times_day
+        if entity_data.possible_values is not None:
+            attributes["PossibleValues"] = entity_data.possible_values
+        # Every active fault, whatever the state had room for. The state
+        # is capped by Home Assistant and says how many it dropped; this
+        # is where the dropped ones are.
+        if entity_data.errors is not None:
+            attributes["Errors"] = entity_data.errors
+        if isinstance(entity_data.value, str) and entity_data.value.startswith("{"):
+            attributes["Raw_JSON"] = entity_data.value
+            schedule = _readable_schedule(entity_data)
+            if schedule:
+                attributes["Schedule"] = schedule
 
         return attributes

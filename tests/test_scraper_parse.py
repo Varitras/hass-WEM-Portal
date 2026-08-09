@@ -75,11 +75,11 @@ def test_value_and_unit_are_split(scraper):
     )
 
     sensor = data["heat_pump-outside_temperature"]
-    assert sensor["value"] == 12.5
-    assert sensor["unit"] == "°C"
-    assert sensor["platform"] == "sensor"
-    assert sensor["icon"] is None, "a unit with a device class must not force an icon"
-    assert sensor["friendlyName"] == "Heat pump - Outside temperature"
+    assert sensor.value == 12.5
+    assert sensor.unit == "°C"
+    assert sensor.platform == "sensor"
+    assert sensor.icon is None, "a unit with a device class must not force an icon"
+    assert sensor.friendly_name == "Heat pump - Outside temperature"
 
 
 def test_german_decimal_comma_becomes_a_float(scraper):
@@ -89,7 +89,7 @@ def test_german_decimal_comma_becomes_a_float(scraper):
         scraper, _page(_panel("Heating circuit", [("Room temperature", "21,5 °C")]))
     )
 
-    assert data["heating_circuit-room_temperature"]["value"] == 21.5
+    assert data["heating_circuit-room_temperature"].value == 21.5
 
 
 def test_unit_is_derived_from_the_name_when_absent(scraper):
@@ -101,8 +101,8 @@ def test_unit_is_derived_from_the_name_when_absent(scraper):
     )
     data = _parse(scraper, page)
 
-    assert data["heat_pump-temperatur_vorlauf"]["unit"] == "°C"
-    assert data["pump-drehzahl"]["unit"] == "%"
+    assert data["heat_pump-temperatur_vorlauf"].unit == "°C"
+    assert data["pump-drehzahl"].unit == "%"
 
 
 def test_non_numeric_value_keeps_the_full_string_and_no_unit(scraper):
@@ -111,8 +111,8 @@ def test_non_numeric_value_keeps_the_full_string_and_no_unit(scraper):
     data = _parse(scraper, _page(_panel("Status", [("Mode", "Reduziert Betrieb")])))
 
     sensor = data["status-mode"]
-    assert sensor["value"] == "Reduziert Betrieb"
-    assert sensor["unit"] is None
+    assert sensor.value == "Reduziert Betrieb"
+    assert sensor.unit is None
 
 
 def test_boolean_and_missing_values_are_sanitized(scraper):
@@ -121,9 +121,9 @@ def test_boolean_and_missing_values_are_sanitized(scraper):
     page = _page(_panel("Pump", [("Ein", "Ein"), ("Aus", "Aus"), ("Missing", "--")]))
     data = _parse(scraper, page)
 
-    assert data["pump-ein"]["value"] == 1.0
-    assert data["pump-aus"]["value"] == 0.0
-    assert data["pump-missing"]["value"] is None
+    assert data["pump-ein"].value == 1.0
+    assert data["pump-aus"].value == 0.0
+    assert data["pump-missing"].value is None
 
 
 def test_enum_value_cells_are_parsed_too(scraper):
@@ -139,7 +139,7 @@ def test_enum_value_cells_are_parsed_too(scraper):
         ),
     )
 
-    assert data["mode-operating_mode"]["value"] == "Automatik"
+    assert data["mode-operating_mode"].value == "Automatik"
 
 
 def test_panel_without_a_header_is_skipped(scraper):
@@ -191,8 +191,8 @@ def test_rows_of_several_panels_do_not_collide(scraper):
     )
     data = _parse(scraper, page)
 
-    assert data["heating_circuit_1-temperatur"]["value"] == 30.0
-    assert data["heating_circuit_2-temperatur"]["value"] == 40.0
+    assert data["heating_circuit_1-temperatur"].value == 30.0
+    assert data["heating_circuit_2-temperatur"].value == 40.0
 
 
 def test_expert_module_page_prefers_the_postback_response():
@@ -440,7 +440,7 @@ def test_incomplete_row_is_skipped_without_losing_the_rest(scraper):
     data = _parse(scraper, page)
 
     assert "heat_pump-no_value" not in data
-    assert data["heat_pump-good"]["value"] == 7.0
+    assert data["heat_pump-good"].value == 7.0
 
 
 def test_units_without_a_device_class_keep_a_useful_icon(scraper):
@@ -732,7 +732,7 @@ def test_the_same_row_twice_in_one_panel_is_reported(scraper, caplog):
     assert "Outside temperature" in caplog.text
     # Unchanged behaviour: the later row still wins. This says so, it does
     # not pretend to have fixed it.
-    assert result[0]["heat_pump-outside_temperature"]["value"] == 45.6
+    assert result[0]["heat_pump-outside_temperature"].value == 45.6
 
 
 def test_two_panels_with_the_same_heading_are_reported(scraper, caplog):

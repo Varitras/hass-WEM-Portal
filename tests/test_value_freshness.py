@@ -16,7 +16,7 @@ import time
 
 from custom_components.wemportal import wemportalapi
 from custom_components.wemportal.const import DEVICE_VALUES_STALE_AFTER_SECONDS
-from custom_components.wemportal.models import ModuleRef
+from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.utils import serialize_modules
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
@@ -60,18 +60,12 @@ def _two_module_api():
     }
     api.data = {
         "1234": {
-            "Heat pump-AktRaumSoll": {
-                "ParameterID": "AktRaumSoll",
-                "value": 21.0,
-                "ModuleIndex": 0,
-                "ModuleType": 1,
-            },
-            "Circuit-Komfort": {
-                "ParameterID": "Komfort",
-                "value": 24.0,
-                "ModuleIndex": 1,
-                "ModuleType": 1,
-            },
+            "Heat pump-AktRaumSoll": Reading(
+                parameter_id="AktRaumSoll", value=21.0, module_index=0, module_type=1
+            ),
+            "Circuit-Komfort": Reading(
+                parameter_id="Komfort", value=24.0, module_index=1, module_type=1
+            ),
         }
     }
     return api
@@ -118,10 +112,10 @@ def test_the_module_the_portal_stopped_answering_for_ages_out(caplog):
         failure = api._fetch_parameter_values("1234")
 
     assert failure is None
-    assert api.data["1234"]["Circuit-Komfort"]["value"] is None, (
+    assert api.data["1234"]["Circuit-Komfort"].value is None, (
         "the missing module's reading is still presented as current"
     )
-    assert api.data["1234"]["Heat pump-AktRaumSoll"]["value"] == 21.5, (
+    assert api.data["1234"]["Heat pump-AktRaumSoll"].value == 21.5, (
         "the answering module was aged along with the silent one"
     )
     assert "module" in caplog.text.lower(), "nobody was told why the values went"
@@ -149,7 +143,7 @@ def test_a_module_answered_recently_is_left_alone():
 
     api._fetch_parameter_values("1234")
 
-    assert api.data["1234"]["Circuit-Komfort"]["value"] == 24.0
+    assert api.data["1234"]["Circuit-Komfort"].value == 24.0
 
 
 def test_a_module_never_stamped_is_not_aged():
@@ -160,27 +154,27 @@ def test_a_module_never_stamped_is_not_aged():
 
     api._fetch_parameter_values("1234")
 
-    assert api.data["1234"]["Circuit-Komfort"]["value"] == 24.0
+    assert api.data["1234"]["Circuit-Komfort"].value == 24.0
 
 
 def test_a_weekly_programme_survives_the_module_aging():
     """Programme rows are governed by the schedule fetch, which has its own
     staleness rule - the same split _clear_unanswered already makes."""
     api = _two_module_api()
-    api.data["1234"]["Circuit-Programme"] = {
-        "ParameterID": "Programme",
-        "value": "MoDiMi",
-        "DataType": 6,
-        "ModuleIndex": 1,
-        "ModuleType": 1,
-    }
+    api.data["1234"]["Circuit-Programme"] = Reading(
+        parameter_id="Programme",
+        value="MoDiMi",
+        data_type=6,
+        module_index=1,
+        module_type=1,
+    )
     api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - AGED
     _answer_only_module_a(api)
 
     api._fetch_parameter_values("1234")
 
-    assert api.data["1234"]["Circuit-Komfort"]["value"] is None
-    assert api.data["1234"]["Circuit-Programme"]["value"] == "MoDiMi", (
+    assert api.data["1234"]["Circuit-Komfort"].value is None
+    assert api.data["1234"]["Circuit-Programme"].value == "MoDiMi", (
         "the programme was blanked although the schedule fetch owns it"
     )
 
@@ -204,14 +198,14 @@ def _schedule_row_api():
     api = WemPortalApi("user@example.org", "secret")
     api.data = {
         "1234": {
-            "Circuit-Programme": {
-                "ParameterID": "Programme",
-                "value": '{"1": []}',
-                "CircuitTimesDay": [{"Day": 1}],
-                "PossibleValues": [1, 2],
-                "ModuleIndex": 1,
-                "ModuleType": 1,
-            }
+            "Circuit-Programme": Reading(
+                parameter_id="Programme",
+                value='{"1": []}',
+                circuit_times_day=[{"Day": 1}],
+                possible_values=[1, 2],
+                module_index=1,
+                module_type=1,
+            )
         }
     }
     return api
@@ -227,9 +221,9 @@ def test_a_failed_due_schedule_refresh_drops_the_stale_attributes():
     api._record_schedule_attempt("1234", module, "Programme", time.time(), False)
 
     row = api.data["1234"]["Circuit-Programme"]
-    assert "CircuitTimesDay" not in row, "stale detail still overrules the raw plan"
-    assert "PossibleValues" not in row
-    assert row["value"] == '{"1": []}', "the raw plan went with the detail"
+    assert row.circuit_times_day is None, "stale detail still overrules the raw plan"
+    assert row.possible_values is None
+    assert row.value == '{"1": []}', "the raw plan went with the detail"
 
 
 def test_a_successful_schedule_refresh_keeps_its_attributes():
@@ -240,5 +234,5 @@ def test_a_successful_schedule_refresh_keeps_its_attributes():
     api._record_schedule_attempt("1234", module, "Programme", time.time(), True)
 
     row = api.data["1234"]["Circuit-Programme"]
-    assert row["CircuitTimesDay"] == [{"Day": 1}]
-    assert row["PossibleValues"] == [1, 2]
+    assert row.circuit_times_day == [{"Day": 1}]
+    assert row.possible_values == [1, 2]

@@ -16,6 +16,7 @@ from custom_components.wemportal import (
     get_wemportal_unique_id,
 )
 from custom_components.wemportal.const import DOMAIN
+from custom_components.wemportal.models import Reading
 
 ENTRY_ID = "entry-1"
 DEVICE = "1234"
@@ -57,7 +58,7 @@ def test_the_entity_left_behind_by_a_platform_change_is_removed():
         }
     )
 
-    _run(registry, {"Heat pump-U_Beginn": {"platform": "date"}})
+    _run(registry, {"Heat pump-U_Beginn": Reading(platform="date")})
 
     assert registry.removed == ["switch.heat_pump_holiday_begin"]
 
@@ -69,7 +70,7 @@ def test_the_entity_that_is_currently_correct_is_never_removed():
         }
     )
 
-    _run(registry, {"Heat pump-U_Beginn": {"platform": "date"}})
+    _run(registry, {"Heat pump-U_Beginn": Reading(platform="date")})
 
     assert registry.removed == []
 
@@ -81,7 +82,7 @@ def test_an_unchanged_platform_removes_nothing():
         }
     )
 
-    _run(registry, {"Heat pump-Pump": {"platform": "switch"}})
+    _run(registry, {"Heat pump-Pump": Reading(platform="switch")})
 
     assert registry.removed == []
 
@@ -109,7 +110,7 @@ def test_only_our_own_unique_ids_are_touched():
         }
     )
 
-    _run(registry, {"Heat pump-U_Beginn": {"platform": "date"}})
+    _run(registry, {"Heat pump-U_Beginn": Reading(platform="date")})
 
     assert registry.removed == []
 
@@ -117,7 +118,7 @@ def test_only_our_own_unique_ids_are_touched():
 def test_the_lookup_stays_inside_this_integration():
     registry = FakeRegistry({})
 
-    _run(registry, {"Heat pump-U_Beginn": {"platform": "date"}})
+    _run(registry, {"Heat pump-U_Beginn": Reading(platform="date")})
 
     assert registry.domains_asked == {DOMAIN}
 
@@ -141,6 +142,6 @@ def test_a_value_without_a_platform_counts_as_a_sensor():
         }
     )
 
-    _run(registry, {"Heat pump-Outside": {"friendlyName": "Outside"}})
+    _run(registry, {"Heat pump-Outside": Reading(friendly_name="Outside")})
 
     assert registry.removed == []

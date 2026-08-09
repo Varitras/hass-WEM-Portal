@@ -61,7 +61,7 @@ from .const import (
     WEM_INVALID_PARAMETER_STATUS,
     WemDataType,
 )
-from .models import ModuleRef, account_state
+from .models import ModuleRef, Reading, account_state
 from .exceptions import (
     ApiBusyError,
     AuthError,
@@ -478,8 +478,8 @@ class WemPortalApi:
                 continue
             if scrape_is_keeping_up and key in scraped_rows:
                 continue
-            if isinstance(row, dict) and row.get("value") is not None:
-                row["value"] = None
+            if isinstance(row, Reading) and row.value is not None:
+                row.value = None
                 forgotten.append(key)
         if not forgotten:
             return
@@ -526,8 +526,8 @@ class WemPortalApi:
         # so the early return above does not fire.
         for key in self._previous_scraper_keys or ():
             row = device.get(key)
-            if isinstance(row, dict) and row.get("value") is not None:
-                row["value"] = None
+            if isinstance(row, Reading) and row.value is not None:
+                row.value = None
                 forgotten.append(key)
         if forgotten:
             _LOGGER.warning(
@@ -1010,27 +1010,27 @@ class WemPortalApi:
         without a value is the portal saying it has none, not evidence that
         the read went wrong.
         """
-        if "friendlyName" in row:
-            row["friendlyName"] = translate(self.language, row["friendlyName"])
+        if row.friendly_name is not None:
+            row.friendly_name = translate(self.language, row.friendly_name)
 
         # Preserve the old unit if the current scrape is missing it (e.g. value
         # is "--"). This prevents Home Assistant from complaining about unit
         # changes.
-        if row.get("unit") not in (None, ""):
+        if row.unit not in (None, ""):
             return
-        if isinstance(previous, dict) and previous.get("unit") not in (None, ""):
-            row["unit"] = previous.get("unit")
+        if isinstance(previous, Reading) and previous.unit not in (None, ""):
+            row.unit = previous.unit
 
     def _merge_webscraping_data(self, device_id, webscraping_data):
         if str(device_id) not in self.data:
             self.data[str(device_id)] = {}
 
         vanished = self._warn_about_renamed_scraper_keys(
-            [key for key, row in webscraping_data.items() if isinstance(row, dict)]
+            [key for key, row in webscraping_data.items() if isinstance(row, Reading)]
         )
 
         for key, new_val in webscraping_data.items():
-            if isinstance(new_val, dict):
+            if isinstance(new_val, Reading):
                 self._prepare_scraped_row(new_val, self.data[str(device_id)].get(key))
             self.data[str(device_id)][key] = new_val
 
@@ -1040,13 +1040,13 @@ class WemPortalApi:
         # would otherwise report it as merely missing from the data.
         for key in vanished:
             entry = self.data[str(device_id)].get(key)
-            if isinstance(entry, dict) and entry.get("value") is not None:
+            if isinstance(entry, Reading) and entry.value is not None:
                 _LOGGER.debug(
                     "Scraped row %s is no longer on the page; its last value "
                     "is not current any more.",
                     key,
                 )
-                entry["value"] = None
+                entry.value = None
 
     def reset_transport(self):
         """Throw away the HTTP state and force a fresh login next cycle.
@@ -2423,51 +2423,38 @@ class WemPortalApi:
             # reload fixed it.
             self.data[device_id]["ConnectionStatus"] = raw_status
 
-            self.data[device_id][f"{device_id}-{DEVICE_STATUS_CONNECTION}"] = {
-                "friendlyName": "Connection Status",
-                "ParameterID": DEVICE_STATUS_CONNECTION,
-                "unit": None,
-                "value": conn_status,
-                "IsWriteable": False,
-                "DataType": -1,
-                "ModuleIndex": -1,
-                "ModuleType": -1,
-                "platform": "sensor",
-                "icon": "mdi:network",
-            }
+            self.data[device_id][f"{device_id}-{DEVICE_STATUS_CONNECTION}"] = Reading(
+                friendly_name="Connection Status",
+                parameter_id=DEVICE_STATUS_CONNECTION,
+                value=conn_status,
+                platform="sensor",
+                icon="mdi:network",
+            )
 
             errors = status_response.get("Errors", [])
             has_errors = "Yes" if errors else "No"
             error_message, error_detail = error_state_and_detail(errors)
 
-            self.data[device_id][f"{device_id}-{DEVICE_STATUS_HAS_ERRORS}"] = {
-                "friendlyName": "Has Errors",
-                "ParameterID": DEVICE_STATUS_HAS_ERRORS,
-                "unit": None,
-                "value": has_errors,
-                "IsWriteable": False,
-                "DataType": -1,
-                "ModuleIndex": -1,
-                "ModuleType": -1,
-                "platform": "sensor",
-                "icon": "mdi:alert",
-            }
+            self.data[device_id][f"{device_id}-{DEVICE_STATUS_HAS_ERRORS}"] = Reading(
+                friendly_name="Has Errors",
+                parameter_id=DEVICE_STATUS_HAS_ERRORS,
+                value=has_errors,
+                platform="sensor",
+                icon="mdi:alert",
+            )
 
-            self.data[device_id][f"{device_id}-{DEVICE_STATUS_ERROR_MESSAGES}"] = {
-                "friendlyName": "Error Messages",
-                "ParameterID": DEVICE_STATUS_ERROR_MESSAGES,
-                "unit": None,
-                "value": error_message,
-                # Every fault, whatever the state could hold. The state is
-                # capped by Home Assistant; this is not.
-                "Errors": error_detail,
-                "IsWriteable": False,
-                "DataType": -1,
-                "ModuleIndex": -1,
-                "ModuleType": -1,
-                "platform": "sensor",
-                "icon": "mdi:message-alert",
-            }
+            self.data[device_id][f"{device_id}-{DEVICE_STATUS_ERROR_MESSAGES}"] = (
+                Reading(
+                    friendly_name="Error Messages",
+                    parameter_id=DEVICE_STATUS_ERROR_MESSAGES,
+                    value=error_message,
+                    # Every fault, whatever the state could hold. The state
+                    # is capped by Home Assistant; this attribute is not.
+                    errors=error_detail,
+                    platform="sensor",
+                    icon="mdi:message-alert",
+                )
+            )
 
             previous = self._last_connection_status.get(device_id)
             self._last_connection_status[device_id] = conn_status
@@ -2515,8 +2502,8 @@ class WemPortalApi:
             return
         for row_name in DEVICE_STATUS_ROWS:
             row = device_data.get(f"{device_id}-{row_name}")
-            if isinstance(row, dict):
-                row["value"] = None
+            if isinstance(row, Reading):
+                row.value = None
 
     def _fetch_parameter_values(self, device_id: str) -> str | None:
         """Refresh and read all known parameter values for one device.
@@ -2784,9 +2771,10 @@ class WemPortalApi:
         log.
         """
         row = self.data.get(device_id, {}).get(f"{module['Name']}-{parameter_id}")
+        row_value = row.value if isinstance(row, Reading) else None
         return parameter_data.get(
             "DataType"
-        ) == WemDataType.PROGRAM or looks_like_schedule((row or {}).get("value"))
+        ) == WemDataType.PROGRAM or looks_like_schedule(row_value)
 
     def _schedule_is_due(self, device_id, parameter_id) -> bool:
         """Whether this programme may be asked for again yet.
@@ -2844,17 +2832,18 @@ class WemPortalApi:
 
             forgotten = []
             for row_name, row in device_rows.items():
-                if not isinstance(row, dict):
+                if not isinstance(row, Reading):
                     continue
-                if (row.get("ModuleIndex"), row.get("ModuleType")) != module_key:
+                if (row.module_index, row.module_type) != module_key:
                     continue
-                is_programme = row.get(
-                    "DataType"
-                ) == WemDataType.PROGRAM or looks_like_schedule(row.get("value"))
+                is_programme = (
+                    row.data_type == WemDataType.PROGRAM
+                    or looks_like_schedule(row.value)
+                )
                 if is_programme:
                     continue
-                if row.get("value") is not None:
-                    row["value"] = None
+                if row.value is not None:
+                    row.value = None
                     forgotten.append(row_name)
             if not forgotten:
                 continue
@@ -2901,9 +2890,9 @@ class WemPortalApi:
             - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
         )
         row = self.data.get(device_id, {}).get(f"{module['Name']}-{parameter_id}")
-        if isinstance(row, dict) and "CircuitTimesDay" in row:
-            row.pop("CircuitTimesDay", None)
-            row.pop("PossibleValues", None)
+        if isinstance(row, Reading) and row.circuit_times_day is not None:
+            row.circuit_times_day = None
+            row.possible_values = None
             _LOGGER.debug(
                 "Schedule %s: refresh failed, dropping the stale detail so "
                 "the raw plan shows instead.",
@@ -2940,28 +2929,25 @@ class WemPortalApi:
         ).json()
 
         sensor_name = f"{module['Name']}-{parameter_id}"
-        if sensor_name not in self.data[device_id]:
-            self.data[device_id][sensor_name] = {
-                "friendlyName": translate(
+        row = self.data[device_id].get(sensor_name)
+        if not isinstance(row, Reading):
+            row = Reading(
+                friendly_name=translate(
                     self.language, friendly_name_mapper(parameter_id)
                 ),
-                "ParameterID": parameter_id,
-                "unit": None,
-                "value": "Active",
-                "IsWriteable": False,
-                "DataType": 6,
-                "ModuleIndex": module_index,
-                "ModuleType": module_type,
-                "platform": "sensor",
-                "icon": "mdi:calendar-clock",
-            }
+                parameter_id=parameter_id,
+                unit=None,
+                value="Active",
+                data_type=WemDataType.PROGRAM,
+                module_index=module_index,
+                module_type=module_type,
+                platform="sensor",
+                icon="mdi:calendar-clock",
+            )
+            self.data[device_id][sensor_name] = row
 
-        self.data[device_id][sensor_name]["CircuitTimesDay"] = schedule_resp.get(
-            "CircuitTimesDay", []
-        )
-        self.data[device_id][sensor_name]["PossibleValues"] = schedule_resp.get(
-            "PossibleValues", []
-        )
+        row.circuit_times_day = schedule_resp.get("CircuitTimesDay", [])
+        row.possible_values = schedule_resp.get("PossibleValues", [])
         # The value is NOT touched. This fetch adds detail to a row the value
         # read already filled; writing "Active" over it replaced a readable
         # week with a placeholder once an hour, until the next cycle put the
@@ -3080,8 +3066,8 @@ class WemPortalApi:
             # otherwise show up as a false drop/spike on the
             # Energy Dashboard.
             old_sensor = self.data.get(device_id, {}).get(f"{device_id}-{sensor_name}")
-            if isinstance(old_sensor, dict) and old_sensor.get("value") is not None:
-                current_value = old_sensor.get("value")
+            if isinstance(old_sensor, Reading) and old_sensor.value is not None:
+                current_value = old_sensor.value
             else:
                 # No previous value either: skip rather than
                 # invent a 0.0, which the Energy Dashboard
@@ -3096,19 +3082,18 @@ class WemPortalApi:
 
         unit = stats_resp.get("Unit", "kWh")
 
-        self.data[device_id][f"{device_id}-{sensor_name}"] = {
-            "friendlyName": group_name,
-            "ParameterID": sensor_name,
-            "unit": unit,
-            "value": current_value,
-            "IsWriteable": False,
-            "DataType": -1,
-            "ModuleIndex": -1,
-            "ModuleType": -1,
-            "platform": "sensor",
-            "device_class": "energy",
-            "state_class": "total_increasing",
-        }
+        # No data_type/module fields on purpose: the -1 placeholders they
+        # used to carry existed only to fill the dict shape, and nothing
+        # reads a module address off a statistics sensor.
+        self.data[device_id][f"{device_id}-{sensor_name}"] = Reading(
+            friendly_name=group_name,
+            parameter_id=sensor_name,
+            unit=unit,
+            value=current_value,
+            platform="sensor",
+            device_class="energy",
+            state_class="total_increasing",
+        )
 
     def _fetch_device_statistics(self, device_id: str) -> None:
         """Read every statistics group the portal lists for one device.

@@ -23,6 +23,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .entity import WemPortalEntity
+from .models import Reading
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,11 +69,7 @@ async def async_setup_entry(
     entities: list[WemPortalDate] = []
     for device_id, entity_data in coordinator.data.items():
         for unique_id, values in entity_data.items():
-            if isinstance(values, int):
-                continue
-            # .get() instead of direct indexing: one malformed data point
-            # should not crash setup for every date entity on this device.
-            if values.get("platform") == "date":
+            if isinstance(values, Reading) and values.platform == "date":
                 entities.append(
                     WemPortalDate(
                         coordinator, config_entry, device_id, unique_id, values
@@ -96,7 +93,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         """Initialize the date entity."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
-        self._attr_native_value = epoch_to_date(entity_data.get("value"))
+        self._attr_native_value = epoch_to_date(entity_data.value)
 
         _LOGGER.debug("Init date: %s: %s", self._attr_name, self._attr_native_value)
 
@@ -119,17 +116,17 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         for key, row in device.items():
             # Some rows are plain counters, not parameters - skip anything
             # that is not one, rather than assuming the shape.
-            if not isinstance(row, dict) or key == self._data_key:
+            if not isinstance(row, Reading) or key == self._data_key:
                 continue
-            if row.get("platform") != "date":
+            if row.platform != "date":
                 continue
-            if (row.get("ModuleIndex"), row.get("ModuleType")) != (
+            if (row.module_index, row.module_type) != (
                 self._module_index,
                 self._module_type,
             ):
                 continue
             try:
-                companions[row.get("ParameterID", key)] = float(row.get("value"))
+                companions[row.parameter_id or key] = float(row.value)
             except (TypeError, ValueError):
                 # No readable value to repeat. Sending a guess would set a
                 # date on the heating system that nobody asked for.
@@ -185,14 +182,14 @@ class WemPortalDate(WemPortalEntity, DateEntity):
     def _current_value(self):
         """This parameter's value as the coordinator now holds it."""
         row = self._coordinator_row()
-        return row.get("value") if row is not None else None
+        return row.value if row is not None else None
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         try:
             self._attr_native_value = epoch_to_date(
-                self.coordinator.data[self._device_id][self._data_key]["value"]
+                self.coordinator.data[self._device_id][self._data_key].value
             )
             _LOGGER.debug(
                 "Update date: %s: %s", self._attr_name, self._attr_native_value

@@ -4,6 +4,7 @@
 reused/persisted.
 """
 
+from custom_components.wemportal.models import Reading
 from custom_components.wemportal.wemportalapi import (
     SCRAPER_FALLBACK_DEVICE_ID,
     WemPortalApi,
@@ -55,10 +56,10 @@ def test_merge_stores_scraped_data_under_resolved_id():
     api = _api(cached_modules={"1234": {(0, 1): {"Index": 0, "Type": 1, "Name": "HP"}}})
     dev = api.resolve_scraper_device_id()
     api._merge_webscraping_data(
-        dev, {"hp-temp": {"value": 21.0, "friendlyName": "HP Temp"}}
+        dev, {"hp-temp": Reading(value=21.0, friendly_name="HP Temp")}
     )
     assert "1234" in api.data
-    assert api.data["1234"]["hp-temp"]["value"] == 21.0
+    assert api.data["1234"]["hp-temp"].value == 21.0
     assert api.resolve_scraper_device_id() == "1234"
 
 

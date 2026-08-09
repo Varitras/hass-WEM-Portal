@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .entity import WemPortalEntity
+from .models import Reading
 from .utils import fix_value_and_unit
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,11 +35,7 @@ async def async_setup_entry(
     entities: list[WemPortalSwitch] = []
     for device_id, entity_data in coordinator.data.items():
         for unique_id, values in entity_data.items():
-            if isinstance(values, int):
-                continue
-            # .get() instead of direct indexing: one malformed data point
-            # should not crash setup for every switch entity on this device.
-            if values.get("platform") == "switch":
+            if isinstance(values, Reading) and values.platform == "switch":
                 entities.append(
                     WemPortalSwitch(
                         coordinator, config_entry, device_id, unique_id, values
@@ -62,14 +59,7 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
-        # .get() with sensible fallbacks rather than direct indexing: an
-        # unexpected/malformed data point should degrade gracefully
-        # (skip this one entity's optional metadata) instead of raising a
-        # KeyError that would abort setup for every switch entity on this
-        # device.
-        value, unit = fix_value_and_unit(
-            entity_data.get("value"), entity_data.get("unit")
-        )
+        value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
 
         self._attr_unit = unit
         # None means "no reading this cycle", which is not the same as
@@ -99,7 +89,7 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         try:
-            temp_val = self.coordinator.data[self._device_id][self._data_key]["value"]
+            temp_val = self.coordinator.data[self._device_id][self._data_key].value
             # Same distinction as in __init__: a key that is present but
             # carries no reading is "unknown", not "off". Guarding only the
             # constructor covered the very first cycle - the one case where

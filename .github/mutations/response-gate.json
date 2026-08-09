@@ -72,15 +72,15 @@
   {
     "label": "golden: a swapped number step must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "\"step\": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,",
-    "new": "\"step\": 1 if data_type == WemDataType.NUMBER_STEP_HALF else 0.5,",
+    "old": "step=0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,",
+    "new": "step=1 if data_type == WemDataType.NUMBER_STEP_HALF else 0.5,",
     "tests": "mapper_output_is_unchanged"
   },
   {
     "label": "golden: a swapped option field must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "\"options\": [enum_value[\"Value\"] for enum_value in enum_values],",
-    "new": "\"options\": [enum_value[\"Name\"] for enum_value in enum_values],",
+    "old": "options=[enum_value[\"Value\"] for enum_value in enum_values],",
+    "new": "options=[enum_value[\"Name\"] for enum_value in enum_values],",
     "tests": "mapper_output_is_unchanged"
   },
   {
@@ -107,8 +107,8 @@
   {
     "label": "net: falsy scraped fields must not fall back to the api value",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            \"unit\": previous.get(\"unit\", sensor.get(\"unit\")),",
-    "new": "            \"unit\": previous.get(\"unit\") or sensor.get(\"unit\"),",
+    "old": "            if api_value is not None:\n                target.value = api_value",
+    "new": "            if api_value is not None:\n                target.value = api_value\n            target.unit = target.unit or sensor.unit",
     "tests": "extra_mapper_output_is_unchanged"
   },
   {
@@ -121,7 +121,7 @@
   {
     "label": "net: skipping a non-dict entry must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "        if not isinstance(scraped_data, dict):\n            continue",
+    "old": "        if not isinstance(scraped_data, Reading):\n            continue",
     "new": "        if False:\n            continue",
     "tests": "extra_mapper_output_is_unchanged"
   },
@@ -191,8 +191,8 @@
   {
     "label": "stats: the sensor attributes must be frozen",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            \"state_class\": \"total_increasing\"",
-    "new": "            \"state_class\": \"total\"",
+    "old": "            state_class=\"total_increasing\",",
+    "new": "            state_class=\"total\",",
     "tests": "statistics_output_is_unchanged"
   },
   {
@@ -296,8 +296,8 @@
   {
     "label": "base: a row's own icon must still win over the derived one",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        icon = entity_data.get(\"icon\")\n        if icon:\n            self._attr_icon = icon",
-    "new": "        icon = entity_data.get(\"icon\")\n        if not icon:\n            self._attr_icon = icon",
+    "old": "        if entity_data.icon:\n            self._attr_icon = entity_data.icon",
+    "new": "        if not entity_data.icon:\n            self._attr_icon = entity_data.icon",
     "tests": "an_icon_from_the_data_is_used"
   },
   {
@@ -506,8 +506,8 @@
   {
     "label": "mapper: reading a word as an epoch must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                common_attributes, value.get(\"NumericValue\") is not None",
-    "new": "                common_attributes, True",
+    "old": "                common, value.get(\"NumericValue\") is not None",
+    "new": "                common, True",
     "tests": "mapper_output_is_unchanged or holiday_date or word"
   },
   {
@@ -675,20 +675,20 @@
     "label": "scrape freshness: carrying the old value over again must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            self.data[str(device_id)][key] = new_val\n",
-    "new": "            if isinstance(new_val, dict) and new_val.get(\"value\") is None:\n                old_val = self.data[str(device_id)].get(key)\n                if isinstance(old_val, dict) and old_val.get(\"value\") is not None:\n                    new_val[\"value\"] = old_val.get(\"value\")\n            self.data[str(device_id)][key] = new_val\n",
+    "new": "            if isinstance(new_val, Reading) and new_val.value is None:\n                old_val = self.data[str(device_id)].get(key)\n                if isinstance(old_val, Reading) and old_val.value is not None:\n                    new_val.value = old_val.value\n            self.data[str(device_id)][key] = new_val\n",
     "tests": "scraped_row_without_a_value_clears_the_sensor"
   },
   {
     "label": "scrape freshness: losing the unit must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if row.get(\"unit\") not in (None, \"\"):\n            return",
+    "old": "        if row.unit not in (None, \"\"):\n            return",
     "new": "        return",
     "tests": "the_unit_is_still_carried_over"
   },
   {
     "label": "scrape freshness: keeping a vanished row's last value must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                entry[\"value\"] = None",
+    "old": "                entry.value = None",
     "new": "                pass",
     "tests": "row_that_stops_being_scraped_stops_showing_its_last_value"
   },
@@ -758,7 +758,7 @@
   {
     "label": "freshness: keeping a value the portal did not send must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                entry[\"value\"] = None\n                cleared.append(parameter_id)",
+    "old": "                entry.value = None\n                cleared.append(parameter_id)",
     "new": "                cleared.append(parameter_id)",
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
@@ -772,14 +772,14 @@
   {
     "label": "freshness: clearing a heating schedule must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if parameter.get(\"DataType\") == WemDataType.PROGRAM or looks_like_schedule(\n                (entry or {}).get(\"value\")\n            ):\n                continue\n",
+    "old": "            if parameter.get(\"DataType\") == WemDataType.PROGRAM or looks_like_schedule(\n                entry_value\n            ):\n                continue\n",
     "new": "",
     "tests": "a_heating_schedule_is_not_cleared_by_the_value_read"
   },
   {
     "label": "freshness: throwing the unit away with the value must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                entry[\"value\"] = None\n",
+    "old": "                entry.value = None\n",
     "new": "                entry.clear()\n",
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
@@ -975,22 +975,22 @@
   {
     "label": "pair: taking a companion from another module must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "            if (row.get(\"ModuleIndex\"), row.get(\"ModuleType\")) != (\n                self._module_index,\n                self._module_type,\n            ):\n                continue",
+    "old": "            if (row.module_index, row.module_type) != (\n                self._module_index,\n                self._module_type,\n            ):\n                continue",
     "new": "            if False:\n                continue",
     "tests": "a_date_belonging_to_another_module_is_not_dragged_in"
   },
   {
     "label": "pair: taking a non-date along must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "            if row.get(\"platform\") != \"date\":\n                continue",
+    "old": "            if row.platform != \"date\":\n                continue",
     "new": "            if False:\n                continue",
     "tests": "only_dates_are_taken_along"
   },
   {
     "label": "pair: inventing a value for an unreadable companion must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "                companions[row.get(\"ParameterID\", key)] = float(row.get(\"value\"))\n            except (TypeError, ValueError):",
-    "new": "                companions[row.get(\"ParameterID\", key)] = float(row.get(\"value\") or 0)\n            except (TypeError, ValueError):",
+    "old": "                companions[row.parameter_id or key] = float(row.value)\n            except (TypeError, ValueError):",
+    "new": "                companions[row.parameter_id or key] = float(row.value or 0)\n            except (TypeError, ValueError):",
     "tests": "a_companion_without_a_readable_value_is_left_out"
   },
   {
@@ -1031,14 +1031,14 @@
   {
     "label": "holiday: writing only the begin must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "            together_with={end.row.get(\"ParameterID\", end.data_key): end_epoch},",
+    "old": "            together_with={(end.row.parameter_id or end.data_key): end_epoch},",
     "new": "            together_with=None,",
     "tests": "both_dates_travel_in_one_request"
   },
   {
     "label": "holiday: leaving the end out of the coordinator must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "    end.row[\"value\"] = end_epoch",
+    "old": "    end.row.value = end_epoch",
     "new": "    pass",
     "tests": "the_written_range_reaches_the_coordinator"
   },
@@ -1094,14 +1094,14 @@
   {
     "label": "programme: keying on the declared type alone must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        return parameter_data.get(\n            \"DataType\"\n        ) == WemDataType.PROGRAM or looks_like_schedule((row or {}).get(\"value\"))",
+    "old": "        return parameter_data.get(\n            \"DataType\"\n        ) == WemDataType.PROGRAM or looks_like_schedule(row_value)",
     "new": "        return parameter_data.get(\"DataType\") == WemDataType.PROGRAM",
     "tests": "a_programme_the_portal_types_as_a_switch_is_still_fetched"
   },
   {
     "label": "programme: fetching a schedule for a plain switch must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": " or looks_like_schedule((row or {}).get(\"value\"))",
+    "old": " or looks_like_schedule(row_value)",
     "new": " or True",
     "tests": "a_plain_switch_is_not_mistaken_for_a_programme"
   },
@@ -1115,8 +1115,8 @@
   {
     "label": "programme: overwriting the week with a placeholder must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\n            \"PossibleValues\", []\n        )",
-    "new": "        self.data[device_id][sensor_name][\"PossibleValues\"] = schedule_resp.get(\n            \"PossibleValues\", []\n        )\n        self.data[device_id][sensor_name][\"value\"] = \"Active\"",
+    "old": "        row.possible_values = schedule_resp.get(\"PossibleValues\", [])",
+    "new": "        row.possible_values = schedule_resp.get(\"PossibleValues\", [])\n        row.value = \"Active\"",
     "tests": "the_fetch_adds_to_the_programme_instead_of_replacing_it"
   },
   {
@@ -1192,14 +1192,14 @@
   {
     "label": "device view: ignoring what the device reported must be noticed",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "    return _schedule_from_circuit_times(row) or _schedule_from_json(row.get(\"value\"))",
-    "new": "    return _schedule_from_json(row.get(\"value\"))",
+    "old": "    return _schedule_from_circuit_times(row) or _schedule_from_json(row.value)",
+    "new": "    return _schedule_from_json(row.value)",
     "tests": "the_reduced_stretch_the_json_does_not_carry_is_shown"
   },
   {
     "label": "device view: dropping the fallback must be noticed",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "    return _schedule_from_circuit_times(row) or _schedule_from_json(row.get(\"value\"))",
+    "old": "    return _schedule_from_circuit_times(row) or _schedule_from_json(row.value)",
     "new": "    return _schedule_from_circuit_times(row)",
     "tests": "without_the_device_view_the_json_still_answers"
   },
@@ -1311,15 +1311,15 @@
   {
     "label": "faults: losing the full list from the attribute must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                \"Errors\": error_detail,",
-    "new": "                \"Errors\": [],",
+    "old": "                    errors=error_detail,",
+    "new": "                    errors=[],",
     "tests": "the_full_fault_list_reaches_the_attribute"
   },
   {
     "label": "faults: dropping the attribute on the way to the entity must be noticed",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "            if \"Errors\" in entity_data:\n                attributes[\"Errors\"] = entity_data[\"Errors\"]",
-    "new": "            if False:\n                attributes[\"Errors\"] = entity_data[\"Errors\"]",
+    "old": "        if entity_data.errors is not None:\n            attributes[\"Errors\"] = entity_data.errors",
+    "new": "        if False:\n            attributes[\"Errors\"] = entity_data.errors",
     "tests": "the_error_attribute_reaches_the_entity"
   },
   {
@@ -1563,28 +1563,28 @@
   {
     "label": "scrape: forgetting the reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        for key in self._previous_scraper_keys or ():\n            row = device.get(key)\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
-    "new": "        for key in self._previous_scraper_keys or ():\n            row = device.get(key)\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
+    "old": "        for key in self._previous_scraper_keys or ():\n            row = device.get(key)\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None",
+    "new": "        for key in self._previous_scraper_keys or ():\n            row = device.get(key)\n            if isinstance(row, Reading) and row.value is not None:\n                row.clear()",
     "tests": "readings_from_a_scrape_that_stopped_working_stop_being_current"
   },
   {
     "label": "freshness: a schedule typed as a switch loses its exemption",
     "path": "custom_components/wemportal/mapper.py",
-    "old": " or looks_like_schedule(\n                (entry or {}).get(\"value\")\n            )",
+    "old": " or looks_like_schedule(\n                entry_value\n            )",
     "new": "",
     "tests": "a_schedule_typed_as_a_switch_is_not_cleared_either"
   },
   {
     "label": "freshness: every switch treated as a schedule",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "looks_like_schedule(\n                (entry or {}).get(\"value\")\n            )",
+    "old": "looks_like_schedule(\n                entry_value\n            )",
     "new": "True",
     "tests": "an_ordinary_switch_the_portal_dropped_is_still_cleared"
   },
   {
     "label": "net: a read-only parameter turned into a control",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "    if not sensor[\"IsWriteable\"]:\n        return None\n",
+    "old": "    if not parameter.get(\"IsWriteable\", False):\n        return None\n",
     "new": "",
     "tests": "mapper_output_is_unchanged"
   },
@@ -1654,8 +1654,8 @@
   {
     "label": "freshness: forgetting a reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up and key in scraped_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row[\"value\"] = None",
-    "new": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up and key in scraped_rows:\n                continue\n            if isinstance(row, dict) and row.get(\"value\") is not None:\n                row.clear()",
+    "old": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up and key in scraped_rows:\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None",
+    "new": "            if key in status_rows:\n                continue\n            if scrape_is_keeping_up and key in scraped_rows:\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.clear()",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -2431,8 +2431,8 @@
   {
     "label": "schedule: stale detail kept overruling the raw plan on failure",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if isinstance(row, dict) and \"CircuitTimesDay\" in row:\n            row.pop(\"CircuitTimesDay\", None)\n            row.pop(\"PossibleValues\", None)",
-    "new": "        if False:\n            row.pop(\"CircuitTimesDay\", None)\n            row.pop(\"PossibleValues\", None)",
+    "old": "        if isinstance(row, Reading) and row.circuit_times_day is not None:\n            row.circuit_times_day = None\n            row.possible_values = None",
+    "new": "        if False:\n            row.circuit_times_day = None\n            row.possible_values = None",
     "tests": "a_failed_due_schedule_refresh_drops_the_stale_attributes"
   },
   {

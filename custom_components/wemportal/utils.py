@@ -14,7 +14,7 @@ from homeassistant.const import (
     UnitOfVolumeFlowRate,
 )
 
-from .models import ModuleRef
+from .models import ModuleRef, Reading
 from .const import (
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
@@ -564,6 +564,6 @@ def device_is_reachable(coordinator_data, device_id) -> bool:
     if not isinstance(device_data, dict):
         return True
     status = device_data.get(f"{device_id}-ConnectionStatus")
-    if not isinstance(status, dict):
+    if not isinstance(status, Reading):
         return True
-    return status.get("value") not in UNREACHABLE_CONNECTION_STATES
+    return status.value not in UNREACHABLE_CONNECTION_STATES

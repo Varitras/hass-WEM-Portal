@@ -16,7 +16,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_EXPERT_SLOT_ID_TEMPLATE, EXPERT_SLOT_COUNT
-from .models import WemPortalConfigEntry
+from .models import Reading, WemPortalConfigEntry
 
 # Keys whose values identify the installation or the account. "cookie" is the
 # scraped session (stored as a data row); "DeviceID" appears inside API rows.
@@ -57,8 +57,16 @@ async def async_get_config_entry_diagnostics(
     modules = (getattr(api, "modules", None) or {}) if api is not None else {}
     aliases = _device_aliases(current.keys() | modules.keys())
 
+    # Readings become dicts before redaction: the redaction helper traverses
+    # plain containers, not dataclasses.
     readings = {
-        aliases[device_id]: async_redact_data(rows, TO_REDACT)
+        aliases[device_id]: async_redact_data(
+            {
+                key: row.as_dict() if isinstance(row, Reading) else row
+                for key, row in rows.items()
+            },
+            TO_REDACT,
+        )
         for device_id, rows in current.items()
     }
     module_counts = {}

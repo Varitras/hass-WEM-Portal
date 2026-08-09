@@ -13,36 +13,37 @@ coordinator, and a full instance per test costs about sixteen seconds.
 """
 
 import types
+from dataclasses import replace
 from datetime import date
 
 import pytest
 
 from custom_components.wemportal import holiday
 from custom_components.wemportal.date import date_to_epoch
-from custom_components.wemportal.models import WemPortalData
+from custom_components.wemportal.models import Reading, WemPortalData
 
 pytest.importorskip("homeassistant")
 
 from homeassistant.exceptions import HomeAssistantError
 
-BEGIN_ROW = {
-    "friendlyName": "Holiday begin",
-    "ParameterID": "U_Beginn",
-    "value": date_to_epoch(date(2026, 8, 3)),
-    "unit": None,
-    "platform": "date",
-    "ModuleIndex": 1,
-    "ModuleType": 2,
-}
-END_ROW = {
-    "friendlyName": "Holiday end",
-    "ParameterID": "U_Ende",
-    "value": date_to_epoch(date(2026, 8, 4)),
-    "unit": None,
-    "platform": "date",
-    "ModuleIndex": 1,
-    "ModuleType": 2,
-}
+BEGIN_ROW = Reading(
+    friendly_name="Holiday begin",
+    parameter_id="U_Beginn",
+    value=date_to_epoch(date(2026, 8, 3)),
+    unit=None,
+    platform="date",
+    module_index=1,
+    module_type=2,
+)
+END_ROW = Reading(
+    friendly_name="Holiday end",
+    parameter_id="U_Ende",
+    value=date_to_epoch(date(2026, 8, 4)),
+    unit=None,
+    platform="date",
+    module_index=1,
+    module_type=2,
+)
 
 
 class _Api:
@@ -64,8 +65,8 @@ def _world(monkeypatch, rows=None, refuse=False):
         rows
         if rows is not None
         else {
-            "Circuit-U_Beginn": dict(BEGIN_ROW),
-            "Circuit-U_Ende": dict(END_ROW),
+            "Circuit-U_Beginn": replace(BEGIN_ROW),
+            "Circuit-U_Ende": replace(END_ROW),
         }
     )
     coordinator = types.SimpleNamespace(
@@ -152,8 +153,8 @@ async def test_the_written_range_reaches_the_coordinator(monkeypatch):
 
     await holiday._write_holiday(hass, _call())
 
-    assert rows["Circuit-U_Beginn"]["value"] == date_to_epoch(date(2026, 8, 20))
-    assert rows["Circuit-U_Ende"]["value"] == date_to_epoch(date(2026, 8, 27))
+    assert rows["Circuit-U_Beginn"].value == date_to_epoch(date(2026, 8, 20))
+    assert rows["Circuit-U_Ende"].value == date_to_epoch(date(2026, 8, 27))
 
 
 async def test_a_refused_write_changes_nothing(monkeypatch):
@@ -165,8 +166,8 @@ async def test_a_refused_write_changes_nothing(monkeypatch):
     with pytest.raises(RuntimeError):
         await holiday._write_holiday(hass, call)
 
-    assert rows["Circuit-U_Beginn"]["value"] == date_to_epoch(date(2026, 8, 3))
-    assert rows["Circuit-U_Ende"]["value"] == date_to_epoch(date(2026, 8, 4))
+    assert rows["Circuit-U_Beginn"].value == date_to_epoch(date(2026, 8, 3))
+    assert rows["Circuit-U_Ende"].value == date_to_epoch(date(2026, 8, 4))
 
 
 async def test_a_range_that_ends_before_it_starts_is_refused(monkeypatch):
@@ -197,8 +198,8 @@ async def test_two_dates_of_different_modules_are_refused(monkeypatch):
     """The portal addresses parameters per module; one request cannot carry
     two modules, and pretending otherwise would write to the wrong circuit."""
     rows = {
-        "Circuit-U_Beginn": dict(BEGIN_ROW),
-        "Other-U_Ende": {**END_ROW, "ModuleIndex": 2},
+        "Circuit-U_Beginn": replace(BEGIN_ROW),
+        "Other-U_Ende": replace(END_ROW, module_index=2),
     }
     hass, api, _rows = _world(monkeypatch, rows=rows)
     across_modules = _call(end_entity="date.other_module")

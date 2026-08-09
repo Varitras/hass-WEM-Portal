@@ -14,8 +14,8 @@ framework answers rather than one this integration tracks by hand.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, NamedTuple
+from dataclasses import dataclass, field, fields
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from homeassistant.config_entries import ConfigEntry
 
@@ -125,6 +125,63 @@ class ModuleRef(NamedTuple):
         choice.
         """
         return f"{self.module_index}:{self.module_type}"
+
+
+@dataclass(slots=True)
+class Reading:
+    """One portal value, in the one shape every entity platform consumes.
+
+    This used to be a dict grown by four different writers - the mapper's
+    control form, its plain-sensor form, the scraped row and the statistics
+    row - each with its own key set, so every reader guarded every access
+    with .get() and a missing key was indistinguishable from a typo'd one.
+    Attribute access fails loudly, mypy can check it, and "which fields can
+    a reading carry" is answered here instead of by grepping the writers.
+
+    Deliberately mutable: value aging, the scraped-row translation pass and
+    the schedule-detail attach all update a reading in place, and each of
+    those writers is itself pinned by tests.
+
+    Not every device entry is a Reading: the per-device dict also carries
+    the raw ConnectionStatus gate as a plain int, so iteration filters with
+    isinstance(..., Reading) - one uniform guard instead of per-key checks.
+    """
+
+    value: Any = None
+    unit: str | None = None
+    icon: str | None = None
+    friendly_name: str | None = None
+    parameter_id: str | None = None
+    platform: str = "sensor"
+    data_type: int | None = None
+    module_index: int | None = None
+    module_type: int | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+    step: float | None = None
+    options: list[str] | None = None
+    options_names: list[str] | None = None
+    circuit_times_day: list[Any] | None = None
+    possible_values: list[Any] | None = None
+    device_class: str | None = None
+    state_class: str | None = None
+    # The full fault list of the error-messages status sensor - the state is
+    # capped by Home Assistant, this attribute is not.
+    errors: list[Any] | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Compact dict form for diagnostics and the golden snapshot.
+
+        Only fields that carry something - except `value`, which stays even
+        when None: a reading with no value this cycle is a statement about
+        the portal, not an omission of this serialisation.
+        """
+        compact = {
+            f.name: getattr(self, f.name)
+            for f in fields(self)
+            if getattr(self, f.name) is not None
+        }
+        return {"value": self.value, **compact}
 
 
 @dataclass

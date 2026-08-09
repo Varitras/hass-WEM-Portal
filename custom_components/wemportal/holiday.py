@@ -36,7 +36,7 @@ from homeassistant.helpers.service import async_register_admin_service
 
 from .const import DOMAIN, SERVICE_SET_HOLIDAY
 from .date import date_to_epoch
-from .models import raise_if_not_writable
+from .models import Reading, raise_if_not_writable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,12 +49,12 @@ class DateTarget(NamedTuple):
     data: object
     device_id: str
     data_key: str
-    row: dict
+    row: Reading
 
     @property
     def address(self):
         """The module this parameter belongs to, as the portal addresses it."""
-        return (self.row.get("ModuleIndex"), self.row.get("ModuleType"))
+        return (self.row.module_index, self.row.module_type)
 
 
 def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
@@ -91,7 +91,7 @@ def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
     data = raise_if_not_writable(entry, f"Setting the holiday of {entity_id}")
 
     row = (data.coordinator.data or {}).get(device_id, {}).get(data_key)
-    if not isinstance(row, dict):
+    if not isinstance(row, Reading):
         raise HomeAssistantError(
             f"{entity_id} has no reading yet, so there is nothing to write "
             "against. Wait for the next update."
@@ -145,11 +145,11 @@ async def _write_holiday(hass: HomeAssistant, call) -> None:
         partial(
             begin.data.api.change_value,
             begin.device_id,
-            begin.row.get("ParameterID", begin.data_key),
+            begin.row.parameter_id or begin.data_key,
             module_index,
             module_type,
             begin_epoch,
-            together_with={end.row.get("ParameterID", end.data_key): end_epoch},
+            together_with={(end.row.parameter_id or end.data_key): end_epoch},
         )
     )
 
@@ -157,8 +157,8 @@ async def _write_holiday(hass: HomeAssistant, call) -> None:
     # refuses, so nothing below runs on a write that did not happen. Leaving
     # the rows behind would make the next write send the old dates back as
     # companions - the defect this service exists alongside.
-    begin.row["value"] = begin_epoch
-    end.row["value"] = end_epoch
+    begin.row.value = begin_epoch
+    end.row.value = end_epoch
     begin.data.coordinator.async_update_listeners()
 
     _LOGGER.info(

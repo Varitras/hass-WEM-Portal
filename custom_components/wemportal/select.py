@@ -13,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
 from .entity import WemPortalEntity
+from .models import Reading
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,11 +29,7 @@ async def async_setup_entry(
     entities: list[WemPortalSelect] = []
     for device_id, entity_data in coordinator.data.items():
         for unique_id, values in entity_data.items():
-            if isinstance(values, int):
-                continue
-            # .get() instead of direct indexing: one malformed data point
-            # should not crash setup for every select entity on this device.
-            if values.get("platform") == "select":
+            if isinstance(values, Reading) and values.platform == "select":
                 entities.append(
                     WemPortalSelect(
                         coordinator, config_entry, device_id, unique_id, values
@@ -136,16 +133,16 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
-        self._options = entity_data.get("options", [])
-        self._options_names = entity_data.get("optionsNames", [])
+        self._options = entity_data.options or []
+        self._options_names = entity_data.options_names or []
 
         try:
-            self._attr_current_option = self._resolve_option(entity_data.get("value"))
+            self._attr_current_option = self._resolve_option(entity_data.value)
         except (ValueError, TypeError):
             self._attr_current_option = None
             _LOGGER.warning(
                 "Value %s not found in options %s (names: %s) for select %s",
-                entity_data.get("value"),
+                entity_data.value,
                 self._options,
                 self._options_names,
                 self._attr_name,
@@ -187,9 +184,11 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
             # its bounds: rediscovery can add an option, and a device already
             # ON it read as unknown against the construction-time list -
             # indistinguishable from a failed read.
-            self._options = entity_data.get("options", self._options)
-            self._options_names = entity_data.get("optionsNames", self._options_names)
-            value = entity_data["value"]
+            if entity_data.options is not None:
+                self._options = entity_data.options
+            if entity_data.options_names is not None:
+                self._options_names = entity_data.options_names
+            value = entity_data.value
             self._attr_current_option = self._resolve_option(value)
         except KeyError:
             self._attr_current_option = None

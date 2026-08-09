@@ -10,6 +10,7 @@ import pytest
 import requests as real_requests
 
 from custom_components.wemportal import exceptions, wemportalapi
+from custom_components.wemportal.models import Reading
 from custom_components.wemportal.const import WEB_LOGGED_IN_MARKER
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
@@ -422,7 +423,7 @@ def test_get_data_accepts_int_device_ids():
         {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
     )
     api.get_data(enabled_devices=[1234])
-    assert api.data["1234"]["1234-ConnectionStatus"]["value"] == "offline"
+    assert api.data["1234"]["1234-ConnectionStatus"].value == "offline"
 
 
 def test_empty_enabled_devices_polls_nothing():
@@ -2956,21 +2957,21 @@ def test_the_full_fault_list_reaches_the_attribute():
     api._fetch_device_status("1234")
 
     row = api.data["1234"]["1234-ErrorMessages"]
-    assert row["value"] == "E12 one, E13 two"
-    assert row["Errors"] == ["E12 one", "E13 two"]
+    assert row.value == "E12 one, E13 two"
+    assert row.errors == ["E12 one", "E13 two"]
 
 
 def test_the_error_attribute_reaches_the_entity():
     """The full list is only worth carrying if it gets past the row."""
     entity = _sensor_from_row(
         "1234-ErrorMessages",
-        {
-            "value": "E12 one (+3 more)",
-            "unit": None,
-            "friendlyName": "Error Messages",
-            "ParameterID": "ErrorMessages",
-            "Errors": ["E12 one", "E13 two", "E14 three", "E15 four"],
-        },
+        Reading(
+            value="E12 one (+3 more)",
+            unit=None,
+            friendly_name="Error Messages",
+            parameter_id="ErrorMessages",
+            errors=["E12 one", "E13 two", "E14 three", "E15 four"],
+        ),
     )
 
     assert entity.extra_state_attributes["Errors"] == [
@@ -2990,7 +2991,7 @@ def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
     fault sees the quiet and concludes there is none.
     """
     api = _api_with_a_read_status()
-    assert api.data["1234"]["1234-HasErrors"]["value"] == "No"
+    assert api.data["1234"]["1234-HasErrors"].value == "No"
 
     def refuse(*_args, **_kwargs):
         raise exceptions.WemPortalError("portal unavailable")
@@ -2998,9 +2999,9 @@ def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
     api.make_api_call = refuse
     api._fetch_device_status("1234")
 
-    assert api.data["1234"]["1234-HasErrors"]["value"] is None
-    assert api.data["1234"]["1234-ErrorMessages"]["value"] is None
-    assert api.data["1234"]["1234-ConnectionStatus"]["value"] is None
+    assert api.data["1234"]["1234-HasErrors"].value is None
+    assert api.data["1234"]["1234-ErrorMessages"].value is None
+    assert api.data["1234"]["1234-ConnectionStatus"].value is None
 
 
 def test_a_status_nobody_could_read_leaves_the_entities_available():
@@ -3054,7 +3055,7 @@ def test_a_device_that_is_not_online_does_not_fail_the_whole_cycle(status, expec
     api.get_data(enabled_devices=["1234"])
 
     # Recorded, because that is what the entities read to go unavailable.
-    assert api.data["1234"]["1234-ConnectionStatus"]["value"] == expected
+    assert api.data["1234"]["1234-ConnectionStatus"].value == expected
 
 
 def test_the_offline_warning_is_logged_once_per_change(caplog):
@@ -3212,14 +3213,14 @@ def _switch(value):
         entry,
         "1234",
         "Pump",
-        {
-            "value": value,
-            "unit": None,
-            "friendlyName": "Pump",
-            "ParameterID": "P1",
-            "ModuleIndex": 0,
-            "ModuleType": 1,
-        },
+        Reading(
+            value=value,
+            unit=None,
+            friendly_name="Pump",
+            parameter_id="P1",
+            module_index=0,
+            module_type=1,
+        ),
     )
 
 
@@ -3249,7 +3250,7 @@ def test_a_missing_reading_is_unknown_on_update_too(value, expected, monkeypatch
     monkeypatch.setattr(
         type(switch), "async_write_ha_state", lambda self: None, raising=False
     )
-    switch.coordinator.data = {"1234": {"Pump": {"value": value}}}
+    switch.coordinator.data = {"1234": {"Pump": Reading(value=value)}}
 
     switch._handle_coordinator_update()
 
@@ -3257,7 +3258,7 @@ def test_a_missing_reading_is_unknown_on_update_too(value, expected, monkeypatch
 
 
 def _status(value):
-    return {"1234": {"1234-ConnectionStatus": {"value": value}}}
+    return {"1234": {"1234-ConnectionStatus": Reading(value=value)}}
 
 
 @pytest.mark.parametrize("state", ["offline", "wrong_secret"])
@@ -3286,13 +3287,15 @@ def test_a_device_without_a_status_stays_reachable():
     out `web` mode entirely."""
     from custom_components.wemportal.utils import device_is_reachable
 
-    assert device_is_reachable({"0000": {"some-sensor": {"value": 1}}}, "0000") is True
+    assert (
+        device_is_reachable({"0000": {"some-sensor": Reading(value=1)}}, "0000") is True
+    )
     assert device_is_reachable({}, "0000") is True
     assert device_is_reachable(None, "0000") is True
 
 
 def _scraped(*keys):
-    return {key: {"value": 1, "unit": "°C", "platform": "sensor"} for key in keys}
+    return {key: Reading(value=1, unit="°C", platform="sensor") for key in keys}
 
 
 def test_a_relabelled_scraper_row_is_reported(caplog):
@@ -4079,7 +4082,7 @@ def _scraped_api(*keys):
     api.scraper_device_id = "0000"
     api._merge_webscraping_data(
         "0000",
-        {key: {"value": 1.0, "unit": "°C", "platform": "sensor"} for key in keys},
+        {key: Reading(value=1.0, unit="°C", platform="sensor") for key in keys},
     )
     return api
 
@@ -4094,19 +4097,19 @@ def test_readings_from_a_scrape_that_stopped_working_stop_being_current():
     for _ in range(wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE):
         api._register_scrape_failure()
 
-    assert api.data["0000"]["pump-flow"]["value"] is None
-    assert api.data["0000"]["pump-return"]["value"] is None
+    assert api.data["0000"]["pump-flow"].value is None
+    assert api.data["0000"]["pump-return"].value is None
     # Identity survives: a dropped unit would tell Home Assistant the sensor
     # changed kind.
-    assert api.data["0000"]["pump-flow"]["unit"] == "°C"
+    assert api.data["0000"]["pump-flow"].unit == "°C"
 
 
 def _two_device_api(failing_device):
     """Two devices; `failing_device` never answers, None means both do."""
     api = _api()
     api.data = {
-        "1234": {"flow": {"value": 21.0, "unit": "°C"}},
-        "5678": {"flow": {"value": 42.0, "unit": "°C"}},
+        "1234": {"flow": Reading(value=21.0, unit="°C")},
+        "5678": {"flow": Reading(value=42.0, unit="°C")},
     }
     api.modules = {"1234": {}, "5678": {}}
     api._fetch_device_status = lambda device_id: True
@@ -4136,14 +4139,14 @@ def test_a_device_that_stops_answering_stops_showing_its_last_values():
 
     api.get_data(enabled_devices=["1234", "5678"])
 
-    assert api.data["5678"]["flow"]["value"] is None, (
+    assert api.data["5678"]["flow"].value is None, (
         "a device that has not answered for half an hour still showed its old "
         "reading as current"
     )
-    assert api.data["5678"]["flow"]["unit"] == "°C", (
+    assert api.data["5678"]["flow"].unit == "°C", (
         "dropping the unit tells Home Assistant the sensor changed kind"
     )
-    assert api.data["1234"]["flow"]["value"] == 21.0, (
+    assert api.data["1234"]["flow"].value == 21.0, (
         "the working device lost its readings too"
     )
 
@@ -4160,7 +4163,7 @@ def test_a_brief_gap_does_not_throw_a_device_away():
     """
     api = _two_device_api(None)
     api.get_data(enabled_devices=["1234", "5678"])
-    assert api.data["5678"]["flow"]["value"] == 42.0, "the setup did not read"
+    assert api.data["5678"]["flow"].value == 42.0, "the setup did not read"
 
     # Now it goes quiet - but only just.
     api._fetch_parameter_values = lambda device_id: (
@@ -4168,19 +4171,19 @@ def test_a_brief_gap_does_not_throw_a_device_away():
     )
     api.get_data(enabled_devices=["1234", "5678"])
 
-    assert api.data["5678"]["flow"]["value"] == 42.0
+    assert api.data["5678"]["flow"].value == 42.0
 
 
 def _two_device_api_with_status(failing_device):
     """As above, plus the three diagnostic rows a status read writes."""
     api = _two_device_api(failing_device)
     for device_id in ("1234", "5678"):
-        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_CONNECTION}"] = {
-            "value": "online"
-        }
-        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_HAS_ERRORS}"] = {
-            "value": "No"
-        }
+        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_CONNECTION}"] = (
+            Reading(value="online")
+        )
+        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_HAS_ERRORS}"] = (
+            Reading(value="No")
+        )
     return api
 
 
@@ -4202,8 +4205,8 @@ def test_the_rows_that_explain_the_silence_are_not_blanked_with_it():
     api.get_data(enabled_devices=["1234", "5678"])
 
     connection = f"5678-{wemportalapi.DEVICE_STATUS_CONNECTION}"
-    assert api.data["5678"]["flow"]["value"] is None, "the stale reading was kept"
-    assert api.data["5678"][connection]["value"] == "online", (
+    assert api.data["5678"]["flow"].value is None, "the stale reading was kept"
+    assert api.data["5678"][connection].value == "online", (
         "the status read this cycle was thrown away with the stale readings"
     )
 
@@ -4227,8 +4230,8 @@ def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
     api = _api()
     api.data = {
         "1234": {
-            "Heat pump-T1": {"value": 21.0, "unit": "°C"},
-            "heating_circuit_flow": {"value": 42.0, "unit": "°C"},
+            "Heat pump-T1": Reading(value=21.0, unit="°C"),
+            "heating_circuit_flow": Reading(value=42.0, unit="°C"),
         }
     }
     api._previous_scraper_keys = {"heating_circuit_flow"}
@@ -4238,10 +4241,10 @@ def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
 
     api._forget_stale_device_values("1234")
 
-    assert api.data["1234"]["Heat pump-T1"]["value"] is None, (
+    assert api.data["1234"]["Heat pump-T1"].value is None, (
         "the API reading that really was stale was kept"
     )
-    assert api.data["1234"]["heating_circuit_flow"]["value"] == 42.0, (
+    assert api.data["1234"]["heating_circuit_flow"].value == 42.0, (
         "a scrape from minutes ago was cleared because the API half of the "
         "same device had gone quiet"
     )
@@ -4257,7 +4260,7 @@ def test_the_third_scrape_failure_before_any_success_is_survivable():
     the device into self.data so the early return does not fire.
     """
     api = _api()
-    api.data = {"1234": {"flow": {"value": 21.0, "unit": "°C"}}}
+    api.data = {"1234": {"flow": Reading(value=21.0, unit="°C")}}
     api.scraper_device_id = "1234"
     assert api._previous_scraper_keys is None, "the setup does not reproduce it"
 
@@ -4285,7 +4288,7 @@ def test_a_shared_row_ages_once_the_scrape_has_given_up_too():
     good one wrote. spider_retry_count is what knows.
     """
     api = _api()
-    api.data = {"1234": {"shared_reading": {"value": 21.0, "unit": "°C"}}}
+    api.data = {"1234": {"shared_reading": Reading(value=21.0, unit="°C")}}
     api._previous_scraper_keys = {"shared_reading"}
     # Past the point where _forget_scraped_values stopped acting: it fires on
     # the third failure only, so from the fourth on nobody ages this row.
@@ -4296,7 +4299,7 @@ def test_a_shared_row_ages_once_the_scrape_has_given_up_too():
 
     api._forget_stale_device_values("1234")
 
-    assert api.data["1234"]["shared_reading"]["value"] is None, (
+    assert api.data["1234"]["shared_reading"].value is None, (
         "both sources had stopped answering and the reading was still shown as current"
     )
 
@@ -4312,7 +4315,7 @@ def test_a_device_that_is_busy_forever_still_stops_showing_old_values():
     """
     api = _two_device_api_with_status(None)
     api.get_data(enabled_devices=["1234", "5678"])
-    assert api.data["5678"]["flow"]["value"] == 42.0, "the setup did not read"
+    assert api.data["5678"]["flow"].value == 42.0, "the setup did not read"
 
     api._fetch_device_status = lambda device_id: device_id != "5678"
     api._last_device_read["5678"] = (
@@ -4321,7 +4324,7 @@ def test_a_device_that_is_busy_forever_still_stops_showing_old_values():
 
     api.get_data(enabled_devices=["1234", "5678"])
 
-    assert api.data["5678"]["flow"]["value"] is None, (
+    assert api.data["5678"]["flow"].value is None, (
         "a device that has been busy for half an hour still showed its old "
         "readings as current"
     )
@@ -4341,7 +4344,7 @@ def test_a_device_that_answers_again_starts_its_clock_over():
     api._fetch_parameter_values = lambda device_id: None
     api.get_data(enabled_devices=["1234", "5678"])
 
-    assert api.data["5678"]["flow"]["value"] == 42.0, "a working device was cleared"
+    assert api.data["5678"]["flow"].value == 42.0, "a working device was cleared"
     assert (
         time.monotonic() - api._last_device_read["5678"]
         < wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS
@@ -4356,7 +4359,7 @@ def test_one_failed_scrape_does_not_throw_the_readings_away():
 
     api._register_scrape_failure()
 
-    assert api.data["0000"]["pump-flow"]["value"] == 1.0
+    assert api.data["0000"]["pump-flow"].value == 1.0
 
 
 def test_a_successful_scrape_clears_the_backoff():
@@ -4370,7 +4373,7 @@ def test_a_successful_scrape_clears_the_backoff():
         cookie = {}
 
         def scrape(self):
-            return [{"cookie": {}, "Heating-Outside": {"value": 11.0}}]
+            return [{"cookie": {}, "Heating-Outside": Reading(value=11.0)}]
 
         def close(self):
             pass
@@ -5044,13 +5047,13 @@ def _circuit_times_api(responses, data_type=6, value=None):
     api = _api()
     rows = {}
     if value is not None:
-        rows[SCHEDULE_ROW] = {
-            "value": value,
-            "unit": None,
-            "friendlyName": "Heating programme",
-            "ParameterID": "Heizprogramm1",
-            "platform": "sensor",
-        }
+        rows[SCHEDULE_ROW] = Reading(
+            value=value,
+            unit=None,
+            friendly_name="Heating programme",
+            parameter_id="Heizprogramm1",
+            platform="sensor",
+        )
     api.data = {"1234": rows}
     api.modules = {
         "1234": {
@@ -5196,9 +5199,9 @@ def test_the_fetch_adds_to_the_programme_instead_of_replacing_it():
     api._fetch_circuit_times("1234")
 
     row = api.data["1234"][SCHEDULE_ROW]
-    assert row["value"] == schedule, "the programme was replaced by a placeholder"
-    assert row["CircuitTimesDay"] == [{"day": "MO"}]
-    assert row["PossibleValues"] == ["H"]
+    assert row.value == schedule, "the programme was replaced by a placeholder"
+    assert row.circuit_times_day == [{"day": "MO"}]
+    assert row.possible_values == ["H"]
 
 
 def test_a_row_only_this_fetch_knows_about_still_gets_a_placeholder():
@@ -5210,7 +5213,7 @@ def test_a_row_only_this_fetch_knows_about_still_gets_a_placeholder():
 
     api._fetch_circuit_times("1234")
 
-    assert api.data["1234"][SCHEDULE_ROW]["value"] == "Active"
+    assert api.data["1234"][SCHEDULE_ROW].value == "Active"
 
 
 # --- a scraped reading that is gone must not be shown as current -------
@@ -5220,15 +5223,14 @@ def _scraped_row(value, unit="°C"):
     """One row as the scraper hands it over. Named apart from _scraped_row()
     above, which builds a whole scrape from key names - defining a second
     `_scraped` silently rebound the first for every test in this file."""
-    return {
-        "value": value,
-        "unit": unit,
-        "friendlyName": "Setpoint",
-        "name": "wp-solltemperatur",
-        "icon": None,
-        "ParameterID": "wp-solltemperatur",
-        "platform": "sensor",
-    }
+    return Reading(
+        value=value,
+        unit=unit,
+        friendly_name="Setpoint",
+        icon=None,
+        parameter_id="wp-solltemperatur",
+        platform="sensor",
+    )
 
 
 def test_a_scraped_row_without_a_value_clears_the_sensor():
@@ -5238,13 +5240,13 @@ def test_a_scraped_row_without_a_value_clears_the_sensor():
     portal and the heat pump both showed nothing."""
     api = _api()
     api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(50.5)})
-    assert api.data["0000"]["wp-solltemperatur"]["value"] == 50.5
+    assert api.data["0000"]["wp-solltemperatur"].value == 50.5
 
     api._merge_webscraping_data(
         "0000", {"wp-solltemperatur": _scraped_row(None, unit="")}
     )
 
-    assert api.data["0000"]["wp-solltemperatur"]["value"] is None, (
+    assert api.data["0000"]["wp-solltemperatur"].value is None, (
         "a reading the portal no longer has was reported as current"
     )
 
@@ -5259,7 +5261,7 @@ def test_the_unit_is_still_carried_over():
         "0000", {"wp-solltemperatur": _scraped_row(None, unit="")}
     )
 
-    assert api.data["0000"]["wp-solltemperatur"]["unit"] == "°C"
+    assert api.data["0000"]["wp-solltemperatur"].unit == "°C"
 
 
 def test_a_row_that_stops_being_scraped_stops_showing_its_last_value():
@@ -5274,8 +5276,8 @@ def test_a_row_that_stops_being_scraped_stops_showing_its_last_value():
 
     api._merge_webscraping_data("0000", {"wp-vorlauf": _scraped_row(32.0)})
 
-    assert api.data["0000"]["wp-solltemperatur"]["value"] is None
-    assert api.data["0000"]["wp-vorlauf"]["value"] == 32.0
+    assert api.data["0000"]["wp-solltemperatur"].value is None
+    assert api.data["0000"]["wp-vorlauf"].value == 32.0
 
 
 def test_the_entity_of_a_vanished_row_is_kept():
@@ -5302,10 +5304,10 @@ def test_the_first_cycle_clears_nothing():
 
     api._merge_webscraping_data("0000", {"wp-vorlauf": _scraped_row(31.0)})
 
-    assert api.data["0000"]["wp-vorlauf"]["value"] == 31.0, (
+    assert api.data["0000"]["wp-vorlauf"].value == 31.0, (
         "the first cycle cleared the values it had just read"
     )
-    assert api.data["0000"]["left-over"]["value"] == 12.0
+    assert api.data["0000"]["left-over"].value == 12.0
 
 
 # --- a device with nothing discovered must not be asked for values ------
@@ -5855,14 +5857,14 @@ def _row(raw, **extra):
     view of the same programme arrives beside it, and it is the better of the
     two sources.
     """
-    return {
-        "value": raw,
-        "unit": None,
-        "friendlyName": "Programme",
-        "ParameterID": "Programm",
-        "platform": "sensor",
+    return Reading(
+        value=raw,
+        unit=None,
+        friendly_name="Programme",
+        parameter_id="Programm",
+        platform="sensor",
         **extra,
-    }
+    )
 
 
 def _week_payload():
@@ -5919,14 +5921,14 @@ def _schedule_sensor(raw):
     """A sensor built from one programme reading."""
     return _sensor_from_row(
         "Programm",
-        {
-            "value": raw,
-            "unit": None,
-            "friendlyName": "Heating programme",
-            "ParameterID": "Programm",
-            "ModuleIndex": 0,
-            "ModuleType": 1,
-        },
+        Reading(
+            value=raw,
+            unit=None,
+            friendly_name="Heating programme",
+            parameter_id="Programm",
+            module_index=0,
+            module_type=1,
+        ),
     )
 
 
@@ -5937,14 +5939,14 @@ def _numeric_sensor(value):
     """A sensor that must hold a number - it carries a unit."""
     return _sensor_from_row(
         "Pump",
-        {
-            "value": value,
-            "unit": "%",
-            "friendlyName": "Pump speed",
-            "ParameterID": "Drehzahl",
-            "ModuleIndex": 0,
-            "ModuleType": 1,
-        },
+        Reading(
+            value=value,
+            unit="%",
+            friendly_name="Pump speed",
+            parameter_id="Drehzahl",
+            module_index=0,
+            module_type=1,
+        ),
     )
 
 
@@ -6118,8 +6120,8 @@ def _measured_monday():
         )
     return _row(
         json.dumps(payload),
-        CircuitTimesDay=circuit_times,
-        PossibleValues=HEATING_LEVELS,
+        circuit_times_day=circuit_times,
+        possible_values=HEATING_LEVELS,
     )
 
 
@@ -6143,7 +6145,7 @@ def test_the_levels_are_named_in_the_portals_own_words():
     from custom_components.wemportal.sensor import _readable_schedule
 
     row = _measured_monday()
-    row["PossibleValues"] = [{"Value": 3, "Text": "Fest"}]
+    row.possible_values = [{"Value": 3, "Text": "Fest"}]
 
     assert _readable_schedule(row)["DI"] == ["00:00-24:00 Fest"]
 
@@ -6153,7 +6155,7 @@ def test_a_level_the_portal_did_not_name_keeps_its_times():
     from custom_components.wemportal.sensor import _readable_schedule
 
     row = _measured_monday()
-    row["PossibleValues"] = []
+    row.possible_values = []
 
     assert _readable_schedule(row)["DI"] == ["00:00-24:00"]
 
@@ -6183,7 +6185,7 @@ def test_without_the_device_view_the_json_still_answers():
     from custom_components.wemportal.sensor import _readable_schedule
 
     row = _measured_monday()
-    del row["CircuitTimesDay"]
+    row.circuit_times_day = None
 
     assert _readable_schedule(row)["MO"] == [
         "00:00-06:00 (H)",
@@ -6203,7 +6205,7 @@ def test_the_readable_week_needs_the_value_to_name_its_days():
     where that is done.
     """
     row = _measured_monday()
-    row["value"] = None
+    row.value = None
 
     assert _sensor_from_row("Programm", row).native_value is None
 
@@ -6214,7 +6216,7 @@ def test_a_week_that_does_not_line_up_falls_back_instead_of_mislabelling():
     from custom_components.wemportal.sensor import _readable_schedule
 
     row = _measured_monday()
-    row["value"] = '{"MO-1":"00:00-24:00","MO":"H"}'
+    row.value = '{"MO-1":"00:00-24:00","MO":"H"}'
 
     assert _readable_schedule(row) == {"MO": ["00:00-24:00 (H)"]}
 

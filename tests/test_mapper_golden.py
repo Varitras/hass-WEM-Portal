@@ -40,6 +40,7 @@ import pytest
 
 from custom_components.wemportal.const import WemDataType
 from custom_components.wemportal.mapper import WemPortalDataMapper
+from custom_components.wemportal.models import Reading
 
 GOLDEN = Path(__file__).parent / "fixtures" / "mapper_golden.json"
 
@@ -143,15 +144,14 @@ def _case(
     # rather than skipped.
     api_data = {
         DEVICE: {
-            "heat_pump-p1": {
-                "value": 11.0,
-                "name": "heat_pump-p1",
-                "unit": "°C",
-                "icon": "mdi:thermometer",
-                "friendlyName": "Heat pump - P1",
-                "ParameterID": "heat_pump-p1",
-                "platform": "sensor",
-            }
+            "heat_pump-p1": Reading(
+                value=11.0,
+                unit="°C",
+                icon="mdi:thermometer",
+                friendly_name="Heat pump - P1",
+                parameter_id="heat_pump-p1",
+                platform="sensor",
+            )
         }
     }
     WemPortalDataMapper.process_api_values(
@@ -164,7 +164,9 @@ def _case(
         api_data,
         DEVICE if is_scraper_device else "9999",
     )
-    return label, api_data[DEVICE]
+    # Serialised through the same compact form diagnostics uses, so the
+    # snapshot pins what a reading actually carries, not object identities.
+    return label, {key: row.as_dict() for key, row in api_data[DEVICE].items()}
 
 
 def build_snapshot():
@@ -352,17 +354,16 @@ EXTRA_GOLDEN = Path(__file__).parent / "fixtures" / "mapper_golden_extra.json"
 
 
 def _scraped_row(parameter_id, **overrides):
-    row = {
+    fields = {
         "value": 11.0,
-        "name": parameter_id,
         "unit": "°C",
         "icon": "mdi:thermometer",
-        "friendlyName": "Heat pump - Outside",
-        "ParameterID": parameter_id,
+        "friendly_name": "Heat pump - Outside",
+        "parameter_id": parameter_id,
         "platform": "sensor",
     }
-    row.update(overrides)
-    return row
+    fields.update(overrides)
+    return Reading(**fields)
 
 
 def _param(parameter_id, **overrides):
@@ -429,7 +430,13 @@ def _extra_case(
     # Both are recorded. scraping_mapper is mutated in place and carried
     # across poll cycles, so leaving it out leaves its two write sites frozen
     # nowhere - the matrix above discards it entirely.
-    return {"api_data": api_data[DEVICE], "scraping_mapper": mapper_state}
+    return {
+        "api_data": {
+            key: row.as_dict() if isinstance(row, Reading) else row
+            for key, row in api_data[DEVICE].items()
+        },
+        "scraping_mapper": mapper_state,
+    }
 
 
 def build_extra_snapshot():
@@ -480,7 +487,7 @@ def build_extra_snapshot():
         [_param("Outside")],
         {
             "heat_pump-unrelated": _scraped_row(
-                "heat_pump-unrelated", friendlyName="Heat pump - Pressure"
+                "heat_pump-unrelated", friendly_name="Heat pump - Pressure"
             )
         },
         {},
@@ -522,8 +529,7 @@ def build_extra_snapshot():
                 value=None,
                 unit=None,
                 icon=None,
-                name=None,
-                friendlyName=None,
+                friendly_name=None,
             )
         },
         {"Outside": ["heat_pump-outside"]},

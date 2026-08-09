@@ -37,6 +37,7 @@ from custom_components.wemportal.const import (
     STATISTICS_RETRY_INTERVAL_SECONDS,
     WEM_INVALID_PARAMETER_STATUS,
 )
+from custom_components.wemportal.models import Reading
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
 GOLDEN = Path(__file__).parent / "fixtures" / "statistics_golden.json"
@@ -108,7 +109,13 @@ def _run(script, devices=(DEVICE,), enabled=None, existing=None):
             api.data[device].update(data)
     api.get_statistics(enabled_devices=enabled)
     return {
-        "data": {d: api.data[d] for d in sorted(api.data)},
+        "data": {
+            device: {
+                key: row.as_dict() if isinstance(row, Reading) else row
+                for key, row in api.data[device].items()
+            }
+            for device in sorted(api.data)
+        },
         "calls": calls,
         # Whether the cycle asked to be retried early. Recorded as the
         # decision, not the timestamp, so the case stays deterministic.
@@ -184,7 +191,7 @@ def build_snapshot():
             ],
             API_STATISTICS_READ_URL: [_read([_entry(None)])],
         },
-        existing={DEVICE: {f"{DEVICE}-Energy_1": {"value": 77.0}}},
+        existing={DEVICE: {f"{DEVICE}-Energy_1": Reading(value=77.0)}},
     )
     # And with no previous value it is skipped entirely rather than invented.
     snapshot["missing_value_without_history_is_skipped"] = _run(

@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_EXPERT_WRITE, DOMAIN
 from .entity import WemPortalEntity
+from .models import Reading
 from .utils import fix_value_and_unit, unit_to_device_class
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,11 +29,7 @@ async def async_setup_entry(
     entities: list[WemPortalNumber] = []
     for device_id, entity_data in coordinator.data.items():
         for unique_id, values in entity_data.items():
-            if isinstance(values, int):
-                continue
-            # .get() instead of direct indexing: one malformed data point
-            # should not crash setup for every number entity on this device.
-            if values.get("platform") == "number":
+            if isinstance(values, Reading) and values.platform == "number":
                 entities.append(
                     WemPortalNumber(
                         coordinator, config_entry, device_id, unique_id, values
@@ -192,20 +189,20 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
-        # .get() with sensible fallbacks rather than direct indexing: an
-        # unexpected/malformed data point should degrade gracefully
-        # (skip this one entity's optional metadata) instead of raising a
-        # KeyError that would abort setup for every number entity on this
-        # device.
-        value, unit = fix_value_and_unit(
-            entity_data.get("value"), entity_data.get("unit")
-        )
+        value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
 
         self._attr_native_unit_of_measurement = unit
         self._attr_native_value = self._validated_native_value(value)
-        self._attr_native_min_value = entity_data.get("min_value", 0.0)
-        self._attr_native_max_value = entity_data.get("max_value", 100.0)
-        self._attr_native_step = entity_data.get("step", 1)
+        # Fallbacks for a reading that carries no bounds - possible for a
+        # control the mapper could not size - so setup degrades to a wide
+        # box instead of refusing the entity.
+        self._attr_native_min_value = (
+            entity_data.min_value if entity_data.min_value is not None else 0.0
+        )
+        self._attr_native_max_value = (
+            entity_data.max_value if entity_data.max_value is not None else 100.0
+        )
+        self._attr_native_step = entity_data.step if entity_data.step is not None else 1
 
         _LOGGER.debug(
             'Init number: %s: "%s" [%s]',
@@ -226,21 +223,19 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
 
         try:
             entity_data = self.coordinator.data[self._device_id][self._data_key]
-            value, unit = fix_value_and_unit(
-                entity_data.get("value"), entity_data.get("unit")
-            )
+            value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
 
             # Metadata BEFORE the value. Rediscovery replaces the parameter
             # descriptions once a day and the mapper delivers fresh bounds
             # with every cycle - published only at construction, a value the
             # device newly accepts was refused by Home Assistant's own range
             # check before this integration was ever asked.
-            if "min_value" in entity_data:
-                self._attr_native_min_value = entity_data["min_value"]
-            if "max_value" in entity_data:
-                self._attr_native_max_value = entity_data["max_value"]
-            if "step" in entity_data:
-                self._attr_native_step = entity_data["step"]
+            if entity_data.min_value is not None:
+                self._attr_native_min_value = entity_data.min_value
+            if entity_data.max_value is not None:
+                self._attr_native_max_value = entity_data.max_value
+            if entity_data.step is not None:
+                self._attr_native_step = entity_data.step
 
             self._attr_native_value = self._validated_native_value(value)
 

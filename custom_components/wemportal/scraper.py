@@ -27,7 +27,7 @@ from .exceptions import (
     PortalMaintenanceError,
     ServerError,
 )
-from .models import account_state
+from .models import Reading, account_state
 from .utils import (
     maintenance_notice,
     parse_portal_number,
@@ -595,15 +595,14 @@ class WemPortalScraper:
         return (
             name,
             raw_name,
-            {
-                "value": value,
-                "name": name,
-                "icon": unit_to_icon(unit),
-                "unit": unit,
-                "platform": "sensor",
-                "friendlyName": f"{heading} - {raw_name.lstrip('- ')}",
-                "ParameterID": name,
-            },
+            Reading(
+                value=value,
+                icon=unit_to_icon(unit),
+                unit=unit,
+                platform="sensor",
+                friendly_name=f"{heading} - {raw_name.lstrip('- ')}",
+                parameter_id=name,
+            ),
         )
 
     def _panel_readings(self, heading, panel_key, rows) -> list:

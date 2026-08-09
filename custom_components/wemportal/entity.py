@@ -8,7 +8,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import get_wemportal_unique_id
 from .const import API_FAILURES_TOLERATED
-from .models import raise_if_not_writable
+from .models import Reading, raise_if_not_writable
 from .utils import build_device_info, device_is_reachable, device_model
 
 
@@ -28,7 +28,12 @@ class WemPortalEntity(CoordinatorEntity):
     """
 
     def __init__(
-        self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data
+        self,
+        coordinator,
+        config_entry: ConfigEntry,
+        device_id,
+        _unique_id,
+        entity_data: Reading,
     ) -> None:
         """Initialize the shared entity state."""
         super().__init__(coordinator)
@@ -36,25 +41,28 @@ class WemPortalEntity(CoordinatorEntity):
         self._config_entry = config_entry
         self._device_id = device_id
         self._attr_has_entity_name = True
-        self._attr_name = entity_data.get("friendlyName", _unique_id)
+        self._attr_name = (
+            entity_data.friendly_name
+            if entity_data.friendly_name is not None
+            else _unique_id
+        )
         self._attr_unique_id = get_wemportal_unique_id(
             self._config_entry.entry_id, str(self._device_id), str(_unique_id)
         )
-        # .get() with sensible fallbacks rather than direct indexing: an
-        # unexpected/malformed data point should degrade gracefully (skip
-        # this one entity's optional metadata) instead of raising a KeyError
-        # that would abort setup for every entity on this device.
-        self._parameter_id = entity_data.get("ParameterID", _unique_id)
+        self._parameter_id = (
+            entity_data.parameter_id
+            if entity_data.parameter_id is not None
+            else _unique_id
+        )
         self._data_key = _unique_id
         # Only when the data carries one: an explicit icon overrides the one
         # Home Assistant derives from the device class.
-        icon = entity_data.get("icon")
-        if icon:
-            self._attr_icon = icon
+        if entity_data.icon:
+            self._attr_icon = entity_data.icon
         # Only the writeable platforms use these, but the write path below is
         # shared, so the address of the parameter is too.
-        self._module_index = entity_data.get("ModuleIndex")
-        self._module_type = entity_data.get("ModuleType")
+        self._module_index = entity_data.module_index
+        self._module_type = entity_data.module_type
 
     async def async_write_parameter(self, value, together_with=None) -> None:
         """The one way an entity changes a value on the portal.
@@ -100,7 +108,7 @@ class WemPortalEntity(CoordinatorEntity):
         """
         row = self._coordinator_row()
         if row is not None:
-            row["value"] = value
+            row.value = value
 
     def _forget_written_value(self) -> None:
         """Take back a value nobody could confirm was kept.
@@ -118,19 +126,19 @@ class WemPortalEntity(CoordinatorEntity):
         """
         row = self._coordinator_row()
         if row is not None:
-            row["value"] = None
+            row.value = None
 
-    def _coordinator_row(self):
+    def _coordinator_row(self) -> Reading | None:
         """This parameter's row in the coordinator's data, or None.
 
         Three callers ask the same two-step question - the device, then the
-        parameter - and each guards against the answer not being a dict,
+        parameter - and each guards against the answer not being a reading,
         because a malformed or half-built update must not raise into a write
         path.
         """
         device = (self.coordinator.data or {}).get(self._device_id)
         row = device.get(self._data_key) if isinstance(device, dict) else None
-        return row if isinstance(row, dict) else None
+        return row if isinstance(row, Reading) else None
 
     @property
     def device_info(self) -> DeviceInfo:

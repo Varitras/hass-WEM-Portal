@@ -3,9 +3,10 @@
 import logging
 
 import re
+from dataclasses import replace
 
 from .const import WemDataType
-from .models import ModuleRef
+from .models import ModuleRef, Reading
 from .translations import friendly_name_mapper, translate
 from .utils import looks_like_schedule, sanitize_value, unit_to_icon
 
@@ -60,8 +61,8 @@ def _friendly_name(language: str, parameter_id: str, module_name: str) -> str:
 
 def _describe_value(
     parameter_id, module, device_module, parameter, value, language
-) -> tuple[str, dict]:
-    """Flatten one portal value into the description the rest of the mapper
+) -> tuple[str, Reading]:
+    """Flatten one portal value into the reading the rest of the mapper
     works with. Raises on malformed portal data just like the inline code it
     replaces - the caller's guard turns that into a skipped value."""
     name = f"{device_module['Name']}-{parameter['ParameterID']}"
@@ -92,16 +93,15 @@ def _describe_value(
         if isinstance(final_value, str):
             final_value = sanitize_value(final_value)
 
-    return name, {
-        "friendlyName": _friendly_name(language, parameter_id, device_module["Name"]),
-        "ParameterID": parameter_id,
-        "unit": value.get("Unit"),
-        "value": final_value,
-        "IsWriteable": parameter.get("IsWriteable", False),
-        "DataType": data_type,
-        "ModuleIndex": module["ModuleIndex"],
-        "ModuleType": module["ModuleType"],
-    }
+    return name, Reading(
+        friendly_name=_friendly_name(language, parameter_id, device_module["Name"]),
+        parameter_id=parameter_id,
+        unit=value.get("Unit"),
+        value=final_value,
+        data_type=data_type,
+        module_index=module["ModuleIndex"],
+        module_type=module["ModuleType"],
+    )
 
 
 def _declares_bounds(parameter: dict) -> bool:
@@ -140,9 +140,7 @@ def _is_time_or_programme(parameter: dict) -> bool:
     return not _declares_bounds(parameter)
 
 
-def _time_or_programme_entity(
-    common_attributes: dict, sent_a_number: bool
-) -> dict | None:
+def _time_or_programme_entity(common: Reading, sent_a_number: bool) -> Reading | None:
     """The writeable platform for a time or programme parameter, if any.
 
     Two forms have been observed. A schedule comes as a JSON string and is
@@ -161,11 +159,11 @@ def _time_or_programme_entity(
     1970, to a heating system.
     """
     if sent_a_number:
-        return {**common_attributes, "platform": "date"}
+        return replace(common, platform="date")
     return None
 
 
-def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None:
+def _writeable_entity(sensor: Reading, parameter: dict, value: dict) -> Reading | None:
     """The platform entity this parameter becomes, or None for a plain sensor.
 
     Three ways to get None, and the caller does not have to tell them apart:
@@ -176,40 +174,35 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
 
     The IsWriteable test used to sit at the one call site, which split a
     single question across two places and put the whole thing one level
-    deeper for no gain.
+    deeper for no gain. Asked of the raw parameter now - the same place the
+    bounds come from - so the reading does not have to carry a field whose
+    only reader is this line.
     """
-    if not sensor["IsWriteable"]:
+    if not parameter.get("IsWriteable", False):
         return None
 
-    data_type = sensor["DataType"]
-    final_value = sensor["value"]
+    data_type = sensor.data_type
+    final_value = sensor.value
 
-    common_attributes = {
-        "friendlyName": sensor["friendlyName"],
-        "ParameterID": sensor["ParameterID"],
-        "unit": sensor["unit"],
-        "icon": unit_to_icon(sensor["unit"]),
-        "value": final_value,
-        "DataType": data_type,
-        "ModuleIndex": sensor["ModuleIndex"],
-        "ModuleType": sensor["ModuleType"],
-    }
+    # A copy on purpose: `sensor` goes on living as the plain-sensor record,
+    # and the control this returns is a second, separately aged row.
+    common = replace(sensor, icon=unit_to_icon(sensor.unit))
 
     min_value, max_value = get_min_max(
-        sensor["ParameterID"],
+        sensor.parameter_id,
         data_type,
         parameter.get("MinValue"),
         parameter.get("MaxValue"),
     )
 
     if data_type in (WemDataType.NUMBER_STEP_HALF, WemDataType.NUMBER_STEP_ONE):
-        return {
-            **common_attributes,
-            "platform": "number",
-            "min_value": min_value,
-            "max_value": max_value,
-            "step": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
-        }
+        return replace(
+            common,
+            platform="number",
+            min_value=min_value,
+            max_value=max_value,
+            step=0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
+        )
     if data_type == WemDataType.SELECT:
         # `or []`, not .get()'s default: the portal sends the key with an
         # explicit null rather than omitting it, so the default never applied
@@ -225,12 +218,12 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
         enum_values = parameter.get("EnumValues") or []
         if not enum_values:
             return None
-        return {
-            **common_attributes,
-            "platform": "select",
-            "options": [enum_value["Value"] for enum_value in enum_values],
-            "optionsNames": [enum_value["Name"] for enum_value in enum_values],
-        }
+        return replace(
+            common,
+            platform="select",
+            options=[enum_value["Value"] for enum_value in enum_values],
+            options_names=[enum_value["Name"] for enum_value in enum_values],
+        )
     if data_type == WemDataType.SWITCH:
         if isinstance(final_value, str) and final_value.startswith("{"):
             return None  # It's a JSON schedule, fallback to sensor
@@ -241,20 +234,17 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
         # passed it and became a switch.
         if _is_time_or_programme(parameter):
             return _time_or_programme_entity(
-                common_attributes, value.get("NumericValue") is not None
+                common, value.get("NumericValue") is not None
             )
         if int(min_value) == 0 and int(max_value) == 1:
-            return {
-                **common_attributes,
-                "platform": "switch",
-            }
-        return {
-            **common_attributes,
-            "platform": "number",
-            "min_value": min_value,
-            "max_value": max_value,
-            "step": 1,
-        }
+            return replace(common, platform="switch")
+        return replace(
+            common,
+            platform="number",
+            min_value=min_value,
+            max_value=max_value,
+            step=1,
+        )
     return None
 
 
@@ -369,9 +359,9 @@ def _scraped_entities_naming_the_same_thing(
     """
     matches = []
     for scraped_data in api_data[device_id].values():
-        if not isinstance(scraped_data, dict):
+        if not isinstance(scraped_data, Reading):
             continue
-        scraped_entity_id = scraped_data.get("ParameterID", "")
+        scraped_entity_id = scraped_data.parameter_id or ""
         try:
             scraped_part = scraped_entity_id.split("-")[1]
         except IndexError:
@@ -379,7 +369,7 @@ def _scraped_entities_naming_the_same_thing(
             continue
         translated_scraped = translate(language, friendly_name_mapper(scraped_part))
 
-        sensor_words = _tokenize(sensor["friendlyName"])
+        sensor_words = _tokenize(sensor.friendly_name)
         scraped_words = _tokenize(translated_scraped)
         if scraped_words and scraped_words.issubset(sensor_words):
             matches.append(scraped_entity_id)
@@ -391,7 +381,7 @@ def _merge_into_scraped(
 ) -> None:
     """Feed an API reading into the scraped entity that shows the same value,
     so both sources keep one entity instead of two that drift apart."""
-    parameter_id = sensor["ParameterID"]
+    parameter_id = sensor.parameter_id
     if parameter_id not in scraping_mapper:
         matches = _scraped_entities_naming_the_same_thing(
             device_id, sensor, language, api_data
@@ -402,43 +392,49 @@ def _merge_into_scraped(
         scraping_mapper[parameter_id] = matches or [key]
 
     for scraped_entity in scraping_mapper[parameter_id]:
+        previous = api_data[device_id].get(scraped_entity)
+        target = previous if isinstance(previous, Reading) else None
+
         # An API read that came back empty must not erase a
         # web value that was scraped successfully in the same
         # cycle. Both paths feed this one entity, and writing
         # None over a good reading turned a partial API
         # failure into an unknown sensor.
-        api_value = sensor.get("value")
-        previous = api_data[device_id].get(scraped_entity, {})
-        sensor_dict = {
-            "value": (previous.get("value") if api_value is None else api_value),
-            "name": previous.get("name"),
-            "unit": previous.get("unit", sensor.get("unit")),
-            "icon": previous.get("icon", unit_to_icon(sensor.get("unit"))),
-            "friendlyName": previous.get("friendlyName", sensor.get("friendlyName")),
-            "ParameterID": scraped_entity,
-            "platform": "sensor",
-        }
-        if scraped_entity in api_data[device_id]:
-            api_data[device_id][scraped_entity].update(sensor_dict)
+        api_value = sensor.value
+        if target is None:
+            target = Reading(parameter_id=scraped_entity)
+            api_data[device_id][scraped_entity] = target
+            target.value = api_value
+            target.unit = sensor.unit
+            target.icon = unit_to_icon(sensor.unit)
+            target.friendly_name = sensor.friendly_name
         else:
-            api_data[device_id][scraped_entity] = sensor_dict
+            # The scraped row keeps its own identity (unit, icon, name) -
+            # only the value flows in, and everything the row carries beyond
+            # these fields (a schedule detail, say) stays untouched, exactly
+            # as dict.update() on a fixed key set left it before.
+            if api_value is not None:
+                target.value = api_value
+            target.parameter_id = scraped_entity
+            target.platform = "sensor"
 
 
 def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
     """Write the reading as a read-only sensor, keeping the unit it already
     carried when this update brought none."""
-    new_unit = sensor.get("unit")
-    old_unit = api_data[device_id].get(key, {}).get("unit")
+    new_unit = sensor.unit
+    previous = api_data[device_id].get(key)
+    old_unit = previous.unit if isinstance(previous, Reading) else None
     final_unit = new_unit if new_unit not in (None, "") else old_unit
 
-    api_data[device_id][key] = {
-        "value": sensor["value"],
-        "ParameterID": sensor["ParameterID"],
-        "unit": final_unit,
-        "icon": unit_to_icon(final_unit),
-        "friendlyName": sensor["friendlyName"],
-        "platform": "sensor",
-    }
+    api_data[device_id][key] = Reading(
+        value=sensor.value,
+        parameter_id=sensor.parameter_id,
+        unit=final_unit,
+        icon=unit_to_icon(final_unit),
+        friendly_name=sensor.friendly_name,
+        platform="sensor",
+    )
 
 
 def _clear_unanswered(
@@ -495,12 +491,13 @@ def _clear_unanswered(
             # programme as 2 (an ordinary switch) with the schedule as JSON in
             # the value, so the exemption applied to nobody who has one. Same
             # mistake, same fix as the schedule fetch itself.
+            entry_value = entry.value if isinstance(entry, Reading) else None
             if parameter.get("DataType") == WemDataType.PROGRAM or looks_like_schedule(
-                (entry or {}).get("value")
+                entry_value
             ):
                 continue
-            if isinstance(entry, dict) and entry.get("value") is not None:
-                entry["value"] = None
+            if isinstance(entry, Reading) and entry.value is not None:
+                entry.value = None
                 cleared.append(parameter_id)
 
         if cleared:

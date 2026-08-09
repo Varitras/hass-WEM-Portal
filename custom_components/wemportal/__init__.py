@@ -42,7 +42,12 @@ from .coordinator import (
     get_scraper_device_store,
 )
 from .exceptions import ExpertOperationAborted
-from .models import WemPortalConfigEntry, WemPortalData, forget_account_state
+from .models import (
+    Reading,
+    WemPortalConfigEntry,
+    WemPortalData,
+    forget_account_state,
+)
 from .utils import clamped_scan_interval, close_api_sessions, deserialize_modules
 from .wemportalapi import WemPortalApi
 
@@ -75,13 +80,12 @@ def _migrate_device_unique_ids(registry, config_entry, device_id, data) -> bool:
     run for EVERY device, not just the first."""
     change = False
     for unique_id, values in data.items():
-        if isinstance(values, int):
+        if not isinstance(values, Reading):
             continue
 
         new_id = get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id)
-        platform = values.get("platform", "sensor")
         old_ids = _possible_old_unique_ids(config_entry, device_id, unique_id, values)
-        if _adopt_entity_under_its_old_id(registry, platform, old_ids, new_id):
+        if _adopt_entity_under_its_old_id(registry, values.platform, old_ids, new_id):
             change = True
     return change
 
@@ -93,8 +97,8 @@ def _possible_old_unique_ids(config_entry, device_id, unique_id, values) -> list
     each in up to three spellings. Assembling the list is a different job
     from searching it, and inline it put the search two levels deep.
     """
-    friendly_name = values.get("friendlyName", "")
-    parameter_id = values.get("ParameterID")
+    friendly_name = values.friendly_name or ""
+    parameter_id = values.parameter_id
 
     possible_old_ids = []
     if unique_id != "ConnectionStatus":
@@ -166,9 +170,9 @@ def _remove_entities_from_a_previous_platform(
     only the ones the current data says belong to a different platform now.
     """
     for unique_id, values in data.items():
-        if isinstance(values, int):
+        if not isinstance(values, Reading):
             continue
-        current = values.get("platform", "sensor")
+        current = values.platform
         entity_unique_id = get_wemportal_unique_id(
             config_entry.entry_id, device_id, unique_id
         )

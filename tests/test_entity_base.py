@@ -8,10 +8,12 @@ platform drifts back out of it.
 """
 
 import types
+from dataclasses import replace
 
 import pytest
 
 from custom_components.wemportal.entity import WemPortalEntity
+from custom_components.wemportal.models import Reading
 from custom_components.wemportal.number import WemPortalNumber
 from custom_components.wemportal.select import WemPortalSelect
 from custom_components.wemportal.sensor import WemPortalSensor
@@ -33,23 +35,25 @@ ALLOWED_OVERRIDES = {"sensor"}
 
 def _entity(cls, reachable=True, last_update_success=True, num_failed=0, **overrides):
     """One entity of `cls`, built without Home Assistant."""
-    row = {
-        "value": 1.0,
-        "unit": "°C",
-        "friendlyName": "Pump",
-        "ParameterID": "P1",
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "min_value": 0.0,
-        "max_value": 100.0,
-        "step": 1,
-        "options": ["0", "1"],
-        "optionsNames": ["Aus", "Ein"],
-    }
-    row.update(overrides)
+    row = replace(
+        Reading(
+            value=1.0,
+            unit="°C",
+            friendly_name="Pump",
+            parameter_id="P1",
+            module_index=0,
+            module_type=1,
+            min_value=0.0,
+            max_value=100.0,
+            step=1,
+            options=["0", "1"],
+            options_names=["Aus", "Ein"],
+        ),
+        **overrides,
+    )
     # The status row is what device_is_reachable() reads; "offline" is one of
     # utils.UNREACHABLE_CONNECTION_STATES.
-    status = {"value": "online" if reachable else "offline"}
+    status = Reading(value="online" if reachable else "offline")
     coordinator = types.SimpleNamespace(
         data={"1234": {"Pump": row, "1234-ConnectionStatus": status}},
         api=types.SimpleNamespace(api_version="2.0", modules={}),
@@ -300,7 +304,7 @@ async def test_a_write_brings_the_coordinators_copy_up_to_date(name):
 
     await entity.async_write_parameter(42.0)
 
-    assert entity.coordinator.data["1234"]["Pump"]["value"] == 42.0
+    assert entity.coordinator.data["1234"]["Pump"].value == 42.0
 
 
 @pytest.mark.parametrize("name", sorted(WRITEABLE))
@@ -318,7 +322,7 @@ async def test_a_refused_write_leaves_the_coordinators_copy_alone(name):
     with pytest.raises(RuntimeError):
         await entity.async_write_parameter(42.0)
 
-    assert entity.coordinator.data["1234"]["Pump"]["value"] == 1.0
+    assert entity.coordinator.data["1234"]["Pump"].value == 1.0
 
 
 def test_a_reloaded_entry_invalidates_an_operation_holding_the_old_state():

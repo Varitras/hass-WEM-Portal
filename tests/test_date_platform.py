@@ -18,6 +18,7 @@ from custom_components.wemportal.date import (
     date_to_epoch,
     epoch_to_date,
 )
+from custom_components.wemportal.models import Reading
 
 # Measured on a live installation, not constructed: holiday begin and end came
 # back as these two values, exactly 86400 apart and both exactly on a midnight
@@ -91,15 +92,15 @@ class _Entry:
 def _entity(value=BEGIN_EPOCH):
     data = {
         "1234": {
-            "Heat pump-U_Beginn": {
-                "friendlyName": "Holiday begin",
-                "ParameterID": "U_Beginn",
-                "value": value,
-                "unit": None,
-                "platform": "date",
-                "ModuleIndex": 0,
-                "ModuleType": 1,
-            }
+            "Heat pump-U_Beginn": Reading(
+                friendly_name="Holiday begin",
+                parameter_id="U_Beginn",
+                value=value,
+                unit=None,
+                platform="date",
+                module_index=0,
+                module_type=1,
+            )
         }
     }
     entity = WemPortalDate(
@@ -122,15 +123,15 @@ async def _run_now(function, *args):
 
 def _with_companion(data, value=END_EPOCH, module=(0, 1), platform="date"):
     """A second parameter on the device, next to the one under test."""
-    data["1234"]["Heat pump-U_Ende"] = {
-        "friendlyName": "Holiday end",
-        "ParameterID": "U_Ende",
-        "value": value,
-        "unit": None,
-        "platform": platform,
-        "ModuleIndex": module[0],
-        "ModuleType": module[1],
-    }
+    data["1234"]["Heat pump-U_Ende"] = Reading(
+        friendly_name="Holiday end",
+        parameter_id="U_Ende",
+        value=value,
+        unit=None,
+        platform=platform,
+        module_index=module[0],
+        module_type=module[1],
+    )
     return data
 
 
@@ -196,7 +197,7 @@ async def test_a_day_the_portal_did_not_keep_is_not_displayed():
     _wired(entity)
 
     def portal_kept_the_old_value(_device_id):
-        data["1234"]["Heat pump-U_Beginn"]["value"] = BEGIN_EPOCH
+        data["1234"]["Heat pump-U_Beginn"].value = BEGIN_EPOCH
 
     entity.coordinator.api.reread_device_values = portal_kept_the_old_value
 
@@ -246,7 +247,7 @@ async def test_a_day_that_could_not_be_read_back_is_not_shown_as_set():
     assert entity.native_value is None, (
         "a day nobody could confirm was displayed as if it had been set"
     )
-    assert data["1234"]["Heat pump-U_Beginn"]["value"] is None, (
+    assert data["1234"]["Heat pump-U_Beginn"].value is None, (
         "the unconfirmed day stayed in the coordinator row, so the next "
         "update puts it back on display"
     )
@@ -258,7 +259,7 @@ async def test_a_day_that_was_read_back_is_still_shown():
     _wired(entity)
 
     def portal_kept_it(_device_id):
-        data["1234"]["Heat pump-U_Beginn"]["value"] = date_to_epoch(date(2026, 12, 24))
+        data["1234"]["Heat pump-U_Beginn"].value = date_to_epoch(date(2026, 12, 24))
 
     entity.coordinator.api.reread_device_values = portal_kept_it
 
@@ -287,7 +288,7 @@ async def test_a_write_is_not_reported_before_the_portal_took_it():
 
 def test_a_later_cycle_updates_the_day():
     entity, data = _entity()
-    data["1234"]["Heat pump-U_Beginn"]["value"] = END_EPOCH
+    data["1234"]["Heat pump-U_Beginn"].value = END_EPOCH
 
     entity._handle_coordinator_update()
 
@@ -400,18 +401,15 @@ def test_only_date_rows_become_date_entities():
     added = []
     data = {
         "1234": {
-            "Heat pump-U_Beginn": {
-                "platform": "date",
-                "value": BEGIN_EPOCH,
-                "friendlyName": "Holiday begin",
-                "ParameterID": "U_Beginn",
-            },
-            "Heat pump-Pump": {
-                "platform": "switch",
-                "value": 1.0,
-                "friendlyName": "Pump",
-                "ParameterID": "Pump",
-            },
+            "Heat pump-U_Beginn": Reading(
+                platform="date",
+                value=BEGIN_EPOCH,
+                friendly_name="Holiday begin",
+                parameter_id="U_Beginn",
+            ),
+            "Heat pump-Pump": Reading(
+                platform="switch", value=1.0, friendly_name="Pump", parameter_id="Pump"
+            ),
             "ConnectionStatus": 0,
         }
     }

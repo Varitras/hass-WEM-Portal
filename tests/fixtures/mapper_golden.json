@@ -3892,24 +3892,22 @@
   "results": [
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "Ein"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -3917,24 +3915,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "Off"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -3942,24 +3938,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -3967,24 +3961,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "{\"Mon\":[]}"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -3992,24 +3984,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": 0.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4017,24 +4007,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": 1.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4042,24 +4030,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "Ein"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4067,24 +4053,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "Off"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4092,24 +4076,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4117,24 +4099,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "{\"Mon\":[]}"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4142,24 +4122,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": 0.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4167,24 +4145,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": 1.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4192,24 +4168,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "Ein"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4217,24 +4191,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "Off"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4242,24 +4214,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4267,24 +4237,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": "{\"Mon\":[]}"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4292,24 +4260,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": 0.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4317,24 +4283,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
-        "unit": null,
         "value": 1.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4342,24 +4306,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "%",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4367,24 +4330,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4392,24 +4354,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "%",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4417,24 +4378,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4442,24 +4402,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "%",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4467,24 +4426,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4492,24 +4450,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "kWh",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4517,24 +4473,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "kWh",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4542,24 +4496,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4567,24 +4519,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4592,24 +4542,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4617,24 +4565,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4642,24 +4588,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "kWh",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4667,24 +4611,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "kWh",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4692,24 +4634,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4717,24 +4657,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4742,24 +4680,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4767,24 +4703,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4792,24 +4726,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "kWh",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4817,24 +4749,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "kWh",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4842,24 +4772,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4867,24 +4795,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4892,24 +4818,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4917,24 +4841,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": -1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": -1,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 0.5,
         "unit": "°C",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4942,29 +4864,27 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "module_index": 0,
+        "module_type": 1,
         "options": [
           "0",
           "1"
         ],
-        "optionsNames": [
+        "options_names": [
           "Aus",
           "Ein"
         ],
+        "parameter_id": "P1",
         "platform": "select",
-        "unit": null,
         "value": "Ein"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -4972,29 +4892,27 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "module_index": 0,
+        "module_type": 1,
         "options": [
           "0",
           "1"
         ],
-        "optionsNames": [
+        "options_names": [
           "Aus",
           "Ein"
         ],
+        "parameter_id": "P1",
         "platform": "select",
-        "unit": null,
         "value": "Off"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5002,29 +4920,27 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "module_index": 0,
+        "module_type": 1,
         "options": [
           "0",
           "1"
         ],
-        "optionsNames": [
+        "options_names": [
           "Aus",
           "Ein"
         ],
+        "parameter_id": "P1",
         "platform": "select",
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5032,29 +4948,27 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "module_index": 0,
+        "module_type": 1,
         "options": [
           "0",
           "1"
         ],
-        "optionsNames": [
+        "options_names": [
           "Aus",
           "Ein"
         ],
+        "parameter_id": "P1",
         "platform": "select",
-        "unit": null,
         "value": "{\"Mon\":[]}"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5062,29 +4976,28 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 1,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
+        "module_index": 0,
+        "module_type": 1,
         "options": [
           "0",
           "1"
         ],
-        "optionsNames": [
+        "options_names": [
           "Aus",
           "Ein"
         ],
+        "parameter_id": "P1",
         "platform": "select",
         "unit": "%",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5092,29 +5005,27 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 1,
+        "friendly_name": "Heat Pump P1",
+        "module_index": 0,
+        "module_type": 1,
         "options": [
           "0",
           "1"
         ],
-        "optionsNames": [
+        "options_names": [
           "Aus",
           "Ein"
         ],
+        "parameter_id": "P1",
         "platform": "select",
         "unit": "kWh",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5122,29 +5033,27 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 1,
+        "friendly_name": "Heat Pump P1",
+        "module_index": 0,
+        "module_type": 1,
         "options": [
           "0",
           "1"
         ],
-        "optionsNames": [
+        "options_names": [
           "Aus",
           "Ein"
         ],
+        "parameter_id": "P1",
         "platform": "select",
         "unit": "°C",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5152,29 +5061,27 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 1,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 1,
+        "friendly_name": "Heat Pump P1",
+        "module_index": 0,
+        "module_type": 1,
         "options": [
           "0",
           "1"
         ],
-        "optionsNames": [
+        "options_names": [
           "Aus",
           "Ein"
         ],
+        "parameter_id": "P1",
         "platform": "select",
         "unit": "°C",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5182,24 +5089,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5207,24 +5112,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": 0.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5232,24 +5135,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": 1.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5257,21 +5158,19 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "switch",
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5279,21 +5178,19 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "switch",
-        "unit": null,
         "value": 0.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5301,21 +5198,19 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "switch",
-        "unit": null,
         "value": 1.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5323,24 +5218,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5348,24 +5242,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "%",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5373,21 +5266,20 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "date",
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5395,21 +5287,20 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "switch",
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5417,21 +5308,20 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "switch",
         "unit": "%",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5439,24 +5329,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "kWh",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5464,24 +5352,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5489,24 +5375,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5514,21 +5398,19 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "date",
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5536,21 +5418,19 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "switch",
         "unit": "kWh",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5558,21 +5438,19 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "switch",
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5580,21 +5458,19 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 2,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 2,
+        "friendly_name": "Heat Pump P1",
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "switch",
         "unit": "°C",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5602,24 +5478,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Ein"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5627,24 +5501,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Off"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5652,24 +5524,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5677,24 +5547,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "{\"Mon\":[]}"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5702,24 +5570,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": 0.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5727,24 +5593,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": 1.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5752,24 +5616,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Ein"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5777,24 +5639,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Off"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5802,24 +5662,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5827,24 +5685,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "{\"Mon\":[]}"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5852,24 +5708,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": 0.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5877,24 +5731,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": 1.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5902,24 +5754,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Ein"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5927,24 +5777,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Off"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5952,24 +5800,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -5977,24 +5823,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": "{\"Mon\":[]}"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6002,24 +5846,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": 0.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6027,24 +5869,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
-        "unit": null,
         "value": 1.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6052,24 +5892,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "%",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6077,24 +5916,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6102,24 +5940,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "%",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6127,24 +5964,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6152,24 +5988,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "%",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6177,24 +6012,23 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6202,24 +6036,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "kWh",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6227,24 +6059,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "kWh",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6252,24 +6082,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6277,24 +6105,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6302,24 +6128,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6327,24 +6151,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 1.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6352,24 +6174,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "kWh",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6377,24 +6197,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "kWh",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6402,24 +6220,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6427,24 +6243,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6452,24 +6266,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6477,24 +6289,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 100.0,
         "min_value": 0.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6502,24 +6312,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "kWh",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6527,24 +6335,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "kWh",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6552,24 +6358,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6577,24 +6381,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6602,24 +6404,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6627,24 +6427,22 @@
     },
     {
       "Heat pump-P1": {
-        "DataType": 3,
-        "ModuleIndex": 0,
-        "ModuleType": 1,
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "data_type": 3,
+        "friendly_name": "Heat Pump P1",
         "max_value": 30.0,
         "min_value": 10.0,
+        "module_index": 0,
+        "module_type": 1,
+        "parameter_id": "P1",
         "platform": "number",
         "step": 1,
         "unit": "°C",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6652,18 +6450,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "parameter_id": "P1",
         "platform": "sensor",
-        "unit": null,
         "value": "Ein"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6671,18 +6467,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "parameter_id": "P1",
         "platform": "sensor",
-        "unit": null,
         "value": "Off"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6690,18 +6484,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "parameter_id": "P1",
         "platform": "sensor",
-        "unit": null,
         "value": "Reduziert Betrieb"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6709,18 +6501,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "parameter_id": "P1",
         "platform": "sensor",
-        "unit": null,
         "value": "{\"Mon\":[]}"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6728,18 +6518,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "parameter_id": "P1",
         "platform": "sensor",
-        "unit": null,
         "value": 0.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6747,18 +6535,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:flash",
+        "parameter_id": "P1",
         "platform": "sensor",
-        "unit": null,
         "value": 1.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6766,18 +6552,17 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
+        "parameter_id": "P1",
         "platform": "sensor",
         "unit": "%",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6785,18 +6570,17 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
+        "parameter_id": "P1",
         "platform": "sensor",
         "unit": "%",
         "value": 30.0
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6804,18 +6588,17 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
+        "friendly_name": "Heat Pump P1",
         "icon": "mdi:percent",
+        "parameter_id": "P1",
         "platform": "sensor",
         "unit": "%",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6823,18 +6606,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "friendly_name": "Heat Pump P1",
+        "parameter_id": "P1",
         "platform": "sensor",
         "unit": "kWh",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6842,18 +6623,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "friendly_name": "Heat Pump P1",
+        "parameter_id": "P1",
         "platform": "sensor",
         "unit": "kWh",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6861,18 +6640,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "friendly_name": "Heat Pump P1",
+        "parameter_id": "P1",
         "platform": "sensor",
         "unit": "°C",
         "value": ""
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6880,18 +6657,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "friendly_name": "Heat Pump P1",
+        "parameter_id": "P1",
         "platform": "sensor",
         "unit": "°C",
         "value": "--"
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6899,18 +6674,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "friendly_name": "Heat Pump P1",
+        "parameter_id": "P1",
         "platform": "sensor",
         "unit": "°C",
         "value": 21.5
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6918,18 +6691,16 @@
     },
     {
       "Heat pump-P1": {
-        "ParameterID": "P1",
-        "friendlyName": "Heat Pump P1",
-        "icon": null,
+        "friendly_name": "Heat Pump P1",
+        "parameter_id": "P1",
         "platform": "sensor",
         "unit": "°C",
         "value": null
       },
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -6937,10 +6708,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": ""
@@ -6948,10 +6718,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": "--"
@@ -6959,10 +6728,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": "Ein"
@@ -6970,10 +6738,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": "Off"
@@ -6981,10 +6748,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": "Reduziert Betrieb"
@@ -6992,10 +6758,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": "{\"Mon\":[]}"
@@ -7003,10 +6768,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 0.0
@@ -7014,10 +6778,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 1.0
@@ -7025,10 +6788,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 11.0
@@ -7036,10 +6798,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 21.5
@@ -7047,10 +6808,9 @@
     },
     {
       "heat_pump-p1": {
-        "ParameterID": "heat_pump-p1",
-        "friendlyName": "Heat pump - P1",
+        "friendly_name": "Heat pump - P1",
         "icon": "mdi:thermometer",
-        "name": "heat_pump-p1",
+        "parameter_id": "heat_pump-p1",
         "platform": "sensor",
         "unit": "°C",
         "value": 30.0
