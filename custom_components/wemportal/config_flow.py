@@ -26,6 +26,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from .models import account_unique_id
 from .const import (
     AVAILABLE_MODES,
     CONF_EXPERT_AUTO_POLL,
@@ -81,15 +82,8 @@ DATA_SCHEMA = vol.Schema(
 )
 
 
-def account_unique_id(username) -> str:
-    """Normalised account id used as the config entry's unique_id.
-
-    Portal usernames are email addresses, so casing and stray whitespace are
-    not meaningful - but a raw comparison treated "Max@example.org" and
-    "max@example.org" as two accounts, which meant two entries polling the
-    same installation twice.
-    """
-    return (username or "").strip().lower()
+# account_unique_id moved to models.py: it is account vocabulary, and the
+# per-account state registry keys on the same normalisation.
 
 
 async def validate_input(hass: HomeAssistant, data):

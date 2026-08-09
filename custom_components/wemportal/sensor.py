@@ -9,13 +9,14 @@ import re
 
 from homeassistant.components.sensor import RestoreSensor
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import MAX_LENGTH_STATE_STATE, EntityCategory
+from homeassistant.const import CONF_USERNAME, MAX_LENGTH_STATE_STATE, EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import GITHUB_PROJECT_URL
 from .entity import WemPortalEntity
+from .models import account_state
 from .utils import (
     build_device_info,
     device_is_reachable,
@@ -80,14 +81,8 @@ _UNUSED_WINDOW = "00:00-00:00"
 # portal speaks.
 _DAY_ORDER = (1, 2, 3, 4, 5, 6, 0)
 
-# Readings already reported as unreadable, so the same word is not warned
-# about on every cycle. Module level for the same reason as
-# utils._MARKER_REPORTED: entities are rebuilt on a reload, the portal's
-# vocabulary is not.
-_UNREADABLE_REPORTED: set = set()
 
-
-def _report_unreadable_value(name, value) -> None:
+def _report_unreadable_value(name, value, reported) -> None:
     """Say once that a reading could not be made into a number.
 
     The portal sometimes sends a word this integration does not know - a pump
@@ -106,9 +101,9 @@ def _report_unreadable_value(name, value) -> None:
     portal sent and need not be hashable.
     """
     key = (name, repr(value))
-    if key in _UNREADABLE_REPORTED:
+    if key in reported:
         return
-    _UNREADABLE_REPORTED.add(key)
+    reported.add(key)
     _LOGGER.warning(
         'Cannot read %r as a number for "%s", so it shows as unknown. If the '
         "WEM Portal shows something meaningful there, please report that word "
@@ -415,7 +410,13 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             try:
                 float(value)
             except (TypeError, ValueError):
-                _report_unreadable_value(self._attr_name, value)
+                _report_unreadable_value(
+                    self._attr_name,
+                    value,
+                    account_state(
+                        self._config_entry.data.get(CONF_USERNAME)
+                    ).unreadable_values_reported,
+                )
                 return None
 
         return value

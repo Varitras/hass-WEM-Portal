@@ -88,13 +88,18 @@ def _mock_sleep(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _no_leftover_cooldown():
-    """Both 403 backoffs are module state, so they outlive the test that set
-    one. Production wants exactly that - a fresh api object must not forget a
-    rate limit. A test run must not inherit one: without this, the first test
-    to earn a 403 makes every later test's request raise ForbiddenError before
-    it is even sent, and the failures point everywhere except at the cause.
+def _no_leftover_account_memory():
+    """The IP backoff and the per-account state outlive the test that set
+    them. Production wants exactly that - a fresh api object must not forget
+    a rate limit, and a reload must not repeat every warning. A test run must
+    not inherit either: without this, the first test to earn a 403 makes
+    every later test's request raise ForbiddenError before it is even sent,
+    and the first warning swallows its siblings in every later test.
     """
+    from custom_components.wemportal import models
+
     wemportalapi.reset_cooldowns_for_tests()
+    models.reset_account_states_for_tests()
     yield
     wemportalapi.reset_cooldowns_for_tests()
+    models.reset_account_states_for_tests()

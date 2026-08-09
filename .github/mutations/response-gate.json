@@ -23,8 +23,8 @@
   {
     "label": "marker probe: reporting more than once per site must be noticed",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    if what in _MARKER_REPORTED:\n        _LOGGER.debug(\"Maintenance marker seen again on the %s.\", what)\n        return\n    _MARKER_REPORTED.add(what)\n",
-    "new": "",
+    "old": "    if what in reported:\n        _LOGGER.debug(\"Maintenance marker seen again on the %s.\", what)\n        return\n    reported.add(what)",
+    "new": "    reported.add(what)",
     "tests": "once_per_request_label"
   },
   {
@@ -366,7 +366,7 @@
   {
     "label": "job id: a missing JobID must be reported, not passed over",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                _report_missing_job_id(device_id)",
+    "old": "                _report_missing_job_id(\n                    device_id, self._account_state.missing_job_ids_reported\n                )",
     "new": "                pass",
     "tests": "missing_job_id"
   },
@@ -555,8 +555,8 @@
   {
     "label": "cooldown: spreading an expert 403 across accounts must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        return _EXPERT_BLOCKED_UNTIL.get(self.username, 0.0)",
-    "new": "        return max(_EXPERT_BLOCKED_UNTIL.values(), default=0.0)",
+    "old": "        return self._account_state.expert_blocked_until",
+    "new": "        from .models import _ACCOUNT_STATES\n\n        return max(\n            (state.expert_blocked_until for state in _ACCOUNT_STATES.values()),\n            default=0.0,\n        )",
     "tests": "expert_backoff_does_not_spread_to_another_account"
   },
   {
@@ -1325,15 +1325,15 @@
   {
     "label": "collision: overwriting a reading without a word must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                if name in output:\n                    _report_duplicate_row(name, heading, raw_name)",
-    "new": "                if False:\n                    _report_duplicate_row(name, heading, raw_name)",
+    "old": "                if name in output:\n                    _report_duplicate_row(\n                        name,\n                        heading,\n                        raw_name,\n                        self._account_state.duplicate_rows_reported,\n                    )",
+    "new": "                if False:\n                    _report_duplicate_row(\n                        name,\n                        heading,\n                        raw_name,\n                        self._account_state.duplicate_rows_reported,\n                    )",
     "tests": "the_same_row_twice_in_one_panel_is_reported"
   },
   {
     "label": "collision: reporting the same one every cycle must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "    if key in _DUPLICATE_ROWS:\n        return\n    _DUPLICATE_ROWS.add(key)",
-    "new": "    _DUPLICATE_ROWS.add(key)",
+    "old": "    if key in reported:\n        return\n    reported.add(key)",
+    "new": "    reported.add(key)",
     "tests": "a_collision_is_reported_once_not_every_cycle"
   },
   {
@@ -1346,8 +1346,8 @@
   {
     "label": "vocabulary: warning about the same word every cycle must be noticed",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "    if key in _UNREADABLE_REPORTED:\n        return\n    _UNREADABLE_REPORTED.add(key)",
-    "new": "    _UNREADABLE_REPORTED.add(key)",
+    "old": "    if key in reported:\n        return\n    reported.add(key)",
+    "new": "    reported.add(key)",
     "tests": "an_unreadable_word_is_reported_once_not_every_cycle"
   },
   {
@@ -2434,5 +2434,19 @@
     "old": "        if isinstance(row, dict) and \"CircuitTimesDay\" in row:\n            row.pop(\"CircuitTimesDay\", None)\n            row.pop(\"PossibleValues\", None)",
     "new": "        if False:\n            row.pop(\"CircuitTimesDay\", None)\n            row.pop(\"PossibleValues\", None)",
     "tests": "a_failed_due_schedule_refresh_drops_the_stale_attributes"
+  },
+  {
+    "label": "account: a fresh memory handed out on every ask",
+    "path": "custom_components/wemportal/models.py",
+    "old": "    return _ACCOUNT_STATES.setdefault(account_unique_id(username), AccountState())",
+    "new": "    return AccountState()",
+    "tests": "the_same_account_gets_the_same_memory"
+  },
+  {
+    "label": "account: the key taken verbatim instead of normalised",
+    "path": "custom_components/wemportal/models.py",
+    "old": "    return _ACCOUNT_STATES.setdefault(account_unique_id(username), AccountState())",
+    "new": "    return _ACCOUNT_STATES.setdefault(username or \"\", AccountState())",
+    "tests": "the_same_account_gets_the_same_memory"
   }
 ]

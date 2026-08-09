@@ -4503,10 +4503,8 @@ MAINTENANCE_HTML = (
 
 def _gate_probe():
     """A scraper whose gate is driven directly, with a clean report set."""
-    from custom_components.wemportal import utils
     from custom_components.wemportal.scraper import WemPortalScraper
 
-    utils._MARKER_REPORTED.clear()
     return WemPortalScraper("user@example.org", "secret")
 
 
@@ -4653,6 +4651,11 @@ TRANSPORT_FIELDS = frozenset(
 # last values for another full window after each reset.
 PRESERVED_FIELDS = frozenset(
     {
+        # The account's reload-surviving memory. A transport recovery must
+        # not touch it - forgetting the 403 backoff on the very
+        # reinstantiation the 403 caused is the old wound the state exists
+        # to close.
+        "_account_state",
         "_first_cycle_done",
         "_deadline",
         "_last_device_read",
@@ -4796,9 +4799,6 @@ def test_a_missing_job_id_is_reported_once_per_device(caplog):
     """
     import logging
 
-    from custom_components.wemportal import wemportalapi as api_module
-
-    api_module._MISSING_JOB_ID_REPORTED.clear()
     api = _api()
     api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
     api.make_api_call = lambda url, **_kwargs: FakeResponse(
@@ -5907,7 +5907,11 @@ def _sensor_from_row(key, row):
         async_add_listener=lambda *_args, **_kwargs: None,
     )
     return WemPortalSensor(
-        coordinator, types.SimpleNamespace(entry_id="e1"), "1234", key, row
+        coordinator,
+        types.SimpleNamespace(entry_id="e1", data={"username": "user@example.org"}),
+        "1234",
+        key,
+        row,
     )
 
 
@@ -5929,15 +5933,6 @@ def _schedule_sensor(raw):
 # --- a word the portal knows and this integration does not --------------
 
 
-@pytest.fixture
-def _forget_unreadable_reports():
-    from custom_components.wemportal import sensor as sensor_module
-
-    sensor_module._UNREADABLE_REPORTED.clear()
-    yield
-    sensor_module._UNREADABLE_REPORTED.clear()
-
-
 def _numeric_sensor(value):
     """A sensor that must hold a number - it carries a unit."""
     return _sensor_from_row(
@@ -5953,15 +5948,13 @@ def _numeric_sensor(value):
     )
 
 
-def test_a_word_that_is_not_a_number_shows_as_unknown(_forget_unreadable_reports):
+def test_a_word_that_is_not_a_number_shows_as_unknown():
     """Upstream #146: a pump speed reading "Stop" on a portal that writes
     "Aus" everywhere else. Not a fault - a state we do not know."""
     assert _numeric_sensor("Stop").native_value is None
 
 
-def test_an_unreadable_word_is_reported_once_not_every_cycle(
-    _forget_unreadable_reports, caplog
-):
+def test_an_unreadable_word_is_reported_once_not_every_cycle(caplog):
     """It arrives on every cycle for as long as the condition lasts, and a
     warning each time buries everything else in the log."""
     import logging
@@ -5975,9 +5968,7 @@ def test_an_unreadable_word_is_reported_once_not_every_cycle(
     assert "Stop" in hits[0].getMessage(), "the unknown word was not named"
 
 
-def test_a_different_unreadable_word_is_reported_on_its_own(
-    _forget_unreadable_reports, caplog
-):
+def test_a_different_unreadable_word_is_reported_on_its_own(caplog):
     """Silencing the sensor rather than the word would hide the second state
     this installation turns out to have."""
     import logging
@@ -5990,9 +5981,7 @@ def test_a_different_unreadable_word_is_reported_on_its_own(
     assert len(hits) == 2
 
 
-def test_a_word_this_integration_does_know_is_not_reported(
-    _forget_unreadable_reports, caplog
-):
+def test_a_word_this_integration_does_know_is_not_reported(caplog):
     import logging
 
     with caplog.at_level(logging.WARNING):

@@ -26,6 +26,65 @@ if TYPE_CHECKING:
     from .wemportalapi import WemPortalApi
 
 
+def account_unique_id(username: str | None) -> str:
+    """Normalised account id: the config entry's unique_id AND the key the
+    per-account state lives under.
+
+    Portal usernames are email addresses, so casing and stray whitespace are
+    not meaningful - but a raw comparison treated "Max@example.org" and
+    "max@example.org" as two accounts, which meant two entries polling the
+    same installation twice.
+    """
+    return (username or "").strip().lower()
+
+
+@dataclass
+class AccountState:
+    """What one portal account remembers ACROSS reloads.
+
+    Every field here used to be its own module-level global in the module
+    that used it - six of them across five files, each invisible from the
+    others. They exist because a reload rebuilds every object while the
+    portal's memory does not reset: a 403 backoff must not be forgotten by
+    the very reinstantiation it caused, and a warning already given must not
+    repeat after every options change.
+
+    NOT here on purpose: the API-wide 403 backoff
+    (wemportalapi._BLOCKED_UNTIL). The portal rate-limits per IP, not per
+    account, so that one is shared by every account of the installation.
+    """
+
+    # Consecutive auth failures, seeding the coordinator's reauth counter -
+    # a failed setup triggers the very reload that would otherwise reset it.
+    auth_failures: int = 0
+    # Monotonic deadline of the expert (web) 403 backoff. Per account, with
+    # a test pinning that one account's backoff does not spread to another.
+    expert_blocked_until: float = 0.0
+    # One warning per subject, surviving the reload that rebuilds the
+    # objects doing the warning.
+    duplicate_rows_reported: set[str] = field(default_factory=set)
+    unreadable_values_reported: set[tuple[str, str]] = field(default_factory=set)
+    maintenance_markers_reported: set[str] = field(default_factory=set)
+    missing_job_ids_reported: set[str] = field(default_factory=set)
+
+
+# The ONE sanctioned module-level mutable in this package: the registry the
+# per-account state survives reloads in. Anything else that wants to outlive
+# its object belongs in here - the guard test enforces exactly that.
+_ACCOUNT_STATES: dict[str, AccountState] = {}
+
+
+def account_state(username: str | None) -> AccountState:
+    """The reload-surviving state of one portal account."""
+    return _ACCOUNT_STATES.setdefault(account_unique_id(username), AccountState())
+
+
+def reset_account_states_for_tests() -> None:
+    """Only the test suite has any business calling this - production has no
+    situation in which forgetting an account's memory is correct."""
+    _ACCOUNT_STATES.clear()
+
+
 class ModuleRef(NamedTuple):
     """One module of one device, as the portal addresses it.
 

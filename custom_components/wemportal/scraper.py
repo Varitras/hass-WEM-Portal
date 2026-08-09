@@ -27,6 +27,7 @@ from .exceptions import (
     PortalMaintenanceError,
     ServerError,
 )
+from .models import account_state
 from .utils import (
     maintenance_notice,
     parse_portal_number,
@@ -103,14 +104,7 @@ def _unit_from_name(name: str) -> str:
     return ""
 
 
-# Keys already reported as colliding, so a portal that lists two identical
-# rows does not say so on every single cycle. Module level for the same
-# reason as utils._MARKER_REPORTED: the scraper object outlives a cycle but
-# not a reload, and this is about the page, not about one object's lifetime.
-_DUPLICATE_ROWS: set[str] = set()
-
-
-def _report_duplicate_row(key, panel, row_name) -> None:
+def _report_duplicate_row(key, panel, row_name, reported) -> None:
     """Say that one reading has just overwritten another.
 
     The parser assigns into the output by key, which overwrites without a
@@ -129,9 +123,9 @@ def _report_duplicate_row(key, panel, row_name) -> None:
     observed to have. A real log will say which of the two it is, and that is
     what a fix should be built on.
     """
-    if key in _DUPLICATE_ROWS:
+    if key in reported:
         return
-    _DUPLICATE_ROWS.add(key)
+    reported.add(key)
     _LOGGER.warning(
         "Two rows of the WEM Portal expert page produce the same sensor (%s): "
         "panel %r, row %r. The later one wins and the earlier reading is lost, "
@@ -151,6 +145,9 @@ class WemPortalScraper:
     def __init__(self, username, password, cookie=None, budget=None):
         self.username = username
         self.password = password
+        # Once-per-subject warning memory, surviving the reload that rebuilds
+        # this object. See models.AccountState.
+        self._account_state = account_state(username)
         self.cookie = cookie if cookie else {}
         self.session = requests.Session(impersonate="chrome110")
         # Optional callable returning the seconds left of the poll cycle this
@@ -250,7 +247,9 @@ class WemPortalScraper:
                 raise PortalMaintenanceError(notice)
             # Not acted on here - but worth knowing about, because it is the
             # open question that keeps the check from being universal.
-            report_unexpected_maintenance_marker(notice, what)
+            report_unexpected_maintenance_marker(
+                notice, what, self._account_state.maintenance_markers_reported
+            )
 
     def _load_expert_page(self):
         """GET the main portal page and POST to select the 'Expert' tab.
@@ -651,7 +650,12 @@ class WemPortalScraper:
                 heading, panel_key, rows
             ):
                 if name in output:
-                    _report_duplicate_row(name, heading, raw_name)
+                    _report_duplicate_row(
+                        name,
+                        heading,
+                        raw_name,
+                        self._account_state.duplicate_rows_reported,
+                    )
                 output[name] = sensor
 
         # A page that parsed to nothing is not a successful scrape. The XPaths

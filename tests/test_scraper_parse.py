@@ -708,11 +708,8 @@ def test_the_report_survives_unparseable_html(scraper, caplog):
 
 @pytest.fixture(autouse=True)
 def _forget_reported_duplicates():
-    from custom_components.wemportal import scraper as scraper_module
 
-    scraper_module._DUPLICATE_ROWS.clear()
     yield
-    scraper_module._DUPLICATE_ROWS.clear()
 
 
 def test_the_same_row_twice_in_one_panel_is_reported(scraper, caplog):

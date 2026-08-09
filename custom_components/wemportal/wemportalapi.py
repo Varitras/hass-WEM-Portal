@@ -61,7 +61,7 @@ from .const import (
     WEM_INVALID_PARAMETER_STATUS,
     WemDataType,
 )
-from .models import ModuleRef
+from .models import ModuleRef, account_state
 from .exceptions import (
     ApiBusyError,
     AuthError,
@@ -109,13 +109,8 @@ DEVICE_STATUS_ROWS = (
 )
 
 
-# Devices whose refresh answered without a JobID, so the warning below is
-# raised once per device instead of on every cycle.
-_MISSING_JOB_ID_REPORTED: set[str] = set()
-
-
-# The 403 backoffs live here rather than on the instance, and that placement
-# is the fix for a defect, not a style choice.
+# The IP-wide 403 backoff lives here rather than on the instance, and that
+# placement is the fix for a defect, not a style choice.
 #
 # They used to be instance state carried forward by whoever built the next
 # WemPortalApi. That works only where there IS a previous instance to copy
@@ -128,13 +123,13 @@ _MISSING_JOB_ID_REPORTED: set[str] = set()
 #
 # Nothing can forget to pass on what it never has to pass on.
 #
-# The global one is global because the limit is: the portal counts requests
-# per IP, so a 403 earned by one account is a statement about every account
-# behind the same address. The expert one is per account on purpose - a 403
-# there is frequently one rejected request rather than an IP-wide limit (see
-# activate_expert_cooldown), so it must not spread.
+# This one stays a module global ON PURPOSE, whitelisted by the guard test:
+# the portal counts requests per IP, so a 403 earned by one account is a
+# statement about every account behind the same address - it is
+# installation-wide, not account state. The expert backoff, per account by
+# design, lives in models.AccountState with the rest of the reload-surviving
+# account memory.
 _BLOCKED_UNTIL = 0.0
-_EXPERT_BLOCKED_UNTIL: dict[str, float] = {}
 
 
 def _extend_cooldown(current: float, until: float) -> float:
@@ -143,23 +138,24 @@ def _extend_cooldown(current: float, until: float) -> float:
 
 
 def reset_cooldowns_for_tests() -> None:
-    """Drop both backoffs. Only the test suite has any business calling this;
-    production has no situation in which forgetting a 403 is correct."""
+    """Drop the IP-wide backoff. Only the test suite has any business calling
+    this; production has no situation in which forgetting a 403 is correct.
+    The per-account state has its own reset in models."""
     global _BLOCKED_UNTIL
     _BLOCKED_UNTIL = 0.0
-    _EXPERT_BLOCKED_UNTIL.clear()
 
 
-def _report_missing_job_id(device_id):
+def _report_missing_job_id(device_id, reported):
     """Say once that a device started no identifiable measurement job.
 
     A read without a JobID is answered from the most recent job, which may be
     the PREVIOUS measurement served as current. Whether a healthy portal ever
     answers this way is not established - this is what would establish it.
+    `reported` is the account's own once-per-device memory.
     """
-    if device_id in _MISSING_JOB_ID_REPORTED:
+    if device_id in reported:
         return
-    _MISSING_JOB_ID_REPORTED.add(device_id)
+    reported.add(device_id)
     _LOGGER.warning(
         "Device %s answered the measurement refresh without a JobID. The "
         "read then returns whichever job the portal considers newest, which "
@@ -193,6 +189,9 @@ class WemPortalApi:
         """
         self.username = username
         self.password = password
+        # The account's reload-surviving memory: expert backoff, auth streak,
+        # once-per-subject warnings. See models.AccountState.
+        self._account_state = account_state(username)
         self._init_from_config(config)
         self._init_from_storage(
             existing_data,
@@ -230,12 +229,12 @@ class WemPortalApi:
         API or scraper pauses the expert path too, because
         check_expert_cooldown() consults check_cooldown() first.
         """
-        return _EXPERT_BLOCKED_UNTIL.get(self.username, 0.0)
+        return self._account_state.expert_blocked_until
 
     @_expert_blocked_until.setter
     def _expert_blocked_until(self, value: float) -> None:
-        _EXPERT_BLOCKED_UNTIL[self.username] = _extend_cooldown(
-            _EXPERT_BLOCKED_UNTIL.get(self.username, 0.0), value or 0.0
+        self._account_state.expert_blocked_until = _extend_cooldown(
+            self._account_state.expert_blocked_until, value or 0.0
         )
 
     def _init_from_config(self, config):
@@ -2701,7 +2700,9 @@ class WemPortalApi:
                 # ever been observed present. So this measures instead of
                 # guessing: one warning per device, and the decision can be
                 # made on evidence. Same approach as the maintenance marker.
-                _report_missing_job_id(device_id)
+                _report_missing_job_id(
+                    device_id, self._account_state.missing_job_ids_reported
+                )
             else:
                 read_data = {**data, "JobID": ticket.job_id}
             time.sleep(5)

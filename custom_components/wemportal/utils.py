@@ -390,13 +390,7 @@ def unit_to_state_class(unit):
     }.get(unit)  # return None if no state class is available
 
 
-# Request labels for which an unexpected maintenance marker has already been
-# reported. Bounded by the number of request sites, so this can never grow
-# without limit - and one report per site is all the evidence needed.
-_MARKER_REPORTED: set[str] = set()
-
-
-def report_unexpected_maintenance_marker(notice, what) -> None:
+def report_unexpected_maintenance_marker(notice, what, reported) -> None:
     """Note a maintenance marker on a response that is not treated as downtime.
 
     The marker check is currently enabled only where a real maintenance page
@@ -416,10 +410,10 @@ def report_unexpected_maintenance_marker(notice, what) -> None:
     logging - and once per request label, so a marker that IS on every page
     cannot flood the log.
     """
-    if what in _MARKER_REPORTED:
+    if what in reported:
         _LOGGER.debug("Maintenance marker seen again on the %s.", what)
         return
-    _MARKER_REPORTED.add(what)
+    reported.add(what)
     _LOGGER.warning(
         "The WEM Portal maintenance marker appeared in the response to the "
         "%s, which is NOT treated as downtime. If the portal was working "

@@ -728,7 +728,7 @@ async def async_unload_entry(
             data.abort_unload()
         return False
 
-    forget_auth_failures(config_entry.entry_id)
+    forget_auth_failures(config_entry)
     # runtime_data is still readable here - Home Assistant drops it only
     # after this returns True. Close the API + scraper HTTP sessions so
     # they don't linger open after the entry is unloaded/reloaded.

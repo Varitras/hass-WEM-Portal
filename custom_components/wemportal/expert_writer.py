@@ -83,6 +83,7 @@ from .exceptions import (
     PortalMaintenanceError,
     ServerError,
 )
+from .models import account_state
 from .utils import (
     maintenance_notice,
     parse_portal_number,
@@ -417,6 +418,9 @@ class WemPortalExpertClient:
     ):
         self.username = username
         self.password = password
+        # Once-per-subject warning memory shared with the scraper - both talk
+        # to the same portal for the same account. See models.AccountState.
+        self._account_state = account_state(username)
         # Shared, in-memory cookie cache for session reuse across operations
         # (a plain dict owned by the WemPortalApi, passed by reference, so
         # every short-lived client instance sees the same one). Structure:
@@ -532,7 +536,9 @@ class WemPortalExpertClient:
                 raise PortalMaintenanceError(notice)
             # Not acted on here - but worth knowing about, because it is the
             # open question that keeps the check from being universal.
-            report_unexpected_maintenance_marker(notice, what)
+            report_unexpected_maintenance_marker(
+                notice, what, self._account_state.maintenance_markers_reported
+            )
 
     def _raise_if_forbidden(self, response):
         if response.status_code == 403:

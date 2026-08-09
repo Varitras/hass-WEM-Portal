@@ -2158,19 +2158,19 @@ async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
     assert raised is not None, (
         "the reauth threshold was never reached across setup retries"
     )
-    coord_mod.forget_auth_failures(entry.entry_id)
+    coord_mod.forget_auth_failures(entry)
 
 
 async def test_a_successful_cycle_clears_the_auth_failure_count(hass):
     """A transient login hiccup must not accumulate towards reauth forever."""
-    from custom_components.wemportal import coordinator as coord_mod
+    from custom_components.wemportal.models import account_state
 
     entry = await _setup(hass, _entry(hass))
-    coord_mod._AUTH_FAILURES[entry.entry_id] = 2
+    account_state(USER).auth_failures = 2
 
     await entry.runtime_data.coordinator._async_update_data()
 
-    assert entry.entry_id not in coord_mod._AUTH_FAILURES
+    assert account_state(USER).auth_failures == 0
 
 
 async def test_entities_of_an_offline_device_go_unavailable(hass, monkeypatch):
@@ -2312,7 +2312,6 @@ async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):
     """
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
-    from custom_components.wemportal import coordinator as coord_mod
     from custom_components.wemportal.exceptions import WemPortalError
 
     entry = await _setup(hass, _entry(hass))
@@ -2340,7 +2339,9 @@ async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):
             await coordinator._async_update_data()
 
     assert coordinator.num_auth_failed == 0, "the streak was not broken"
-    assert entry.entry_id not in coord_mod._AUTH_FAILURES
+    from custom_components.wemportal.models import account_state
+
+    assert account_state(USER).auth_failures == 0
 
 
 async def test_reauth_reloads_the_entry_exactly_once(hass, monkeypatch):
