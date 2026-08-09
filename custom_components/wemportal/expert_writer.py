@@ -242,23 +242,33 @@ def parse_parameter_list(html_content) -> list:
         header = panel.xpath(".//span[contains(@id, '_HeaderTemplate_lblHeaderText')]")
         group = header[0].text_content().strip() if header else ""
         for icon in panel.xpath(".//input[contains(@class, 'EditIcon')]"):
-            match = _EDIT_LINK_RE.search(icon.get("onclick") or "")
-            if not match:
-                continue
-            row = icon.xpath("./ancestor::tr[1]")
-            if not row:
-                continue
-            name = row[0].xpath(".//span[contains(@class, 'simpleDataName')]")
-            value = row[0].xpath(".//span[contains(@class, 'simpleDataValue')]")
-            results.append(
-                {
-                    "group": group,
-                    "name": name[0].text_content().strip() if name else "",
-                    "entityvalue": match.group(1),
-                    "value": value[0].text_content().strip() if value else "",
-                }
-            )
+            parameter = _parameter_from_edit_icon(icon, group)
+            if parameter is not None:
+                results.append(parameter)
     return results
+
+
+def _parameter_from_edit_icon(icon, group) -> dict | None:
+    """The parameter an edit icon stands for, or None if it stands for none.
+
+    Two ways to be none, and neither is an error: the icon's onclick carries
+    no entityvalue, or it sits outside a table row and there is nothing to
+    read a name and a value from.
+    """
+    match = _EDIT_LINK_RE.search(icon.get("onclick") or "")
+    if not match:
+        return None
+    row = icon.xpath("./ancestor::tr[1]")
+    if not row:
+        return None
+    name = row[0].xpath(".//span[contains(@class, 'simpleDataName')]")
+    value = row[0].xpath(".//span[contains(@class, 'simpleDataValue')]")
+    return {
+        "group": group,
+        "name": name[0].text_content().strip() if name else "",
+        "entityvalue": match.group(1),
+        "value": value[0].text_content().strip() if value else "",
+    }
 
 
 def parse_module_list(html_content) -> list:

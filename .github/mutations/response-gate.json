@@ -681,8 +681,8 @@
   {
     "label": "scrape freshness: losing the unit must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                if new_val.get(\"unit\") in (None, \"\"):",
-    "new": "                if False:",
+    "old": "        if row.get(\"unit\") not in (None, \"\"):\n            return",
+    "new": "        return",
     "tests": "the_unit_is_still_carried_over"
   },
   {
@@ -2221,8 +2221,8 @@
   {
     "label": "discovery: a parameter alone in its section skipped again",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            match = _EDIT_LINK_RE.search(icon.get(\"onclick\") or \"\")\n            if not match:\n                continue",
-    "new": "            match = _EDIT_LINK_RE.search(icon.get(\"onclick\") or \"\")\n            if not match or \"readdata=False\" in (icon.get(\"onclick\") or \"\"):\n                continue",
+    "old": "    match = _EDIT_LINK_RE.search(icon.get(\"onclick\") or \"\")\n    if not match:\n        return None",
+    "new": "    match = _EDIT_LINK_RE.search(icon.get(\"onclick\") or \"\")\n    if not match or \"readdata=False\" in (icon.get(\"onclick\") or \"\"):\n        return None",
     "tests": "a_parameter_alone_in_its_section_is_offered_by_discovery_too"
   },
   {

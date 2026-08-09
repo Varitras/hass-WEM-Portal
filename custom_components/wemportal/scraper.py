@@ -605,6 +605,24 @@ class WemPortalScraper:
             },
         )
 
+    def _panel_readings(self, heading, panel_key, rows) -> list:
+        """The rows of one panel that yielded a reading, in page order.
+
+        Returns them rather than collecting into a dict: whether a name has
+        been seen before is a question about the WHOLE page, and answering it
+        per panel would miss two panels sharing a heading.
+        """
+        readings = []
+        for row in rows:
+            try:
+                reading = self._row_sensor(heading, panel_key, row)
+            except (IndexError, ValueError):
+                continue
+            if reading is None:
+                continue
+            readings.append(reading)
+        return readings
+
     def parse_expert_page(self, html_content, source="the expert page", required=True):
         """Turn the expert page into sensor dicts.
 
@@ -623,14 +641,13 @@ class WemPortalScraper:
             if panel is None:
                 continue
             heading, panel_key, rows = panel
-            for row in rows:
-                try:
-                    reading = self._row_sensor(heading, panel_key, row)
-                except (IndexError, ValueError):
-                    continue
-                if reading is None:
-                    continue
-                name, raw_name, sensor = reading
+            # Collected into ONE output across all panels, because a
+            # collision can also be two panels carrying the same heading -
+            # see _report_duplicate_row. Per-panel dicts would hide exactly
+            # that half of it.
+            for name, raw_name, sensor in self._panel_readings(
+                heading, panel_key, rows
+            ):
                 if name in output:
                     _report_duplicate_row(name, heading, raw_name)
                 output[name] = sensor

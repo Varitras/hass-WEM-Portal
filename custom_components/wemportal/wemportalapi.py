@@ -981,6 +981,41 @@ class WemPortalApi:
             )
         return gone
 
+    def _prepare_scraped_row(self, row, previous) -> None:
+        """Translate the row's name and keep a unit this scrape did not bring.
+
+        Mutates `row` in place, which is what the caller stores. Split out of
+        the merge loop, where it sat two levels deep and pushed the unit test
+        below to three.
+
+        The old VALUE is deliberately NOT carried over when this scrape has
+        none. It used to be, to avoid "a gap in the history, even though the
+        previous value is still very likely accurate". Measured on a live
+        installation, that premise does not hold: the portal renders "--" for
+        a value it does not currently have, the scrape maps that to None, and
+        the sensor then reported a setpoint of 50.5 degrees for three hours
+        while the portal and the heat pump both showed nothing. Only
+        reloading the integration cleared it.
+
+        A gap is the truthful record of an hour with no reading. A flat line
+        at the last value is not, and it is the shape automations act on.
+
+        We only get here after a scrape that produced rows at all - a page
+        with no readings is rejected earlier - so a row that came back
+        without a value is the portal saying it has none, not evidence that
+        the read went wrong.
+        """
+        if "friendlyName" in row:
+            row["friendlyName"] = translate(self.language, row["friendlyName"])
+
+        # Preserve the old unit if the current scrape is missing it (e.g. value
+        # is "--"). This prevents Home Assistant from complaining about unit
+        # changes.
+        if row.get("unit") not in (None, ""):
+            return
+        if isinstance(previous, dict) and previous.get("unit") not in (None, ""):
+            row["unit"] = previous.get("unit")
+
     def _merge_webscraping_data(self, device_id, webscraping_data):
         if str(device_id) not in self.data:
             self.data[str(device_id)] = {}
@@ -991,42 +1026,7 @@ class WemPortalApi:
 
         for key, new_val in webscraping_data.items():
             if isinstance(new_val, dict):
-                if "friendlyName" in new_val:
-                    new_val["friendlyName"] = translate(
-                        self.language, new_val["friendlyName"]
-                    )
-
-                # Preserve the old unit if the current scrape is missing it (e.g. value is "--")
-                # This prevents Home Assistant from complaining about unit changes.
-                if new_val.get("unit") in (None, ""):
-                    old_val = self.data[str(device_id)].get(key)
-                    if isinstance(old_val, dict) and old_val.get("unit") not in (
-                        None,
-                        "",
-                    ):
-                        new_val["unit"] = old_val.get("unit")
-
-                # The old value is deliberately NOT carried over when this
-                # scrape has none.
-                #
-                # It used to be, to avoid "a gap in the history, even though
-                # the previous value is still very likely accurate". Measured
-                # on a live installation, that premise does not hold: the
-                # portal renders "--" for a value it does not currently have,
-                # the scrape maps that to None, and the sensor then reported a
-                # setpoint of 50.5 degrees for three hours while the portal
-                # and the heat pump both showed nothing. Only reloading the
-                # integration cleared it.
-                #
-                # A gap is the truthful record of an hour with no reading. A
-                # flat line at the last value is not, and it is the shape
-                # automations act on.
-                #
-                # We only get here after a scrape that produced rows at all -
-                # a page with no readings is rejected earlier - so a row that
-                # came back without a value is the portal saying it has none,
-                # not evidence that the read went wrong.
-
+                self._prepare_scraped_row(new_val, self.data[str(device_id)].get(key))
             self.data[str(device_id)][key] = new_val
 
         # Same reasoning for a row that stopped coming back entirely: it is
