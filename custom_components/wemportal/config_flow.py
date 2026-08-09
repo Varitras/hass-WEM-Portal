@@ -188,9 +188,8 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 # up at least once - a disabled or failing entry never is.
                 # Until then the check above cannot see it, so compare the
                 # normalised usernames as well. Costs nothing - no network.
-                for existing in self._async_current_entries(include_ignore=False):
-                    if account_unique_id(existing.data.get(CONF_USERNAME)) == account:
-                        return self.async_abort(reason="already_configured")
+                if self._account_already_has_an_entry(account):
+                    return self.async_abort(reason="already_configured")
 
                 info = await validate_input(self.hass, user_input)
                 return self.async_create_entry(
@@ -241,6 +240,44 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         return await self.async_step_reauth_confirm()
 
+    def _account_already_has_an_entry(self, account) -> bool:
+        """Whether some existing entry logs into the same portal account.
+
+        The unique_id check above misses an entry created before unique_ids
+        were used: it only gets one from _backfill_account_unique_id during
+        setup, which a disabled or failing entry never reaches. Comparing the
+        normalised usernames costs no network.
+        """
+        return any(
+            account_unique_id(existing.data.get(CONF_USERNAME)) == account
+            for existing in self._async_current_entries(include_ignore=False)
+        )
+
+    async def _credential_error(self, entry, new_data) -> str | None:
+        """The error key these credentials produce, or None if they work.
+
+        Split out because its four handlers sat three levels deep in the step
+        below, where each one cost the reader two enclosing branches that have
+        nothing to do with what the portal answered.
+        """
+        # Validate against the mode the entry actually runs in (options
+        # override the value stored at initial setup).
+        effective_mode = entry.options.get(
+            CONF_MODE, new_data.get(CONF_MODE, DEFAULT_MODE)
+        )
+        try:
+            await validate_input(self.hass, {**new_data, CONF_MODE: effective_mode})
+        except RateLimited:
+            return "rate_limited"
+        except CannotConnect:
+            return "cannot_connect"
+        except InvalidAuth:
+            return "invalid_auth"
+        except Exception:
+            _LOGGER.exception("Unexpected exception during reauth")
+            return "unknown"
+        return None
+
     async def async_step_reauth_confirm(self, user_input=None):
         """Ask for fresh credentials, validate them, update and reload."""
         entry = getattr(self, "_reauth_entry", None)
@@ -260,25 +297,8 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "wrong_account"
             else:
                 new_data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
-                # Validate against the mode the entry actually runs in (options
-                # override the value stored at initial setup).
-                effective_mode = entry.options.get(
-                    CONF_MODE, new_data.get(CONF_MODE, DEFAULT_MODE)
-                )
-                try:
-                    await validate_input(
-                        self.hass, {**new_data, CONF_MODE: effective_mode}
-                    )
-                except RateLimited:
-                    errors["base"] = "rate_limited"
-                except CannotConnect:
-                    errors["base"] = "cannot_connect"
-                except InvalidAuth:
-                    errors["base"] = "invalid_auth"
-                except Exception:
-                    _LOGGER.exception("Unexpected exception during reauth")
-                    errors["base"] = "unknown"
-                else:
+                failure = await self._credential_error(entry, new_data)
+                if failure is None:
                     # Reloads even when the entry is unchanged, which is the
                     # whole point here: someone re-entering the SAME password
                     # is telling us the portal rejected a login it should
@@ -287,6 +307,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     # report success. There is no update listener to collide
                     # with (see async_setup_entry).
                     return self.async_update_reload_and_abort(entry, data=new_data)
+                errors["base"] = failure
 
         return self.async_show_form(
             step_id="reauth_confirm",

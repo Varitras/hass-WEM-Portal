@@ -76,58 +76,76 @@ def _migrate_device_unique_ids(registry, config_entry, device_id, data) -> bool:
             continue
 
         new_id = get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id)
-
-        # Build a list of possible old unique_ids
-        friendly_name = values.get("friendlyName", "")
         platform = values.get("platform", "sensor")
-
-        possible_old_ids = []
-        if unique_id != "ConnectionStatus":
-            possible_old_ids.append(unique_id)
-            possible_old_ids.append(f"{device_id}-{unique_id}")
-
-        if friendly_name:
-            possible_old_ids.append(friendly_name)
-            possible_old_ids.append(f"{device_id}-{friendly_name}")
-            possible_old_ids.append(
-                get_wemportal_unique_id(config_entry.entry_id, device_id, friendly_name)
-            )
-
-        parameter_id = values.get("ParameterID")
-        if parameter_id:
-            possible_old_ids.append(parameter_id)
-            possible_old_ids.append(f"{device_id}-{parameter_id}")
-            possible_old_ids.append(
-                get_wemportal_unique_id(config_entry.entry_id, device_id, parameter_id)
-            )
-
-        # Try to find an entity under any of these old ids
-        for old_id in possible_old_ids:
-            if not old_id:
-                continue
-            name_id = registry.async_get_entity_id(platform, DOMAIN, old_id)
-            if name_id is not None:
-                new_entity_id = registry.async_get_entity_id(platform, DOMAIN, new_id)
-                if new_entity_id is not None and new_entity_id != name_id:
-                    _LOGGER.info(
-                        "Found entity with old id and an entity with a new unique_id. Preserving old entity..."
-                    )
-                    registry.async_remove(new_entity_id)
-
-                if old_id != new_id:
-                    _LOGGER.info(
-                        "Migrating entity %s from old id %s to new unique_id %s",
-                        name_id,
-                        old_id,
-                        new_id,
-                    )
-                    registry.async_update_entity(
-                        name_id,
-                        new_unique_id=new_id,
-                    )
-                    change = True
-                break
+        old_ids = _possible_old_unique_ids(config_entry, device_id, unique_id, values)
+        if _adopt_entity_under_its_old_id(registry, platform, old_ids, new_id):
+            change = True
     return change
+
+
+def _possible_old_unique_ids(config_entry, device_id, unique_id, values) -> list:
+    """Every unique_id shape a past release may have registered this under.
+
+    Three sources - the key itself, the friendly name and the ParameterID -
+    each in up to three spellings. Assembling the list is a different job
+    from searching it, and inline it put the search two levels deep.
+    """
+    friendly_name = values.get("friendlyName", "")
+    parameter_id = values.get("ParameterID")
+
+    possible_old_ids = []
+    if unique_id != "ConnectionStatus":
+        possible_old_ids.append(unique_id)
+        possible_old_ids.append(f"{device_id}-{unique_id}")
+
+    if friendly_name:
+        possible_old_ids.append(friendly_name)
+        possible_old_ids.append(f"{device_id}-{friendly_name}")
+        possible_old_ids.append(
+            get_wemportal_unique_id(config_entry.entry_id, device_id, friendly_name)
+        )
+
+    if parameter_id:
+        possible_old_ids.append(parameter_id)
+        possible_old_ids.append(f"{device_id}-{parameter_id}")
+        possible_old_ids.append(
+            get_wemportal_unique_id(config_entry.entry_id, device_id, parameter_id)
+        )
+    return possible_old_ids
+
+
+def _adopt_entity_under_its_old_id(registry, platform, old_ids, new_id) -> bool:
+    """Give the first entity found under an old id the current one.
+
+    Stops at the first hit whether or not it changed anything: the entity has
+    been identified, and carrying on would match the same one again under
+    another of its old spellings.
+    """
+    for old_id in old_ids:
+        if not old_id:
+            continue
+        name_id = registry.async_get_entity_id(platform, DOMAIN, old_id)
+        if name_id is None:
+            continue
+
+        new_entity_id = registry.async_get_entity_id(platform, DOMAIN, new_id)
+        if new_entity_id is not None and new_entity_id != name_id:
+            _LOGGER.info(
+                "Found entity with old id and an entity with a new unique_id. Preserving old entity..."
+            )
+            registry.async_remove(new_entity_id)
+
+        if old_id == new_id:
+            return False
+        _LOGGER.info(
+            "Migrating entity %s from old id %s to new unique_id %s",
+            name_id,
+            old_id,
+            new_id,
+        )
+        registry.async_update_entity(name_id, new_unique_id=new_id)
+        return True
+    return False
 
 
 def _remove_entities_from_a_previous_platform(

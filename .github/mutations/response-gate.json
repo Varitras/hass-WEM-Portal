@@ -1381,8 +1381,8 @@
   {
     "label": "blocked ip: leaving the re-authentication step behind must be noticed",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "                except RateLimited:\n                    errors[\"base\"] = \"rate_limited\"",
-    "new": "                except RateLimited:\n                    errors[\"base\"] = \"cannot_connect\"",
+    "old": "        except RateLimited:\n            return \"rate_limited\"",
+    "new": "        except RateLimited:\n            return \"cannot_connect\"",
     "tests": "both_flows_have_a_message_for_a_blocked_ip"
   },
   {

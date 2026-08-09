@@ -2810,15 +2810,20 @@ def test_wrong_credentials_are_still_wrong_credentials(monkeypatch):
 
 
 def test_both_flows_have_a_message_for_a_blocked_ip():
-    """The step catches it; without the translation the user gets a raw key."""
+    """The step catches it; without the translation the user gets a raw key.
+
+    Named per flow rather than counted: the setup step assigns the key
+    inline, the re-authentication step returns it from _credential_error, and
+    the options flow has a third spelling again. A single count over the file
+    cannot tell which of the three went missing.
+    """
     import pathlib
 
     from custom_components.wemportal import config_flow
 
     source = pathlib.Path(config_flow.__file__).read_text(encoding="utf-8")
-    assert source.count('errors["base"] = "rate_limited"') == 2, (
-        "the setup step and the re-authentication step must both say it"
-    )
+    assert 'errors["base"] = "rate_limited"' in source, "the setup step must say it"
+    assert 'return "rate_limited"' in source, "the re-authentication step must say it"
 
     for name in ("translations/en.json", "translations/de.json"):
         assert _catalogue(name)["config"]["error"].get("rate_limited"), name
