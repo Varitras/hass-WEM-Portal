@@ -79,9 +79,18 @@ def account_state(username: str | None) -> AccountState:
     return _ACCOUNT_STATES.setdefault(account_unique_id(username), AccountState())
 
 
+def forget_account_state(username: str | None) -> None:
+    """Drop one account's remembered state - config entry removal only.
+
+    The state exists to survive reloads, so nothing short of the account
+    actually leaving the installation may call this.
+    """
+    _ACCOUNT_STATES.pop(account_unique_id(username), None)
+
+
 def reset_account_states_for_tests() -> None:
     """Only the test suite has any business calling this - production has no
-    situation in which forgetting an account's memory is correct."""
+    other situation in which forgetting EVERY account's memory is correct."""
     _ACCOUNT_STATES.clear()
 
 

@@ -7,6 +7,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **A rate-limit block now shows up in Repairs, in your language.** A 403
+  cooldown pauses all polling for a long stretch - the one state a user
+  notices and could previously explain only from the log. It is a repair
+  issue while the block holds and clears itself with the next successful
+  update.
 - **A diagnostics download, written to be shareable.** Home Assistant's
   three-dot menu on the integration now offers a diagnostics report:
   coordinator health, readings and module counts. Credentials, configured
@@ -16,6 +21,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   hand-picking log lines.
 
 ### Changed
+- **The expert auto-poll reports a persistently unreadable parameter in
+  Repairs, not as a notification.** Same three-strike rule, same two
+  wordings (configured id vs. portal refusal) - but translatable, collected
+  where Home Assistant gathers actionable problems, and taken back down
+  automatically once the parameter reads again.
 - **After a restart an expert parameter restores its value, never its range.**
   A stored range is a copy of a reading that no longer exists, and Home
   Assistant checks the published range before this integration is asked - so
@@ -25,6 +35,17 @@ versioning follows [Semantic Versioning](https://semver.org/).
   typing box, not a slider, until the first read or write.
 
 ### Fixed
+- **Removing the integration removes its traces.** The module cache and the
+  scraper device id stayed in `.storage` forever, the account's remembered
+  state outlived the account, and a repair issue could outlive the entry
+  that raised it. Removal now deletes both stores, the entry's issues and
+  the account memory.
+- **A cleared expert slot no longer leaves a dead number entity behind.**
+  The registry entry of a slot that is no longer configured (or of every
+  slot, once expert write is off) was never offered again and sat
+  permanently unavailable. It is removed on the next reload; because the
+  unique_id is stable, re-configuring the slot re-creates the entity under
+  its old entity_id, so recorded history survives.
 - **New bounds and options reach entities that already exist.** Rediscovery
   replaces the parameter descriptions once a day and every cycle delivers
   fresh metadata - but Number published its construction-time range forever

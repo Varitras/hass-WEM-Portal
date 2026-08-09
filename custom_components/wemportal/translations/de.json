@@ -103,6 +103,20 @@
       "discovery_aborted": "Das WEM-Portal-Konto, für das gesucht wurde, wurde neu geladen oder entfernt, deshalb wurde die Suche abgebrochen. Es wurde nichts geändert. Öffne die Optionen erneut, sobald die Integration fertig geladen ist."
     }
   },
+  "issues": {
+    "rate_limited": {
+      "title": "WEM Portal weist Anfragen ab (Rate-Limit)",
+      "description": "Das WEM Portal weist Anfragen aus diesem Netz gerade ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Die Abfrage pausiert und läuft von selbst wieder an; jeder weitere Versuch verlängert die Sperre. An Benutzername und Passwort liegt es nicht. Diese Meldung verschwindet mit der nächsten erfolgreichen Aktualisierung."
+    },
+    "expert_poll_unreadable_id": {
+      "title": "Fachmann-Parameter „{name}“ kann nicht angefragt werden",
+      "description": "Die konfigurierte ID für „{name}“ ist keine lesbare Parameter-ID und wurde deshalb nie angefragt. In den Integrationsoptionen korrigieren oder leeren."
+    },
+    "expert_poll_read_failures": {
+      "title": "Fachmann-Parameter „{name}“ lässt sich wiederholt nicht lesen",
+      "description": "„{name}“ konnte {failures} Mal in Folge nicht gelesen werden, während andere Parameter erfolgreich gelesen wurden. Meist ist die ID in den Integrationsoptionen falsch, das Portal kann aber auch einen einzelnen Parameter ablehnen. Diese Meldung verschwindet, sobald der Parameter wieder gelesen wird."
+    }
+  },
   "services": {
     "set_expert_parameter": {
       "name": "Fachmann-Parameter setzen",

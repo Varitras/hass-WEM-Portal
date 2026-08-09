@@ -23,16 +23,27 @@ from typing import Any
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.issue_registry import (
+    IssueSeverity,
+    async_create_issue,
+    async_delete_issue,
+)
 
 from .const import (
     CONF_EXPERT_AUTO_POLL,
     CONF_EXPERT_POLL_INTERVAL,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
+    DOMAIN,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
 )
 from .exceptions import ExpertOperationAborted
 
 _LOGGER = logging.getLogger(__name__)
+
+# The issue_id stem of the per-parameter read-failure repair issue; the full
+# id is "{entry_id}_{stem}_{digest}", entry-prefixed so async_remove_entry
+# can clean it up by prefix (see tests/test_repairs.py).
+EXPERT_POLL_FAIL_ISSUE = "expert_poll_fail"
 
 # Fraction of extra, random delay added on top of the configured interval each
 # cycle (0..20%). Jitter is added ONLY upwards, so the effective interval is
@@ -327,12 +338,17 @@ class ExpertController:
                     and entityvalue not in self.fail_notified
                 ):
                     self.fail_notified.add(entityvalue)
-                    self._notify_read_failure(
+                    self._report_read_failure(
                         entity, self.fail_counts[entityvalue], unreadable_id
                     )
             elif state is not None:
+                # Read BEFORE the discard below forgets it: only a streak
+                # that was actually reported has an issue to take down.
+                was_reported = entityvalue in self.fail_notified
                 self.fail_counts.pop(entityvalue, None)
                 self.fail_notified.discard(entityvalue)
+                if was_reported:
+                    self._clear_read_failure_issue(entityvalue)
             entity.apply_read_state(state)
 
     def apply_verified_write(self, entityvalue: str, state) -> None:
@@ -353,39 +369,52 @@ class ExpertController:
             if entity.entityvalue == entityvalue:
                 entity.apply_read_state(state)
 
-    def _notify_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
-        """Tell the user about a parameter that keeps not being read.
+    def _report_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
+        """Raise a repair issue for a parameter that keeps not being read.
 
-        The wording says only what is known. An id that never left the house
-        can only be the configured value; an id that was requested and failed
-        can be that OR the portal, and asserting the first sent people to
-        check a setting that was correct.
+        A repairs entry rather than a notification: it is translatable, it
+        lands where Home Assistant collects actionable problems, and the
+        recovery path can take it back down again (see apply_read).
+
+        Two separate translations, because they say only what is known. An
+        id that never left the house can only be the configured value; an id
+        that was requested and failed can be that OR the portal, and
+        asserting the first sent people to check a setting that was correct.
         """
         from .expert_writer import entityvalue_digest
 
-        entityvalue = entity.entityvalue
+        digest = entityvalue_digest(entity.entityvalue)
         if unreadable_id:
-            reason = (
-                f"The configured ID for '{entity.name}' is not a readable "
-                "parameter ID, so it was never requested. Fix or clear it in "
-                "the integration options."
+            async_create_issue(
+                self._hass,
+                DOMAIN,
+                f"{self._entry.entry_id}_{EXPERT_POLL_FAIL_ISSUE}_{digest}",
+                is_fixable=False,
+                severity=IssueSeverity.WARNING,
+                translation_key="expert_poll_unreadable_id",
+                translation_placeholders={"name": entity.name},
             )
-        else:
-            reason = (
-                f"Reading '{entity.name}' has failed {failures} times in a "
-                "row while other parameters were read successfully. That is "
-                "usually a wrong ID in the integration options, but the "
-                "portal can refuse a single parameter too."
-            )
-        self._hass.async_create_task(
-            self._hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "WEM Portal expert auto-poll",
-                    "message": reason,
-                    "notification_id": f"wemportal_poll_fail_{entityvalue_digest(entityvalue)}",
-                },
-                blocking=False,
-            )
+            return
+        async_create_issue(
+            self._hass,
+            DOMAIN,
+            f"{self._entry.entry_id}_{EXPERT_POLL_FAIL_ISSUE}_{digest}",
+            is_fixable=False,
+            severity=IssueSeverity.WARNING,
+            translation_key="expert_poll_read_failures",
+            translation_placeholders={
+                "name": entity.name,
+                "failures": str(failures),
+            },
+        )
+
+    def _clear_read_failure_issue(self, entityvalue: str) -> None:
+        """Take the repair issue down once its parameter reads again."""
+        from .expert_writer import entityvalue_digest
+
+        digest = entityvalue_digest(entityvalue)
+        async_delete_issue(
+            self._hass,
+            DOMAIN,
+            f"{self._entry.entry_id}_{EXPERT_POLL_FAIL_ISSUE}_{digest}",
         )

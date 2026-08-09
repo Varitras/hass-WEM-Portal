@@ -16,7 +16,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry, entity_registry
+from homeassistant.helpers import device_registry, entity_registry, issue_registry
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
@@ -42,7 +42,7 @@ from .coordinator import (
     get_scraper_device_store,
 )
 from .exceptions import ExpertOperationAborted
-from .models import WemPortalConfigEntry, WemPortalData
+from .models import WemPortalConfigEntry, WemPortalData, forget_account_state
 from .utils import clamped_scan_interval, close_api_sessions, deserialize_modules
 from .wemportalapi import WemPortalApi
 
@@ -729,6 +729,10 @@ async def async_unload_entry(
         return False
 
     forget_auth_failures(config_entry)
+    # An unloaded entry cannot re-check what its issues report, so they come
+    # down with it; whatever still holds after a reload is re-raised within
+    # a few cycles by the code that watches it.
+    _async_delete_entry_issues(hass, config_entry.entry_id)
     # runtime_data is still readable here - Home Assistant drops it only
     # after this returns True. Close the API + scraper HTTP sessions so
     # they don't linger open after the entry is unloaded/reloaded.
@@ -744,3 +748,39 @@ async def async_unload_entry(
     async_release_holiday_service(hass, config_entry)
 
     return True
+
+
+def _async_delete_entry_issues(hass: HomeAssistant, entry_id: str) -> None:
+    """Drop every repair issue raised under this entry.
+
+    Issue ids start with the entry id by contract (tests/test_repairs.py
+    pins that), which is what makes deleting them by prefix possible.
+    Called from unload AND removal: an entry whose setup failed never
+    reaches async_unload_entry, but its first refresh can already have
+    raised the rate-limit issue.
+    """
+    registry = issue_registry.async_get(hass)
+    stale = [
+        issue_id
+        for domain, issue_id in registry.issues
+        if domain == DOMAIN and issue_id.startswith(f"{entry_id}_")
+    ]
+    for issue_id in stale:
+        issue_registry.async_delete_issue(hass, DOMAIN, issue_id)
+
+
+async def async_remove_entry(
+    hass: HomeAssistant, config_entry: WemPortalConfigEntry
+) -> None:
+    """Delete what a removed entry would otherwise leave behind for good.
+
+    Home Assistant calls this only when the entry is removed, not on an
+    unload or reload. Neither store was ever deleted before, so a removed
+    entry left its module cache and scraper device id in .storage forever -
+    and the account state kept remembering an account that no longer exists
+    in this installation.
+    """
+    await get_modules_store(hass, config_entry.entry_id).async_remove()
+    await get_scraper_device_store(hass, config_entry.entry_id).async_remove()
+    _async_delete_entry_issues(hass, config_entry.entry_id)
+    forget_account_state(config_entry.data.get(CONF_USERNAME))

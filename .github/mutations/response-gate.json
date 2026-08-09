@@ -2448,5 +2448,75 @@
     "old": "    return _ACCOUNT_STATES.setdefault(account_unique_id(username), AccountState())",
     "new": "    return _ACCOUNT_STATES.setdefault(username or \"\", AccountState())",
     "tests": "the_same_account_gets_the_same_memory"
+  },
+  {
+    "label": "remove: the module cache must be deleted with its entry",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    await get_modules_store(hass, config_entry.entry_id).async_remove()",
+    "new": "    pass",
+    "tests": "removing_the_entry_deletes_its_stores"
+  },
+  {
+    "label": "remove: the scraper device id must be deleted with its entry",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    await get_scraper_device_store(hass, config_entry.entry_id).async_remove()",
+    "new": "    pass",
+    "tests": "removing_the_entry_deletes_its_stores"
+  },
+  {
+    "label": "remove: the account memory must go with its account",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    forget_account_state(config_entry.data.get(CONF_USERNAME))",
+    "new": "    pass",
+    "tests": "removing_the_entry_deletes_its_stores"
+  },
+  {
+    "label": "remove: a never-loaded entry's issues must still be cleared",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    _async_delete_entry_issues(hass, config_entry.entry_id)\n    forget_account_state(config_entry.data.get(CONF_USERNAME))",
+    "new": "    forget_account_state(config_entry.data.get(CONF_USERNAME))",
+    "tests": "removing_a_never_loaded_entry_still_clears_its_issues"
+  },
+  {
+    "label": "unload: the entry's issues must come down with it",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    _async_delete_entry_issues(hass, config_entry.entry_id)\n    # runtime_data is still readable here",
+    "new": "    # runtime_data is still readable here",
+    "tests": "unloading_takes_the_entry_issues_down"
+  },
+  {
+    "label": "ghosts: a still-configured slot must survive the cleanup",
+    "path": "custom_components/wemportal/number.py",
+    "old": "            and registry_entry.unique_id.startswith(expert_prefix)\n            and registry_entry.unique_id not in expected_unique_ids",
+    "new": "            and registry_entry.unique_id.startswith(expert_prefix)",
+    "tests": "reload_drops_expert_entities_whose_slot_is_gone"
+  },
+  {
+    "label": "ghosts: entities outside the expert prefix must stay",
+    "path": "custom_components/wemportal/number.py",
+    "old": "            registry_entry.platform == DOMAIN\n            and registry_entry.unique_id.startswith(expert_prefix)",
+    "new": "            registry_entry.platform == DOMAIN",
+    "tests": "disabling_expert_write_drops_its_registry_entries"
+  },
+  {
+    "label": "rate limit: only a ForbiddenError is evidence of one",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                if isinstance(exc, ForbiddenError):\n                    async_create_issue(",
+    "new": "                if True:\n                    async_create_issue(",
+    "tests": "ordinary_failure_does_not_claim_a_rate_limit"
+  },
+  {
+    "label": "rate limit: the issue must clear on the success that ends it",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                async_delete_issue(\n                    self.hass,\n                    DOMAIN,\n                    f\"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}\",\n                )",
+    "new": "                pass",
+    "tests": "rate_limit_becomes_a_repair_issue_and_success_clears_it"
+  },
+  {
+    "label": "poll fail: the recovery must take the issue down",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "                if was_reported:\n                    self._clear_read_failure_issue(entityvalue)",
+    "new": "                if was_reported:\n                    pass",
+    "tests": "recovered_parameter_clears_its_failure_streak"
   }
 ]

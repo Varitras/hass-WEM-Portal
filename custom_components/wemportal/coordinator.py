@@ -12,6 +12,11 @@ from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry
+from homeassistant.helpers.issue_registry import (
+    IssueSeverity,
+    async_create_issue,
+    async_delete_issue,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -27,6 +32,7 @@ from .const import (
 from .exceptions import (
     ApiBusyError,
     AuthError,
+    ForbiddenError,
     PollDeadlineExceeded,
     PortalMaintenanceError,
     WemPortalError,
@@ -49,6 +55,13 @@ SCRAPER_DEVICE_STORAGE_VERSION = 1
 # A safety cap on how long the coordinator will ever wait between retries
 # after repeated failures (see the backoff logic in _async_update_data).
 MAX_BACKOFF_SECONDS = 6 * 3600  # 6 hours
+
+# The issue_id suffix of the repair issue that says the portal is
+# rate-limiting this installation; one constant so the create and the delete
+# site cannot drift apart. The full id is prefixed with the entry id, which
+# is the cleanup contract async_remove_entry relies on (tests/test_repairs.py
+# pins that, and requires the translation_key to be a literal at the call).
+RATE_LIMIT_ISSUE = "rate_limited"
 
 # Consecutive auth failures per config entry, kept OUTSIDE the coordinator.
 #
@@ -292,6 +305,13 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 )
                 self.num_failed = 0
                 self._reset_auth_failures()
+                # The rate-limit story ends with the first successful cycle;
+                # idempotent, so paying it every success is fine.
+                async_delete_issue(
+                    self.hass,
+                    DOMAIN,
+                    f"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}",
+                )
                 await self._async_save_modules_cache()
                 await self._async_save_scraper_device_id()
                 return fetched
@@ -364,13 +384,25 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # without an auth failure, which is evidence this one lacks.
                 _LOGGER.debug("Skipping this cycle: %s", exc)
                 raise UpdateFailed(str(exc)) from exc
-            # ForbiddenError was named here as well, which reads as two
-            # separate cases and is one: it derives from WemPortalError, so
-            # this clause always covered it. test_a_forbidden_error_is_a_
-            # wemportal_error keeps that true.
+            # ForbiddenError still shares this clause (it derives from
+            # WemPortalError; test_a_forbidden_error_is_a_wemportal_error
+            # keeps that true) - but it is the one failure the user WILL
+            # notice and cannot explain from anywhere but the log: a 403
+            # cooldown pauses all polling for a long stretch. Said in the
+            # repairs dashboard, in the user's language, until a successful
+            # cycle takes it back down.
             except WemPortalError as exc:
                 self.num_failed += 1
                 self._reset_auth_failures()
+                if isinstance(exc, ForbiddenError):
+                    async_create_issue(
+                        self.hass,
+                        DOMAIN,
+                        f"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}",
+                        is_fixable=False,
+                        severity=IssueSeverity.WARNING,
+                        translation_key="rate_limited",
+                    )
                 if self.num_failed >= 2:
                     # Reset the connection, do NOT rebuild the api object.
                     # Rebuilding meant carrying nine pieces of state across by

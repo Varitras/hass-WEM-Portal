@@ -53,6 +53,7 @@ async def async_setup_entry(
     # entry setup, so curl_cffi arrived anyway. That is why the pure option
     # helpers now live in expert_options.py - see the structural guard in
     # tests/test_security.py.
+    expert_entities = []
     if config_entry.options.get(CONF_EXPERT_WRITE, False):
         from .expert_writer import create_expert_number_entities
 
@@ -64,6 +65,13 @@ async def async_setup_entry(
             # __init__), which reads all configured ids in one shared session
             # and pushes the values back into these entities.
             config_entry.runtime_data.expert.attach_entities(expert_entities)
+
+    # AFTER the migration above: the migration renames a configured slot's
+    # old raw-id registry entry onto its digest id, and running the cleanup
+    # first would delete exactly the entry the migration exists to preserve.
+    _async_drop_ghost_expert_entities(
+        hass, config_entry, {entity.unique_id for entity in expert_entities}
+    )
 
 
 def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> None:
@@ -98,6 +106,37 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
             )
         except ValueError as exc:
             _LOGGER.warning("Could not migrate expert entity %s: %s", entity_id, exc)
+
+
+def _async_drop_ghost_expert_entities(hass, config_entry, expected_unique_ids) -> None:
+    """Drop registry entries of expert slots this entry no longer offers.
+
+    The unique_id of a cleared slot (or of every slot, once the expert option
+    is off) is never registered again, so its entry sat in the dashboard as a
+    permanently unavailable number - one more per cleared slot. Only entries
+    under this entry's own expert unique_id prefix are candidates; everything
+    else this integration registers stays untouched.
+
+    Deleting rather than keeping is safe for history: the digest unique_id is
+    stable, so re-configuring the slot re-creates the entity under its old
+    entity_id, which is what the recorder keys history by.
+    """
+    registry = entity_registry.async_get(hass)
+    expert_prefix = f"{config_entry.entry_id}:expert:"
+    for registry_entry in entity_registry.async_entries_for_config_entry(
+        registry, config_entry.entry_id
+    ):
+        is_ghost = (
+            registry_entry.platform == DOMAIN
+            and registry_entry.unique_id.startswith(expert_prefix)
+            and registry_entry.unique_id not in expected_unique_ids
+        )
+        if is_ghost:
+            _LOGGER.info(
+                "Removing expert entity %s: its slot is no longer configured.",
+                registry_entry.entity_id,
+            )
+            registry.async_remove(registry_entry.entity_id)
 
 
 class WemPortalNumber(WemPortalEntity, NumberEntity):

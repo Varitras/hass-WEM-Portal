@@ -180,6 +180,245 @@ async def test_unload_cleans_up(hass):
     assert not hasattr(entry, "runtime_data")
 
 
+async def test_removing_the_entry_deletes_its_stores_and_account_memory(
+    hass, hass_storage
+):
+    """Removal must take everything the entry left behind with it.
+
+    Neither store was ever deleted, so a removed (or re-added) entry left
+    its module cache and scraper device id in .storage forever; the account
+    state kept the removed account's memory; and a repair issue raised for
+    the entry stayed in the dashboard with no integration behind it.
+    """
+    from homeassistant.helpers import issue_registry
+
+    from custom_components.wemportal.models import account_state
+
+    entry = await _setup(hass, _entry(hass))
+    modules_key = f"{DOMAIN}_{entry.entry_id}_modules"
+    scraper_key = f"{DOMAIN}_{entry.entry_id}_scraper_device"
+    hass_storage[modules_key] = {"version": 1, "key": modules_key, "data": {}}
+    hass_storage[scraper_key] = {"version": 1, "key": scraper_key, "data": "1234"}
+    # Remembered state that a plain unload deliberately KEEPS (unlike the
+    # auth streak, which unload already clears - asserting on that would
+    # pass without any removal logic at all).
+    account_state(USER).duplicate_rows_reported.add("some row")
+    issue_registry.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+        is_fixable=False,
+        severity=issue_registry.IssueSeverity.WARNING,
+        translation_key="rate_limited",
+    )
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert modules_key not in hass_storage, "the module cache survived removal"
+    assert scraper_key not in hass_storage, "the scraper device id survived removal"
+    assert "some row" not in account_state(USER).duplicate_rows_reported, (
+        "the removed account's memory was kept"
+    )
+    assert (
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+    ) not in issue_registry.async_get(hass).issues, (
+        "a repair issue outlived the entry it belongs to"
+    )
+
+
+async def test_a_reload_drops_expert_entities_whose_slot_is_gone(hass):
+    """Clearing a slot must clear its registry entry on the next (re)load.
+
+    The unique_id of a cleared slot was never offered again, so its registry
+    entry sat in the dashboard as a permanently unavailable number - one more
+    per cleared slot.
+    """
+    from homeassistant.helpers import entity_registry
+
+    digest_kept = expert_writer.entityvalue_digest(EV_A)
+    digest_gone = expert_writer.entityvalue_digest(EV_B)
+    entry = _entry(
+        hass,
+        {CONF_EXPERT_WRITE: True, CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A},
+    )
+    registry = entity_registry.async_get(hass)
+    registry.async_get_or_create(
+        "number",
+        DOMAIN,
+        f"{entry.entry_id}:expert:{digest_gone}",
+        config_entry=entry,
+    )
+
+    await _setup(hass, entry)
+
+    assert (
+        registry.async_get_entity_id(
+            "number", DOMAIN, f"{entry.entry_id}:expert:{digest_gone}"
+        )
+        is None
+    ), "the cleared slot's entity stayed registered"
+    assert (
+        registry.async_get_entity_id(
+            "number", DOMAIN, f"{entry.entry_id}:expert:{digest_kept}"
+        )
+        is not None
+    ), "the configured slot's entity was removed with the ghost"
+
+
+async def test_disabling_expert_write_drops_its_registry_entries(hass):
+    """With the option off there are no expert entities, so entries under the
+    expert unique_id prefix are ghosts - and ONLY those may go: an entity of
+    another platform under this entry must stay untouched."""
+    from homeassistant.helpers import entity_registry
+
+    entry = _entry(hass)
+    registry = entity_registry.async_get(hass)
+    registry.async_get_or_create(
+        "number",
+        DOMAIN,
+        f"{entry.entry_id}:expert:{expert_writer.entityvalue_digest(EV_A)}",
+        config_entry=entry,
+    )
+    bystander = registry.async_get_or_create(
+        "number",
+        DOMAIN,
+        f"{entry.entry_id}:1234:Some plain number",
+        config_entry=entry,
+    )
+
+    await _setup(hass, entry)
+
+    assert (
+        registry.async_get_entity_id(
+            "number",
+            DOMAIN,
+            f"{entry.entry_id}:expert:{expert_writer.entityvalue_digest(EV_A)}",
+        )
+        is None
+    ), "a ghost expert entity survived disabling the option"
+    assert registry.async_get_entity_id("number", DOMAIN, bystander.unique_id), (
+        "the cleanup removed an entity outside the expert prefix"
+    )
+
+
+async def test_a_rate_limit_becomes_a_repair_issue_and_success_clears_it(
+    hass, monkeypatch
+):
+    """A 403 cooldown pauses ALL polling for a long time - the one state the
+    user WILL notice and cannot see the reason for anywhere but the log."""
+    from homeassistant.helpers import issue_registry
+
+    entry = await _setup(hass, _entry(hass))
+    issue_id = f"{entry.entry_id}_rate_limited"
+    registry = issue_registry.async_get(hass)
+
+    def refuse(self, *_args, **_kwargs):
+        raise ForbiddenError("rate limited")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", refuse)
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert (DOMAIN, issue_id) in registry.issues, (
+        "a rate-limited poll raised no repair issue"
+    )
+
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+    )
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert (DOMAIN, issue_id) not in registry.issues, (
+        "the repair issue survived the successful poll that ends the story"
+    )
+
+
+async def test_an_ordinary_failure_does_not_claim_a_rate_limit(hass, monkeypatch):
+    """Only a ForbiddenError is evidence of a rate limit. Raising the issue
+    for every failed poll would tell the user to wait out a block that does
+    not exist - while the real cause goes uninvestigated."""
+    from homeassistant.helpers import issue_registry
+
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    entry = await _setup(hass, _entry(hass))
+
+    def broken(self, *_args, **_kwargs):
+        raise WemPortalError("portal answered garbage")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", broken)
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert (
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+    ) not in issue_registry.async_get(hass).issues, (
+        "an ordinary failure was reported as a rate limit"
+    )
+
+
+async def test_unloading_takes_the_entry_issues_down(hass):
+    """An unloaded entry cannot re-check what its issues report, so they
+    must come down with it; a reloaded entry re-raises what still holds
+    within a few cycles."""
+    from homeassistant.helpers import issue_registry
+
+    entry = await _setup(hass, _entry(hass))
+    issue_registry.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+        is_fixable=False,
+        severity=issue_registry.IssueSeverity.WARNING,
+        translation_key="rate_limited",
+    )
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert (
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+    ) not in issue_registry.async_get(hass).issues, (
+        "an issue kept reporting for an entry that can no longer check it"
+    )
+
+
+async def test_removing_a_never_loaded_entry_still_clears_its_issues(hass, monkeypatch):
+    """A setup that fails on its first refresh has already raised the
+    rate-limit issue - but a failed entry never reaches async_unload_entry,
+    so removal is the only cleanup it gets."""
+    from homeassistant.helpers import issue_registry
+
+    def refuse(self, *_args, **_kwargs):
+        raise ForbiddenError("rate limited")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", refuse)
+    entry = _entry(hass)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert (
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+    ) in issue_registry.async_get(hass).issues, (
+        "precondition: the failed first refresh raised the issue"
+    )
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert (
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+    ) not in issue_registry.async_get(hass).issues, (
+        "the issue outlived the entry that raised it"
+    )
+
+
 async def test_migrate_entry_bumps_version(hass):
     """A V1 entry must end up at V2. The bump was missing, so Home Assistant
     treated the entry as migration-pending and re-ran the migration on every
@@ -1487,10 +1726,15 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
 async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
     """An entry with the auto-poll armed, plus the list of scheduled polls.
 
-    Returns (entry, scheduled, notifications). `read_many` stands in for the
+    Returns (entry, scheduled, raised_issues). `read_many` stands in for the
     portal round trip and may raise. `entityvalues` configures more than one
     parameter, which is what the "one bad batch" rule needs to be visible at
     all - with a single id there is nothing to compare it against.
+
+    `raised_issues` records every async_create_issue CALL, not the registry's
+    end state: the registry de-duplicates by issue_id, so a controller that
+    re-raises the same issue every cycle still ends at one entry - only the
+    call count can see the difference the once-per-streak rule makes.
     """
     from custom_components.wemportal import expert_controller
     from custom_components.wemportal.const import CONF_EXPERT_AUTO_POLL
@@ -1510,14 +1754,14 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
         lambda self, ids: read_many(ids),
     )
 
-    # Register our own handler rather than patching the registry (async_call
-    # is read-only): this is also the path a real notification takes.
-    notifications = []
+    raised_issues = []
+    real_create_issue = expert_controller.async_create_issue
 
-    async def record(call):
-        notifications.append(call.data)
+    def record(hass_argument, domain, issue_id, **kwargs):
+        raised_issues.append({"issue_id": issue_id, **kwargs})
+        return real_create_issue(hass_argument, domain, issue_id, **kwargs)
 
-    hass.services.async_register("persistent_notification", "create", record)
+    monkeypatch.setattr(expert_controller, "async_create_issue", record)
 
     entry = await _setup(
         hass,
@@ -1538,8 +1782,8 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
     # counts a test asserts are the ones it caused, not one more.
     entry.runtime_data.expert.fail_counts.clear()
     entry.runtime_data.expert.fail_notified.clear()
-    notifications.clear()
-    return entry, scheduled, notifications
+    raised_issues.clear()
+    return entry, scheduled, raised_issues
 
 
 async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypatch):
@@ -1560,7 +1804,7 @@ async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypa
     def always_fails(_ids):
         raise RuntimeError("portal unavailable")
 
-    entry, scheduled, notifications = await _auto_poll_entry(
+    entry, scheduled, raised_issues = await _auto_poll_entry(
         hass, monkeypatch, always_fails
     )
     poll = scheduled[-1]
@@ -1572,7 +1816,7 @@ async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypa
     assert entry.runtime_data.expert.fail_counts == {}, (
         "an outage was counted against the individual parameters"
     )
-    assert notifications == [], "an outage produced a 'check your ID' notice"
+    assert raised_issues == [], "an outage produced a 'check your ID' issue"
 
 
 async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
@@ -1580,7 +1824,9 @@ async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
 ):
     """The case the counting DOES exist for: the batch works, one id never
     comes back. After three of those the user hears about it - once."""
-    entry, scheduled, notifications = await _auto_poll_entry(
+    from homeassistant.helpers import issue_registry
+
+    entry, scheduled, raised_issues = await _auto_poll_entry(
         hass,
         monkeypatch,
         lambda ids: {},
@@ -1592,18 +1838,24 @@ async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
         await hass.async_block_till_done()
 
     assert entry.runtime_data.expert.fail_counts[EV_A] == 5
-    assert len(notifications) == 1, (
-        f"{len(notifications)} notifications for one persistent failure"
+    assert len(raised_issues) == 1, (
+        f"{len(raised_issues)} repair issues for one persistent failure"
     )
     # An id that is not in the result at all was never requested - read_many
-    # rejects one it cannot read before sending anything - so the message may
-    # point at the configuration, and has to say where to change it.
-    assert "options" in notifications[0]["message"]
+    # rejects one it cannot read before sending anything - so the issue may
+    # point at the configuration (the unreadable-id wording does exactly that).
+    assert raised_issues[0]["translation_key"] == "expert_poll_unreadable_id"
+    assert (DOMAIN, raised_issues[0]["issue_id"]) in issue_registry.async_get(
+        hass
+    ).issues, "the recorded call never reached the real issue registry"
 
 
 async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch):
     """Otherwise a parameter that failed once could never notify again, and
-    a recurring problem would go quiet after its first streak."""
+    a recurring problem would go quiet after its first streak - and the
+    repair issue would outlive the problem it reports."""
+    from homeassistant.helpers import issue_registry
+
     state = {"fail": True}
 
     def sometimes(_ids):
@@ -1613,13 +1865,16 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
             else {EV_A: expert_writer.ExpertParameterState(21.0, [0.0, 100.0], {})}
         )
 
-    entry, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, sometimes)
+    entry, scheduled, raised_issues = await _auto_poll_entry(
+        hass, monkeypatch, sometimes
+    )
     poll = scheduled[-1]
 
-    for _ in range(2):
+    for _ in range(3):
         await poll(None)
         await hass.async_block_till_done()
-    assert entry.runtime_data.expert.fail_counts[EV_A] == 2
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 3
+    assert len(raised_issues) == 1, "three consecutive misses raised no issue"
 
     state["fail"] = False
     await poll(None)
@@ -1627,6 +1882,9 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
 
     assert EV_A not in entry.runtime_data.expert.fail_counts
     assert EV_A not in entry.runtime_data.expert.fail_notified
+    assert (DOMAIN, raised_issues[0]["issue_id"]) not in issue_registry.async_get(
+        hass
+    ).issues, "the repair issue survived the recovery it reports on"
 
 
 async def test_a_failed_poll_still_arms_the_next_one(hass, monkeypatch):
@@ -3018,7 +3276,7 @@ async def test_one_bad_batch_is_not_blamed_on_every_configured_id(hass, monkeypa
     Counting it per id told the user to go and fix settings that were fine -
     a persistent notification per parameter, on a portal hiccup.
     """
-    entry, scheduled, notifications = await _auto_poll_entry(
+    entry, scheduled, raised_issues = await _auto_poll_entry(
         hass,
         monkeypatch,
         lambda ids: {entityvalue: None for entityvalue in ids},
@@ -3033,7 +3291,7 @@ async def test_one_bad_batch_is_not_blamed_on_every_configured_id(hass, monkeypa
     assert not entry.runtime_data.expert.fail_counts, (
         "a failed batch was counted against the ids it consists of"
     )
-    assert notifications == []
+    assert raised_issues == []
 
 
 async def test_a_single_configured_id_is_still_reported(hass, monkeypatch):
@@ -3044,7 +3302,7 @@ async def test_a_single_configured_id_is_still_reported(hass, monkeypatch):
     exactly the installation that has the least other evidence - the same trap
     as refusing a read that named no JobID.
     """
-    entry, scheduled, notifications = await _auto_poll_entry(
+    entry, scheduled, raised_issues = await _auto_poll_entry(
         hass,
         monkeypatch,
         lambda ids: {entityvalue: None for entityvalue in ids},
@@ -3056,10 +3314,10 @@ async def test_a_single_configured_id_is_still_reported(hass, monkeypatch):
         await hass.async_block_till_done()
 
     assert entry.runtime_data.expert.fail_counts[EV_A] == 4
-    assert len(notifications) == 1
+    assert len(raised_issues) == 1
     # It was requested and failed, so the portal is a candidate too - the
-    # message must not assert the configuration is wrong.
-    assert "portal" in notifications[0]["message"]
+    # read-failures wording must not assert the configuration is wrong.
+    assert raised_issues[0]["translation_key"] == "expert_poll_read_failures"
 
 
 async def test_the_rescan_option_marks_the_cached_lists_as_due(hass):

@@ -103,6 +103,20 @@
       "discovery_aborted": "The WEM Portal account this was searching was reloaded or removed, so the search stopped. Nothing was changed. Open the options again once the integration has finished loading."
     }
   },
+  "issues": {
+    "rate_limited": {
+      "title": "WEM Portal is refusing requests (rate limit)",
+      "description": "The WEM Portal is refusing requests from this network right now, which it does after too many in a short time. Polling is paused and resumes by itself; every extra attempt makes the block last longer. Your username and password are not the problem. This issue clears itself with the next successful update."
+    },
+    "expert_poll_unreadable_id": {
+      "title": "Expert parameter '{name}' cannot be requested",
+      "description": "The configured ID for '{name}' is not a readable parameter ID, so it was never requested. Fix or clear it in the integration options."
+    },
+    "expert_poll_read_failures": {
+      "title": "Expert parameter '{name}' keeps failing to read",
+      "description": "Reading '{name}' has failed {failures} times in a row while other parameters were read successfully. That is usually a wrong ID in the integration options, but the portal can refuse a single parameter too. This issue clears itself once the parameter reads again."
+    }
+  },
   "services": {
     "set_expert_parameter": {
       "name": "Set expert parameter",
