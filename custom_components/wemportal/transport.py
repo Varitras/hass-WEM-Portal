@@ -11,6 +11,7 @@ shared with the domain half, so the split is a move of code, not a change of
 object shape.
 """
 
+from typing import Final
 import logging
 
 import time
@@ -20,10 +21,7 @@ import requests
 from .const import (
     API_LOCK_TIMEOUT_SECONDS,
     API_REQUEST_TIMEOUT_SECONDS,
-    API_TRANSPORT_RETRY_DELAY_SECONDS,
     DATA_GATHERING_ERROR,
-    EXPERT_FORBIDDEN_COOLDOWN_SECONDS,
-    FORBIDDEN_COOLDOWN_SECONDS,
 )
 from .exceptions import (
     ExpiredSessionError,
@@ -32,6 +30,32 @@ from .exceptions import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# How long to wait before the single retry of a request that never reached
+# the portal at all. Deliberately shorter than make_api_call()'s `delay`,
+# which covers the re-login path: nothing has to settle here, we are only
+# avoiding an instant second attempt into the same hiccup.
+API_TRANSPORT_RETRY_DELAY_SECONDS: Final = 2
+
+# Backoff after a 403 on the EXPERT (Fachmann) path only.
+#
+# A 403 does not necessarily mean the portal is rate-limiting our IP: it can
+# just as well mean "I do not accept this particular request" (an unexpected
+# postback shape, a session that is not in the required state, ...). Treating
+# every expert 403 as an IP-wide rate limit paused the whole integration for
+# FORBIDDEN_COOLDOWN_SECONDS because of a single rejected request - verified
+# in practice while the portal was demonstrably reachable in a browser at the
+# same time. The expert path therefore backs off on its own now, while the
+# polling paths keep running; a 403 seen by the API/scraper still pauses
+# everything, including the expert path, because that IS the rate-limit signal.
+EXPERT_FORBIDDEN_COOLDOWN_SECONDS: Final = 300  # 5 minutes
+
+# How long to pause ALL outbound requests after the server responds with a
+# 403 (rate limit / forbidden), before trying again. This is intentionally
+# generous: a 403 means the server is already unhappy with our request
+# rate, so backing off hard (rather than continuing to poll other
+# endpoints in the same cycle) is the safer choice.
+FORBIDDEN_COOLDOWN_SECONDS: Final = 15 * 60  # 15 minutes
 
 # The IP-wide 403 backoff lives here rather than on the instance, and that
 # placement is the fix for a defect, not a style choice.

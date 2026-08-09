@@ -37,7 +37,6 @@ from custom_components.wemportal.const import (
     CONF_SCAN_INTERVAL_API,
     DOMAIN,
     PLATFORMS,
-    SERVICE_SET_EXPERT_PARAMETER,
 )
 from custom_components.wemportal.exceptions import (
     AuthError,
@@ -45,6 +44,9 @@ from custom_components.wemportal.exceptions import (
     ParameterWriteError,
 )
 from custom_components.wemportal.wemportalapi import WemPortalApi
+from custom_components.wemportal import (
+    SERVICE_SET_EXPERT_PARAMETER,
+)
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(120)]
 
@@ -534,7 +536,7 @@ async def test_the_holiday_service_follows_the_loaded_entries(hass):
     """It needs no option - it writes through the same mobile API the number,
     select and switch entities already use - but it must still disappear when
     nothing is loaded to serve it."""
-    from custom_components.wemportal.const import SERVICE_SET_HOLIDAY
+    from custom_components.wemportal.holiday import SERVICE_SET_HOLIDAY
 
     entry = await _setup(hass, _entry(hass))
     assert hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY)
@@ -559,7 +561,7 @@ async def test_the_holiday_service_refuses_a_non_admin(hass, hass_read_only_user
     from homeassistant.core import Context
     from homeassistant.exceptions import Unauthorized
 
-    from custom_components.wemportal.const import SERVICE_SET_HOLIDAY
+    from custom_components.wemportal.holiday import SERVICE_SET_HOLIDAY
 
     await _setup(hass, _entry(hass))
 
@@ -2991,7 +2993,7 @@ async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatc
     assert coordinators, "no coordinator was built, so this proves nothing"
     coordinator = coordinators[-1]
 
-    from custom_components.wemportal.const import SERVICE_SET_HOLIDAY
+    from custom_components.wemportal.holiday import SERVICE_SET_HOLIDAY
 
     assert not hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER), (
         "a failed setup left its expert service registered"

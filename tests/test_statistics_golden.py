@@ -30,15 +30,15 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.wemportal.const import (
+from custom_components.wemportal.models import Reading
+from custom_components.wemportal.wemportalapi import WemPortalApi
+from custom_components.wemportal.wemportalapi import (
     API_STATISTICS_READ_URL,
     API_STATISTICS_REFRESH_URL,
     STATISTICS_REFRESH_INTERVAL_SECONDS,
     STATISTICS_RETRY_INTERVAL_SECONDS,
     WEM_INVALID_PARAMETER_STATUS,
 )
-from custom_components.wemportal.models import Reading
-from custom_components.wemportal.wemportalapi import WemPortalApi
 
 GOLDEN = Path(__file__).parent / "fixtures" / "statistics_golden.json"
 

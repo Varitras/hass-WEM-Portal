@@ -1,5 +1,6 @@
 """Utility functions for WEM Portal."""
 
+from typing import Final
 import logging
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
@@ -18,14 +19,30 @@ from .models import ModuleRef, Reading
 from .const import (
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
-    DEFAULT_DEVICE_MODEL,
-    DEVICE_TYPE_NAMES,
     DOMAIN,
-    MISSING_DATA_STRINGS,
-    WEB_MAINTENANCE_MARKER,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+DEFAULT_DEVICE_MODEL: Final = "WEM Portal"
+
+# DeviceType as reported by Device/Read. Only used for the device model
+# shown in Home Assistant; an unknown value falls back to the generic name.
+DEVICE_TYPE_NAMES: Final = {
+    1: "Combi boiler",
+    2: "Heat pump",
+}
+
+# Scraper Constants
+MISSING_DATA_STRINGS: Final = ["--", "label ist null", "label ist null "]
+
+# The portal announces planned downtime by rendering this container on the
+# login page. Matched on the CSS class, NOT on its text: the wording changes
+# per announcement and is localised, while the class is purpose-built and
+# language-independent. Note the login form stays fully present and
+# submittable during maintenance - only the backend behind it is down - so
+# "is there a form?" cannot tell the two apart.
+WEB_MAINTENANCE_MARKER: Final = "offlinecontent"
 
 
 def clamped_scan_interval(options, key, default, minimum):

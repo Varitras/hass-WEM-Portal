@@ -1,5 +1,6 @@
 """Web scraping scraper for WEM Portal using curl_cffi."""
 
+from typing import Final
 import logging
 import time
 
@@ -8,9 +9,7 @@ from lxml import html
 
 from .const import (
     GITHUB_PROJECT_URL,
-    PERCENTAGE_KEYWORDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
-    TEMPERATURE_KEYWORDS,
     WEB_LOGGED_IN_MARKER,
     WEB_LOGIN_FORM_MARKER,
     WEB_LOGIN_URL,
@@ -37,6 +36,15 @@ from .utils import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+PERCENTAGE_KEYWORDS: Final = [
+    "leistungsanforderung",
+    "drehzahl",
+    "power_requirement",
+    "speed",
+]
+
+TEMPERATURE_KEYWORDS: Final = ["temperatur", "temperature", "temp"]
 
 # Unit -> icon mapping for scraped sensors. Defined once at module level
 # instead of being re-created for every single table row during parsing

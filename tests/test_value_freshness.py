@@ -15,10 +15,12 @@ import time
 
 
 from custom_components.wemportal import wemportalapi
-from custom_components.wemportal.const import DEVICE_VALUES_STALE_AFTER_SECONDS
 from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.utils import serialize_modules
 from custom_components.wemportal.wemportalapi import WemPortalApi
+from custom_components.wemportal.wemportalapi import (
+    DEVICE_VALUES_STALE_AFTER_SECONDS,
+)
 
 MODULE_A = ModuleRef(module_index=0, module_type=1)
 MODULE_B = ModuleRef(module_index=1, module_type=1)

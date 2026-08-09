@@ -2,6 +2,7 @@
 Weishaupt webscraping and API library
 """
 
+from typing import Final
 import logging
 
 import copy
@@ -16,21 +17,8 @@ from lxml import html
 from lxml.etree import ParserError
 
 from .const import (
-    API_CIRCUIT_TIMES_READ_URL,
-    API_CIRCUIT_TIMES_REFRESH_URL,
-    API_DATA_ACCESS_READ_URL,
-    API_DATA_ACCESS_WRITE_URL,
-    API_DEVICE_READ_URL,
-    API_DEVICE_STATUS_READ_URL,
-    API_EVENT_TYPE_READ_URL,
     API_LOCK_TIMEOUT_SECONDS,
-    API_LOGIN_URL,
-    API_REFRESH_URL,
     API_REQUEST_TIMEOUT_SECONDS,
-    API_STATISTICS_READ_URL,
-    API_STATISTICS_REFRESH_URL,
-    CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
-    CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
     CONF_LANGUAGE,
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
@@ -40,22 +28,13 @@ from .const import (
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
     DEFAULT_MODE,
     DEFAULT_TIMEOUT,
-    DEVICE_VALUES_STALE_AFTER_SECONDS,
     GITHUB_PROJECT_URL,
     MIN_SCAN_INTERVAL_API_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
-    PARAMETER_REDISCOVERY_INTERVAL_SECONDS,
-    PARAMETER_REDISCOVERY_RETRY_SECONDS,
-    POLL_DEADLINE_SECONDS,
-    SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE,
-    SCRAPER_FALLBACK_DEVICE_ID,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
-    STATISTICS_REFRESH_INTERVAL_SECONDS,
-    STATISTICS_RETRY_INTERVAL_SECONDS,
     WEB_LOGGED_IN_MARKER,
     WEB_LOGIN_FORM_MARKER,
     WEB_LOGIN_URL,
-    WEM_INVALID_PARAMETER_STATUS,
     WemDataType,
 )
 from .models import ModuleRef, Reading, account_state
@@ -94,6 +73,148 @@ from .utils import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+API_CIRCUIT_TIMES_READ_URL: Final = "https://www.wemportal.com/app/CircuitTimes/Read"
+
+API_CIRCUIT_TIMES_REFRESH_URL: Final = (
+    "https://www.wemportal.com/app/CircuitTimes/Refresh"
+)
+
+API_DATA_ACCESS_READ_URL: Final = "https://www.wemportal.com/app/DataAccess/Read"
+
+API_DATA_ACCESS_WRITE_URL: Final = "https://www.wemportal.com/app/DataAccess/Write"
+
+API_DEVICE_READ_URL: Final = "https://www.wemportal.com/app/Device/Read"
+
+API_DEVICE_STATUS_READ_URL: Final = "https://www.wemportal.com/app/DeviceStatus/Read"
+
+API_EVENT_TYPE_READ_URL: Final = "https://www.wemportal.com/app/EventType/Read"
+
+API_LOGIN_URL: Final = "https://www.wemportal.com/app/Account/Login"
+
+API_REFRESH_URL: Final = "https://www.wemportal.com/app/DataAccess/Refresh"
+
+API_STATISTICS_READ_URL: Final = "https://www.wemportal.com/app/Statistics/Read"
+
+API_STATISTICS_REFRESH_URL: Final = "https://www.wemportal.com/app/Statistics/Refresh"
+
+CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
+
+# How soon a schedule that FAILED to load is tried again. Shorter than the
+# refresh interval, so a transient failure does not cost a full hour, but
+# still an interval: the timestamp records the attempt rather than the
+# success, otherwise a schedule that keeps failing is re-fetched on every
+# coordinator cycle - two requests each time, at the portal that is already
+# failing. Same reasoning and same value as the statistics retry.
+CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
+
+# How long one device's readings may stay on display without a successful
+# read of its own.
+#
+# A cycle where one device fails and another succeeds is reported as a
+# SUCCESS, and rightly so: failing it would take every other device's
+# entities down with it. But that also means the failing device keeps
+# publishing whatever it last returned, with nothing saying otherwise -
+# mapper._clear_unanswered only runs when the portal ANSWERED and left a
+# parameter out, which is not this case.
+#
+# A duration rather than a count of failed cycles, unlike the scrape: there
+# the backoff stretches the gap between attempts, so counting attempts was
+# the only honest measure. Here the cycle counts as successful, so the
+# interval stays whatever the user configured - and a limit in minutes then
+# means the same thing whether that is 5 minutes or 30.
+DEVICE_VALUES_STALE_AFTER_SECONDS: Final = 30 * 60
+
+# Heating schedules (CircuitTimes) rarely change - only when a user edits
+# them directly in the WEM Portal app (this integration only ever shows
+# them as read-only sensors). Refetching them every single coordinator
+# cycle is unnecessary load; this caps how often they're refreshed.
+# How long a module's discovered parameter list is trusted before the portal
+# is asked again.
+#
+# The list used to be cached forever: activating an input or output on a
+# module the integration already knew produced a parameter it would never
+# discover, with no error and no way to force a re-scan short of removing and
+# re-adding the integration. A NEW module was found (it has no cached
+# parameters), a new parameter on an existing one was not.
+#
+# One JSON request per module makes this cheap enough to do on a timer -
+# unlike the Fachmann discovery, which is a full web navigation and stays
+# on-demand only. Four modules once a day is 0.04% of the portal's 10,000
+# requests per 12 hours.
+#
+# Wall clock, not monotonic: the timestamp is persisted with the module cache
+# and has to survive a restart, which monotonic does not.
+PARAMETER_REDISCOVERY_INTERVAL_SECONDS: Final = 24 * 3600  # 1 day
+
+# How soon a FAILED re-scan is attempted again. Shorter than the interval
+# above, but not immediate: a portal that just refused must not be asked once
+# per cycle. Same shape as the statistics and schedule retries.
+PARAMETER_REDISCOVERY_RETRY_SECONDS: Final = 3600  # 1 hour
+
+# How long one poll cycle may spend before it stops itself.
+#
+# The same reasoning as the lock timeout above, one step further along.
+# asyncio.timeout cancels the coordinator's AWAIT; it cannot cancel the
+# executor thread behind it. A cycle that overran therefore ran on to
+# completion - holding the shared lock, still spending requests at a portal
+# that counts them per IP - while Home Assistant had already recorded the
+# failure and moved on. Nobody was waiting for that work any more.
+#
+# Below DEFAULT_TIMEOUT so the worker is gone BEFORE the coordinator gives
+# up on it rather than after, which is the whole point: the next cycle then
+# finds a free lock instead of queueing behind an abandoned one.
+POLL_DEADLINE_SECONDS: Final = DEFAULT_TIMEOUT - 30
+
+# Placeholder device id the web scraper falls back to when no real
+# API-discovered device is known (a pure-web install that never ran the
+# mobile API). The scraper itself has no device concept - it reads a web
+# page - but entity unique_ids are "<entry>:<device_id>:<name>", so scraped
+# sensors need a STABLE device id or their history breaks on mode switches.
+# See WemPortalApi.resolve_scraper_device_id() for how this is locked in
+# once and then persisted.
+SCRAPER_FALLBACK_DEVICE_ID: Final = "0000"
+
+# How many scrapes in a row may fail before the values they produced stop
+# being presented as current.
+#
+# Counted in failures rather than measured as an age, because the two are not
+# proportional: each failure adds a growing pause of its own, so with a
+# five-minute interval the third failure lands about six intervals after the
+# last success, and with a thirty-minute one about three. A multiple of the
+# interval would therefore mean a different thing on every installation, while
+# a count means the same everywhere - and still clears sooner where the
+# interval is shorter, which is the right way round.
+#
+# Three rather than one: a single failed scrape is ordinary, and the second is
+# where the cached session is discarded and a full login retried. Only the
+# third says the portal is not delivering. The counter resets on any
+# successful scrape.
+#
+# Note this counts ATTEMPTS THAT FAILED, not "we have not looked". A scrape
+# that is never run - because its device is disabled - leaves the values
+# alone; nothing was asked, so nothing was refused.
+SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE: Final = 3
+
+# Energy statistics are daily aggregates - they don't need per-cycle
+# refreshes. This caps how often they're refreshed.
+STATISTICS_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
+
+# How long to wait before retrying when a statistics cycle failed for EVERY
+# device. The rate-limit timestamp is deliberately set BEFORE the fetch (so a
+# persistently failing portal can never be hammered), which would otherwise
+# make a single failure cost a full refresh interval. Shortening the wait on
+# failure keeps that protection while recovering sooner. Must stay well above
+# the coordinator's scan interval so a failing portal is still approached at a
+# calm pace.
+STATISTICS_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
+
+# Server-side status code returned by Statistics/Read for a statistics
+# group that isn't valid for the queried module (ModuleType 7/Index 0).
+# The refresh call lists such groups, but reading them is rejected with
+# this code. It's an expected, harmless per-group condition - skipped
+# quietly rather than logged as a warning on every startup.
+WEM_INVALID_PARAMETER_STATUS: Final = 3001
 
 # The three rows a device status read owns. Named once because they are
 # written in one place and forgotten in another when the read fails: a

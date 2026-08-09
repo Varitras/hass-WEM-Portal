@@ -1,5 +1,6 @@
 """Shared base class for the WEM Portal entity platforms."""
 
+from typing import Final
 from functools import partial
 
 from homeassistant.config_entries import ConfigEntry
@@ -7,10 +8,22 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import get_wemportal_unique_id
-from .const import API_FAILURES_TOLERATED
 from .coordinator import WemPortalDataUpdateCoordinator
 from .models import Reading, raise_if_not_writable
 from .utils import build_device_info, device_is_reachable, device_model
+
+# The same thought on the API side, which had none: one failed cycle used to
+# take every entity of the account unavailable at once. The portal answers a
+# cycle with "Unbekannter Fehler" now and then and the next one succeeds, so a
+# single failure says nothing - but at the default interval it costs half an
+# hour of every graph and sends automations a state change on the way out and
+# back.
+#
+# One rather than the scrape's three, because an API cycle is the expensive
+# one: at the default interval three failures is an hour and a half of
+# readings presented as current. The counter is the coordinator's own, reset
+# by any successful cycle.
+API_FAILURES_TOLERATED: Final = 1
 
 
 class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):

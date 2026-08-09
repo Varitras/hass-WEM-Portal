@@ -25,7 +25,7 @@ them would be a guess dressed up as a feature.
 import logging
 
 from functools import partial
-from typing import NamedTuple
+from typing import Final, NamedTuple
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -34,11 +34,15 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.service import async_register_admin_service
 
-from .const import DOMAIN, SERVICE_SET_HOLIDAY
+from .const import (
+    DOMAIN,
+)
 from .date import date_to_epoch
 from .models import Reading, raise_if_not_writable
 
 _LOGGER = logging.getLogger(__name__)
+
+SERVICE_SET_HOLIDAY: Final = "set_holiday"
 
 
 class DateTarget(NamedTuple):

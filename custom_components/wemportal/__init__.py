@@ -6,6 +6,7 @@ https://github.com/erikkastelec/hass-WEM-Portal
 
 """
 
+from typing import Final
 import logging
 
 from datetime import timedelta
@@ -33,7 +34,6 @@ from .const import (
     MIN_SCAN_INTERVAL_API_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
     PLATFORMS,
-    SERVICE_SET_EXPERT_PARAMETER,
 )
 from .coordinator import (
     WemPortalDataUpdateCoordinator,
@@ -52,6 +52,8 @@ from .utils import clamped_scan_interval, close_api_sessions, deserialize_module
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
+
+SERVICE_SET_EXPERT_PARAMETER: Final = "set_expert_parameter"
 
 
 def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):

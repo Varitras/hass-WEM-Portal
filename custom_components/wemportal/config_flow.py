@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Final
 import logging
 import re
 
@@ -28,7 +29,6 @@ from homeassistant.helpers.selector import (
 
 from .models import account_unique_id
 from .const import (
-    AVAILABLE_MODES,
     CONF_EXPERT_AUTO_POLL,
     CONF_EXPERT_ENABLE_MODULE_NAV,
     CONF_EXPERT_ENABLE_SECURITY_CODE,
@@ -62,6 +62,8 @@ from .utils import close_api_sessions
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
+
+AVAILABLE_MODES: Final = ["api", "web", "both"]
 
 # Password uses a proper password-type selector so the browser masks the
 # input (a plain `str` field renders as clear text - shoulder-surfing /
