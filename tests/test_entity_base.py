@@ -15,6 +15,7 @@ import pytest
 from custom_components.wemportal.entity import WemPortalEntity
 from custom_components.wemportal.models import Reading
 from custom_components.wemportal.number import WemPortalNumber
+from custom_components.wemportal.date import WemPortalDate
 from custom_components.wemportal.select import WemPortalSelect
 from custom_components.wemportal.sensor import WemPortalSensor
 from custom_components.wemportal.switch import WemPortalSwitch
@@ -24,6 +25,7 @@ PLATFORMS = {
     "number": WemPortalNumber,
     "select": WemPortalSelect,
     "switch": WemPortalSwitch,
+    "date": WemPortalDate,
 }
 
 # The rules that belong to the base. sensor.py overrides both on purpose: it
@@ -88,6 +90,36 @@ def test_no_platform_redefines_a_shared_rule(name):
         )
     else:
         assert not redefined, f"{name} redefines {redefined} instead of using the base"
+
+
+def test_a_device_named_like_a_status_row_is_not_diagnostic():
+    """The category is decided on the parameter id alone.
+
+    The former substring match ran over the whole unique_id - which also
+    carries the entry id and the DEVICE id - so a device whose portal name
+    contains a status word turned every one of its sensors into a
+    diagnostic entity."""
+    from homeassistant.const import EntityCategory
+
+    row = Reading(value=1.0, friendly_name="Flow", parameter_id="P1")
+    coordinator = types.SimpleNamespace(
+        data={"HasErrors-Unit": {"flow": row}},
+        api=types.SimpleNamespace(api_version=None, modules={}),
+        last_update_success=True,
+        num_failed=0,
+        async_add_listener=lambda *_args, **_kwargs: None,
+    )
+    entity = WemPortalSensor(
+        coordinator, types.SimpleNamespace(entry_id="e1"), "HasErrors-Unit", "flow", row
+    )
+
+    assert entity.entity_category is None, (
+        "a status word in the DEVICE name made an ordinary sensor diagnostic"
+    )
+    assert (
+        _entity(WemPortalSensor, parameter_id="HasErrors").entity_category
+        is EntityCategory.DIAGNOSTIC
+    )
 
 
 @pytest.mark.parametrize("name", sorted(PLATFORMS))

@@ -394,7 +394,7 @@
   {
     "label": "unload gate: the shared write path must ask before writing",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        raise_if_not_writable(self._config_entry, self._attr_name)",
+    "old": "        raise_if_not_writable(\n            self._config_entry, self._attr_name or str(self._attr_unique_id)\n        )",
     "new": "        pass",
     "tests": "no_platform_writes_while_the_entry_is_unloading"
   },
@@ -1017,8 +1017,8 @@
   {
     "label": "write-back: recording a value the portal refused must be noticed",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        raise_if_not_writable(self._config_entry, self._attr_name)\n        await self.hass.async_add_executor_job(",
-    "new": "        raise_if_not_writable(self._config_entry, self._attr_name)\n        self._record_written_value(value)\n        await self.hass.async_add_executor_job(",
+    "old": "        raise_if_not_writable(\n            self._config_entry, self._attr_name or str(self._attr_unique_id)\n        )\n        await self.hass.async_add_executor_job(",
+    "new": "        raise_if_not_writable(\n            self._config_entry, self._attr_name or str(self._attr_unique_id)\n        )\n        self._record_written_value(value)\n        await self.hass.async_add_executor_job(",
     "tests": "a_refused_write_leaves_the_coordinators_copy_alone"
   },
   {
@@ -1122,8 +1122,8 @@
   {
     "label": "schedule: letting a non-programme through must be noticed",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "    if not isinstance(parsed, dict):\n        return None\n\n    windows = {}",
-    "new": "    if False:\n        return None\n\n    windows = {}",
+    "old": "    if not isinstance(parsed, dict):\n        return None\n\n    windows: dict[str, dict[int, str]] = {}",
+    "new": "    if False:\n        return None\n\n    windows: dict[str, dict[int, str]] = {}",
     "tests": "something_that_is_not_a_programme_adds_no_attribute"
   },
   {
@@ -2518,5 +2518,12 @@
     "old": "                if was_reported:\n                    self._clear_read_failure_issue(entityvalue)",
     "new": "                if was_reported:\n                    pass",
     "tests": "recovered_parameter_clears_its_failure_streak"
+  },
+  {
+    "label": "category: a status word in the device name must not make a sensor diagnostic",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if self._parameter_id in DEVICE_STATUS_ROWS:\n            return EntityCategory.DIAGNOSTIC\n        return None",
+    "new": "        if any(\n            status_row in str(self._attr_unique_id)\n            for status_row in DEVICE_STATUS_ROWS\n        ):\n            return EntityCategory.DIAGNOSTIC\n        return None",
+    "tests": "device_named_like_a_status_row_is_not_diagnostic"
   }
 ]

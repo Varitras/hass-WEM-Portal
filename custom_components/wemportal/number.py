@@ -3,6 +3,7 @@ Number platform for wemportal component
 """
 
 import logging
+from typing import Any
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
@@ -214,7 +215,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Update the current value."""
         await self.async_write_parameter(value)
-        self._attr_native_value = value  # type: ignore
+        self._attr_native_value = value
         self.async_write_ha_state()
 
     @callback
@@ -265,7 +266,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attributes = {}
+        attributes: dict[str, Any] = {}
         if self._last_updated is not None:
             attributes["Last Updated"] = self._last_updated
         return attributes

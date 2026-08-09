@@ -16,6 +16,7 @@ a date platform and not a datetime one.
 import logging
 
 from datetime import UTC, date, datetime
+from typing import Any
 
 from homeassistant.components.date import DateEntity
 from homeassistant.config_entries import ConfigEntry
@@ -97,7 +98,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
 
         _LOGGER.debug("Init date: %s: %s", self._attr_name, self._attr_native_value)
 
-    def _companion_dates(self) -> dict:
+    def _companion_dates(self) -> dict[str, float]:
         """The other date parameters of this module, at their current value.
 
         A holiday is a range, and the portal appears to want the whole of it:
@@ -204,7 +205,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attributes = {}
+        attributes: dict[str, Any] = {}
         if self._last_updated is not None:
             attributes["Last Updated"] = self._last_updated
         return attributes

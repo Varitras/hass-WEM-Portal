@@ -35,6 +35,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   typing box, not a slider, until the first read or write.
 
 ### Fixed
+- **A device whose name contains "HasErrors" no longer turns all its sensors
+  into diagnostics.** The diagnostic category was decided by searching the
+  whole unique_id - which also carries the entry id and the device id - for
+  one of the three status words. It is decided on the parameter id now, the
+  same way the availability rule beside it already was.
 - **Removing the integration removes its traces.** The module cache and the
   scraper device id stayed in `.storage` forever, the account's remembered
   state outlived the account, and a repair issue could outlive the entry

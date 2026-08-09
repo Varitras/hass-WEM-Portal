@@ -8,11 +8,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import get_wemportal_unique_id
 from .const import API_FAILURES_TOLERATED
+from .coordinator import WemPortalDataUpdateCoordinator
 from .models import Reading, raise_if_not_writable
 from .utils import build_device_info, device_is_reachable, device_model
 
 
-class WemPortalEntity(CoordinatorEntity):
+class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
     """What the date, number, select, sensor and switch platforms share.
 
     Every entity is one row of the coordinator's data, addressed by device id
@@ -76,7 +77,9 @@ class WemPortalEntity(CoordinatorEntity):
         the same request. Only the date platform uses it, for a parameter the
         portal will not accept on its own - see WemPortalApi._change_value.
         """
-        raise_if_not_writable(self._config_entry, self._attr_name)
+        raise_if_not_writable(
+            self._config_entry, self._attr_name or str(self._attr_unique_id)
+        )
         await self.hass.async_add_executor_job(
             partial(
                 self.coordinator.api.change_value,
@@ -143,11 +146,12 @@ class WemPortalEntity(CoordinatorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Get device information."""
-        return build_device_info(
+        info: DeviceInfo = build_device_info(
             self._config_entry.entry_id,
             self._device_id,
             model=device_model(self.coordinator.api, self._device_id),
         )
+        return info
 
     @property
     def available(self):

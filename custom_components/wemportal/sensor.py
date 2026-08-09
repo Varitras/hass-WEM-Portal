@@ -6,6 +6,7 @@ import logging
 
 import json
 import re
+from typing import Any
 
 from homeassistant.components.sensor import RestoreSensor
 from homeassistant.config_entries import ConfigEntry
@@ -17,6 +18,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import GITHUB_PROJECT_URL
 from .entity import WemPortalEntity
 from .models import Reading, account_state
+from .wemportalapi import DEVICE_STATUS_ROWS
 from .utils import (
     build_device_info,
     device_is_reachable,
@@ -125,8 +127,8 @@ def _parse_schedule(raw):
     if not isinstance(parsed, dict):
         return None
 
-    windows = {}
-    marks = {}
+    windows: dict[str, dict[int, str]] = {}
+    marks: dict[str, str] = {}
     for key, value in parsed.items():
         if not isinstance(key, str) or not isinstance(value, str):
             continue
@@ -186,7 +188,7 @@ def _day_labels(raw):
     return dict(zip(_DAY_ORDER, days, strict=True))
 
 
-def _level_names(possible_values) -> dict:
+def _level_names(possible_values) -> dict[Any, str]:
     """Level number -> the portal's own word for it.
 
     The portal ships this alongside the programme, which is what makes the
@@ -239,7 +241,7 @@ def _stretch_text(start, end, level, names) -> str:
     return span
 
 
-def _window_text(period, letter) -> str:
+def _window_text(period: str, letter) -> str:
     """One programmed window, with the letter the portal put on it."""
     if letter:
         return f"{period} ({letter})"
@@ -314,7 +316,9 @@ def _schedule_summary(row):
     if not schedule:
         return None
 
-    groups = []
+    # Lists, not tuples: a day that repeats the previous text extends the
+    # group in place.
+    groups: list[list[str]] = []
     for day, entries in schedule.items():
         text = ", ".join(entries)
         if groups and groups[-1][2] == text:
@@ -474,12 +478,13 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             and self.coordinator.api.api_version
         ):
             sw_version = self.coordinator.api.api_version
-        return build_device_info(
+        info: DeviceInfo = build_device_info(
             self._config_entry.entry_id,
             self._device_id,
             sw_version=sw_version,
             model=device_model(self.coordinator.api, self._device_id),
         )
+        return info
 
     @property
     def available(self):
@@ -496,7 +501,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # device: they are what explains WHY everything else went away.
         # Matched on the parameter id rather than as a substring of the
         # unique_id, which also carries the entry id and the device id.
-        if self._parameter_id in ("ConnectionStatus", "HasErrors", "ErrorMessages"):
+        if self._parameter_id in DEVICE_STATUS_ROWS:
             return True
         return device_is_reachable(self.coordinator.data, self._device_id)
 
@@ -529,11 +534,15 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
 
     @property
     def entity_category(self):
-        """Return the entity category."""
-        if any(
-            diagnostic in self._attr_unique_id
-            for diagnostic in ["ConnectionStatus", "HasErrors", "ErrorMessages"]
-        ):
+        """Return the entity category.
+
+        Decided on the parameter id, like `available` above. The former
+        substring match on the unique_id also carried the entry id and the
+        device id, so any device whose portal name happened to contain one
+        of these words would have turned every one of its sensors into a
+        diagnostic entity.
+        """
+        if self._parameter_id in DEVICE_STATUS_ROWS:
             return EntityCategory.DIAGNOSTIC
         return None
 
@@ -554,7 +563,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attributes = {}
+        attributes: dict[str, Any] = {}
         if self._last_updated is not None:
             attributes["Last Updated"] = self._last_updated
 
