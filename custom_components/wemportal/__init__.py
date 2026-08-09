@@ -6,6 +6,8 @@ https://github.com/erikkastelec/hass-WEM-Portal
 
 """
 
+import logging
+
 from datetime import timedelta
 
 import homeassistant.helpers.config_validation as cv
@@ -19,7 +21,6 @@ from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
-    _LOGGER,
     CONF_EXPERT_NOTIFY_ON_SUCCESS,
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_WRITE,
@@ -44,6 +45,8 @@ from .exceptions import ExpertOperationAborted
 from .models import WemPortalConfigEntry, WemPortalData
 from .utils import clamped_scan_interval, close_api_sessions, deserialize_modules
 from .wemportalapi import WemPortalApi
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):

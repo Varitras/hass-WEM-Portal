@@ -2,14 +2,17 @@
 Switch platform for wemportal component
 """
 
+import logging
+
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import _LOGGER
 from .entity import WemPortalEntity
 from .utils import fix_value_and_unit
+
+_LOGGER = logging.getLogger(__name__)
 
 # Recognized "on" values, covering both the numeric form (API path) and the
 # German/English text forms a value may arrive in (e.g. depending on the

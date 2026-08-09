@@ -1,5 +1,7 @@
 """Utility functions for WEM Portal."""
 
+import logging
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
     MAX_LENGTH_STATE_STATE,
@@ -14,7 +16,6 @@ from homeassistant.const import (
 
 from .models import ModuleRef
 from .const import (
-    _LOGGER,
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
     DEFAULT_DEVICE_MODEL,
@@ -23,6 +24,8 @@ from .const import (
     MISSING_DATA_STRINGS,
     WEB_MAINTENANCE_MARKER,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def clamped_scan_interval(options, key, default, minimum):

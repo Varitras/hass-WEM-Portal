@@ -2,6 +2,8 @@
 Sensor platform for wemportal component
 """
 
+import logging
+
 import json
 import re
 
@@ -12,7 +14,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import _LOGGER, GITHUB_PROJECT_URL
+from .const import GITHUB_PROJECT_URL
 from .entity import WemPortalEntity
 from .utils import (
     build_device_info,
@@ -22,6 +24,8 @@ from .utils import (
     unit_to_device_class,
     unit_to_state_class,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(

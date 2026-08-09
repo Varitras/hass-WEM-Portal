@@ -2,6 +2,8 @@
 Weishaupt webscraping and API library
 """
 
+import logging
+
 import copy
 import threading
 import time
@@ -14,7 +16,6 @@ from lxml import html
 from lxml.etree import ParserError
 
 from .const import (
-    _LOGGER,
     API_CIRCUIT_TIMES_READ_URL,
     API_CIRCUIT_TIMES_REFRESH_URL,
     API_DATA_ACCESS_READ_URL,
@@ -90,6 +91,8 @@ from .utils import (
     maintenance_notice,
     short_device_id,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 # The three rows a device status read owns. Named once because they are
 # written in one place and forgotten in another when the read fails: a

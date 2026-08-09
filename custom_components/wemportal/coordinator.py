@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import asyncio
 from time import monotonic
 
@@ -16,7 +18,6 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import (
-    _LOGGER,
     AUTH_ERROR_ESCALATION_THRESHOLD,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_TIMEOUT,
@@ -31,6 +32,8 @@ from .exceptions import (
 )
 from .utils import device_identifier, serialize_modules
 from .wemportalapi import WemPortalApi
+
+_LOGGER = logging.getLogger(__name__)
 
 # Version of the on-disk format used to persist discovered device/module/
 # parameter metadata (see get_modules_store()). Bump this if the structure

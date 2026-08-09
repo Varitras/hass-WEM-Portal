@@ -13,6 +13,8 @@ exactly on midnight UTC. Whole days, no time component - which is why this is
 a date platform and not a datetime one.
 """
 
+import logging
+
 from datetime import UTC, date, datetime
 
 from homeassistant.components.date import DateEntity
@@ -20,8 +22,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import _LOGGER
 from .entity import WemPortalEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def epoch_to_date(value) -> date | None:

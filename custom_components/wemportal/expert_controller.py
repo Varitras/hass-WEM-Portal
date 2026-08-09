@@ -14,6 +14,8 @@ see the structural guard in tests/test_security.py.
 
 from __future__ import annotations
 
+import logging
+
 import random
 import threading
 from typing import Any
@@ -23,13 +25,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
 
 from .const import (
-    _LOGGER,
     CONF_EXPERT_AUTO_POLL,
     CONF_EXPERT_POLL_INTERVAL,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
 )
 from .exceptions import ExpertOperationAborted
+
+_LOGGER = logging.getLogger(__name__)
 
 # Fraction of extra, random delay added on top of the configured interval each
 # cycle (0..20%). Jitter is added ONLY upwards, so the effective interval is

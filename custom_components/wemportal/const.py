@@ -1,6 +1,5 @@
 """Constants for the WEM Portal Integration"""
 
-import logging
 from enum import IntEnum
 from typing import Final
 
@@ -13,7 +12,6 @@ class WemDataType(IntEnum):
     PROGRAM = 6
 
 
-_LOGGER = logging.getLogger("custom_components.wemportal")
 DOMAIN: Final = "wemportal"
 # Issue tracker of THIS fork - used in user-facing error hints, so problems
 # with fork-specific behaviour land here and not at the upstream project.

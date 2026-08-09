@@ -1,11 +1,15 @@
 """Data mapper for mapping API values to Home Assistant platforms."""
 
+import logging
+
 import re
 
-from .const import _LOGGER, WemDataType
+from .const import WemDataType
 from .models import ModuleRef
 from .translations import friendly_name_mapper, translate
 from .utils import looks_like_schedule, sanitize_value, unit_to_icon
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def get_min_max(

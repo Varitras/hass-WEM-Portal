@@ -7,7 +7,6 @@ from curl_cffi import requests
 from lxml import html
 
 from .const import (
-    _LOGGER,
     GITHUB_PROJECT_URL,
     PERCENTAGE_KEYWORDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
@@ -35,6 +34,8 @@ from .utils import (
     sanitize_value,
     unit_to_icon,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 # Unit -> icon mapping for scraped sensors. Defined once at module level
 # instead of being re-created for every single table row during parsing

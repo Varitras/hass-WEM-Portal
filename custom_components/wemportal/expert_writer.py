@@ -10,6 +10,8 @@ against the live option list from the freshly fetched edit form and
 verifies the result by re-reading the form afterwards.
 """
 
+import logging
+
 import hashlib
 import random
 import re
@@ -20,7 +22,6 @@ from curl_cffi import requests
 from lxml import html
 
 from .const import (
-    _LOGGER,
     CONF_EXPERT_NOTIFY_ON_SUCCESS,
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
@@ -87,6 +88,8 @@ from .utils import (
     parse_portal_number,
     report_unexpected_maintenance_marker,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 # Edit dialog endpoint; entityvalue identifies device/module/parameter.
 EXPERT_PARAMETER_URL = (
