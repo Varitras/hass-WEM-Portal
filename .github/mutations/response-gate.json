@@ -2238,5 +2238,26 @@
     "old": "            except AbortFlow:\n                raise\n            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                self._discovery_error = \"discovery_busy\"",
     "new": "            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                self._discovery_error = \"discovery_busy\"",
     "tests": "the_abort_survives_the_step_that_calls_it"
+  },
+  {
+    "label": "coordinator: a failure count that only ever climbs",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                self.num_failed = 0\n                self._reset_auth_failures()",
+    "new": "                self._reset_auth_failures()",
+    "tests": "a_good_cycle_between_two_bad_ones_keeps_the_entities"
+  },
+  {
+    "label": "expert: the dialog's wording dropped on the way to the entity",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if state.portal_text is not None:\n                self._portal_text = state.portal_text\n",
+    "new": "",
+    "tests": "the_dialog_wording_reaches_the_entity_that_has_to_show_it"
+  },
+  {
+    "label": "expert: the only readable answer to a special value left unpublished",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if self._portal_text is not None:\n                attributes[\"portal_value\"] = self._portal_text\n",
+    "new": "",
+    "tests": "the_dialog_wording_reaches_the_entity_that_has_to_show_it"
   }
 ]

@@ -15,7 +15,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
+from homeassistant.const import (
+    CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+    STATE_UNAVAILABLE,
+)
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
@@ -1770,6 +1775,46 @@ async def test_a_cycle_that_ran_out_of_time_still_counts_as_a_failure(
     )
     assert coordinator.num_auth_failed == 0, (
         "a slow portal moved the integration towards a reauth prompt"
+    )
+
+
+async def test_a_good_cycle_between_two_bad_ones_keeps_the_entities(hass, monkeypatch):
+    """The tolerated failure is a CONSECUTIVE one, so a success must clear it.
+
+    Every branch that counts a failure was tested; the success that resets
+    the count was not. Left standing, the counter only climbs, and the first
+    hiccup after weeks of clean polling arrives as the second failure - so
+    the tolerance expires on exactly the outage it was written for, and the
+    dashboard empties anyway.
+    """
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+
+    cycles = iter([ForbiddenError("blocked"), FAKE_DATA, ForbiddenError("blocked")])
+
+    def next_cycle(self, *_args, **_kwargs):
+        outcome = next(cycles)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", next_cycle)
+
+    for _ in range(3):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    assert coordinator.num_failed == 1, (
+        "the successful cycle in between did not clear the failure count"
+    )
+    outside = next(
+        state
+        for state in hass.states.async_all("sensor")
+        if "outside_temperature" in state.entity_id
+    )
+    assert outside.state != STATE_UNAVAILABLE, (
+        "one failed cycle emptied the dashboard, though it is the one case "
+        "the tolerance exists for"
     )
 
 

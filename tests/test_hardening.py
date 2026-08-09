@@ -668,6 +668,33 @@ def test_the_factory_default_is_read_from_the_dialog():
     assert worded.factory_default == "Aus"
 
 
+def test_the_dialog_wording_reaches_the_entity_that_has_to_show_it():
+    """Read out of the form and published on the entity are two steps.
+
+    Only the first was ever asked. The second is what the user sees, and it
+    carries the whole answer where a special value is selected: the state
+    goes unknown because a number cannot hold "Aus", and unknown without the
+    wording beside it is indistinguishable from a read that simply failed.
+    """
+    from custom_components.wemportal import expert_writer
+
+    state = expert_writer.WemPortalExpertClient.parse_parameter_form(
+        _dialog_html(
+            [("-32768", "Aus", True), ("200", "20.0", False), ("680", "68.0", False)],
+            factory_default="20.0",
+        )
+    )
+    entity = _expert_entity(_api())
+
+    entity._apply_state(state)
+
+    assert entity.native_value is None, "a word was published as a number"
+    assert entity.extra_state_attributes == {
+        "portal_value": "Aus",
+        "factory_default": "20.0",
+    }
+
+
 def test_a_scaled_parameter_reads_as_the_portal_shows_it_not_ten_times_over():
     """The portal offers 1.5 as the string "15", and only the string was read.
 
