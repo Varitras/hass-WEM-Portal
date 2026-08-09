@@ -1615,7 +1615,13 @@ def create_expert_number_entities(config_entry):
 # might offer is excluded before it has been asked - see the entity class for
 # why excluding anything here is a lock rather than a label.
 EXPERT_UNKNOWN_BOUND = 100000.0
-EXPERT_UNKNOWN_STEP = 0.5
+# 0.01 rather than the 0.5 this started as: the heating curve is offered in
+# 0.05 steps, so half-value granularity locked out four values in five. Being
+# finer than any parameter needs costs nothing - while the bounds are
+# placeholders the entity is a box, where the arrows are useless anyway and
+# the value is typed - whereas being too coarse is a lock on the very write
+# that would fetch the real step.
+EXPERT_UNKNOWN_STEP = 0.01
 
 # What every slot claimed before the placeholders existed. Kept only to
 # recognise such a record on the first start after an upgrade - see

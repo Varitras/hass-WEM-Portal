@@ -2280,5 +2280,12 @@
     "old": "                _LOGGER.debug(\"Skipping this cycle: %s\", exc)",
     "new": "                self.num_failed += 1\n                self._reset_auth_failures()\n                _LOGGER.debug(\"Skipping this cycle: %s\", exc)",
     "tests": "a_busy_api_counts_neither_for_nor_against_the_credentials"
+  },
+  {
+    "label": "expert: a placeholder step too coarse for what the portal offers",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "EXPERT_UNKNOWN_STEP = 0.01",
+    "new": "EXPERT_UNKNOWN_STEP = 0.5",
+    "tests": "an_unread_slot_rasters_finely_enough_for_what_the_portal_offers"
   }
 ]

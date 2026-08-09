@@ -499,6 +499,29 @@ def test_a_parameter_whose_range_is_known_is_a_slider_again():
     assert entity.mode == NumberMode.AUTO
 
 
+def test_an_unread_slot_rasters_finely_enough_for_what_the_portal_offers():
+    """The placeholder step was 0.5, and the portal offers 0.05.
+
+    Home Assistant does not enforce the step on a service call - it checks
+    only min/max - but the input field and the arrows do, and that is the
+    way this gets used. So a heating curve of 0.55 could not be typed at a
+    slot the portal had not been asked about yet, and the write that would
+    have fetched the real step is exactly what the field refused to compose.
+    Same trap as the old 0-to-100 range, one order of magnitude finer.
+
+    Values below are measured at the portal: the heating curve runs 0.05 to
+    1.50 in 0.05, the frost protection -20.0 to 17.5 in halves.
+    """
+    entity = _expert_entity(_api())
+
+    for offered in (0.05, 0.55, 1.5, 17.5, -19.5):
+        steps = offered / entity.native_step
+        assert abs(steps - round(steps)) < 1e-9, (
+            f"{offered} is not on the placeholder raster of "
+            f"{entity.native_step}, so it cannot be typed before the first read"
+        )
+
+
 def test_a_postback_asks_the_portal_for_a_delta_not_a_whole_page():
     """Two headers decide what the portal sends back.
 

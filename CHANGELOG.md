@@ -15,6 +15,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   one account apart and all the message needs it for.
 
 ### Fixed
+- **A slot the portal has not been asked about yet accepts fine values.** The
+  placeholder step was half a unit, and the heating curve is offered in
+  hundredths — so four values in five could not be typed into a slot before
+  its first successful read, and the write that would have fetched the real
+  step was among them. The placeholder is now finer than any parameter needs,
+  which costs nothing: until the real range arrives the entity is a box, where
+  the value is typed rather than stepped.
 - **A parameter set through the service shows its new value right away.** Both
   ways of writing an expert parameter end in a portal read-back, and the number
   entity applies it - but the `set_expert_parameter` action dropped the answer,
