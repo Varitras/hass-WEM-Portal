@@ -330,9 +330,7 @@ def _smallest_gap(options):
     larger than the true one makes values unreachable.
 
     No guard for a short list: one option produces no pair to subtract, so
-    the comprehension is empty and the answer is already None. The guard that
-    stood here said the same thing twice, which a mutation demonstrated by
-    removing it with nothing changing.
+    the comprehension is empty and the answer is already None.
     """
     ordered = sorted(options or [])
     gaps = [

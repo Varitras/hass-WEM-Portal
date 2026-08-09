@@ -149,8 +149,7 @@ class WemPortalEntity(CoordinatorEntity):
         "Unbekannter Fehler" now and then and the next cycle succeeds, and
         taking every entity of the account unavailable for that costs half an
         hour of every graph at the default interval - plus a state change out
-        and back for anything automating on it. The web scrape already worked
-        this way; the API side did not.
+        and back for anything automating on it.
 
         The readings themselves are unaffected: a device that stops answering
         still has its values aged out, and the count resets on any successful

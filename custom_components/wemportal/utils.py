@@ -134,19 +134,9 @@ def build_device_info(entry_id, device_id, sw_version=None, model=None):
 def sanitize_value(value_str):
     """Sanitize typical German/English WEM Portal strings into numeric values.
 
-    This is the single, shared implementation used by both the API mapper
-    (mapper.py) and the web scraper (scraper.py). Previously each of those
-    modules had its own slightly different copy of this logic, which meant
-    a value like "Ein" (German) or "On" (English) could be recognized in
-    one code path but not the other. Consolidating it here fixes that
-    inconsistency once, for both paths.
-
-    It took a `unit` and a `name` until neither was read any more. `name`
-    was how energy and power sensors were told apart, back when only they
-    turned a missing-data placeholder into None; that now applies to every
-    sensor, so there is nothing left to tell apart. `unit` had already
-    stopped deciding anything when boolean values became always-numeric -
-    see the note below.
+    The single implementation for both readers - the API mapper (mapper.py)
+    and the web scraper (scraper.py) - so that "Ein"/"On" cannot be
+    recognised on one path and not the other.
 
     Args:
         value_str: The raw string value coming from the portal (or already

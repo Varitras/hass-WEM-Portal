@@ -768,10 +768,9 @@ class WemportalOptionsFlow(OptionsFlow):
     async def _run_expert(self, work, *arguments):
         """Run one blocking expert operation under the shared per-account lock.
 
-        The entity write and the auto-poll both take it, so only one expert
-        portal operation runs at a time - discovery, the heaviest of the three
-        and the only one a user starts by hand, did not. It could open a second
-        portal session on the same account beside a running poll or write.
+        The entity write and the auto-poll take the same lock, so only one
+        expert portal operation runs per account at a time. Discovery is the
+        heaviest of the three and the only one a user starts by hand.
 
         Taken INSIDE the executor job, like the write path does it: waiting for
         a threading lock on the event loop would stall Home Assistant for as
