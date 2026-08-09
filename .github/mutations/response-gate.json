@@ -2151,8 +2151,8 @@
   {
     "label": "expert: a refusal that throws the fresh range away",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "                    f\"({len(state.options)} discrete options).\",\n                    state=state,",
-    "new": "                    f\"({len(state.options)} discrete options).\",",
+    "old": "                f\"({len(state.options)} discrete options).\",\n                state=state,",
+    "new": "                f\"({len(state.options)} discrete options).\",",
     "tests": "a_refused_value_carries_the_range_that_refused_it"
   },
   {
@@ -2301,5 +2301,33 @@
     "old": "        try:\n            login_response = self.session.post(\n                WEB_LOGIN_URL,\n                data=login_data,\n                allow_redirects=True,\n                timeout=self._request_timeout(),\n            )\n        except Exception as exc:\n            raise self._transport_failure(exc, \"send the WEM Portal login\") from exc",
     "new": "        login_response = self.session.post(\n            WEB_LOGIN_URL,\n            data=login_data,\n            allow_redirects=True,\n            timeout=self._request_timeout(),\n        )",
     "tests": "every_scraper_request_classifies_its_transport_failure"
+  },
+  {
+    "label": "expert: the option beside the scale thrown away at the parser again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            else:\n                special_values[label or attribute] = attribute\n",
+    "new": "",
+    "tests": "a_special_value_can_be_written_by_the_word_the_portal_shows"
+  },
+  {
+    "label": "expert: a word that has to be spelled exactly as the portal does",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if offered.casefold() == word.casefold():",
+    "new": "            if offered == word:",
+    "tests": "a_special_value_can_be_written_by_the_word_the_portal_shows"
+  },
+  {
+    "label": "service: a value field that coerces every word to a number",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "                vol.Required(\"value\"): vol.Any(vol.Coerce(float), cv.string),",
+    "new": "                vol.Required(\"value\"): vol.Coerce(float),",
+    "tests": "the_service_can_set_the_option_that_is_not_a_number"
+  },
+  {
+    "label": "expert: a special write confirmed against the number it does not have",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if expected_word is not None:\n                confirmed = verify.portal_text == expected_word\n                shown, wanted = verify.portal_text, expected_word\n            else:",
+    "new": "            if False:\n                confirmed = verify.portal_text == expected_word\n                shown, wanted = verify.portal_text, expected_word\n            else:",
+    "tests": "a_special_value_can_be_written_by_the_word_the_portal_shows"
   }
 ]

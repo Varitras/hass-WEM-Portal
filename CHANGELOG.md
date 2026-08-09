@@ -14,6 +14,16 @@ versioning follows [Semantic Versioning](https://semver.org/).
   verbatim. Only its last two digits remain, which is what tells two devices of
   one account apart and all the message needs it for.
 
+### Added
+- **The `set_expert_parameter` action now takes the word too, so an "off"
+  position can finally be set.** A heating curve can be switched to *Aus*, a
+  frost protection likewise — but that is not a point on the scale (the portal
+  encodes it as `0` on one parameter and `-32768` on the next), so the number
+  entity cannot offer it and Home Assistant's range check refuses it before
+  this integration is asked. Passing the word the dialog shows goes around
+  both; case does not matter. The value field is a text field now, which
+  accepts numbers exactly as before.
+
 ### Fixed
 - **A poll that runs out of time says so from every request, not just one.**
   A request is capped at what is left of the cycle, so timing out on that cap

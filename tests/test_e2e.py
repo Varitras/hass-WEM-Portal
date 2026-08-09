@@ -425,6 +425,47 @@ async def test_a_service_write_reaches_the_entity_that_shows_the_parameter(
     )
 
 
+async def test_the_service_can_set_the_option_that_is_not_a_number(hass, monkeypatch):
+    """The whole way in for a value that sits beside the scale.
+
+    The schema coerced everything to a float, so the word never reached the
+    write - and the number entity cannot carry it either, which left "Aus" a
+    setting the portal offers and nothing here could set.
+    """
+    await _setup(hass, _entry(hass, _expert_options()))
+
+    written = {}
+
+    def write(self, entityvalue, value, **_kwargs):
+        written["value"] = value
+        return expert_writer.ExpertParameterState(
+            None, [20.0, 68.0], {}, portal_text="Aus"
+        )
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", write)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_EXPERT_PARAMETER,
+        {"entityvalue": EV_A, "value": "Aus"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert written["value"] == "Aus", (
+        "the word was coerced to a number before it ever reached the write"
+    )
+    shown = [
+        state
+        for state in hass.states.async_all("number")
+        if "expert_parameter_1" in state.entity_id
+    ]
+    assert shown[0].state == "unknown", "a word was published as a number"
+    assert shown[0].attributes["portal_value"] == "Aus", (
+        "nothing on the entity says which setting it is on"
+    )
+
+
 async def test_expert_service_refuses_while_another_operation_runs(hass):
     """The shared per-account lock must reject a second concurrent expert
     operation instead of opening a parallel portal session."""

@@ -344,6 +344,7 @@ class ExpertParameterState:
         post_values=None,
         portal_text=None,
         factory_default=None,
+        special_values=None,
     ):
         self.current = current  # currently selected value (float), or None
         # What the portal displays for the current selection, and what it says
@@ -358,6 +359,11 @@ class ExpertParameterState:
         # parameters: 1.5 is offered as the string "15". Defaults to the value
         # written out, which is what every unscaled parameter needs.
         self.post_values = post_values or {}
+        # The options that are NOT points on the scale, by the word the dialog
+        # shows for them: {"Aus": "-32768"}. A number cannot carry a word, so
+        # these are unreachable through the entity by construction - the
+        # domain service takes the word instead. See write_parameter.
+        self.special_values = special_values or {}
         self.min_value = min(options) if options else None
         self.max_value = max(options) if options else None
         # The gap between two neighbouring options, which is what the entity
@@ -1154,12 +1160,21 @@ class WemPortalExpertClient:
         current = None
         selected_text = None
         post_values = {}
+        # Kept rather than dropped: a value beside the scale is still a
+        # setting the portal accepts, and until it was carried this far no
+        # route could reach it - the entity cannot put "Aus" on a number, and
+        # Home Assistant refuses it against the published range before this
+        # integration is asked. Keyed by the word, which is all a caller has
+        # to go on; the token behind it is installation-specific.
+        special_values = {}
         for shown, posted, attribute, selected, label in pairs:
             on_scale = shown is not None or not by_label
             value = (shown if by_label else posted) if on_scale else None
             if on_scale:
                 options.append(value)
                 post_values[value] = attribute
+            else:
+                special_values[label or attribute] = attribute
             if selected:
                 # None where the portal has a special value selected: a number
                 # entity cannot show "Aus", and the attribute below says so.
@@ -1204,6 +1219,7 @@ class WemPortalExpertClient:
             post_values,
             portal_text=selected_text,
             factory_default=factory_default or None,
+            special_values=special_values,
         )
 
     # ------------------------------------------------------------------
@@ -1413,17 +1429,7 @@ class WemPortalExpertClient:
 
             # Validate against the live option list; option values are the
             # exact strings the server expects back.
-            value_f = float(value)
-            if value_f not in state.options:
-                # Carries the state: a caller whose idea of the range is out
-                # of date is precisely the caller that lands here.
-                raise ParameterWriteError(
-                    f"Value {value} not allowed; device accepts "
-                    f"{state.min_value}..{state.max_value} "
-                    f"({len(state.options)} discrete options).",
-                    state=state,
-                )
-            value_str = state.post_value_for(value_f)
+            value_str, expected_word = self._requested_option(state, value)
 
             # The Senden button is type=button and submits via a JS
             # __doPostBack('ctl00$DialogContent$BtnSave', '') - replicate
@@ -1456,20 +1462,68 @@ class WemPortalExpertClient:
             # immediately, so a short retry budget is enough here (unlike
             # the initial read, where live values may still be loading).
             verify = self._fetch_form(entityvalue, max_attempts=2)
-            if verify.current != value_f:
+            # A word is confirmed by the word the dialog shows, because a
+            # value beside the scale leaves `current` empty by design - that
+            # is what makes it special in the first place.
+            if expected_word is not None:
+                confirmed = verify.portal_text == expected_word
+                shown, wanted = verify.portal_text, expected_word
+            else:
+                confirmed = verify.current == float(value)
+                shown, wanted = verify.current, float(value)
+            if not confirmed:
                 raise ParameterWriteError(
-                    f"Write not confirmed: form still shows {verify.current}, "
-                    f"expected {value_f}. The portal may have rejected the value.",
+                    f"Write not confirmed: form still shows {shown}, "
+                    f"expected {wanted}. The portal may have rejected the value.",
                     state=verify,
                 )
             _LOGGER.info(
                 "Expert parameter %s written and verified: %s",
                 short_entityvalue(entityvalue),
-                value_f,
+                wanted,
             )
             return verify
         finally:
             self.close()
+
+    @staticmethod
+    def _requested_option(state, value):
+        """The token to post, and the word to verify against - or None.
+
+        A word addresses an option that sits BESIDE the scale ("Aus"), and
+        naming it is the only way to reach one: it has no place on a number,
+        so neither the entity nor Home Assistant's range check - which runs
+        before this integration is asked - can carry it.
+
+        Matched case-insensitively. The word comes from a human typing what
+        the portal displays, and "aus" for "Aus" failing would be a puzzle
+        with no clue in it.
+        """
+        word = str(value).strip()
+        for offered, attribute in state.special_values.items():
+            if offered.casefold() == word.casefold():
+                return attribute, offered
+
+        try:
+            value_f = float(value)
+        except (TypeError, ValueError) as exc:
+            offers = ", ".join(state.special_values) or "no non-numeric option"
+            raise ParameterWriteError(
+                f"{word!r} is not a value this parameter takes. It accepts "
+                f"{state.min_value}..{state.max_value} and {offers}.",
+                state=state,
+            ) from exc
+
+        if value_f not in state.options:
+            # Carries the state: a caller whose idea of the range is out
+            # of date is precisely the caller that lands here.
+            raise ParameterWriteError(
+                f"Value {value} not allowed; device accepts "
+                f"{state.min_value}..{state.max_value} "
+                f"({len(state.options)} discrete options).",
+                state=state,
+            )
+        return state.post_value_for(value_f), None
 
     # ------------------------------------------------------------------
     @staticmethod

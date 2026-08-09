@@ -389,8 +389,17 @@ so it is left out of the entity's range.
 
 Two consequences:
 
-- **You cannot set such a parameter to "off" from Home Assistant.** The
-  numeric values work as usual; use the portal for the off position.
+- **The number entity cannot offer it**, and neither can Home Assistant's own
+  range check. Set it through the action instead, naming the word the portal
+  shows — case does not matter:
+
+  ```yaml
+  action: wemportal.set_expert_parameter
+  data:
+    entityvalue: "3A7F91C2E0B48D5619F2A0C7B4E83D105C2A"
+    value: "Aus"
+  ```
+
 - **When the portal has the special value selected, the entity reads
   `unknown`** and `portal_value` says which one (`Aus`). That is not a failed
   read — a number entity simply cannot show a word.

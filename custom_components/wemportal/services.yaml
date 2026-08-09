@@ -15,7 +15,11 @@ set_expert_parameter:
         text:
     value:
       name: Value
-      description: New value. Must be one of the options the device offers.
+      description: >-
+        New value. Must be one of the options the device offers - a number, or
+        the word the portal shows for an option that is not one (for example
+        "Aus"). Those words are the only way to set such an option: they have
+        no place on a number entity.
       required: true
       example: 30
       # No min/max/step: expert parameters are not all percentages - there
@@ -24,12 +28,13 @@ set_expert_parameter:
       # a step of 1 silently blocked. Bounds here would only suggest a
       # precision that does not exist; the real check happens on write, where
       # the value is validated against the option list the device itself
-      # offers. `box` keeps a numeric field rather than a slider, which needs
-      # a range to make sense.
+      # offers.
+      #
+      # A text field rather than a number one: an option beside the scale is
+      # named by its word, and a number selector cannot express that. Numbers
+      # typed here still arrive as numbers - the schema coerces what parses.
       selector:
-        number:
-          mode: box
-          step: any
+        text:
 set_holiday:
   fields:
     begin_entity:

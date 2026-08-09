@@ -764,22 +764,21 @@ def test_a_dropdown_whose_labels_are_words_falls_back_to_its_values():
     assert state.options == [0.0, 1.0]
 
 
-def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
-    """The one line where a number reaches the heating system.
+class _WrittenResponse:
+    """The portal's answer to a write postback."""
 
-    Rebuilding the string from the float posts "1.5" where the form expects
-    "15" - the portal answers that with the value unchanged, and the write is
-    reported as refused. Every test of this path mocked write_parameter out,
-    so nothing watched what was actually sent.
+    status_code = 200
+    text = "<html><body>ok</body></html>"
+    url = "https://www.wemportal.com/Web/UControls/Weishaupt/ExpertParameter.aspx"
+
+
+def _recording_write_client(monkeypatch, dialogs):
+    """A client that records what it posts, answering with `dialogs` in turn.
+
+    `dialogs` are option lists as _dialog_html takes them: the form before the
+    write, then the one the verify re-reads.
     """
     from custom_components.wemportal import expert_writer
-
-    before = expert_writer.WemPortalExpertClient.parse_parameter_form(
-        _dialog_html([("10", "1.0", True), ("15", "1.5", False)])
-    )
-    after = expert_writer.WemPortalExpertClient.parse_parameter_form(
-        _dialog_html([("10", "1.0", False), ("15", "1.5", True)])
-    )
 
     sent = {}
 
@@ -791,20 +790,65 @@ def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
         def close(self):
             pass
 
-    class _WrittenResponse:
-        status_code = 200
-        text = "<html><body>ok</body></html>"
-        url = "https://www.wemportal.com/Web/UControls/Weishaupt/ExpertParameter.aspx"
-
+    forms = iter(
+        [
+            expert_writer.WemPortalExpertClient.parse_parameter_form(
+                _dialog_html(options)
+            )
+            for options in dialogs
+        ]
+    )
     client = expert_writer.WemPortalExpertClient("user@example.org", "pw")
     client.session = _Session()
-    forms = iter([before, after])
     monkeypatch.setattr(client, "_login", lambda: None)
     monkeypatch.setattr(client, "_fetch_form", lambda *_a, **_k: next(forms))
+    return client, sent
+
+
+def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
+    """The one line where a number reaches the heating system.
+
+    Rebuilding the string from the float posts "1.5" where the form expects
+    "15" - the portal answers that with the value unchanged, and the write is
+    reported as refused. Every test of this path mocked write_parameter out,
+    so nothing watched what was actually sent.
+    """
+    client, sent = _recording_write_client(
+        monkeypatch,
+        [
+            [("10", "1.0", True), ("15", "1.5", False)],
+            [("10", "1.0", False), ("15", "1.5", True)],
+        ],
+    )
 
     client.write_parameter("A" * 36, 1.5)
 
     assert sent["ctl00$DialogContent$ddlNewValue"] == "15"
+
+
+def test_a_special_value_can_be_written_by_the_word_the_portal_shows(monkeypatch):
+    """ "Aus" is a real setting that no route could reach.
+
+    It sits beside the scale rather than on it, so the number entity cannot
+    offer it and Home Assistant refuses it against the published range. The
+    admin service goes around that check - but the write itself took a float,
+    so the one route that could have reached the value did not either.
+
+    Typed in lower case on purpose: the word comes from a human copying what
+    the portal displays, and "aus" failing where "Aus" works would be a puzzle
+    with no clue in it.
+    """
+    off_selected = [("-32768", "Aus", True), ("200", "20.0", False)]
+    client, sent = _recording_write_client(
+        monkeypatch,
+        [[("-32768", "Aus", False), ("200", "20.0", True)], off_selected],
+    )
+
+    client.write_parameter("A" * 36, "aus")
+
+    assert sent["ctl00$DialogContent$ddlNewValue"] == "-32768", (
+        "the word was not translated into the token the form expects back"
+    )
 
 
 def test_a_refused_value_carries_the_range_that_refused_it(monkeypatch):
@@ -3268,18 +3312,26 @@ def test_the_service_value_field_does_not_impose_a_percent_range():
     """Expert parameters are not all percentages - temperatures, times and
     curves are among them, and the data model knows half steps
     (NUMBER_STEP_HALF), which a step of 1 silently blocked. The real check is
-    on write, against the option list the device itself offers."""
+    on write, against the option list the device itself offers.
+
+    A text field rather than a number one, because an option that sits beside
+    the scale is named by its word ("Aus") and a number selector cannot
+    express that. It settles the original question by construction too: a
+    text field states no minimum, no maximum and no step at all.
+    """
     from pathlib import Path
 
     import yaml
 
     p = Path(__file__).resolve().parent.parent / "custom_components" / "wemportal"
     spec = yaml.safe_load((p / "services.yaml").read_text(encoding="utf-8"))
-    number = spec["set_expert_parameter"]["fields"]["value"]["selector"]["number"]
+    selector = spec["set_expert_parameter"]["fields"]["value"]["selector"]
 
-    assert "min" not in number
-    assert "max" not in number
-    assert number.get("step") == "any", "a step of 1 rules out half-step values"
+    assert "number" not in selector, (
+        "a number field cannot express the options that are not numbers, and "
+        "carries a range and a step this parameter may not have"
+    )
+    assert "text" in selector
 
 
 # --- stored options are held to their floors --------------------------

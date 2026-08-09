@@ -591,10 +591,14 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
         # The write verified itself against the portal; that answer is exactly
         # what the entity for this id should be showing.
         data.expert.apply_verified_write(entityvalue, state)
+        # The dialog's own wording, which is the number for an ordinary
+        # parameter and the only readable answer for one set beside the
+        # scale - where `current` is empty by design.
+        written = state.portal_text or state.current
         _LOGGER.info(
             "Expert parameter %s set to %s (allowed range %s..%s)",
             ev_short,
-            state.current,
+            written,
             state.min_value,
             state.max_value,
         )
@@ -604,7 +608,7 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
                 "create",
                 {
                     "title": "WEM Portal expert write",
-                    "message": f"{ev_short} set to {state.current}.",
+                    "message": f"{ev_short} set to {written}.",
                     "notification_id": f"wemportal_expert_{entityvalue_digest(entityvalue)}",
                 },
                 blocking=False,
@@ -622,7 +626,10 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required("entityvalue"): cv.string,
-                vol.Required("value"): vol.Coerce(float),
+                # A number, or the word the dialog shows for an option that
+                # is not one ("Aus"). Coerce first, so "30" stays a number
+                # and only what cannot be one travels on as text.
+                vol.Required("value"): vol.Any(vol.Coerce(float), cv.string),
             }
         ),
     )
