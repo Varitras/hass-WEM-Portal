@@ -297,15 +297,18 @@ def test_the_gate_is_where_the_status_is_actually_handled(module):
     carries a page" broke a test whose point that change served: a net on the
     current spelling is a net on the code, not on the intent.
     """
+    from custom_components.wemportal.exceptions import ForbiddenError, ServerError
+
     gate = _gate_for(module)
 
+    # Named rather than caught as a bare Exception and identified afterwards:
+    # anything else the gate might raise - an AttributeError from a botched
+    # refactor, say - used to read as "rejected, good" for one assertion and
+    # was only then told apart by class NAME. Naming both here lets the wrong
+    # exception travel up as the failure it is.
     for status in (500, 502, 403, 204, 302):
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises((ServerError, ForbiddenError)):
             gate(_Answer(status), "probe")
-        assert type(excinfo.value).__name__ in ("ServerError", "ForbiddenError"), (
-            f"{module}: status {status} was accepted as a usable answer "
-            f"({type(excinfo.value).__name__})"
-        )
 
     # The one status that IS a page must still get through, or the gate could
     # satisfy the loop above by rejecting everything.
