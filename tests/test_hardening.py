@@ -9,7 +9,7 @@ import time
 import pytest
 import requests as real_requests
 
-from custom_components.wemportal import exceptions, wemportalapi
+from custom_components.wemportal import exceptions, statistics, wemportalapi
 from custom_components.wemportal.models import Reading
 from custom_components.wemportal.const import WEB_LOGGED_IN_MARKER
 from custom_components.wemportal.wemportalapi import WemPortalApi
@@ -271,9 +271,9 @@ def test_failed_statistics_cycle_retries_after_the_short_interval():
     assert len(calls) == 1
 
     waited = time.time() - api.last_statistics_fetch
-    remaining = wemportalapi.STATISTICS_REFRESH_INTERVAL_SECONDS - waited
+    remaining = statistics.STATISTICS_REFRESH_INTERVAL_SECONDS - waited
 
-    assert remaining <= wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert remaining <= statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
     assert remaining > 0, "the rate limit must not be dropped entirely"
 
 
@@ -297,7 +297,7 @@ def _statistics_api_with_groups(groups, read_answer):
     api.last_statistics_fetch = 0.0
 
     def make_api_call(url, **kwargs):
-        if url == wemportalapi.API_STATISTICS_REFRESH_URL:
+        if url == statistics.API_STATISTICS_REFRESH_URL:
             return FakeResponse(
                 {"GroupTypeDescriptions": [{"GroupType": g} for g in groups]}
             )
@@ -309,7 +309,7 @@ def _statistics_api_with_groups(groups, read_answer):
 
 def _remaining_wait(api):
     """How long until statistics would be fetched again."""
-    return wemportalapi.STATISTICS_REFRESH_INTERVAL_SECONDS - (
+    return statistics.STATISTICS_REFRESH_INTERVAL_SECONDS - (
         time.time() - api.last_statistics_fetch
     )
 
@@ -317,7 +317,7 @@ def _remaining_wait(api):
 def _invalid_group_error():
     """The portal's own "this group does not apply here" rejection."""
     error = exceptions.WemPortalError("not valid for this module")
-    error.server_status = wemportalapi.WEM_INVALID_PARAMETER_STATUS
+    error.server_status = statistics.WEM_INVALID_PARAMETER_STATUS
     return error
 
 
@@ -334,7 +334,7 @@ def test_a_device_whose_every_group_failed_is_not_counted_as_a_success():
     api.get_statistics(enabled_devices=["1234"])
 
     remaining = _remaining_wait(api)
-    assert remaining <= wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert remaining <= statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
     assert remaining > 0, "the rate limit must not be dropped entirely"
 
 
@@ -383,7 +383,7 @@ def test_one_group_that_worked_keeps_the_device_a_success():
 
     api.get_statistics(enabled_devices=["1234"])
 
-    assert _remaining_wait(api) > wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert _remaining_wait(api) > statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
 
 
 def test_groups_that_do_not_apply_are_not_failures():
@@ -398,7 +398,7 @@ def test_groups_that_do_not_apply_are_not_failures():
 
     api.get_statistics(enabled_devices=["1234"])
 
-    assert _remaining_wait(api) > wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert _remaining_wait(api) > statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
 
 
 def test_statistics_timestamp_is_kept_when_nothing_was_attempted():

@@ -96,10 +96,10 @@ def _no_leftover_account_memory():
     every later test's request raise ForbiddenError before it is even sent,
     and the first warning swallows its siblings in every later test.
     """
-    from custom_components.wemportal import models
+    from custom_components.wemportal import models, transport
 
-    wemportalapi.reset_cooldowns_for_tests()
+    transport.reset_cooldowns_for_tests()
     models.reset_account_states_for_tests()
     yield
-    wemportalapi.reset_cooldowns_for_tests()
+    transport.reset_cooldowns_for_tests()
     models.reset_account_states_for_tests()

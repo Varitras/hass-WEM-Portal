@@ -19,6 +19,7 @@ TRANSPORT = (
 
 DOMAIN_MODULES = {
     "wemportalapi",
+    "statistics",
     "mapper",
     "scraper",
     "coordinator",

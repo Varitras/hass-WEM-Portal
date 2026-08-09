@@ -204,6 +204,7 @@ def test_a_value_read_answered_with_null_fails_the_cycle_cleanly():
 # site fails this test until it is added here - which is the moment to
 # decide what shape the answer has and what a wrong shape means.
 JSON_ANSWER_BOUNDARIES = {
+    "statistics.py": {"_fetch_device_statistics"},
     "transport.py": {"get_response_details"},
     "wemportalapi.py": {
         "api_login",
@@ -213,7 +214,6 @@ JSON_ANSWER_BOUNDARIES = {
         "_fetch_device_status",
         "_fetch_parameter_values",
         "_read_one_schedule",
-        "_fetch_device_statistics",
     },
 }
 

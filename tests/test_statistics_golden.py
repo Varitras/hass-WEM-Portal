@@ -32,7 +32,7 @@ import pytest
 
 from custom_components.wemportal.models import Reading
 from custom_components.wemportal.wemportalapi import WemPortalApi
-from custom_components.wemportal.wemportalapi import (
+from custom_components.wemportal.statistics import (
     API_STATISTICS_READ_URL,
     API_STATISTICS_REFRESH_URL,
     STATISTICS_REFRESH_INTERVAL_SECONDS,

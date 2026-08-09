@@ -148,56 +148,56 @@
   },
   {
     "label": "stats: a routine rejection must not abort the remaining groups",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "            except Exception as exc:  # noqa: BLE001\n                # Status 3001 = this statistics group isn't valid for",
     "new": "            except ZeroDivisionError as exc:  # noqa: BLE001\n                # Status 3001 = this statistics group isn't valid for",
     "tests": "statistics_output_is_unchanged or routine_rejection_still_counts"
   },
   {
     "label": "stats: an extra read per group must be noticed as traffic",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "                stats_resp = self.make_api_call(\n                    API_STATISTICS_READ_URL,",
     "new": "                self.make_api_call(API_STATISTICS_READ_URL, headers=headers, data=read_payload, do_retry=True)\n                stats_resp = self.make_api_call(\n                    API_STATISTICS_READ_URL,",
     "tests": "statistics_output_is_unchanged or one_read_per_group"
   },
   {
     "label": "stats: never inventing a zero must be frozen",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "                    \"skipping instead of reporting 0.\",\n                    group_id,\n                )\n                return",
     "new": "                    \"skipping instead of reporting 0.\",\n                    group_id,\n                )\n                current_value = 0.0",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the fallback name map must be frozen",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "            group_name = fallback_names.get(group_id, f\"Energy {group_id}\")",
     "new": "            group_name = f\"Energy {group_id}\"",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the Energy suffix rule must be frozen",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "            if \"energy\" not in translated_group.lower():",
     "new": "            if False:",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the unit default must be frozen",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "        unit = stats_resp.get(\"Unit\", \"kWh\")",
     "new": "        unit = stats_resp.get(\"Unit\", \"MWh\")",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the sensor attributes must be frozen",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "            state_class=\"total_increasing\",",
     "new": "            state_class=\"total\",",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: picking the newest entry by date must be frozen",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "        latest_stat = latest_statistics_entry(values)",
     "new": "        latest_stat = values[-1]",
     "tests": "statistics_output_is_unchanged"
@@ -470,7 +470,7 @@
   },
   {
     "label": "transport: spreading the retry to statistics must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "                    API_STATISTICS_READ_URL,",
     "new": "                    API_STATISTICS_READ_URL, retry_transport=True,",
     "tests": "exactly_the_value_path_asks_for_a_transport_retry"
@@ -1513,21 +1513,21 @@
   },
   {
     "label": "statistics: a device whose every group failed counts as read",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "        if failed and not read:\n            raise WemPortalError(\n                f\"Every statistics group of device {device_id} failed to read \"\n                f\"({failed} of {len(group_types)}).\"\n            )",
     "new": "        pass",
     "tests": "a_device_whose_every_group_failed_is_not_counted_as_a_success"
   },
   {
     "label": "statistics: any group error condemns the whole device",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "        if failed and not read:",
     "new": "        if failed:",
     "tests": "one_group_that_worked_keeps_the_device_a_success"
   },
   {
     "label": "statistics: a group that does not apply counted as a failure",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "                else:\n                    failed += 1\n                    _LOGGER.warning(\n                        \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                    )",
     "new": "                failed += 1\n                _LOGGER.warning(\n                    \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                )",
     "tests": "groups_that_do_not_apply_are_not_failures"
@@ -1667,7 +1667,7 @@
   },
   {
     "label": "stats: a refusal repeated once per remaining group",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/statistics.py",
     "old": "            except ForbiddenError:",
     "new": "            except ZeroDivisionError:",
     "tests": "a_refusal_stops_the_group_loop_instead_of_repeating_itself"

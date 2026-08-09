@@ -21,7 +21,15 @@ from custom_components.wemportal.wemportalapi import WemPortalApi
 
 from .test_hardening import FakeResponse
 
-API_SOURCE = pathlib.Path(wemportalapi.__file__).read_text(encoding="utf-8")
+# Every module of the package, not just wemportalapi: the statistics path
+# moved to its own module in the rebuild, and a scan pinned to one file went
+# blind to it - a mutation adding retry_transport=True there survived a green
+# suite. Whoever cuts the next module off inherits this guard automatically.
+PACKAGE = pathlib.Path(wemportalapi.__file__).parent
+API_SOURCES = {
+    source_file.name: source_file.read_text(encoding="utf-8")
+    for source_file in sorted(PACKAGE.glob("*.py"))
+}
 
 # The requests allowed a transport retry: the two READS on the value path.
 #
@@ -211,30 +219,35 @@ def test_expired_session_still_re_authenticates_and_retries():
 
 
 def _retry_transport_by_url():
-    """Which URL constant each make_api_call site asks a transport retry for."""
-    tree = ast.parse(API_SOURCE)
+    """Which URL constant each make_api_call site asks a transport retry for.
+
+    Across the WHOLE package - see API_SOURCES for what a one-file scan
+    cost.
+    """
     found = {}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        function = node.func
-        if not (
-            isinstance(function, ast.Attribute) and function.attr == "make_api_call"
-        ):
-            continue
-        if not node.args or not isinstance(node.args[0], ast.Name):
-            raise AssertionError(
-                f"make_api_call at line {node.lineno} no longer passes its URL as a "
-                "plain constant; this scan can no longer see what it asks for."
+    for file_name, source in API_SOURCES.items():
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.Call):
+                continue
+            function = node.func
+            if not (
+                isinstance(function, ast.Attribute) and function.attr == "make_api_call"
+            ):
+                continue
+            if not node.args or not isinstance(node.args[0], ast.Name):
+                raise AssertionError(
+                    f"make_api_call at {file_name}:{node.lineno} no longer passes "
+                    "its URL as a plain constant; this scan can no longer see what "
+                    "it asks for."
+                )
+            url_name = node.args[0].id
+            opted_in = any(
+                kw.arg == "retry_transport"
+                and isinstance(kw.value, ast.Constant)
+                and kw.value.value is True
+                for kw in node.keywords
             )
-        url_name = node.args[0].id
-        opted_in = any(
-            kw.arg == "retry_transport"
-            and isinstance(kw.value, ast.Constant)
-            and kw.value.value is True
-            for kw in node.keywords
-        )
-        found[url_name] = found.get(url_name, False) or opted_in
+            found[url_name] = found.get(url_name, False) or opted_in
     return found
 
 
