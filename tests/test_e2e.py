@@ -468,6 +468,35 @@ async def test_the_service_can_set_the_option_that_is_not_a_number(hass, monkeyp
     )
 
 
+async def test_diagnostics_carry_no_credentials_and_no_installation_ids(hass):
+    """The diagnostics download is written to be attached to a public issue.
+
+    Whatever else it contains, three things must not leave the house: the
+    login (username, password), the configured expert ids, and the device
+    ids - the latter are dict KEYS, which the redaction helper cannot touch,
+    so they are replaced by positional aliases.
+    """
+    import json as json_module
+
+    from custom_components.wemportal.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+
+    entry = await _setup(hass, _entry(hass, _expert_options()))
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    dump = json_module.dumps(result, default=str)
+    assert "secret" not in dump, "the password is in the report"
+    assert USER not in dump, "the username is in the report"
+    assert EV_A not in dump, "a configured expert id is in the report"
+    assert '"1234"' not in dump, "a device id survived as a key"
+    assert '"device_1"' in dump, "the aliased device data is missing entirely"
+    assert "outside temperature" in dump.lower(), (
+        "the readings are gone - a report without data helps nobody"
+    )
+
+
 async def test_expert_service_refuses_while_another_operation_runs(hass):
     """The shared per-account lock must reject a second concurrent expert
     operation instead of opening a parallel portal session."""
