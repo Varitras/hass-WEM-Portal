@@ -36,6 +36,28 @@ jobs:
       - name: Check formatting
         run: ruff format --check .
 
+  mypy:
+    # The guard on the typed data model (rebuild phase 3): types without a
+    # checker rot. Scope lives in mypy.ini and grows with the rebuild -
+    # widening it is part of each phase's definition of done.
+    name: mypy
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v7"
+      - uses: "actions/setup-python@v7"
+        with:
+          python-version: "3.12"
+      # Home Assistant has to be importable for the checked modules' own
+      # imports; the test requirements bring a matching release. Mypy is
+      # pinned for the same reason Ruff is: an unpinned checker fails builds
+      # nobody changed.
+      - name: Install dependencies
+        run: |
+          pip install -r requirements_test.txt
+          pip install "mypy==2.3.0"
+      - name: Type check
+        run: mypy
+
   pytest:
     # Two ends of the supported range, because they catch opposite mistakes.
     #

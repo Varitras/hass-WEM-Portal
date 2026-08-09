@@ -1,6 +1,13 @@
 """Exceptions for the wemportal component."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from homeassistant.exceptions import HomeAssistantError
+
+if TYPE_CHECKING:
+    from .expert_writer import ExpertParameterState
 
 
 class WemPortalError(HomeAssistantError):
@@ -56,7 +63,7 @@ class ParameterWriteError(WemPortalError):
     the case this is for.
     """
 
-    def __init__(self, message, state=None):
+    def __init__(self, message: str, state: ExpertParameterState | None = None) -> None:
         super().__init__(message)
         self.state = state
 

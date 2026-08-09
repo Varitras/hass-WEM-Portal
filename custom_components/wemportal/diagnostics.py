@@ -6,11 +6,17 @@ and configured expert ids by key, device ids by aliasing - they are dict
 KEYS, which the redaction helper cannot reach.
 """
 
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Any
+
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_EXPERT_SLOT_ID_TEMPLATE, EXPERT_SLOT_COUNT
+from .models import WemPortalConfigEntry
 
 # Keys whose values identify the installation or the account. "cookie" is the
 # scraped session (stored as a data row); "DeviceID" appears inside API rows.
@@ -23,7 +29,7 @@ TO_REDACT = {
 }
 
 
-def _device_aliases(device_ids) -> dict:
+def _device_aliases(device_ids: Iterable[Any]) -> dict[Any, str]:
     """Positional alias per device id, stable within one report.
 
     Sorted so two downloads from the same installation name the same device
@@ -37,7 +43,9 @@ def _device_aliases(device_ids) -> dict:
     }
 
 
-async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry) -> dict:
+async def async_get_config_entry_diagnostics(
+    hass: HomeAssistant, entry: WemPortalConfigEntry
+) -> dict[str, Any]:
     """Return diagnostics for a config entry, redacted for publication."""
     data = getattr(entry, "runtime_data", None)
     coordinator = getattr(data, "coordinator", None)

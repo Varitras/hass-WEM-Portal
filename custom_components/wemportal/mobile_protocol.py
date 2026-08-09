@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Any, NamedTuple
 
 
-def as_answer_dict(payload: Any) -> dict | None:
+def as_answer_dict(payload: Any) -> dict[str, Any] | None:
     """The payload as the object every API answer is - or None.
 
     `null`, a bare list and a bare string are all valid JSON bodies, and
@@ -35,7 +35,7 @@ def as_answer_dict(payload: Any) -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
-def described_parameters(payload: Any) -> list[dict] | None:
+def described_parameters(payload: Any) -> list[dict[str, Any]] | None:
     """The parameter descriptions of a module answer, or None.
 
     None means the answer carries no readable list at all - the caller books
