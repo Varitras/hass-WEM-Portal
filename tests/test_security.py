@@ -318,3 +318,30 @@ def test_the_service_description_states_the_single_account_limit():
     assert "One expert account at a time" in (
         (root / "README.md").read_text(encoding="utf-8")
     )
+
+
+# --- the same hex id in two spellings is one id ------------------------
+
+
+def test_the_same_id_in_two_spellings_counts_as_a_duplicate():
+    """Hex is case-insensitive, so these name the SAME parameter.
+
+    Slipping past the duplicate check meant two slots writing the same
+    heating value, each with its own entity - and the service's allowlist
+    then refused whichever spelling the caller did not use.
+    """
+    from custom_components.wemportal.expert_options import duplicate_entityvalues
+
+    lower = "a" * 36
+    upper = lower.upper()
+
+    assert duplicate_entityvalues([lower, upper]) == {lower}
+
+
+def test_a_service_write_is_allowed_in_either_spelling():
+    """The allowlist compares against what the user typed into a slot; the
+    caller of the action has no way to know which case that was."""
+    from custom_components.wemportal.expert_options import canonical_entityvalue
+
+    assert canonical_entityvalue(" AbCdEf ") == canonical_entityvalue("abcdef")
+    assert canonical_entityvalue(None) == ""

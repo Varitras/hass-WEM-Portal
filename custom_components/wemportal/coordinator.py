@@ -32,7 +32,6 @@ from .const import (
 from .exceptions import (
     ApiBusyError,
     AuthError,
-    ForbiddenError,
     PollDeadlineExceeded,
     PortalMaintenanceError,
     WemPortalError,
@@ -270,6 +269,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             return await self._update_within_timeout(device_filter)
         except TimeoutError as exc:
             self.num_failed += 1
+            self._sync_rate_limit_issue()
             self._reset_auth_failures()
             _LOGGER.warning(
                 "Fetching WEM Portal data timed out after %ds. Note the "
@@ -281,6 +281,33 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(
                 f"Timed out fetching data from wemportal after {DEFAULT_TIMEOUT}s"
             ) from exc
+
+    def _sync_rate_limit_issue(self) -> None:
+        """Report the IP-wide backoff if it is holding, withdraw it if not.
+
+        Asked of the STATE after every cycle, not of whatever was raised -
+        and that is the whole point. A 403 is usually earned inside
+        statistics, schedules or the `both`-mode scrape, each of which
+        catches broadly so one optional part cannot cost the readings. So
+        the exception rarely reaches here, and both halves went wrong: the
+        report never appeared, and a later cycle that "succeeded" while
+        every request was still being refused deleted it.
+
+        Idempotent in both directions, so running it on every path costs
+        nothing.
+        """
+        issue_id = f"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}"
+        if self.api.is_rate_limited():
+            async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=IssueSeverity.WARNING,
+                translation_key="rate_limited",
+            )
+            return
+        async_delete_issue(self.hass, DOMAIN, issue_id)
 
     def _reset_auth_failures(self) -> None:
         """Clear the consecutive-auth-failure count.
@@ -300,18 +327,15 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         around it without moving the error handling one level in."""
         async with asyncio.timeout(DEFAULT_TIMEOUT):
             try:
+                # In `finally` below rather than per branch: every one of the
+                # seven exits is a moment where the backoff either holds or
+                # does not, and a branch added later would otherwise silently
+                # skip the report.
                 fetched = await self.hass.async_add_executor_job(
                     self.api.fetch_data, device_filter
                 )
                 self.num_failed = 0
                 self._reset_auth_failures()
-                # The rate-limit story ends with the first successful cycle;
-                # idempotent, so paying it every success is fine.
-                async_delete_issue(
-                    self.hass,
-                    DOMAIN,
-                    f"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}",
-                )
                 await self._async_save_modules_cache()
                 await self._async_save_scraper_device_id()
                 return fetched
@@ -384,25 +408,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # without an auth failure, which is evidence this one lacks.
                 _LOGGER.debug("Skipping this cycle: %s", exc)
                 raise UpdateFailed(str(exc)) from exc
-            # ForbiddenError still shares this clause (it derives from
-            # WemPortalError; test_a_forbidden_error_is_a_wemportal_error
-            # keeps that true) - but it is the one failure the user WILL
-            # notice and cannot explain from anywhere but the log: a 403
-            # cooldown pauses all polling for a long stretch. Said in the
-            # repairs dashboard, in the user's language, until a successful
-            # cycle takes it back down.
             except WemPortalError as exc:
                 self.num_failed += 1
                 self._reset_auth_failures()
-                if isinstance(exc, ForbiddenError):
-                    async_create_issue(
-                        self.hass,
-                        DOMAIN,
-                        f"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}",
-                        is_fixable=False,
-                        severity=IssueSeverity.WARNING,
-                        translation_key="rate_limited",
-                    )
                 if self.num_failed >= 2:
                     # Reset the connection, do NOT rebuild the api object.
                     # Rebuilding meant carrying nine pieces of state across by
@@ -437,3 +445,4 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 ) from exc
             finally:
                 self.last_try = monotonic()
+                self._sync_rate_limit_issue()

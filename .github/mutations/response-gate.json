@@ -2500,17 +2500,17 @@
   },
   {
     "label": "rate limit: only a ForbiddenError is evidence of one",
-    "path": "custom_components/wemportal/coordinator.py",
-    "old": "                if isinstance(exc, ForbiddenError):\n                    async_create_issue(",
-    "new": "                if True:\n                    async_create_issue(",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        return bool(self._blocked_until) and time.monotonic() < self._blocked_until",
+    "new": "        return True",
     "tests": "ordinary_failure_does_not_claim_a_rate_limit"
   },
   {
     "label": "rate limit: the issue must clear on the success that ends it",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "                async_delete_issue(\n                    self.hass,\n                    DOMAIN,\n                    f\"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}\",\n                )",
-    "new": "                pass",
-    "tests": "rate_limit_becomes_a_repair_issue_and_success_clears_it"
+    "old": "        async_delete_issue(self.hass, DOMAIN, issue_id)",
+    "new": "        pass",
+    "tests": "rate_limit_becomes_a_repair_issue_until_the_block_lapses"
   },
   {
     "label": "poll fail: the recovery must take the issue down",
@@ -2574,5 +2574,33 @@
     "old": "                response_data = as_answer_dict(response.json())",
     "new": "                response_data = response.json()",
     "tests": "non_object_error_body_does_not_replace_the_real_failure"
+  },
+  {
+    "label": "rate limit: the report must follow the backoff state, not the exception",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if self.api.is_rate_limited():",
+    "new": "        if False:",
+    "tests": "403_a_sub_task_swallowed_still_raises_the_repair_issue"
+  },
+  {
+    "label": "rate limit: a cycle under an active block must not clear the report",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                self._sync_rate_limit_issue()",
+    "new": "                pass",
+    "tests": "successful_cycle_under_an_active_block_keeps_the_issue"
+  },
+  {
+    "label": "scrape: a 403 must count as a failed scrape",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self._register_scrape_failure()\n            self._activate_cooldown()\n            self._reset_scraper()",
+    "new": "            self._activate_cooldown()\n            self._reset_scraper()",
+    "tests": "every_failed_scrape_earns_a_backoff"
+  },
+  {
+    "label": "expert ids: the same hex in two spellings must be one id",
+    "path": "custom_components/wemportal/expert_options.py",
+    "old": "    return (raw or \"\").strip().casefold()",
+    "new": "    return (raw or \"\").strip()",
+    "tests": "same_id_in_two_spellings_counts_as_a_duplicate"
   }
 ]

@@ -95,16 +95,47 @@ def test_every_issue_translation_key_is_translated_in_every_language():
             )
 
 
+def _assignments_per_file():
+    """Every `name = <expression>` in each package module.
+
+    So the check below survives the ordinary act of naming the id before
+    using it twice - which is exactly what happened when creating and
+    deleting the same issue moved into one place. A scan that only
+    understands a literal at the call site goes blind on the first
+    refactor, and blind is worse than absent: the suite stays green.
+    """
+    per_file = {}
+    for source_file in sorted(PACKAGE.glob("*.py")):
+        assignments = {}
+        for node in ast.walk(ast.parse(source_file.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target = node.targets[0]
+                if isinstance(target, ast.Name):
+                    assignments[target.id] = node.value
+        per_file[source_file.name] = assignments
+    return per_file
+
+
 def test_every_issue_id_starts_with_the_config_entry_id():
     """The prefix is the cleanup contract: async_remove_entry drops an
     entry's issues by matching '{entry_id}_', so an id that starts any other
     way survives the entry it belongs to."""
+    assignments = _assignments_per_file()
+
     for file_name, node in _create_issue_calls():
         assert len(node.args) >= 3, (
             f"{file_name}: async_create_issue must pass the issue_id "
             "positionally so this test can inspect it"
         )
         issue_id = node.args[2]
+        if isinstance(issue_id, ast.Name):
+            resolved = assignments[file_name].get(issue_id.id)
+            assert resolved is not None, (
+                f"{file_name}: the issue id comes from {issue_id.id}, which is "
+                "not assigned in this module - this scan cannot see what it "
+                "holds. Build the id here, or assign it in the same file."
+            )
+            issue_id = resolved
         starts_with_entry_id = (
             isinstance(issue_id, ast.JoinedStr)
             and isinstance(issue_id.values[0], ast.FormattedValue)

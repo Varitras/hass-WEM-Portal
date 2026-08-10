@@ -306,18 +306,28 @@ async def test_disabling_expert_write_drops_its_registry_entries(hass):
     )
 
 
-async def test_a_rate_limit_becomes_a_repair_issue_and_success_clears_it(
+async def test_a_rate_limit_becomes_a_repair_issue_until_the_block_lapses(
     hass, monkeypatch
 ):
     """A 403 cooldown pauses ALL polling for a long time - the one state the
-    user WILL notice and cannot see the reason for anywhere but the log."""
+    user WILL notice and cannot see the reason for anywhere but the log.
+
+    The 403 sets the backoff AND raises, exactly as the transport does, and
+    what ends the report is the backoff lapsing - not merely some later
+    cycle happening to work. An expert-path 403 deliberately does NOT get
+    here: it pauses the Fachmann path alone and leaves polling running, so
+    "the portal is refusing requests" would be the wrong thing to say.
+    """
     from homeassistant.helpers import issue_registry
+
+    from custom_components.wemportal import transport
 
     entry = await _setup(hass, _entry(hass))
     issue_id = f"{entry.entry_id}_rate_limited"
     registry = issue_registry.async_get(hass)
 
     def refuse(self, *_args, **_kwargs):
+        self._activate_cooldown()
         raise ForbiddenError("rate limited")
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", refuse)
@@ -328,6 +338,7 @@ async def test_a_rate_limit_becomes_a_repair_issue_and_success_clears_it(
         "a rate-limited poll raised no repair issue"
     )
 
+    transport.reset_cooldowns_for_tests()
     monkeypatch.setattr(
         WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
     )
@@ -335,7 +346,96 @@ async def test_a_rate_limit_becomes_a_repair_issue_and_success_clears_it(
     await hass.async_block_till_done()
 
     assert (DOMAIN, issue_id) not in registry.issues, (
-        "the repair issue survived the successful poll that ends the story"
+        "the repair issue survived the block it reports on"
+    )
+
+
+async def test_a_403_a_sub_task_swallowed_still_raises_the_repair_issue(
+    hass, monkeypatch
+):
+    """The 403 rarely arrives where the coordinator can see it.
+
+    Statistics, schedules and the `both`-mode scrape all catch broadly on
+    purpose - one optional part failing must not cost the readings. So a
+    rate limit earned in any of them was reported to nobody, while every
+    request in the installation was already being refused.
+
+    The cycle below therefore SUCCEEDS as far as the coordinator can tell,
+    and the issue must still appear: what matters is the backoff being
+    active, not which call happened to raise.
+    """
+    from homeassistant.helpers import issue_registry
+
+    from custom_components.wemportal import transport
+
+    entry = await _setup(hass, _entry(hass))
+
+    def succeed_but_earn_a_403(self, *_args, **_kwargs):
+        # Exactly what a swallowed 403 leaves behind: the backoff is set,
+        # and the cycle returns data anyway.
+        self._activate_cooldown()
+        return FAKE_DATA
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", succeed_but_earn_a_403)
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert (
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+    ) in issue_registry.async_get(hass).issues, (
+        "a 403 swallowed by a sub-task never reached the user"
+    )
+
+    # And it goes away once the backoff has actually lapsed - not merely
+    # because some later cycle happened to work.
+    transport.reset_cooldowns_for_tests()
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+    )
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert (
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+    ) not in issue_registry.async_get(hass).issues
+
+
+async def test_a_successful_cycle_under_an_active_block_keeps_the_issue(
+    hass, monkeypatch
+):
+    """The opposite mistake, and the worse one.
+
+    A cooldown pauses whole request paths, so a cycle can come back
+    "successful" while the installation is still blocked. Deleting the
+    issue on any success took the explanation away exactly when the user
+    was looking for it.
+    """
+    from homeassistant.helpers import issue_registry
+
+    entry = await _setup(hass, _entry(hass))
+
+    def blocked_but_returning_data(self, *_args, **_kwargs):
+        self._activate_cooldown()
+        return FAKE_DATA
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", blocked_but_returning_data)
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    # A second cycle that raises nothing at all, with the backoff still on.
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+    )
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert (
+        DOMAIN,
+        f"{entry.entry_id}_rate_limited",
+    ) in issue_registry.async_get(hass).issues, (
+        "the block is still on, but the report of it was deleted"
     )
 
 
@@ -398,6 +498,9 @@ async def test_removing_a_never_loaded_entry_still_clears_its_issues(hass, monke
     from homeassistant.helpers import issue_registry
 
     def refuse(self, *_args, **_kwargs):
+        # Both halves, as the transport does them: the backoff is what the
+        # report is derived from, the exception is what fails the setup.
+        self._activate_cooldown()
         raise ForbiddenError("rate limited")
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", refuse)

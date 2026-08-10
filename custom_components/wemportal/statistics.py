@@ -12,7 +12,7 @@ freezes the exact traffic.
 import logging
 
 import time
-from typing import Final
+from typing import TYPE_CHECKING, Any, Final
 
 from .exceptions import ForbiddenError, WemPortalError
 from .models import Reading
@@ -47,9 +47,22 @@ WEM_INVALID_PARAMETER_STATUS: Final = 3001
 
 
 class WemPortalStatistics:
-    """The energy statistics path - throttle, traffic and rows."""
+    """The energy statistics path - throttle, traffic and rows.
 
-    def _statistics_devices(self, enabled_devices=None) -> list:
+    What this half needs from the object it is mixed into, declared for the
+    same reason as in transport.py: a mixin's dependencies on its host are
+    otherwise invisible, and these are the seam the rebuild cut along.
+    """
+
+    if TYPE_CHECKING:
+        data: dict[str, dict[str, Any]]
+        modules: dict[str, Any]
+        language: str
+        last_statistics_fetch: float
+
+        def make_api_call(self, url: str, **kwargs: Any) -> Any: ...
+
+    def _statistics_devices(self, enabled_devices=None) -> list[str]:
         """The devices this cycle should ask the portal about."""
         # `is not None`, NOT truthiness: an EMPTY list means "every device is
         # disabled", and treating that as "no filter given" polled all of them -
@@ -67,7 +80,7 @@ class WemPortalStatistics:
             if str(device_id) in self.data and str(device_id) in self.modules
         ]
 
-    def _statistics_group_name(self, group: dict) -> str:
+    def _statistics_group_name(self, group: dict[str, Any]) -> str:
         """The display name for one statistics group: the portal's own
         description where it has one, a fixed fallback where it is blank."""
         group_id = group.get("GroupType")
@@ -83,7 +96,7 @@ class WemPortalStatistics:
                 7: "Power Consumption Cooling",
                 8: "Total Power Consumption",
             }
-            group_name = fallback_names.get(group_id, f"Energy {group_id}")
+            group_name = fallback_names.get(group_id, f"Energy {group_id}")  # type: ignore[arg-type]
         else:
             translated_group = translate(self.language, group_name)
             if "energy" not in translated_group.lower():

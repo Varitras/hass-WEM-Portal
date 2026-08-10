@@ -1108,6 +1108,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             # global cooldown the API path uses, discard the scraper
             # (fresh connection once the cooldown expires), and let the
             # error propagate so the coordinator's backoff kicks in too.
+            #
+            # Counted like every other failed exit, and this one was missed
+            # the longest. The count does two jobs: it ages the scraped
+            # readings after three failures, and it is what says the scrape
+            # is still keeping a shared row fresh (see
+            # _kept_fresh_by_the_scrape). Left at zero, a rate-limited
+            # scrape delivered nothing while its last values were exempt
+            # from every ageing pass in the integration.
+            self._register_scrape_failure()
             self._activate_cooldown()
             self._reset_scraper()
             raise

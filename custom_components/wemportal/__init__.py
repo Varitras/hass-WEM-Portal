@@ -521,14 +521,19 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
         # Only ids the user configured in a slot may be written. Without this
         # the service is a generic write primitive for ANY parameter of the
         # installation, including ones never surfaced in Home Assistant.
+        # Compared in the canonical spelling: hex is case-insensitive, so a
+        # caller passing the id in the other case names the same parameter
+        # and was refused for a difference that means nothing.
+        from .expert_options import canonical_entityvalue
+
         allowed = {
-            (
-                target_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot) or ""
-            ).strip()
+            canonical_entityvalue(
+                target_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)
+            )
             for slot in range(1, EXPERT_SLOT_COUNT + 1)
         }
         allowed.discard("")
-        if entityvalue not in allowed:
+        if canonical_entityvalue(entityvalue) not in allowed:
             raise HomeAssistantError(
                 f"WEM Portal expert write: {short_entityvalue(entityvalue)} is not one of "
                 "the parameters configured in this integration's options. Add it "

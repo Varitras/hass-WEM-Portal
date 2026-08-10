@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import HomeAssistantError
 
@@ -14,6 +14,14 @@ class WemPortalError(HomeAssistantError):
     """
     Custom exception for WEM Portal errors
     """
+
+    # The portal's own status code, where the failure got far enough to
+    # carry one. The transport sets it so a caller can react to a specific
+    # code - statistics skips an invalid group by it - without parsing the
+    # message text. None whenever the request never reached the portal, and
+    # declared here rather than attached on the fly so both sides can be
+    # type-checked.
+    server_status: Any = None
 
 
 class AuthError(WemPortalError):

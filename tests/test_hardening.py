@@ -4045,6 +4045,13 @@ def test_an_unreadable_refresh_answer_does_not_serve_the_previous_job():
     [
         exceptions.PortalMaintenanceError("down until 18:00"),
         exceptions.AuthError("wrong password"),
+        # The 403 was the one exit left out, and it is the worst one to
+        # leave out: the count is also what makes the scraped readings age
+        # (three failures) AND what exempts them from the api-side ageing
+        # while the scrape is believed to be working. Not counting it meant
+        # a rate-limited scrape delivered nothing while its last values were
+        # protected from every ageing pass there is.
+        exceptions.ForbiddenError("rate limited"),
     ],
 )
 def test_every_failed_scrape_earns_a_backoff(error, monkeypatch):

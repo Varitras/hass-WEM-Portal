@@ -11,12 +11,16 @@ shared with the domain half, so the split is a move of code, not a change of
 object shape.
 """
 
-from typing import Final
+from typing import TYPE_CHECKING, Any, Final
 import logging
 
+import threading
 import time
 
 import requests
+
+if TYPE_CHECKING:
+    from .models import AccountState
 
 from .const import (
     API_LOCK_TIMEOUT_SECONDS,
@@ -99,7 +103,27 @@ def reset_cooldowns_for_tests() -> None:
 
 
 class WemPortalTransport:
-    """Session, retry, recovery and cooldown - the wire side of the api."""
+    """Session, retry, recovery and cooldown - the wire side of the api.
+
+    The block below is what this half needs from the object it is mixed
+    into. Declaring it beats assuming it: a mixin's dependencies on its host
+    are invisible otherwise, and these five are exactly the seam along which
+    the god module was cut. mypy checks them, so a rename on either side
+    fails here rather than at runtime.
+    """
+
+    if TYPE_CHECKING:
+        _account_state: AccountState
+        headers: dict[str, str]
+        _api_lock: threading.Lock
+        session: requests.Session | None
+        expert_cookies: Any
+
+        def _reset_scraper(self) -> None: ...
+
+        def api_login(self) -> None: ...
+
+        def check_deadline(self) -> None: ...
 
     @property
     def _blocked_until(self) -> float:
@@ -188,6 +212,18 @@ class WemPortalTransport:
                 f"Expert path is backing off after a previous 403 "
                 f"({remaining_str} remaining). Sensor polling is unaffected."
             )
+
+    def is_rate_limited(self) -> bool:
+        """Whether the IP-wide 403 backoff is currently holding requests.
+
+        The question the coordinator asks after every cycle, and it has to
+        be a question about STATE rather than about what was raised: a 403
+        is usually earned inside statistics, schedules or the scrape, all of
+        which catch broadly on purpose so one optional part cannot cost the
+        readings. Nothing propagates, and the user was told nothing while
+        every request was being refused.
+        """
+        return bool(self._blocked_until) and time.monotonic() < self._blocked_until
 
     def check_cooldown(self):
         """Raise ForbiddenError immediately, without making any request,
@@ -349,8 +385,14 @@ class WemPortalTransport:
                 pass
         return server_status, server_message
 
-    def _send(self, url, headers, data):
-        """GET when the call carries no body, POST when it does."""
+    def _send(self, url, headers, data) -> requests.Response:
+        """GET when the call carries no body, POST when it does.
+
+        The session is established by the caller's login before any request
+        gets here; None means make_api_call was entered without one, which
+        is a programming error rather than a portal failure.
+        """
+        assert self.session is not None, "no API session - login runs first"
         if not data:
             _LOGGER.debug("Sending GET request to %s with headers: %s", url, headers)
             return self.session.get(
@@ -539,4 +581,10 @@ class WemPortalTransport:
                     retry_transport=retry_transport,
                 )
 
-        return response
+        # Unreachable in practice: the loop either returns a response or
+        # _recover_or_raise raises on the last attempt. Stated rather than
+        # left to `return response`, which mypy reads as possibly-None and
+        # a reader as "sometimes this falls through".
+        raise WemPortalError(
+            f"{DATA_GATHERING_ERROR} Request to {url} ended without a response."
+        )

@@ -40,7 +40,7 @@ LINE_LIMIT = 900
 # shrinking; expert_writer is a Telerik form protocol written out longhand,
 # where the length is mostly literal field ids.
 LINE_BUDGETS = {
-    "wemportalapi.py": 2644,
+    "wemportalapi.py": 2653,
     "expert_writer.py": 2345,
     "config_flow.py": 908,
 }
@@ -56,7 +56,7 @@ COMPLEXITY_LIMIT = 15
 COMPLEXITY_BUDGETS = {
     "expert_writer.py::WemPortalExpertClient.parse_parameter_form": 29,
     "mapper.py::_clear_unanswered": 25,
-    "__init__.py::_async_register_expert_service": 23,
+    "__init__.py::_async_register_expert_service": 22,
     "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,
     "wemportalapi.py::WemPortalApi._fetch_parameter_values": 19,
