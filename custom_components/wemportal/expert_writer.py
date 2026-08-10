@@ -1462,20 +1462,6 @@ class WemPortalExpertClient:
         )
 
     # ------------------------------------------------------------------
-    def read_parameter(self, entityvalue: str) -> ExpertParameterState:
-        """Login, fetch one parameter's edit form, parse it, close session.
-
-        Total server load: 3 requests (login page, login POST, form GET),
-        only when explicitly invoked - never periodically.
-        """
-        self._validate_entityvalue(entityvalue)
-        self._check_gates()
-        try:
-            self._login()
-            return self._fetch_form(entityvalue)
-        finally:
-            self.close()
-
     def read_many(self, entityvalues) -> dict:
         """Read several parameters on ONE shared session.
 

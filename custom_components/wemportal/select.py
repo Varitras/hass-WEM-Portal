@@ -5,7 +5,6 @@ Select platform for wemportal component
 import logging
 
 import difflib
-from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -166,14 +165,6 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
     def options(self) -> list[str]:
         """Return list of available options."""
         return self._options_names
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes of this device."""
-        attributes: dict[str, Any] = {}
-        if self._last_updated is not None:
-            attributes["Last Updated"] = self._last_updated
-        return attributes
 
     @callback
     def _handle_coordinator_update(self) -> None:

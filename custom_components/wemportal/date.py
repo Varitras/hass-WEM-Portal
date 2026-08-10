@@ -16,7 +16,6 @@ a date platform and not a datetime one.
 import logging
 
 from datetime import UTC, date, datetime
-from typing import Any
 
 from homeassistant.components.date import DateEntity
 from homeassistant.config_entries import ConfigEntry
@@ -201,11 +200,3 @@ class WemPortalDate(WemPortalEntity, DateEntity):
             _LOGGER.debug("Sensor data %s", self.coordinator.data)
 
         self.async_write_ha_state()
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes of this device."""
-        attributes: dict[str, Any] = {}
-        if self._last_updated is not None:
-            attributes["Last Updated"] = self._last_updated
-        return attributes

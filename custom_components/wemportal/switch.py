@@ -3,7 +3,6 @@ Switch platform for wemportal component
 """
 
 import logging
-from typing import Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -113,11 +112,3 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
             _LOGGER.debug("Sensor data %s", self.coordinator.data)
 
         self.async_write_ha_state()
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes of this device."""
-        attributes: dict[str, Any] = {}
-        if self._last_updated is not None:
-            attributes["Last Updated"] = self._last_updated
-        return attributes

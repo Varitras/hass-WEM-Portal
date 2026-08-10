@@ -51,7 +51,6 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
     ) -> None:
         """Initialize the shared entity state."""
         super().__init__(coordinator)
-        self._last_updated = None
         self._config_entry = config_entry
         self._device_id = device_id
         self._attr_has_entity_name = True

@@ -564,8 +564,6 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
         attributes: dict[str, Any] = {}
-        if self._last_updated is not None:
-            attributes["Last Updated"] = self._last_updated
 
         entity_data = self._current_row()
         if entity_data is None:

@@ -3,7 +3,6 @@ Number platform for wemportal component
 """
 
 import logging
-from typing import Any
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
@@ -262,11 +261,3 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
     def device_class(self):
         """Return the device class of the sensor."""
         return unit_to_device_class(self._attr_native_unit_of_measurement)
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes of this device."""
-        attributes: dict[str, Any] = {}
-        if self._last_updated is not None:
-            attributes["Last Updated"] = self._last_updated
-        return attributes
