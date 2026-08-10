@@ -52,7 +52,7 @@ from .exceptions import (
     UnknownAuthError,
     WemPortalError,
 )
-from .mapper import WemPortalDataMapper
+from .mapper import WemPortalDataMapper, forget_dropped_parameters
 from .mobile_protocol import (
     as_answer_dict,
     described_parameters,
@@ -1740,6 +1740,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             )
             return
 
+        # Before the replacement: it needs the list as it stands today.
+        forget_dropped_parameters(self.data.get(device_id), values, parameters)
         self.modules[device_id][key]["parameters"] = parameters
         self.modules[device_id][key]["parameters_fetched_at"] = time.time()
         # The portal answered this time. Clearing it here rather than only on

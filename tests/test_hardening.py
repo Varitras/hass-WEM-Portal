@@ -5495,6 +5495,62 @@ def test_a_description_that_arrives_clears_the_refusal():
     assert "description_refused" not in module
 
 
+def test_a_parameter_the_portal_stopped_describing_stops_being_published():
+    """The parameter list is replaced on every re-read; the readings are a
+    second dict that nothing pruned.
+
+    So a parameter the portal stops describing keeps its last value, and the
+    entity goes on publishing it as current for the rest of the session with
+    nothing in the log. `_clear_unanswered` cannot reach it either - that
+    pass only walks the parameters the portal still describes, which is
+    exactly the set this one just left.
+
+    Only the disappeared parameter may go. A row the web scraper maintains
+    was never in the description, so deleting it here would throw away a
+    value this path knows nothing about.
+    """
+    api = _api()
+    api.modules = {
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heizkreis",
+                "parameters": {
+                    "P1": {"ParameterID": "P1"},
+                    "P2": {"ParameterID": "P2"},
+                },
+            }
+        }
+    }
+    api.data = {
+        "1234": {
+            "ConnectionStatus": 0,
+            "Heizkreis-P1": Reading(value=21.0, parameter_id="P1"),
+            "Heizkreis-P2": Reading(value=50.5, parameter_id="P2"),
+            "Heizkreis-Vorlauftemperatur": Reading(value=42.0),
+        }
+    }
+
+    api._store_module_description(
+        "1234",
+        (0, 1),
+        api.modules["1234"][(0, 1)],
+        FakeResponse({"Parameters": [{"ParameterID": "P1"}]}),
+    )
+
+    device_data = api.data["1234"]
+    assert "Heizkreis-P2" not in device_data, (
+        "the reading of a parameter the portal no longer describes stayed "
+        "behind, and every cycle republishes its last value as current"
+    )
+    assert device_data["Heizkreis-P1"].value == 21.0
+    assert device_data["Heizkreis-Vorlauftemperatur"].value == 42.0, (
+        "a scraped row the description never contained was taken with it"
+    )
+    assert device_data["ConnectionStatus"] == 0
+
+
 def test_a_device_with_parameters_is_still_read():
     """The guard must not swallow the ordinary case."""
     api = _api()

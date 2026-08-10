@@ -40,7 +40,7 @@ LINE_LIMIT = 900
 # shrinking; expert_writer is a Telerik form protocol written out longhand,
 # where the length is mostly literal field ids.
 LINE_BUDGETS = {
-    "wemportalapi.py": 2653,
+    "wemportalapi.py": 2655,
     "expert_writer.py": 2345,
     "config_flow.py": 908,
 }

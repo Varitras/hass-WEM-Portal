@@ -450,6 +450,47 @@ def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
     )
 
 
+def forget_dropped_parameters(device_data, module, described) -> None:
+    """Take the readings of dropped parameters down with the description.
+
+    Sibling of `_clear_unanswered` below, and the case that one cannot see.
+    Both answer "this reading is no longer current", but from opposite
+    directions: that pass walks the parameters the portal still describes
+    and empties the ones it did not answer for. A parameter that vanishes
+    from the description leaves that set altogether, so nothing walks it
+    again and its last value stands as current for the rest of the session,
+    with nothing anywhere saying so.
+
+    Called from the discovery path, which is the only place a parameter can
+    disappear - the description is replaced wholesale on every re-read while
+    the readings live in a second dict that nothing prunes.
+
+    Removed rather than emptied, unlike over there: an unanswered parameter
+    still exists and keeps its unit and name, while this one is gone.
+
+    Only what was described and no longer is. A scraped row filed under the
+    same module was never in that list and is not this function's to delete.
+
+    Takes the module as it stands and the description that is about to
+    replace it, rather than the difference: working out what left is the
+    same thought as deleting it, and splitting the two across modules is how
+    one of them ends up not matching the other's key shape.
+    """
+    dropped = set(module.get("parameters") or ()) - set(described)
+    if not dropped or not device_data:
+        return
+
+    module_name = module.get("Name", "")
+    for parameter_id in dropped:
+        device_data.pop(f"{module_name}-{parameter_id}", None)
+    _LOGGER.info(
+        "Module %s stopped describing %s; dropping the last value instead "
+        "of publishing it on as current.",
+        module_name,
+        ", ".join(sorted(dropped)),
+    )
+
+
 def _clear_unanswered(
     device_id, values_json, modules_dict, parsed_sensors, api_data
 ) -> None:

@@ -2623,5 +2623,12 @@
     "old": "if seconds > budget",
     "new": "if seconds > budget * 100",
     "tests": "a_test_over_the_budget_is_reported"
+  },
+  {
+    "label": "discovery: a parameter that left the description must lose its reading",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        device_data.pop(f\"{module_name}-{parameter_id}\", None)",
+    "new": "        device_data.get(f\"{module_name}-{parameter_id}\", None)",
+    "tests": "a_parameter_the_portal_stopped_describing_stops_being_published"
   }
 ]
