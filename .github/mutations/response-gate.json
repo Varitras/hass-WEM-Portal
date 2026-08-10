@@ -2602,5 +2602,12 @@
     "old": "    return (raw or \"\").strip().casefold()",
     "new": "    return (raw or \"\").strip()",
     "tests": "same_id_in_two_spellings_counts_as_a_duplicate"
+  },
+  {
+    "label": "requirements: a bound raised in one file only must be caught",
+    "path": "requirements_runtime.txt",
+    "old": "curl_cffi>=0.15.0",
+    "new": "curl_cffi>=0.15.3",
+    "tests": "manifest_and_the_runtime_file_name_the_same"
   }
 ]

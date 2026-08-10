@@ -36,6 +36,7 @@ GUARD_FILES = {
     "test_reading_boundary.py": "readings are read as attributes, never as dict keys",
     "test_reading_invariants.py": "every mapped reading carries the fields other paths read",
     "test_repairs.py": "every repair issue is translated and entry-prefixed",
+    "test_requirements.py": "the manifest and the runtime file name the same dependencies",
     "test_transport_boundary.py": "transport imports no domain module",
     "test_transport_errors.py": "only the value path opts into a transport retry",
     "test_guards.py": "the guards stay package-wide and stay present",
