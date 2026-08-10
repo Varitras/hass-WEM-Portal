@@ -254,27 +254,40 @@ def _described_module(device_id, module, modules_dict):
     Two ways to have nothing: the answer is not shaped like a module at all,
     or it is one this integration never discovered.
     """
+    # Outside the guard on purpose: a device this mapper was called for and
+    # does not know is a fault in this integration, not a portal answer, and
+    # swallowing it here would hide it.
+    device_modules = modules_dict[device_id]
     try:
         module_key = ModuleRef(
             module_index=module["ModuleIndex"], module_type=module["ModuleType"]
         )
+        # The LOOKUP belongs in here too. An id the portal sent as a list or
+        # a dict builds a ModuleRef without complaint and only raises when
+        # something hashes it - so with the lookup one line below, the guard
+        # watched the harmless half and the throw took every later module of
+        # this device with it.
+        return device_modules.get(module_key)
     except (KeyError, TypeError) as exc:
         _LOGGER.warning("Skipping malformed module entry in API response: %s", exc)
         return None
-    return modules_dict[device_id].get(module_key)
 
 
 def _described_parameter(value, device_module):
     """The id and stored description of one answered value, or None to skip
     it. Same two ways to have nothing as above."""
+    described = device_module["parameters"]
     try:
         parameter_id = value["ParameterID"]
+        # Inside the guard for the same reason as one level up: `in` hashes
+        # the id, so a ParameterID the portal sent as a dict raised here and
+        # cost the rest of the module.
+        if parameter_id not in described:
+            return None
     except (KeyError, TypeError) as exc:
         _LOGGER.warning("Skipping malformed value entry in API response: %s", exc)
         return None
-    if parameter_id not in device_module["parameters"]:
-        return None
-    return parameter_id, device_module["parameters"][parameter_id]
+    return parameter_id, described[parameter_id]
 
 
 def _read_modules(device_id, values_json, modules_dict, language, api_data) -> tuple:
@@ -559,9 +572,14 @@ def _clear_unanswered(
             module_key = ModuleRef(
                 module_index=module["ModuleIndex"], module_type=module["ModuleType"]
             )
+            # Inside the guard, like the two readers above: the id only has
+            # to be hashable when something looks it up, so a list or a dict
+            # arriving here raised past the `continue` that exists for it -
+            # and this pass runs LAST, so it took the ageing of every module
+            # of this device with it.
+            device_module = modules_dict.get(device_id, {}).get(module_key)
         except (KeyError, TypeError):
             continue
-        device_module = modules_dict.get(device_id, {}).get(module_key)
         if not device_module or not device_module.get("parameters"):
             continue
 

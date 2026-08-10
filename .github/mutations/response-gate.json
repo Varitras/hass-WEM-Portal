@@ -2665,5 +2665,26 @@
     "old": "        circuit_times_day=kept.circuit_times_day if kept else None,\n        possible_values=kept.possible_values if kept else None,\n",
     "new": "",
     "tests": "value_read_keeps_the_schedule_detail_the_hourly_fetch_attached"
+  },
+  {
+    "label": "contract: an unhashable module id must cost only its own module",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        return device_modules.get(module_key)\n    except (KeyError, TypeError) as exc:",
+    "new": "        pass\n    except (KeyError, TypeError) as exc:",
+    "tests": "module_id_the_portal_sent_as_a_list_costs_only_that_module"
+  },
+  {
+    "label": "contract: an unhashable parameter id must cost only its own value",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        if parameter_id not in described:\n            return None\n    except (KeyError, TypeError) as exc:",
+    "new": "        pass\n    except (KeyError, TypeError) as exc:",
+    "tests": "parameter_id_the_portal_sent_as_a_dict_costs_only_that_value"
+  },
+  {
+    "label": "contract: a device list with no usable row must be reported",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not new_data:",
+    "new": "        if False:",
+    "tests": "device_list_where_no_row_is_usable_is_reported_not_adopted"
   }
 ]

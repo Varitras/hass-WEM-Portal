@@ -131,6 +131,29 @@ def test_get_devices_failure_keeps_cache():
     assert api.data == {"1234": {"k": "v"}}
 
 
+def test_a_device_list_where_no_row_is_usable_is_reported_not_adopted():
+    """Skipping a bad row is right; skipping every row and calling it an
+    empty account is not.
+
+    The rows are skipped one by one with a warning, and then data and modules
+    are replaced regardless - so an answer this integration could not read
+    became a successful poll of an account with nothing in it. On the usual
+    one-device installation that is everything gone, no setup error, and no
+    way back until a reload: get_devices runs once per session.
+    """
+    api = _api(cached_modules=CACHED_MODULES, existing_data={"1234": {"k": "v"}})
+    # Shaped like the contract at the top level, unreadable in every row.
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {"Devices": [{"no": "id"}, {"also": "no id"}]}
+    )
+
+    with pytest.raises(exceptions.ServerError):
+        api.get_devices()
+
+    assert api.data == {"1234": {"k": "v"}}, "the readings were replaced by nothing"
+    assert api.modules == CACHED_MODULES, "the discovery cache went with them"
+
+
 def test_get_devices_success_carries_cached_parameters():
     api = _api(cached_modules=CACHED_MODULES)
     device_json = {

@@ -1478,6 +1478,20 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                     "its contract: %s",
                     exc,
                 )
+
+        if not new_data:
+            # Skipping ONE unusable row costs that device; skipping every row
+            # and adopting the result costs the account. Committing here
+            # replaced the readings with nothing and reported a successful
+            # cycle - on a one-device installation, everything gone with no
+            # error, and get_devices only runs once per session, so nothing
+            # brought it back before a reload.
+            raise ServerError(
+                f"The WEM Portal answered with {len(device_rows)} device "
+                "row(s) and none of them was readable - keeping what was "
+                "there rather than reporting an empty account."
+            )
+
         self.modules = new_modules
         self.data = new_data
 

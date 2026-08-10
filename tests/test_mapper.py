@@ -378,6 +378,65 @@ def test_both_mode_remembers_the_match_in_the_scraping_mapper():
     assert scraping_mapper[(ModuleRef(*MODULE_KEY), "Outside")] == ["heat_pump-outside"]
 
 
+def test_a_module_id_the_portal_sent_as_a_list_costs_only_that_module():
+    """The guard wraps building the key, not looking it up - and the lookup
+    is where it breaks.
+
+    `ModuleIndex: []` builds a ModuleRef fine and then raises TypeError at
+    the dict lookup, one line below the except that was meant to catch it.
+    Nothing above catches it either, so one unusable row from the portal
+    took every LATER module of the same device with it - the readings the
+    portal answered correctly included.
+    """
+    modules = {
+        DEVICE: {
+            MODULE_KEY: {
+                "Name": "Heat pump",
+                "parameters": {"P1": _parameter("P1")},
+            }
+        }
+    }
+    values = {
+        "Modules": [
+            {"ModuleIndex": [], "ModuleType": 1, "Values": []},
+            {
+                "ModuleIndex": MODULE_KEY[0],
+                "ModuleType": MODULE_KEY[1],
+                "Values": [_value("P1", numeric=21.0)],
+            },
+        ]
+    }
+
+    data = _process(modules, values)
+
+    assert data["Heat pump-P1"].value == 21.0, (
+        "the good module was never read - one malformed row aborted the whole device"
+    )
+
+
+def test_a_parameter_id_the_portal_sent_as_a_dict_costs_only_that_value():
+    """Same shape one level down: the membership test hashes the id, and it
+    sits outside the guard that exists for exactly this."""
+    values = {
+        "Modules": [
+            {
+                "ModuleIndex": MODULE_KEY[0],
+                "ModuleType": MODULE_KEY[1],
+                "Values": [
+                    {"ParameterID": {}, "NumericValue": 1, "StringValue": ""},
+                    _value("P1", numeric=21.0),
+                ],
+            }
+        ]
+    }
+
+    data = _process(_modules(_parameter("P1")), values)
+
+    assert data["Heat pump-P1"].value == 21.0, (
+        "one unusable value aborted the rest of the module"
+    )
+
+
 def test_a_value_read_keeps_the_schedule_detail_the_hourly_fetch_attached():
     """The programme fetch runs once an hour, the value read every cycle.
 
