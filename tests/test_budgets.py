@@ -41,7 +41,7 @@ LINE_LIMIT = 900
 # where the length is mostly literal field ids.
 LINE_BUDGETS = {
     "wemportalapi.py": 2688,
-    "expert_writer.py": 2345,
+    "expert_writer.py": 2351,
     "config_flow.py": 917,
 }
 

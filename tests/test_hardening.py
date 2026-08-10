@@ -512,6 +512,26 @@ def _expert_entity(api, entry_id="e1"):
     return entity
 
 
+def test_the_auto_poll_does_not_publish_state_for_an_entity_ha_never_added():
+    """A registry-disabled expert entity is built like any other and handed
+    to the controller - Home Assistant then does not add it.
+
+    It therefore has no `hass`, and publishing state for it raises. The poll
+    applies its result to every configured entity, so that happened once per
+    cycle, forever, for a parameter the user had deliberately disabled.
+    """
+    entity = _expert_entity(_api())
+    # What Home Assistant leaves behind for an entity it never took.
+    entity.hass = None
+    state = _read_state(21.0, [10.0, 21.0, 35.0])
+
+    entity.apply_read_state(state)
+
+    assert entity.native_value is None, (
+        "a value was published for an entity Home Assistant does not know"
+    )
+
+
 def _read_state(current, options):
     from custom_components.wemportal import expert_writer
 

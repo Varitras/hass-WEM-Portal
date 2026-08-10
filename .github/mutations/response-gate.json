@@ -2721,5 +2721,12 @@
     "old": "        if self._coordinator_row() is None:",
     "new": "        if False:",
     "tests": "control_whose_reading_is_gone_does_not_write"
+  },
+  {
+    "label": "expert poll: an entity HA never added must not be published",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if not self._is_in_home_assistant():\n                return\n",
+    "new": "",
+    "tests": "auto_poll_does_not_publish_state_for_an_entity_ha_never_added"
   }
 ]

@@ -2088,6 +2088,8 @@ try:
             """
             if state is None:
                 return
+            if not self._is_in_home_assistant():
+                return
             if self._write_in_progress:
                 _LOGGER.debug(
                     "Discarding poll result for %s: a write is in progress.",
@@ -2096,6 +2098,23 @@ try:
                 return
             self._apply_state(state)
             self.async_write_ha_state()
+
+        def _is_in_home_assistant(self) -> bool:
+            """Whether Home Assistant actually took this entity.
+
+            An entity disabled in the registry is CONSTRUCTED like every
+            other one and handed to the auto-poll controller, and Home
+            Assistant then does not add it - so it has no `hass`, and
+            publishing state for it raises. The poll applies its result to
+            every configured parameter, so that happened once per cycle,
+            forever, for a parameter the user had deliberately switched off.
+
+            On the write path the damage is worse than noise: the value has
+            reached the heating system by the time the state is published, so
+            the raise reads like a failed write and invites a retry that
+            writes twice.
+            """
+            return self.hass is not None
 
         async def async_set_native_value(self, value: float) -> None:
             """Write the value and wait for the portal to confirm it.
@@ -2244,7 +2263,8 @@ try:
 
             # Verified value from the portal, plus the real device range.
             self._apply_state(state)
-            self.async_write_ha_state()
+            if self._is_in_home_assistant():
+                self.async_write_ha_state()
             _LOGGER.info(
                 "Expert parameter %s set and verified: %s",
                 self._attr_name,
