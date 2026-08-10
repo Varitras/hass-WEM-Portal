@@ -58,7 +58,8 @@ from .expert_options import (
     duplicate_entityvalues,
     expert_client_options,
 )
-from .utils import close_api_sessions
+from .coordinator import get_modules_store
+from .utils import close_api_sessions, serialize_modules
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -391,6 +392,14 @@ class WemportalOptionsFlow(OptionsFlow):
                     marked += 1
 
         if marked:
+            # To disk as well, not only to the api object: saving the form
+            # this step returns to schedules a reload, and a reload rebuilds
+            # that object from the persisted cache. A failure here is not a
+            # slower next start like the coordinator's own save - it is the
+            # request itself going missing, so it is not swallowed.
+            await get_modules_store(self.hass, self.config_entry.entry_id).async_save(
+                serialize_modules(modules)
+            )
             _LOGGER.info(
                 "Options: marked the parameter list of %d module(s) for a "
                 "re-read on the next update.",

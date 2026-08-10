@@ -2630,5 +2630,12 @@
     "old": "        device_data.pop(f\"{module_name}-{parameter_id}\", None)",
     "new": "        device_data.get(f\"{module_name}-{parameter_id}\", None)",
     "tests": "a_parameter_the_portal_stopped_describing_stops_being_published"
+  },
+  {
+    "label": "rescan: the request must reach the disk, not just the api object",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            await get_modules_store(self.hass, self.config_entry.entry_id).async_save(\n                serialize_modules(modules)\n            )\n",
+    "new": "",
+    "tests": "a_requested_rescan_outlives_the_reload_the_dialog_triggers"
   }
 ]

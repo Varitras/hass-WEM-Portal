@@ -3506,6 +3506,43 @@ async def test_the_rescan_option_also_marks_a_refused_module(hass):
     assert api.modules["1234"][(0, 1)]["parameters_fetched_at"] == 0
 
 
+async def test_a_requested_rescan_outlives_the_reload_the_dialog_triggers(hass):
+    """The request went to the api object and nowhere else.
+
+    That object is rebuilt from the persisted module cache on every reload -
+    and the step this button hands the user back to is the settings form,
+    whose save schedules exactly that reload. The most natural next click
+    therefore undid the rescan, as did any restart before the next cycle,
+    with nothing anywhere saying so.
+    """
+    from custom_components.wemportal.coordinator import get_modules_store
+    from custom_components.wemportal.utils import deserialize_modules
+
+    entry = await _setup(hass, _entry(hass))
+    entry.runtime_data.api.modules = {
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heat pump",
+                "parameters": {"P": {}},
+                "parameters_fetched_at": 9999.0,
+            }
+        }
+    }
+
+    await _open_options(hass, entry, "rescan_parameters")
+
+    persisted = deserialize_modules(
+        await get_modules_store(hass, entry.entry_id).async_load()
+    )
+    module = persisted.get("1234", {}).get((0, 1), {})
+    assert module.get("parameters_fetched_at") == 0, (
+        "the rescan was never written to disk, so the reload the settings "
+        f"form schedules puts the old timestamp straight back: {module}"
+    )
+
+
 async def test_the_rescan_option_makes_no_portal_requests(hass):
     """Doing the reads here would put a multi-second round trip inside a
     dialog and duplicate the rate limiting the normal path already has."""
