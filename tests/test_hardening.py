@@ -9,7 +9,7 @@ import time
 import pytest
 import requests as real_requests
 
-from custom_components.wemportal import exceptions, statistics, wemportalapi
+from custom_components.wemportal import exceptions, statistics, transport, wemportalapi
 from custom_components.wemportal.models import Reading
 from custom_components.wemportal.const import WEB_LOGGED_IN_MARKER
 from custom_components.wemportal.wemportalapi import WemPortalApi
@@ -4853,7 +4853,11 @@ def test_a_recovery_leaves_a_busy_connection_alone(monkeypatch, caplog):
     """
     import logging
 
-    monkeypatch.setattr(wemportalapi, "API_LOCK_TIMEOUT_SECONDS", 0.05)
+    # transport, not wemportalapi: reset_transport reads the constant from
+    # its own module namespace since the rebuild split the two. Patching the
+    # other one hits a name nothing reads, and the test then waits out the
+    # real 330 seconds - still passing, at 80% of the suite's runtime.
+    monkeypatch.setattr(transport, "API_LOCK_TIMEOUT_SECONDS", 0.05)
     closed = []
     api = _api()
     api.session = _ClosingSession(closed)

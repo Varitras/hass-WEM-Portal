@@ -2609,5 +2609,19 @@
     "old": "curl_cffi>=0.15.0",
     "new": "curl_cffi>=0.15.3",
     "tests": "manifest_and_the_runtime_file_name_the_same"
+  },
+  {
+    "label": "durations: a run over the budget must come back red",
+    "path": "tests/conftest.py",
+    "old": "    session.exitstatus = pytest.ExitCode.TESTS_FAILED",
+    "new": "",
+    "tests": "the_budget_is_wired_into_the_session"
+  },
+  {
+    "label": "durations: the budget must actually compare against the budget",
+    "path": "tests/durations.py",
+    "old": "if seconds > budget",
+    "new": "if seconds > budget * 100",
+    "tests": "a_test_over_the_budget_is_reported"
   }
 ]

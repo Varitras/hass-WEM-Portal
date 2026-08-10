@@ -31,6 +31,7 @@ PACKAGE = TESTS.parents[0] / "custom_components" / "wemportal"
 GUARD_FILES = {
     "test_account_state.py": "no mutable module-level state outside the registry",
     "test_budgets.py": "no module or function grows past its frozen budget",
+    "test_durations.py": "no test quietly starts taking minutes",
     "test_portal_boundaries.py": "every json read and html parse is a declared boundary",
     "test_portal_values.py": "comma normalisation lives in exactly one place",
     "test_reading_boundary.py": "readings are read as attributes, never as dict keys",

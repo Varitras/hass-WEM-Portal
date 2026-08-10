@@ -5,13 +5,23 @@ Declares the Home Assistant custom-component test plugin (which provides the
 `time.sleep` mock so the integration's real server-load pacing sleeps never
 run in tests. Importing the modules here also makes collection fail loudly
 if the integration cannot be imported against the installed HA version.
+
+Also holds the runtime budget per test - see durations.py for the accident
+that one exists for.
 """
 
 import pytest
 
 from custom_components.wemportal import expert_writer, wemportalapi
 
+from .durations import SLOW_TEST_SECONDS, over_budget
+
 pytest_plugins = ("pytest_homeassistant_custom_component",)
+
+# Summed per test across setup, call and teardown, and read at the end of
+# the session. A dict at module level because that is what a pytest hook
+# has: the hooks are functions, not a fixture with somewhere to keep state.
+_durations: dict = {}
 
 
 def pytest_addoption(parser):
@@ -27,6 +37,45 @@ def pytest_addoption(parser):
         default=False,
         help="rewrite the recorded mapper snapshot instead of comparing to it",
     )
+    parser.addoption(
+        "--slow-test-seconds",
+        type=float,
+        default=SLOW_TEST_SECONDS,
+        help=(
+            "fail the session if a single test takes longer than this "
+            "(0 makes every test late, which is how the check is tested)"
+        ),
+    )
+
+
+def pytest_runtest_logreport(report):
+    """Add up what one test costs, fixtures included."""
+    _durations[report.nodeid] = _durations.get(report.nodeid, 0.0) + report.duration
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Turn a green run red when a test ran far longer than it should.
+
+    Only a green one: a failing suite has more urgent news, and a test that
+    is slow *because* it failed is not the subject here.
+    """
+    if exitstatus != pytest.ExitCode.OK:
+        return
+
+    late = over_budget(_durations, session.config.getoption("--slow-test-seconds"))
+    if not late:
+        return
+
+    listed = "\n  ".join(f"{seconds:7.2f}s {node_id}" for node_id, seconds in late)
+    print(
+        f"\nSLOWER THAN THE BUDGET ALLOWS:\n  {listed}\n\n"
+        "A test in the minutes is nearly always a wait that was meant to be "
+        "shortened and no longer is - check what the test patches against "
+        "where the production code now reads it. If the time is genuinely "
+        "warranted, raise SLOW_TEST_SECONDS in tests/durations.py and say "
+        "in the commit why."
+    )
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 @pytest.fixture(autouse=True)
