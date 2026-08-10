@@ -7,10 +7,12 @@ them only. WemPortalEntity now owns those rules; these tests fail if a
 platform drifts back out of it.
 """
 
+import asyncio
 import types
 from dataclasses import replace
 
 import pytest
+from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.wemportal.entity import WemPortalEntity
 from custom_components.wemportal.models import Reading
@@ -65,6 +67,81 @@ def _entity(cls, reachable=True, last_update_success=True, num_failed=0, **overr
     )
     entry = types.SimpleNamespace(entry_id="e1")
     return cls(coordinator, entry, "1234", "Pump", row)
+
+
+def _run(method, *args):
+    """Drive one coroutine to completion from a synchronous test.
+
+    Takes the method and its arguments so a `pytest.raises` block around it
+    contains a single call - spelled out as asyncio.run(entity.method(x)) it
+    contains two, and a failure in the outer one would satisfy the test just
+    as well.
+    """
+    return asyncio.run(method(*args))
+
+
+def _select_capturing_its_writes(**overrides):
+    """A select entity whose write is recorded instead of performed.
+
+    The write itself belongs to the shared base and is tested there; what
+    this file is asking is which VALUE the platform decides to hand it.
+    """
+    entity = _entity(WemPortalSelect, **overrides)
+    written = []
+
+    async def _capture(value, together_with=None):
+        written.append(value)
+
+    entity.async_write_parameter = _capture
+    entity.async_write_ha_state = lambda: None
+    return entity, written
+
+
+def test_the_chosen_name_writes_the_value_that_belongs_to_it():
+    entity, written = _select_capturing_its_writes(
+        options=["0", "1"], options_names=["Aus", "Ein"]
+    )
+
+    _run(entity.async_select_option, "Ein")
+
+    assert written == ["1"]
+
+
+def test_two_options_with_one_name_do_not_write_a_guessed_value():
+    """The value was chosen by the POSITION of the first matching name.
+
+    The portal decides what an EnumValues list looks like, and two entries
+    sharing a display name make that position a coin toss: picking the
+    second one wrote the first one's value into the heating system, while
+    the entity went on showing the name that was clicked. Nothing in the
+    log, nothing in the state - the setting was simply not what was asked
+    for.
+
+    Refusing is the only honest answer here: which of the two the user meant
+    is not knowable from what the portal sent.
+    """
+    entity, written = _select_capturing_its_writes(
+        options=["0", "1"], options_names=["Automatik", "Automatik"]
+    )
+
+    with pytest.raises(HomeAssistantError):
+        _run(entity.async_select_option, "Automatik")
+
+    assert written == [], "a value was written for a name that names two of them"
+
+
+def test_an_option_the_lists_no_longer_agree_on_is_not_written_either():
+    """The two lists are refreshed under separate guards, so they can end up
+    paired by position without being paired by content. A name with no value
+    of its own must not fall back to whatever sits at that index."""
+    entity, written = _select_capturing_its_writes(
+        options=["0"], options_names=["Aus", "Ein"]
+    )
+
+    with pytest.raises(HomeAssistantError):
+        _run(entity.async_select_option, "Ein")
+
+    assert written == []
 
 
 @pytest.mark.parametrize("name", sorted(PLATFORMS))

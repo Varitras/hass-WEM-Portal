@@ -5,10 +5,12 @@ Select platform for wemportal component
 import logging
 
 import difflib
+from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
@@ -123,8 +125,8 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
-        self._options = entity_data.options or []
-        self._options_names = entity_data.options_names or []
+        self._options: list[Any] = entity_data.options or []
+        self._options_names: list[Any] = entity_data.options_names or []
 
         try:
             self._attr_current_option = self._resolve_option(entity_data.value)
@@ -141,11 +143,42 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
             'Init select: %s: "%s"', self._attr_name, self._attr_current_option
         )
 
+    def _portal_value_for(self, option: str) -> Any:
+        """The portal value the chosen name stands for.
+
+        Found by PAIRING the two lists, not by the position of the first
+        matching name. The portal decides what an EnumValues list looks
+        like, and two entries sharing a display name made that position a
+        coin toss: choosing the second one wrote the first one's value into
+        the heating system, while the entity went on showing the name that
+        was clicked - nothing in the log, nothing in the state.
+
+        A set, so two entries that agree on both name and value are still
+        one answer; it is only a name meaning two different values that
+        cannot be resolved.
+
+        Refusing is the honest answer for both of the ways this fails: which
+        of two values the user meant is not knowable from what the portal
+        sent, and a name with no value paired to it (the two lists are
+        refreshed under separate guards) must not fall back to whatever
+        happens to sit at that index.
+        """
+        candidates = {
+            value
+            for value, name in zip(self._options, self._options_names, strict=False)
+            if name == option
+        }
+        if len(candidates) != 1:
+            raise HomeAssistantError(
+                f'Cannot set "{self._attr_name}" to "{option}": the portal '
+                f"offers {len(candidates)} values under that name, so which "
+                "one was meant is not decidable. Nothing was written."
+            )
+        return candidates.pop()
+
     async def async_select_option(self, option: str) -> None:
         """Call the API to change the parameter value"""
-        await self.async_write_parameter(
-            self._options[self._options_names.index(option)]
-        )
+        await self.async_write_parameter(self._portal_value_for(option))
 
         self._attr_current_option = option
 

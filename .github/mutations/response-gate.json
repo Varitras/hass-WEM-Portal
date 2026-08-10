@@ -2700,5 +2700,19 @@
     "old": "            if (device_id, key) in known:\n                continue\n",
     "new": "",
     "tests": "reading_gets_one_entity_however_often_the_coordinator_updates"
+  },
+  {
+    "label": "select: a name meaning two values must not be written",
+    "path": "custom_components/wemportal/select.py",
+    "old": "        if len(candidates) != 1:",
+    "new": "        if False:",
+    "tests": "two_options_with_one_name_do_not_write_a_guessed_value"
+  },
+  {
+    "label": "select: the value must be paired with the name, not indexed by it",
+    "path": "custom_components/wemportal/select.py",
+    "old": "            if name == option\n        }",
+    "new": "        }",
+    "tests": "chosen_name_writes_the_value_that_belongs_to_it"
   }
 ]
