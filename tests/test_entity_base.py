@@ -97,6 +97,58 @@ def _select_capturing_its_writes(**overrides):
     return entity, written
 
 
+def _entity_that_can_actually_write(cls, **overrides):
+    """An entity whose existing write gate is satisfied, so a refusal below
+    can only come from the check under test.
+
+    Spelled out rather than assumed: `raise_if_not_writable` refuses an entry
+    with no runtime_data, and a test built on that stub would pass for a
+    reason that has nothing to do with what it claims to check.
+    """
+    entity = _entity(cls, **overrides)
+    entity._config_entry.runtime_data = types.SimpleNamespace(
+        why_not_current=lambda _entry: None
+    )
+    # Bound before the executor runs, so it has to exist even in the case
+    # where the write must never happen.
+    entity.coordinator.api.change_value = lambda *args, **kwargs: None
+    reached_the_portal = []
+
+    async def _executor(call):
+        reached_the_portal.append(call)
+
+    entity.hass = types.SimpleNamespace(async_add_executor_job=_executor)
+    return entity, reached_the_portal
+
+
+def test_a_control_writes_while_its_reading_is_there():
+    """The control case for the test below - without it, a refusal proves
+    nothing about the reason for the refusal."""
+    entity, reached_the_portal = _entity_that_can_actually_write(WemPortalNumber)
+
+    _run(entity.async_write_parameter, 21.0)
+
+    assert len(reached_the_portal) == 1
+
+
+def test_a_control_whose_reading_is_gone_does_not_write():
+    """A parameter the portal stopped describing has its reading removed -
+    and the entity outlives it until the next reload.
+
+    It kept the module address it was built with, so a click still sent a
+    write for a parameter that is no longer there. Removing the reading is
+    recent (it used to linger with a stale value), which is what turned this
+    from a wrong display into a wrong write.
+    """
+    entity, reached_the_portal = _entity_that_can_actually_write(WemPortalNumber)
+    del entity.coordinator.data["1234"]["Pump"]
+
+    with pytest.raises(HomeAssistantError):
+        _run(entity.async_write_parameter, 21.0)
+
+    assert reached_the_portal == [], "a write was sent for a reading that is gone"
+
+
 def test_the_chosen_name_writes_the_value_that_belongs_to_it():
     entity, written = _select_capturing_its_writes(
         options=["0", "1"], options_names=["Aus", "Ein"]

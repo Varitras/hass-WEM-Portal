@@ -394,7 +394,7 @@
   {
     "label": "unload gate: the shared write path must ask before writing",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        raise_if_not_writable(\n            self._config_entry, self._attr_name or str(self._attr_unique_id)\n        )",
+    "old": "        raise_if_not_writable(self._config_entry, what)",
     "new": "        pass",
     "tests": "no_platform_writes_while_the_entry_is_unloading"
   },
@@ -1017,8 +1017,8 @@
   {
     "label": "write-back: recording a value the portal refused must be noticed",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        raise_if_not_writable(\n            self._config_entry, self._attr_name or str(self._attr_unique_id)\n        )\n        await self.hass.async_add_executor_job(",
-    "new": "        raise_if_not_writable(\n            self._config_entry, self._attr_name or str(self._attr_unique_id)\n        )\n        self._record_written_value(value)\n        await self.hass.async_add_executor_job(",
+    "old": "        raise_if_not_writable(self._config_entry, what)\n        if self._coordinator_row() is None:",
+    "new": "        raise_if_not_writable(self._config_entry, what)\n        self._record_written_value(value)\n        if self._coordinator_row() is None:",
     "tests": "a_refused_write_leaves_the_coordinators_copy_alone"
   },
   {
@@ -2714,5 +2714,12 @@
     "old": "            if name == option\n        }",
     "new": "        }",
     "tests": "chosen_name_writes_the_value_that_belongs_to_it"
+  },
+  {
+    "label": "write gate: a control must not write for a reading that is gone",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        if self._coordinator_row() is None:",
+    "new": "        if False:",
+    "tests": "control_whose_reading_is_gone_does_not_write"
   }
 ]

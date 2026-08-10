@@ -5,6 +5,7 @@ from functools import partial
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -144,10 +145,24 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         `together_with` names further parameters of the same module to send in
         the same request. Only the date platform uses it, for a parameter the
         portal will not accept on its own - see WemPortalApi._change_value.
+
+        The second gate is the reading itself. An entity outlives the row it
+        was built from: the module address it writes to was taken at
+        construction, and a parameter the portal stops describing has its
+        reading removed while the entity stays until the next reload. Writing
+        then addressed something that is not there any more - which only
+        became reachable when dropping those readings did, and would have
+        been the same silent wrong write either way.
         """
-        raise_if_not_writable(
-            self._config_entry, self._attr_name or str(self._attr_unique_id)
-        )
+        what = self._attr_name or str(self._attr_unique_id)
+        raise_if_not_writable(self._config_entry, what)
+        if self._coordinator_row() is None:
+            raise HomeAssistantError(
+                f"{what}: the portal no longer answers for this parameter, so "
+                "the address this entity would write to may not mean anything "
+                "any more. Nothing was written; the entity starts working "
+                "again by itself once the parameter is back."
+            )
         await self.hass.async_add_executor_job(
             partial(
                 self.coordinator.api.change_value,
