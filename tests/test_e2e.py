@@ -886,6 +886,41 @@ async def test_fresh_bounds_from_the_portal_reach_a_running_number(hass, monkeyp
     assert komfort.attributes["step"] == 0.5
 
 
+async def test_a_reading_that_appears_on_a_later_cycle_gets_an_entity(hass):
+    """The platforms walked coordinator.data once, during setup, and never
+    looked again.
+
+    Four ordinary situations produce a reading only on a LATER cycle: a
+    device that was unreachable at startup (get_parameters skips it), the
+    parameter re-discovery that deliberately waits for the second cycle, the
+    hourly statistics whose first attempt failed, and the scrape half of
+    `both` mode. Each of them ended as coordinator data that no entity ever
+    rendered - permanently, until someone reloaded the entry by hand.
+    """
+    entry = await _setup(hass, _entry(hass))
+    before = {state.entity_id for state in hass.states.async_all("sensor")}
+
+    data = {
+        device_id: dict(rows)
+        for device_id, rows in entry.runtime_data.coordinator.data.items()
+    }
+    data["1234"]["Heat pump-Latecomer"] = Reading(
+        value=7.0,
+        unit="°C",
+        friendly_name="Latecomer",
+        parameter_id="Latecomer",
+        platform="sensor",
+    )
+    entry.runtime_data.coordinator.async_set_updated_data(data)
+    await hass.async_block_till_done()
+
+    added = {state.entity_id for state in hass.states.async_all("sensor")} - before
+    assert len(added) == 1, (
+        f"a reading that arrived after setup got no entity at all: {added}"
+    )
+    assert hass.states.get(added.pop()).state == "7.0"
+
+
 async def test_fresh_options_from_the_portal_reach_a_running_select(hass, monkeypatch):
     """The counterpart for selects: an option added by rediscovery was
     missing from the entity, and a device already ON that option read as

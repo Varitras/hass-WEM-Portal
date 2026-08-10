@@ -9,8 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .entity import WemPortalEntity
-from .models import Reading
+from .entity import async_add_readings_as_they_appear, WemPortalEntity
 from .utils import fix_value_and_unit
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,18 +30,9 @@ async def async_setup_entry(
 ) -> None:
     """Switch entry setup."""
 
-    coordinator = config_entry.runtime_data.coordinator
-    entities: list[WemPortalSwitch] = []
-    for device_id, entity_data in coordinator.data.items():
-        for unique_id, values in entity_data.items():
-            if isinstance(values, Reading) and values.platform == "switch":
-                entities.append(
-                    WemPortalSwitch(
-                        coordinator, config_entry, device_id, unique_id, values
-                    )
-                )
-
-    async_add_entities(entities)
+    async_add_readings_as_they_appear(
+        config_entry, async_add_entities, "switch", WemPortalSwitch
+    )
 
 
 class WemPortalSwitch(WemPortalEntity, SwitchEntity):

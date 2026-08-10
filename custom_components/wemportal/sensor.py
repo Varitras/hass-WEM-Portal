@@ -16,7 +16,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import GITHUB_PROJECT_URL
-from .entity import WemPortalEntity
+from .entity import async_add_readings_as_they_appear, WemPortalEntity
 from .models import Reading, account_state
 from .wemportalapi import DEVICE_STATUS_ROWS
 from .utils import (
@@ -38,17 +38,9 @@ async def async_setup_entry(
 ) -> None:
     """Sensor entry setup."""
 
-    coordinator = config_entry.runtime_data.coordinator
-    entities: list[WemPortalSensor] = []
-    for device_id, entity_data in coordinator.data.items():
-        for unique_id, values in entity_data.items():
-            if isinstance(values, Reading) and values.platform == "sensor":
-                entities.append(
-                    WemPortalSensor(
-                        coordinator, config_entry, device_id, unique_id, values
-                    )
-                )
-    async_add_entities(entities)
+    async_add_readings_as_they_appear(
+        config_entry, async_add_entities, "sensor", WemPortalSensor
+    )
 
 
 # One of these payloads carries THREE kinds of key, and only the first is a

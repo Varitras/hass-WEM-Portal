@@ -2686,5 +2686,19 @@
     "old": "        if not new_data:",
     "new": "        if False:",
     "tests": "device_list_where_no_row_is_usable_is_reported_not_adopted"
+  },
+  {
+    "label": "entities: a reading that appears later must still get one",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_add_the_ones_without_an_entity)\n    )",
+    "new": "    return",
+    "tests": "reading_that_appears_on_a_later_cycle_gets_an_entity"
+  },
+  {
+    "label": "entities: an entity must not be built twice for one reading",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "            if (device_id, key) in known:\n                continue\n",
+    "new": "",
+    "tests": "reading_gets_one_entity_however_often_the_coordinator_updates"
   }
 ]

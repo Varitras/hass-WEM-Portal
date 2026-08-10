@@ -22,7 +22,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .entity import WemPortalEntity
+from .entity import async_add_readings_as_they_appear, WemPortalEntity
 from .models import Reading
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,18 +65,9 @@ async def async_setup_entry(
 ) -> None:
     """Date entry setup."""
 
-    coordinator = config_entry.runtime_data.coordinator
-    entities: list[WemPortalDate] = []
-    for device_id, entity_data in coordinator.data.items():
-        for unique_id, values in entity_data.items():
-            if isinstance(values, Reading) and values.platform == "date":
-                entities.append(
-                    WemPortalDate(
-                        coordinator, config_entry, device_id, unique_id, values
-                    )
-                )
-
-    async_add_entities(entities)
+    async_add_readings_as_they_appear(
+        config_entry, async_add_entities, "date", WemPortalDate
+    )
 
 
 class WemPortalDate(WemPortalEntity, DateEntity):

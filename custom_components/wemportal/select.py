@@ -12,8 +12,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
-from .entity import WemPortalEntity
-from .models import Reading
+from .entity import async_add_readings_as_they_appear, WemPortalEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,18 +24,9 @@ async def async_setup_entry(
 ) -> None:
     """Select entry setup."""
 
-    coordinator = config_entry.runtime_data.coordinator
-    entities: list[WemPortalSelect] = []
-    for device_id, entity_data in coordinator.data.items():
-        for unique_id, values in entity_data.items():
-            if isinstance(values, Reading) and values.platform == "select":
-                entities.append(
-                    WemPortalSelect(
-                        coordinator, config_entry, device_id, unique_id, values
-                    )
-                )
-
-    async_add_entities(entities)
+    async_add_readings_as_they_appear(
+        config_entry, async_add_entities, "select", WemPortalSelect
+    )
 
 
 class WemPortalSelect(WemPortalEntity, SelectEntity):

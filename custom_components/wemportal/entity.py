@@ -4,6 +4,7 @@ from typing import Final
 from functools import partial
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -24,6 +25,61 @@ from .utils import build_device_info, device_is_reachable, device_model
 # readings presented as current. The counter is the coordinator's own, reset
 # by any successful cycle.
 API_FAILURES_TOLERATED: Final = 1
+
+
+def _readings_of(data, platform: str):
+    """Every (device id, key, reading) the coordinator holds for a platform.
+
+    Not every entry is a reading - the raw ConnectionStatus travels in the
+    same dict as a plain int - so the isinstance test is the filter, not a
+    precaution.
+    """
+    for device_id, rows in (data or {}).items():
+        for key, reading in rows.items():
+            if isinstance(reading, Reading) and reading.platform == platform:
+                yield device_id, key, reading
+
+
+@callback
+def async_add_readings_as_they_appear(
+    config_entry: ConfigEntry, async_add_entities, platform: str, build
+) -> None:
+    """Give every reading of one platform an entity - now and on later cycles.
+
+    Each platform used to walk the coordinator's data once, during setup, and
+    never look again. Four ordinary situations produce a reading only on a
+    LATER cycle: a device that was unreachable at startup (get_parameters
+    skips it), the parameter re-discovery that deliberately waits for the
+    second cycle, the hourly statistics whose first attempt failed - those are
+    the Energy Dashboard rows - and the scrape half of `both` mode. Every one
+    of them ended as coordinator data no entity ever rendered, until somebody
+    reloaded the entry by hand. There is no update listener that would have
+    done it for them; the flows reload explicitly and nothing else does.
+
+    Adding only. A reading that goes away leaves its entity showing unknown,
+    which is a state a user can read and act on - removing the entity would
+    take its history with it for what is often one bad cycle.
+    """
+    coordinator = config_entry.runtime_data.coordinator
+    known: set[tuple[str, str]] = set()
+
+    @callback
+    def _add_the_ones_without_an_entity() -> None:
+        fresh = []
+        for device_id, key, reading in _readings_of(coordinator.data, platform):
+            if (device_id, key) in known:
+                continue
+            known.add((device_id, key))
+            fresh.append(build(coordinator, config_entry, device_id, key, reading))
+        if fresh:
+            async_add_entities(fresh)
+
+    _add_the_ones_without_an_entity()
+    # Removed on unload with everything else: a listener that outlives its
+    # entry keeps building entities for a coordinator nobody reads.
+    config_entry.async_on_unload(
+        coordinator.async_add_listener(_add_the_ones_without_an_entity)
+    )
 
 
 class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):

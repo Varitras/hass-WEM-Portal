@@ -72,6 +72,7 @@ class _Coordinator:
     def __init__(self, data):
         self.data = data
         self.last_update_success = True
+        self.listeners = []
         # A portal that accepts a write and confirms whatever the row already
         # says it stored. Tests that care about either replace them.
         self.api = types.SimpleNamespace(
@@ -81,12 +82,20 @@ class _Coordinator:
             reread_device_values=lambda *_args, **_kwargs: None,
         )
 
+    def async_add_listener(self, update):
+        """Real coordinators hand back a remover; nothing here updates."""
+        self.listeners.append(update)
+        return lambda: self.listeners.remove(update)
+
     def async_update_listeners(self):
         pass
 
 
 class _Entry:
     entry_id = "entry-1"
+
+    def async_on_unload(self, remove) -> None:
+        """Home Assistant keeps these to call on unload; nothing here unloads."""
 
 
 def _entity(value=BEGIN_EPOCH):
