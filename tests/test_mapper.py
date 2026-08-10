@@ -9,11 +9,14 @@ value - so the branch-by-branch mapping is worth pinning down.
 import pytest
 
 from custom_components.wemportal.const import WemDataType
-from custom_components.wemportal.models import Reading
+from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.mapper import WemPortalDataMapper, get_min_max
 
 DEVICE = "1234"
 MODULE_KEY = (0, 1)
+# A second module of the SAME type: two heating circuits share one parameter
+# catalogue, so the same ParameterID legitimately appears twice on a device.
+SECOND_MODULE_KEY = (1, 1)
 
 
 def _parameter(parameter_id, **overrides):
@@ -359,8 +362,9 @@ def test_both_mode_writes_the_api_value_onto_the_matching_scraped_sensor():
 
 
 def test_both_mode_remembers_the_match_in_the_scraping_mapper():
-    """The correlation is cached per parameter, so later cycles reuse it
-    instead of re-tokenising every scraped name."""
+    """The correlation is cached per parameter OF ITS MODULE, so later cycles
+    reuse it instead of re-tokenising every scraped name - and a second module
+    with the same parameter id gets an entry of its own."""
     scraping_mapper = {}
 
     _process(
@@ -371,7 +375,96 @@ def test_both_mode_remembers_the_match_in_the_scraping_mapper():
         scraping_mapper=scraping_mapper,
     )
 
-    assert scraping_mapper["Outside"] == ["heat_pump-outside"]
+    assert scraping_mapper[(ModuleRef(*MODULE_KEY), "Outside")] == ["heat_pump-outside"]
+
+
+def _two_circuits(first_value, second_value):
+    """Two modules of one type, both describing the same ParameterID."""
+    modules = {
+        DEVICE: {
+            MODULE_KEY: {
+                "Name": "Heating circuit 1",
+                "parameters": {"P1": _parameter("P1")},
+            },
+            SECOND_MODULE_KEY: {
+                "Name": "Heating circuit 2",
+                "parameters": {"P1": _parameter("P1")},
+            },
+        }
+    }
+    values = {
+        "Modules": [
+            {
+                "ModuleIndex": MODULE_KEY[0],
+                "ModuleType": MODULE_KEY[1],
+                "Values": [_value("P1", numeric=first_value, unit="°C")],
+            },
+            {
+                "ModuleIndex": SECOND_MODULE_KEY[0],
+                "ModuleType": SECOND_MODULE_KEY[1],
+                "Values": [_value("P1", numeric=second_value, unit="°C")],
+            },
+        ]
+    }
+    return modules, values
+
+
+def test_two_modules_sharing_a_parameter_id_keep_their_own_readings():
+    """A parameter id identifies a parameter WITHIN its module, not on the
+    device - and the merge cache was keyed on the bare id.
+
+    Two heating circuits are two modules of one type with one parameter
+    catalogue, so the same id on one device is the ordinary case, not an
+    exotic one. The second circuit therefore found the first circuit's entry
+    already in the cache, wrote ITS value into the first circuit's reading
+    and stamped its own module address on it - so circuit 1 published circuit
+    2's temperature, circuit 2 got no reading at all and thus no entity, and
+    the per-module ageing pass was watching the wrong module. Nothing logged.
+    """
+    modules, values = _two_circuits(21.0, 45.0)
+
+    data = _process(modules, values, mode="both")
+
+    first = data.get("Heating circuit 1-P1")
+    second = data.get("Heating circuit 2-P1")
+    assert first is not None and second is not None, (
+        f"a circuit lost its reading entirely, so it can never get an "
+        f"entity: {sorted(data)}"
+    )
+    assert (first.value, second.value) == (21.0, 45.0), (
+        "one circuit is publishing the other's value as its own"
+    )
+    assert (first.module_index, first.module_type) == MODULE_KEY
+    assert (second.module_index, second.module_type) == SECOND_MODULE_KEY
+
+
+def test_only_one_module_may_claim_the_same_scraped_row():
+    """Both circuits' names contain the scraped row's words, so both would
+    merge into it - and the second would overwrite the first's value in it.
+
+    A scraped row shows one value, so at most one API reading can BE that
+    row. The one that gets there first keeps it; the other stays under its
+    own key, which is the outcome that costs nothing: an extra entity beats
+    two circuits sharing one.
+    """
+    modules, values = _two_circuits(21.0, 45.0)
+    scraping_mapper = {}
+
+    data = _process(
+        modules,
+        values,
+        mode="both",
+        existing=_scraped("heat_pump-p1", "Heating circuit - P1"),
+        scraping_mapper=scraping_mapper,
+    )
+
+    targets = [target for targets in scraping_mapper.values() for target in targets]
+    assert len(targets) == len(set(targets)), (
+        f"two modules were pointed at the same target row: {scraping_mapper}"
+    )
+    assert {21.0, 45.0} == {
+        row.value for row in data.values() if isinstance(row, Reading)
+    }, f"a circuit's value was overwritten by the other's: {data}"
 
 
 def test_both_mode_keeps_an_unmatched_api_value_under_its_own_key():

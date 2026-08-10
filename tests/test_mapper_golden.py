@@ -40,7 +40,7 @@ import pytest
 
 from custom_components.wemportal.const import WemDataType
 from custom_components.wemportal.mapper import WemPortalDataMapper
-from custom_components.wemportal.models import Reading
+from custom_components.wemportal.models import ModuleRef, Reading
 
 GOLDEN = Path(__file__).parent / "fixtures" / "mapper_golden.json"
 
@@ -435,8 +435,22 @@ def _extra_case(
             key: row.as_dict() if isinstance(row, Reading) else row
             for key, row in api_data[DEVICE].items()
         },
-        "scraping_mapper": mapper_state,
+        "scraping_mapper": {
+            _cache_key_name(key): targets for key, targets in mapper_state.items()
+        },
     }
+
+
+def _cache_key_name(key) -> str:
+    """The merge cache key as one readable string.
+
+    It is a (ModuleRef, ParameterID) pair - the module belongs in it because
+    two heating circuits share one parameter catalogue - and JSON has no
+    tuple keys. Spelled out rather than str()'d so a diff in this fixture
+    stays readable.
+    """
+    module, parameter_id = key
+    return f"{ModuleRef(*module).as_storage_key()}/{parameter_id}"
 
 
 def build_extra_snapshot():
@@ -448,14 +462,14 @@ def build_extra_snapshot():
     snapshot["cached_mapping"] = _extra_case(
         [_param("Outside")],
         {"heat_pump-outside": _scraped_row("heat_pump-outside")},
-        {"Outside": ["heat_pump-outside"]},
+        {(MODULE_KEY, "Outside"): ["heat_pump-outside"]},
     )
     # Cached, but pointing at a row that no longer exists: the mapper has to
     # create it rather than fail (the else branch of the write loop).
     snapshot["cached_mapping_missing_row"] = _extra_case(
         [_param("Outside")],
         {},
-        {"Outside": ["heat_pump-gone"]},
+        {(MODULE_KEY, "Outside"): ["heat_pump-gone"]},
     )
     # A cached mapping onto SEVERAL rows, so the write loop runs twice.
     snapshot["cached_mapping_two_targets"] = _extra_case(
@@ -464,7 +478,7 @@ def build_extra_snapshot():
             "heat_pump-outside": _scraped_row("heat_pump-outside"),
             "heat_pump-outside2": _scraped_row("heat_pump-outside2", value=12.0),
         },
-        {"Outside": ["heat_pump-outside", "heat_pump-outside2"]},
+        {(MODULE_KEY, "Outside"): ["heat_pump-outside", "heat_pump-outside2"]},
     )
 
     # A row whose ParameterID carries no "-": split("-")[1] raises, and the
@@ -532,7 +546,7 @@ def build_extra_snapshot():
                 friendly_name=None,
             )
         },
-        {"Outside": ["heat_pump-outside"]},
+        {(MODULE_KEY, "Outside"): ["heat_pump-outside"]},
     )
     return snapshot
 
@@ -546,11 +560,11 @@ def test_the_extra_cases_reach_what_the_matrix_cannot():
     # The cached case must NOT have rebuilt the mapping - if it did, it is
     # exercising the scan again and proves nothing about the cached path.
     assert snapshot["cached_mapping"]["scraping_mapper"] == {
-        "Outside": ["heat_pump-outside"]
+        "0:1/Outside": ["heat_pump-outside"]
     }
     # And where nothing matched, the fallback assignment must have happened.
     assert snapshot["no_row_matches"]["scraping_mapper"] == {
-        "Outside": ["Heat pump-Outside"]
+        "0:1/Outside": ["Heat pump-Outside"]
     }
 
 

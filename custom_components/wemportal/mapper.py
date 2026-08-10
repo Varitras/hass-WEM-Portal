@@ -381,17 +381,37 @@ def _merge_into_scraped(
 ) -> None:
     """Feed an API reading into the scraped entity that shows the same value,
     so both sources keep one entity instead of two that drift apart."""
-    parameter_id = sensor.parameter_id
-    if parameter_id not in scraping_mapper:
-        matches = _scraped_entities_naming_the_same_thing(
-            device_id, sensor, language, api_data
-        )
+    # The module belongs in the key. A ParameterID identifies a parameter
+    # WITHIN its module, and two heating circuits are two modules of one type
+    # sharing one parameter catalogue - the ordinary case, not an exotic one.
+    # Keyed on the bare id, the second circuit found the first one's entry,
+    # wrote its value into the first one's reading and never got a row of its
+    # own, so it had no entity at all.
+    cache_key = (
+        ModuleRef(module_index=sensor.module_index, module_type=sensor.module_type),
+        sensor.parameter_id,
+    )
+    if cache_key not in scraping_mapper:
+        # A scraped row shows ONE value, so at most one API reading can be
+        # it. Both circuits' names contain the row's words, so both would
+        # match - and the second would overwrite the first inside the row.
+        # First one there keeps it; the other stays under its own key, which
+        # is the cheaper mistake: an extra entity beats two circuits sharing
+        # one reading.
+        claimed = {target for targets in scraping_mapper.values() for target in targets}
+        matches = [
+            match
+            for match in _scraped_entities_naming_the_same_thing(
+                device_id, sensor, language, api_data
+            )
+            if match not in claimed
+        ]
         # Falls back to the reading's own key: no scraped entity showing this
         # value means there is nothing to merge into, and the entity is its
         # own target.
-        scraping_mapper[parameter_id] = matches or [key]
+        scraping_mapper[cache_key] = matches or [key]
 
-    for scraped_entity in scraping_mapper[parameter_id]:
+    for scraped_entity in scraping_mapper[cache_key]:
         previous = api_data[device_id].get(scraped_entity)
         target = previous if isinstance(previous, Reading) else None
 

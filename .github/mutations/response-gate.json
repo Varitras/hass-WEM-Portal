@@ -93,15 +93,15 @@
   {
     "label": "net: the cached-mapping path must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "    if parameter_id not in scraping_mapper:\n        matches = _scraped_entities_naming_the_same_thing(\n            device_id, sensor, language, api_data\n        )",
-    "new": "    if True:\n        matches = _scraped_entities_naming_the_same_thing(\n            device_id, sensor, language, api_data\n        )",
+    "old": "    if cache_key not in scraping_mapper:\n        # A scraped row shows ONE value, so at most one API reading can be",
+    "new": "    if True:\n        # A scraped row shows ONE value, so at most one API reading can be",
     "tests": "extra_mapper_output_is_unchanged or extra_cases_reach"
   },
   {
     "label": "net: the scraping_mapper fallback assignment must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "        scraping_mapper[parameter_id] = matches or [key]",
-    "new": "        scraping_mapper[parameter_id] = matches",
+    "old": "        scraping_mapper[cache_key] = matches or [key]",
+    "new": "        scraping_mapper[cache_key] = matches",
     "tests": "extra_mapper_output_is_unchanged or extra_cases_reach"
   },
   {
@@ -604,22 +604,22 @@
   {
     "label": "schedules: recording the attempt only on success must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if fetched:\n            self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at\n            return\n",
-    "new": "        if not fetched:\n            return\n        self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at\n        return\n",
+    "old": "        if fetched:\n            self._last_circuit_times_fetch[key] = attempted_at\n            return\n",
+    "new": "        if not fetched:\n            return\n        self._last_circuit_times_fetch[key] = attempted_at\n        return\n",
     "tests": "failing_schedule_is_not_refetched_on_every_cycle or refresh_without_a_job_id_also_counts"
   },
   {
     "label": "schedules: not shortening the wait after a failure must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at - max(\n            0,\n            CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS\n            - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,\n        )",
-    "new": "        self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at",
+    "old": "        self._last_circuit_times_fetch[key] = attempted_at - max(\n            0,\n            CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS\n            - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,\n        )",
+    "new": "        self._last_circuit_times_fetch[key] = attempted_at",
     "tests": "failed_schedule_is_tried_again_after_the_retry_interval"
   },
   {
     "label": "schedules: back-dating a successful fetch must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if fetched:\n            self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at\n            return\n",
-    "new": "        if False:\n            self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at\n            return\n",
+    "old": "        if fetched:\n            self._last_circuit_times_fetch[key] = attempted_at\n            return\n",
+    "new": "        if False:\n            self._last_circuit_times_fetch[key] = attempted_at\n            return\n",
     "tests": "successful_schedule_keeps_the_full_interval"
   },
   {
@@ -2637,5 +2637,26 @@
     "old": "            await get_modules_store(self.hass, self.config_entry.entry_id).async_save(\n                serialize_modules(modules)\n            )\n",
     "new": "",
     "tests": "a_requested_rescan_outlives_the_reload_the_dialog_triggers"
+  },
+  {
+    "label": "identity: the merge cache key must carry the module",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    cache_key = (\n        ModuleRef(module_index=sensor.module_index, module_type=sensor.module_type),\n        sensor.parameter_id,\n    )",
+    "new": "    cache_key = sensor.parameter_id",
+    "tests": "two_modules_sharing_a_parameter_id_keep_their_own_readings"
+  },
+  {
+    "label": "identity: a scraped row may be claimed by one module only",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if match not in claimed\n",
+    "new": "",
+    "tests": "only_one_module_may_claim_the_same_scraped_row"
+  },
+  {
+    "label": "identity: the schedule throttle key must carry the module",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "    return (\n        device_id,\n        ModuleRef(module_index=module[\"Index\"], module_type=module[\"Type\"]),\n        parameter_id,\n    )",
+    "new": "    return (device_id, parameter_id)",
+    "tests": "two_circuits_with_the_same_programme_id_are_both_fetched"
   }
 ]

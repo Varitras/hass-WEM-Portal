@@ -227,6 +227,23 @@ def _report_missing_job_id(device_id, reported):
     )
 
 
+def _schedule_throttle_key(device_id, module, parameter_id) -> tuple:
+    """What identifies one programme for the hourly refresh throttle.
+
+    The module is part of it. Two heating circuits are two modules of one
+    type sharing one parameter catalogue, so the same programme id appears
+    twice on a device - and keyed without the module, the first circuit
+    fetched stamped the key and the second was never due again, on any cycle.
+    Built here rather than at the two call sites: a key spelled out in two
+    places is one that eventually disagrees with itself.
+    """
+    return (
+        device_id,
+        ModuleRef(module_index=module["Index"], module_type=module["Type"]),
+        parameter_id,
+    )
+
+
 class WemPortalApi(WemPortalTransport, WemPortalStatistics):
     """Wrapper class for Weishaupt WEM Portal"""
 
@@ -2448,14 +2465,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             "DataType"
         ) == WemDataType.PROGRAM or looks_like_schedule(row_value)
 
-    def _schedule_is_due(self, device_id, parameter_id) -> bool:
+    def _schedule_is_due(self, device_id, module, parameter_id) -> bool:
         """Whether this programme may be asked for again yet.
 
         Heating schedules rarely change - only through the WEM Portal app
         directly, since this integration shows them read-only - so refetching
         one on every coordinator cycle is load for nothing.
         """
-        last_fetch = self._last_circuit_times_fetch.get((device_id, parameter_id), 0)
+        key = _schedule_throttle_key(device_id, module, parameter_id)
+        last_fetch = self._last_circuit_times_fetch.get(key, 0)
         return time.time() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
 
     def _stamp_answered_modules(self, device_id, values) -> None:
@@ -2543,10 +2561,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         failed - the existing JSON fallback takes over once the detail is
         gone, and the next successful refresh puts it back.
         """
+        key = _schedule_throttle_key(device_id, module, parameter_id)
         if fetched:
-            self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at
+            self._last_circuit_times_fetch[key] = attempted_at
             return
-        self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at - max(
+        self._last_circuit_times_fetch[key] = attempted_at - max(
             0,
             CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
             - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
@@ -2629,7 +2648,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                         device_id, module, parameter_id, parameter_data
                     ):
                         continue
-                    if not self._schedule_is_due(device_id, parameter_id):
+                    if not self._schedule_is_due(device_id, module, parameter_id):
                         continue
                     attempted_at = time.time()
                     fetched = False

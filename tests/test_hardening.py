@@ -10,7 +10,7 @@ import pytest
 import requests as real_requests
 
 from custom_components.wemportal import exceptions, statistics, transport, wemportalapi
-from custom_components.wemportal.models import Reading
+from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.const import WEB_LOGGED_IN_MARKER
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
@@ -5133,7 +5133,7 @@ def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
     api, _calls = _circuit_times_api([exceptions.WemPortalError("nope")] * 10)
 
     api._fetch_circuit_times("1234")
-    stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
+    stamp = api._last_circuit_times_fetch[("1234", ModuleRef(0, 1), "Heizprogramm1")]
 
     waited = time.time() - stamp
     assert waited >= wemportalapi.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS - (
@@ -5141,6 +5141,35 @@ def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
     ), "the retry was pushed out further than the retry interval"
     assert waited < wemportalapi.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS, (
         "the schedule would be retried immediately"
+    )
+
+
+def test_two_circuits_with_the_same_programme_id_are_both_fetched():
+    """The throttle keyed on (device, parameter id) and left the module out.
+
+    Two heating circuits are two modules of one type sharing one parameter
+    catalogue, so both programmes carry the same id. The first one fetched
+    stamped the key, and the second was "not due" on that cycle - and on
+    every cycle after it. Its schedule was never read at all, and the only
+    trace was a programme sensor that stayed on its JSON fallback forever.
+    """
+    api, calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}] * 2
+    )
+    api.modules["1234"][(1, 1)] = {
+        "Index": 1,
+        "Type": 1,
+        "Name": "Heating circuit 2",
+        "parameters": {
+            "Heizprogramm1": {"ParameterID": "Heizprogramm1", "DataType": 6}
+        },
+    }
+
+    api._fetch_circuit_times("1234")
+
+    assert len(calls) == 4, (
+        f"the second circuit's programme was never fetched - the throttle "
+        f"cannot tell the two modules apart: {calls}"
     )
 
 
@@ -5153,7 +5182,7 @@ def test_a_successful_schedule_keeps_the_full_interval():
     )
 
     api._fetch_circuit_times("1234")
-    stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
+    stamp = api._last_circuit_times_fetch[("1234", ModuleRef(0, 1), "Heizprogramm1")]
 
     assert time.time() - stamp < 5, "a successful fetch was back-dated like a failure"
 
