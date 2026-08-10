@@ -378,6 +378,45 @@ def test_both_mode_remembers_the_match_in_the_scraping_mapper():
     assert scraping_mapper[(ModuleRef(*MODULE_KEY), "Outside")] == ["heat_pump-outside"]
 
 
+def test_a_value_read_keeps_the_schedule_detail_the_hourly_fetch_attached():
+    """The programme fetch runs once an hour, the value read every cycle.
+
+    _emit_plain_sensor builds a fresh Reading from a fixed set of fields, so
+    the week the portal reported was dropped again on the next ordinary
+    cycle and the sensor fell back to its raw JSON view - eleven cycles out
+    of twelve, then back for one. The sibling path keeps it on purpose; the
+    comment there names a schedule detail as the thing that must survive.
+
+    Clearing it is the schedule path's own job: a refresh that fails sets
+    both fields to None, so nothing stale can hide behind this.
+    """
+    existing = {
+        "Heat pump-Programm": Reading(
+            value='{"Mon":[]}',
+            parameter_id="Programm",
+            platform="sensor",
+            circuit_times_day=[{"Mon": ["06:00"]}],
+            possible_values=["Normal"],
+        )
+    }
+
+    data = _process(
+        _modules(_parameter("Programm", DataType=WemDataType.PROGRAM)),
+        _values(_value("Programm", string='{"Mon":[]}')),
+        existing=existing,
+    )
+
+    row = data["Heat pump-Programm"]
+    assert row.circuit_times_day == [{"Mon": ["06:00"]}], (
+        "the week the hourly fetch reported was thrown away by an ordinary value read"
+    )
+    assert row.possible_values == ["Normal"]
+    assert row.data_type == WemDataType.PROGRAM, (
+        "the declared type went missing, and it is what tells a programme "
+        "from an ordinary sensor further down"
+    )
+
+
 def _two_circuits(first_value, second_value):
     """Two modules of one type, both describing the same ParameterID."""
     modules = {

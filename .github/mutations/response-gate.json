@@ -2529,8 +2529,8 @@
   {
     "label": "freshness: a plain sensor losing its module address must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "        module_index=sensor.module_index,\n        module_type=sensor.module_type,\n    )",
-    "new": "    )",
+    "old": "        module_index=sensor.module_index,\n        module_type=sensor.module_type,\n        # A weekly programme's detail comes from its own hourly fetch",
+    "new": "        module_index=None,\n        module_type=None,\n        # A weekly programme's detail comes from its own hourly fetch",
     "tests": "every_mapped_reading_knows_its_module or reading_the_mapper_wrote_ages_out"
   },
   {
@@ -2658,5 +2658,12 @@
     "old": "    return (\n        device_id,\n        ModuleRef(module_index=module[\"Index\"], module_type=module[\"Type\"]),\n        parameter_id,\n    )",
     "new": "    return (device_id, parameter_id)",
     "tests": "two_circuits_with_the_same_programme_id_are_both_fetched"
+  },
+  {
+    "label": "freshness: a value read must not drop the schedule detail",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        circuit_times_day=kept.circuit_times_day if kept else None,\n        possible_values=kept.possible_values if kept else None,\n",
+    "new": "",
+    "tests": "value_read_keeps_the_schedule_detail_the_hourly_fetch_attached"
   }
 ]

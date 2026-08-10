@@ -447,11 +447,12 @@ def _merge_into_scraped(
 
 
 def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
-    """Write the reading as a read-only sensor, keeping the unit it already
-    carried when this update brought none."""
+    """Write the reading as a read-only sensor, keeping what this update did
+    not bring: the unit, and the schedule detail another path maintains."""
     new_unit = sensor.unit
     previous = api_data[device_id].get(key)
-    old_unit = previous.unit if isinstance(previous, Reading) else None
+    kept = previous if isinstance(previous, Reading) else None
+    old_unit = kept.unit if kept else None
     final_unit = new_unit if new_unit not in (None, "") else old_unit
 
     api_data[device_id][key] = Reading(
@@ -461,12 +462,22 @@ def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
         icon=unit_to_icon(final_unit),
         friendly_name=sensor.friendly_name,
         platform="sensor",
+        # What the portal declared this parameter to be. The sensor platform
+        # reads it to tell a weekly programme from an ordinary value.
+        data_type=sensor.data_type,
         # The module this reading came from. Dropping it here left every
         # ordinary sensor unreachable for the per-module ageing pass, which
         # matches on exactly this pair - so a module could fall silent
         # forever and its readings stayed on display as current.
         module_index=sensor.module_index,
         module_type=sensor.module_type,
+        # A weekly programme's detail comes from its own hourly fetch, not
+        # from the value read - so rebuilding the reading here threw it away
+        # on every ordinary cycle, eleven times out of twelve, and the sensor
+        # fell back to the raw JSON view in between. Emptying it is that
+        # fetch's own job: a failed refresh sets both to None.
+        circuit_times_day=kept.circuit_times_day if kept else None,
+        possible_values=kept.possible_values if kept else None,
     )
 
 
