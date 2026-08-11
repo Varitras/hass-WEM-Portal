@@ -49,11 +49,44 @@ GUARD_FILES = {
 SINGLE_FILE_EXEMPTIONS = {
     # The config flow's user-facing strings are the config flow's alone.
     ("test_hardening.py", "config_flow"),
+    # The line number OF the parser, to say the one conversion left in the
+    # package is that one. The other half of that test scans the package;
+    # this half has to name the file the parser lives in.
+    ("test_portal_values.py", "utils"),
+    # The scraper's own response handling: the subject is that module's
+    # boundary, and it is the module the gate is about.
+    ("test_response_gate.py", "scraper"),
 }
 
 
+def _a_source_file_of_this_package(target) -> set:
+    """`<path> / "utils.py"` -> {"utils"}, when utils.py really is one of ours.
+
+    Asked of the PACKAGE rather than of the variable name: keying on the
+    literal `PACKAGE` would go blind the moment somebody calls it something
+    else, which is the failure this whole file exists against. And the
+    question is genuinely "is this a module of the package" - the mutation
+    harness builds a throwaway `root / "module.py"` in a temp directory to
+    test itself, which looks identical and is not a binding to anything.
+    """
+    if not (isinstance(target, ast.BinOp) and isinstance(target.op, ast.Div)):
+        return set()
+    name = target.right
+    if not (isinstance(name, ast.Constant) and str(name.value).endswith(".py")):
+        return set()
+    if not (PACKAGE / str(name.value)).exists():
+        return set()
+    return {str(name.value).removesuffix(".py")}
+
+
 def _tests_that_read_one_source_file(source: str):
-    """Names of modules whose __file__ is read directly in `source`.
+    """The modules whose source `source` reads as ONE named file.
+
+    Two spellings, because both are in use here and only the first was
+    seen: `Path(module.__file__).read_text()` is what the incidents
+    happened with, `(PACKAGE / "module.py").read_text()` is what the tests
+    written since actually do - so this was watching an idiom the
+    repository had moved away from.
 
     `Path(module.__file__).parent` is not a hit: that resolves the PACKAGE
     and is exactly the shape a package-wide scan starts from.
@@ -66,6 +99,7 @@ def _tests_that_read_one_source_file(source: str):
             and node.func.attr == "read_text"
         ):
             continue
+        found |= _a_source_file_of_this_package(node.func.value)
         target = ast.unparse(node.func.value)
         if "__file__" not in target or ".parent" in target:
             continue
@@ -115,6 +149,19 @@ def test_the_scan_catches_the_blindness_it_was_written_for():
         'sources = {f.name: f.read_text(encoding="utf-8") for f in PACKAGE.glob("*.py")}'
     )
     assert _tests_that_read_one_source_file(package_wide) == set()
+
+    # The second spelling, which is what the tests written since actually
+    # use - and which this scan was blind to until it was asked for.
+    by_package_path = 'source = (PACKAGE / "transport.py").read_text(encoding="utf-8")'
+    assert _tests_that_read_one_source_file(by_package_path) == {"transport"}
+
+    # And the one that looks exactly like it and is not: the mutation
+    # harness writes a throwaway module into a temp directory to test
+    # itself. Counted as a pinned guard, that cost a working change a
+    # revert - the shape is identical, only the package knows the
+    # difference.
+    a_throwaway = 'text = (root / "module.py").read_text(encoding="utf-8")'
+    assert _tests_that_read_one_source_file(a_throwaway) == set()
 
 
 def test_every_guard_file_is_listed_and_present():

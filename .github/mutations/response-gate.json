@@ -2777,5 +2777,19 @@
     "old": "            else:\n                # `from . import x, y` - the modules are the aliases.\n                imported.update(alias.name for alias in node.names)\n",
     "new": "",
     "tests": "the_scan_sees_every_spelling_of_an_import"
+  },
+  {
+    "label": "meta guard: the package-path spelling must be seen",
+    "path": "tests/test_guards.py",
+    "old": "        found |= _a_source_file_of_this_package(node.func.value)\n",
+    "new": "",
+    "tests": "the_scan_catches_the_blindness_it_was_written_for"
+  },
+  {
+    "label": "meta guard: a throwaway file must not count as a module",
+    "path": "tests/test_guards.py",
+    "old": "    if not (PACKAGE / str(name.value)).exists():\n        return set()\n",
+    "new": "",
+    "tests": "the_scan_catches_the_blindness_it_was_written_for"
   }
 ]
