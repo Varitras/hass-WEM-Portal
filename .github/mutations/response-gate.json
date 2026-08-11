@@ -1640,7 +1640,7 @@
   {
     "label": "freshness: a single missed read clearing a device",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:\n            return",
+    "old": "        if stale_for < self._values_stale_after_seconds():\n            return",
     "new": "        if False:\n            return",
     "tests": "a_brief_gap_does_not_throw_a_device_away"
   },
@@ -2410,7 +2410,7 @@
   {
     "label": "freshness: a fresh module aged along with the silent one",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            stale_for = now - answered_at\n            if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:\n                continue",
+    "old": "            stale_for = now - answered_at\n            if stale_for < self._values_stale_after_seconds():\n                continue",
     "new": "            stale_for = now - answered_at",
     "tests": "a_module_answered_recently_is_left_alone"
   },
@@ -2742,5 +2742,19 @@
     "old": "        raise ConfigEntryNotReady(\n            \"The stored scraper device id could not be read. Setting up \"\n            \"without it would re-decide the id and move every scraped \"\n            f\"sensor to a new one, so this account is not loaded: {exc}\"\n        ) from exc",
     "new": "        scraper_device_id = None\n        _LOGGER.debug(\"Could not load stored scraper device id: %s\", exc)",
     "tests": "unreadable_scraper_device_id_stops_setup_instead_of_re_deciding"
+  },
+  {
+    "label": "device list: a refresh must keep the readings of a device it still names",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            **previously_known_readings.get(device_id_str, {}),\n",
+    "new": "",
+    "tests": "device_list_refresh_keeps_the_readings_of_a_device_it_still_names"
+  },
+  {
+    "label": "freshness: the staleness limit must reach past one poll interval",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            DEVICE_VALUES_STALE_AFTER_POLLS * self.scan_interval_api.total_seconds(),\n",
+    "new": "            0,\n",
+    "tests": "long_poll_interval_gets_a_staleness_limit_it_can_reach"
   }
 ]

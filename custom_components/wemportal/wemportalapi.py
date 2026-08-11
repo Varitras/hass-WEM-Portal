@@ -119,6 +119,15 @@ CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
 # means the same thing whether that is 5 minutes or 30.
 DEVICE_VALUES_STALE_AFTER_SECONDS: Final = 30 * 60
 
+# ...but never shorter than this many polls. The limit above is a
+# duration on purpose, and nothing caps the API interval from above -
+# the options only enforce a floor. An installation polling every 45
+# minutes was therefore past a fixed half hour before its next attempt
+# even ran, so the first miss emptied everything: the opposite of the
+# one-failed-cycle tolerance this exists for. Two, so exactly one
+# missed cycle is survivable and the second is not.
+DEVICE_VALUES_STALE_AFTER_POLLS: Final = 2
+
 # Heating schedules (CircuitTimes) rarely change - only when a user edits
 # them directly in the WEM Portal app (this integration only ever shows
 # them as read-only sensors). Refetching them every single coordinator
@@ -482,7 +491,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             # display that this could be about.
             return
         stale_for = time.monotonic() - last_read
-        if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:
+        if stale_for < self._values_stale_after_seconds():
             return
 
         # Only the rows this device's API half actually owns.
@@ -1443,6 +1452,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         """
         _LOGGER.debug("Fetching api device data")
         previously_known_modules = self.modules or {}
+        previously_known_readings = self.data or {}
         # Build the fresh device/module view in LOCAL dicts first and only
         # assign to self.modules/self.data once everything succeeded.
         # Previously both were wiped BEFORE the API call: a single failing
@@ -1469,7 +1479,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         for device in device_rows:
             try:
                 self._register_device(
-                    device, previously_known_modules, new_modules, new_data
+                    device,
+                    previously_known_modules,
+                    previously_known_readings,
+                    new_modules,
+                    new_data,
                 )
             except (KeyError, TypeError) as exc:
                 # One malformed device row must not cost the whole account.
@@ -1496,7 +1510,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         self.data = new_data
 
     def _register_device(
-        self, device, previously_known_modules, new_modules, new_data
+        self,
+        device,
+        previously_known_modules,
+        previously_known_readings,
+        new_modules,
+        new_data,
     ) -> None:
         """Adopt one device row of the device-list answer.
 
@@ -1534,7 +1553,16 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         connection_status = device["ConnectionStatus"]
 
         new_modules[device_id_str] = device_modules
-        new_data[device_id_str] = {"ConnectionStatus": connection_status}
+        # The readings come across with the device. This call refreshes the
+        # device and module LIST; it runs once per session, and a transport
+        # recovery starts a new one. The api half is rewritten in the same
+        # cycle either way - but a web-only row has no api half, so wiping
+        # here took those values away for as long as the scrape was not due
+        # or was in its backoff.
+        new_data[device_id_str] = {
+            **previously_known_readings.get(device_id_str, {}),
+            "ConnectionStatus": connection_status,
+        }
         # Kept out of new_data: the entity platforms iterate that dict
         # and would try to build an entity from it.
         if device.get("DeviceType") is not None:
@@ -2479,6 +2507,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             "DataType"
         ) == WemDataType.PROGRAM or looks_like_schedule(row_value)
 
+    def _values_stale_after_seconds(self) -> float:
+        """How long a device or module may stay silent before what it last
+        said stops being shown as current."""
+        return max(
+            DEVICE_VALUES_STALE_AFTER_SECONDS,
+            DEVICE_VALUES_STALE_AFTER_POLLS * self.scan_interval_api.total_seconds(),
+        )
+
     def _schedule_is_due(self, device_id, module, parameter_id) -> bool:
         """Whether this programme may be asked for again yet.
 
@@ -2531,7 +2567,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             if answered_at is None:
                 continue
             stale_for = now - answered_at
-            if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:
+            if stale_for < self._values_stale_after_seconds():
                 continue
 
             forgotten = []

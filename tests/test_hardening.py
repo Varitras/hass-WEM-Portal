@@ -131,6 +131,43 @@ def test_get_devices_failure_keeps_cache():
     assert api.data == {"1234": {"k": "v"}}
 
 
+def test_a_device_list_refresh_keeps_the_readings_of_a_device_it_still_names():
+    """get_devices refreshes the device and module LIST - it is not a reason
+    to throw the readings away.
+
+    It runs once per session, and a transport recovery starts a new one. The
+    api half is written again in the same cycle, so nobody noticed - but a
+    web-only row has no api half. Where the scrape is not due yet or is in
+    its backoff, those values were simply gone, for as long as that lasts.
+    """
+    api = _api(cached_modules=CACHED_MODULES)
+    api.data = {
+        "1234": {
+            "ConnectionStatus": 0,
+            "heat_pump-outside": Reading(value=11.5, parameter_id="heat_pump-outside"),
+        }
+    }
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {
+            "Devices": [
+                {
+                    "ID": 1234,
+                    "ConnectionStatus": 0,
+                    "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}],
+                }
+            ]
+        }
+    )
+
+    api.get_devices()
+
+    scraped = api.data["1234"].get("heat_pump-outside")
+    assert scraped is not None and scraped.value == 11.5, (
+        "a web-only reading was dropped by a refresh of the device list"
+    )
+    assert api.data["1234"]["ConnectionStatus"] == 0
+
+
 def test_a_device_list_where_no_row_is_usable_is_reported_not_adopted():
     """Skipping a bad row is right; skipping every row and calling it an
     empty account is not.

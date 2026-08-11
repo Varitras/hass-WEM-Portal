@@ -12,6 +12,7 @@ raw plan forever.
 
 import logging
 import time
+from datetime import timedelta
 
 
 from custom_components.wemportal import wemportalapi
@@ -349,3 +350,26 @@ def test_a_successful_schedule_refresh_keeps_its_attributes():
     row = api.data["1234"]["Circuit-Programme"]
     assert row.circuit_times_day == [{"Day": 1}]
     assert row.possible_values == [1, 2]
+
+
+def test_a_long_poll_interval_gets_a_staleness_limit_it_can_reach():
+    """The limit is a duration, and it was a fixed thirty minutes.
+
+    Nothing caps the API interval from above - the options only enforce a
+    floor - so an installation polling every 45 minutes was already past the
+    limit before its next attempt ran. The first miss then emptied
+    everything, which is the opposite of the one-failed-cycle tolerance the
+    limit exists for.
+    """
+    api = _two_module_api()
+    api.scan_interval_api = timedelta(seconds=45 * 60)
+    # Silent for 35 minutes: past the old fixed limit, well inside one
+    # interval of this installation.
+    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - 35 * 60
+    _answer_only_module_a(api)
+
+    api._fetch_parameter_values("1234")
+
+    assert api.data["1234"]["Circuit-Komfort"].value == 24.0, (
+        "a reading was dropped before this installation had a second chance to fetch it"
+    )
