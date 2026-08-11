@@ -4727,9 +4727,11 @@ TRANSPORT_FIELDS = frozenset(
 # they are actively dangerous to reset, and both were reset in practice
 # before reset_transport replaced the object rebuild:
 #
-#   * last_statistics_fetch and _last_circuit_times_fetch are portal RATE
-#     LIMITS (an hour each). Resetting them lets the next cycle refetch
-#     immediately - on a portal that was just failing.
+#   * the two hourly portal RATE LIMITS used to live here as fields. They
+#     are gone from this list because they are gone from the object: a
+#     recovery kept them, but a RELOAD replaced the whole api and reset them
+#     anyway, and every options save is a reload. They are properties onto
+#     the account state now, which is the thing built to outlive both.
 #   * _api_lock serialises a poll against a write. A fresh lock is an
 #     unheld lock, so a write could interleave with the poll it exists to
 #     serialise against.
@@ -4791,8 +4793,6 @@ PRESERVED_FIELDS = frozenset(
         "_previous_scraper_keys",
         "_last_connection_status",
         "scraping_mapper",
-        "last_statistics_fetch",
-        "_last_circuit_times_fetch",
         "expert_cookies",
         "spider_wait_interval",
         "spider_retry_count",
@@ -4850,6 +4850,12 @@ def test_a_recovery_touches_exactly_the_transport_fields():
     for field in vars(api):
         setattr(api, field, _Marker(field))
     before = dict(vars(api))
+    # Two of the portal's own limits moved off this object and into the
+    # account's memory, so "did the recovery touch them" is no longer a
+    # question about a field. Snapshotted as VALUES: this one is not
+    # replaced wholesale, it is written into.
+    account_state = api._account_state
+    account_memory_before = dict(vars(account_state))
 
     api.reset_transport()
 
@@ -4859,6 +4865,11 @@ def test_a_recovery_touches_exactly_the_transport_fields():
         f"not reset: {sorted(TRANSPORT_FIELDS - changed)}"
     )
     assert set(vars(api)) == set(before), "a recovery added or removed a field"
+    assert vars(account_state) == account_memory_before, (
+        "a recovery reached into the account's memory - the one thing built "
+        "to outlive it. The hourly portal limits live there now, and reopening "
+        "one lets the next cycle ask a portal that was just failing."
+    )
 
 
 def test_a_recovery_leaves_the_transport_in_the_state_the_next_cycle_expects():
@@ -6575,3 +6586,36 @@ def test_a_write_without_companions_is_unchanged():
             }
         ],
     }
+
+
+def test_the_hourly_gates_survive_the_reload_that_rebuilds_the_api():
+    """The portal's rate limit does not reset because we rebuilt our objects.
+
+    Both hourly gates lived on the api instance, and every options save is a
+    reload that replaces it. Saving the settings therefore bought a fresh
+    statistics round and a fresh set of schedule reads each time - in the one
+    area where the cost is an IP the portal refuses for twelve hours.
+
+    The account state exists for exactly this: its docstring says a backoff
+    must not be forgotten by the very reinstantiation it caused. These two
+    were the only portal-side limits not kept there.
+    """
+    from custom_components.wemportal.models import ModuleRef
+
+    stamped = time.monotonic()
+    schedule_key = ("1234", ModuleRef(0, 1), "P")
+    first = _api()
+    first.last_statistics_fetch = stamped
+    first._last_circuit_times_fetch[schedule_key] = stamped
+
+    after_the_reload = _api()
+
+    # Against the value that was STAMPED, not against the other object's
+    # answer: comparing the two objects passes just as happily when both
+    # forget, which is exactly the break this is about.
+    assert after_the_reload.last_statistics_fetch == stamped, (
+        "a rebuilt api forgot the hourly statistics gate"
+    )
+    assert after_the_reload._last_circuit_times_fetch.get(schedule_key) == stamped, (
+        "a rebuilt api forgot when it last read the schedules"
+    )

@@ -60,6 +60,14 @@ class AccountState:
     # Monotonic deadline of the expert (web) 403 backoff. Per account, with
     # a test pinning that one account's backoff does not spread to another.
     expert_blocked_until: float = 0.0
+    # The two hourly limits the portal imposes on this account's data. They
+    # lived on the api object, which a reload replaces - and every options
+    # save is a reload, so saving twice bought two extra statistics rounds.
+    # Monotonic like expert_blocked_until: this registry lives and dies with
+    # the process, so a wall clock would only add an NTP step as a way to
+    # release them early.
+    statistics_fetched_at: float = 0.0
+    circuit_times_fetched_at: dict[tuple[Any, ...], float] = field(default_factory=dict)
     # One warning per subject, surviving the reload that rebuilds the
     # objects doing the warning.
     duplicate_rows_reported: set[str] = field(default_factory=set)

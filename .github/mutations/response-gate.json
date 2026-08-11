@@ -2798,5 +2798,12 @@
     "old": "\"homeassistant\": \"2024.12.0\"",
     "new": "\"homeassistant\": \"2025.6.0\"",
     "tests": "the_minimum_job_names_the_version_hacs_declares"
+  },
+  {
+    "label": "rate limits: an hourly gate must outlive the reload",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        return self._account_state.statistics_fetched_at",
+    "new": "        return 0.0",
+    "tests": "hourly_gates_survive_the_reload_that_rebuilds_the_api"
   }
 ]
