@@ -2770,5 +2770,12 @@
     "old": "    # None if this unit has no state class.\n    return {_unit_lookup_key(key): value for key, value in mapping.items()}.get(\n        _unit_lookup_key(unit)\n    )",
     "new": "    return mapping.get(unit)",
     "tests": "unit_the_portal_spells_its_own_way_gets_both_halves"
+  },
+  {
+    "label": "boundary: the scan must see a sibling import too",
+    "path": "tests/test_transport_boundary.py",
+    "old": "            else:\n                # `from . import x, y` - the modules are the aliases.\n                imported.update(alias.name for alias in node.names)\n",
+    "new": "",
+    "tests": "the_scan_sees_every_spelling_of_an_import"
   }
 ]
