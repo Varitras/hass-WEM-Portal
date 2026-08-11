@@ -2728,5 +2728,12 @@
     "old": "            if not self._is_in_home_assistant():\n                return\n",
     "new": "",
     "tests": "auto_poll_does_not_publish_state_for_an_entity_ha_never_added"
+  },
+  {
+    "label": "privacy: a request log must name its fields, not their values",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            \", \".join(sorted(data)) if isinstance(data, dict) else type(data).__name__,",
+    "new": "            data,",
+    "tests": "request_log_names_the_fields_it_sent_not_their_values"
   }
 ]

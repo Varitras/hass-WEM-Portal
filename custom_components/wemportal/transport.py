@@ -394,15 +394,20 @@ class WemPortalTransport:
         """
         assert self.session is not None, "no API session - login runs first"
         if not data:
-            _LOGGER.debug("Sending GET request to %s with headers: %s", url, headers)
+            _LOGGER.debug("Sending GET request to %s", url)
             return self.session.get(
                 url, headers=headers, timeout=API_REQUEST_TIMEOUT_SECONDS
             )
+        # The field NAMES, not their values. A debug log is what people paste
+        # into an issue, and the payload of a write carries the
+        # installation's device id and the value being written. Which fields
+        # went out is what makes the line useful; what was in them is what
+        # makes it somebody's heating system. The headers are gone for a
+        # duller reason: four constants, repeated on every request.
         _LOGGER.debug(
-            "Sending POST request to %s with headers: %s and data: %s",
+            "Sending POST request to %s with fields: %s",
             url,
-            headers,
-            data,
+            ", ".join(sorted(data)) if isinstance(data, dict) else type(data).__name__,
         )
         return self.session.post(
             url, headers=headers, json=data, timeout=API_REQUEST_TIMEOUT_SECONDS

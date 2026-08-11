@@ -345,3 +345,34 @@ def test_a_service_write_is_allowed_in_either_spelling():
 
     assert canonical_entityvalue(" AbCdEf ") == canonical_entityvalue("abcdef")
     assert canonical_entityvalue(None) == ""
+
+
+def _api_for_logging():
+    """An api whose session records the call instead of making it."""
+    import types
+
+    api = WemPortalApi.__new__(WemPortalApi)
+    api.session = types.SimpleNamespace(
+        post=lambda *args, **kwargs: None, get=lambda *args, **kwargs: None
+    )
+    return api
+
+
+def test_a_request_log_names_the_fields_it_sent_not_their_values(caplog):
+    """Debug logs are what people paste into an issue.
+
+    The POST log printed the whole payload, so a write carried the
+    installation's device id and the value written into a log somebody then
+    shares. The field NAMES are what makes such a log useful for debugging;
+    the values are what makes it somebody's heating system.
+    """
+    api = _api_for_logging()
+    payload = {"DeviceID": 4711, "ParameterID": "Raumtemp", "Value": 23.5}
+
+    with caplog.at_level(logging.DEBUG):
+        api._send("https://example.invalid/write", {"Accept": "*/*"}, payload)
+
+    text = caplog.text
+    assert "DeviceID" in text, "a log that names nothing is not worth writing"
+    assert "4711" not in text, "the installation's device id went into the log"
+    assert "23.5" not in text, "the value written went into the log"
