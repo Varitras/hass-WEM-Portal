@@ -43,6 +43,8 @@ from .const import (
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
     DEFAULT_CONF_LANGUAGE_VALUE,
+    DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
+    DEFAULT_CONF_SCAN_INTERVAL_VALUE,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     DEFAULT_MODE,
     DOMAIN,
@@ -600,14 +602,18 @@ class WemportalOptionsFlow(OptionsFlow):
                 # and reliably trigger the IP-wide 403 rate limit.
                 vol.Optional(
                     CONF_SCAN_INTERVAL,
-                    default=prefill(CONF_SCAN_INTERVAL, 1800),
+                    default=prefill(
+                        CONF_SCAN_INTERVAL, DEFAULT_CONF_SCAN_INTERVAL_VALUE
+                    ),
                 ): vol.All(
                     cv.positive_int,
                     vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
                 ),
                 vol.Optional(
                     CONF_SCAN_INTERVAL_API,
-                    default=prefill(CONF_SCAN_INTERVAL_API, 300),
+                    default=prefill(
+                        CONF_SCAN_INTERVAL_API, DEFAULT_CONF_SCAN_INTERVAL_API_VALUE
+                    ),
                 ): vol.All(
                     cv.positive_int,
                     vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
@@ -617,7 +623,7 @@ class WemportalOptionsFlow(OptionsFlow):
                 # unsupported language code.
                 vol.Optional(
                     CONF_LANGUAGE,
-                    default=prefill(CONF_LANGUAGE, "en"),
+                    default=prefill(CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE),
                 ): vol.In(["en", "de"]),
                 vol.Optional(
                     CONF_MODE, default=prefill(CONF_MODE, DEFAULT_MODE)

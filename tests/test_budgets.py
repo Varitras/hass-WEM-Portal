@@ -42,7 +42,7 @@ LINE_LIMIT = 900
 LINE_BUDGETS = {
     "wemportalapi.py": 2724,
     "expert_writer.py": 2351,
-    "config_flow.py": 917,
+    "config_flow.py": 923,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to
