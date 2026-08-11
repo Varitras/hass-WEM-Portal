@@ -2434,6 +2434,32 @@ def test_portal_units_are_normalised_to_home_assistant_spelling():
     assert unit_to_device_class(unit) == "pressure"
 
 
+def test_a_unit_the_portal_spells_its_own_way_gets_both_halves():
+    """A device class without a state class is a sensor Home Assistant shows
+    and the Energy Dashboard refuses.
+
+    The device-class lookup was taught to match case-insensitively after the
+    "BAR" incident; the state-class lookup sitting three functions below it
+    was not, and the test written for that incident asked about one half
+    only. So a portal spelling an energy unit its own way produced
+    device_class=ENERGY with state_class=None - accepted everywhere, usable
+    for nothing, and silent.
+    """
+    from custom_components.wemportal.utils import (
+        unit_to_device_class,
+        unit_to_state_class,
+    )
+
+    assert unit_to_device_class("KWH") == "energy"
+    assert unit_to_state_class("KWH") == "total_increasing", (
+        "the energy sensor has no state class, so long-term statistics and "
+        "the Energy Dashboard will not take it"
+    )
+    # A reading with no unit at all keeps answering the way it did: None is
+    # not the same question as an empty unit, which is a real measurement.
+    assert unit_to_state_class(None) is None
+
+
 # Trimmed from a real maintenance page. The login form stays fully present
 # and submittable - only the backend behind it is down - so the notice
 # container is the only thing that sets the two states apart.

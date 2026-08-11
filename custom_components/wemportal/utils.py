@@ -333,6 +333,22 @@ def fix_value_and_unit(value, unit):
     return value, unit
 
 
+def _unit_lookup_key(unit) -> str:
+    """How a unit is spelled when a table is asked about it.
+
+    BOTH sides need this, and that is the whole point: the keys of those
+    tables are Home Assistant constants in their own casing ("kW", "°C",
+    "K"), so lowering only the value would miss every one of them. The
+    portal delivers "BAR" where the constant is "bar", and a stray space is
+    just as easy to get.
+
+    Deliberately not folding None into "": a reading with no unit and a
+    reading whose unit is the empty string are different questions, and the
+    second one has a state class.
+    """
+    return str(unit).strip().lower()
+
+
 def unit_to_device_class(unit):
     """Return the device_class of this unit of measurement, if any."""
 
@@ -363,11 +379,8 @@ def unit_to_device_class(unit):
         UnitOfFrequency.HERTZ: SensorDeviceClass.FREQUENCY,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorDeviceClass.VOLUME_FLOW_RATE,
     }
-    # Both sides normalised - the KEYS above are Home Assistant constants
-    # in their own casing ("kW", "°C", "K"), so lowering only the lookup
-    # value would miss every one of them.
-    return {str(key).strip().lower(): value for key, value in mapping.items()}.get(
-        str(unit).strip().lower()
+    return {_unit_lookup_key(key): value for key, value in mapping.items()}.get(
+        _unit_lookup_key(unit)
     )
 
 
@@ -392,7 +405,14 @@ def unit_to_state_class(unit):
     """Return the state class of this unit of measurement, if any."""
 
     # see: <https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes>
-    return {
+    #
+    # Spelled the same way as the device class one function above. They
+    # answer two halves of one question, and where they disagreed the result
+    # was a sensor with a device class and no state class - which Home
+    # Assistant accepts and the Energy Dashboard refuses.
+    if unit is None:
+        return None
+    mapping = {
         "": SensorStateClass.MEASUREMENT,
         "%": SensorStateClass.MEASUREMENT,
         UnitOfTemperature.CELSIUS: SensorStateClass.MEASUREMENT,
@@ -404,7 +424,11 @@ def unit_to_state_class(unit):
         UnitOfTime.HOURS: SensorStateClass.TOTAL_INCREASING,
         UnitOfFrequency.HERTZ: SensorStateClass.MEASUREMENT,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorStateClass.MEASUREMENT,
-    }.get(unit)  # return None if no state class is available
+    }
+    # None if this unit has no state class.
+    return {_unit_lookup_key(key): value for key, value in mapping.items()}.get(
+        _unit_lookup_key(unit)
+    )
 
 
 def report_unexpected_maintenance_marker(notice, what, reported) -> None:

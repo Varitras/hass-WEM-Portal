@@ -2763,5 +2763,12 @@
     "old": "        if found is None or found.config_entry_id != config_entry.entry_id:\n            continue\n",
     "new": "",
     "tests": "migration_leaves_another_accounts_entity_alone"
+  },
+  {
+    "label": "units: both halves must answer about the same spelling",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    # None if this unit has no state class.\n    return {_unit_lookup_key(key): value for key, value in mapping.items()}.get(\n        _unit_lookup_key(unit)\n    )",
+    "new": "    return mapping.get(unit)",
+    "tests": "unit_the_portal_spells_its_own_way_gets_both_halves"
   }
 ]
