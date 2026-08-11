@@ -2840,5 +2840,12 @@
     "old": "        last_fetch = self._last_circuit_times_fetch.get(key)\n        if last_fetch is None:\n            return True\n",
     "new": "        last_fetch = self._last_circuit_times_fetch.get(key, 0)\n",
     "tests": "schedule_is_fetched_on_the_first_cycle_after_a_reboot"
+  },
+  {
+    "label": "lock: a wait longer than the budget it spends must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "POLL_DEADLINE_SECONDS: Final = DEFAULT_TIMEOUT - 30",
+    "new": "POLL_DEADLINE_SECONDS: Final = DEFAULT_TIMEOUT - 60",
+    "tests": "wait_for_the_lock_never_outlasts_the_budget_it_spends"
   }
 ]

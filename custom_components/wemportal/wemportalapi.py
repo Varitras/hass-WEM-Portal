@@ -165,8 +165,8 @@ PARAMETER_REDISCOVERY_RETRY_SECONDS: Final = 3600  # 1 hour
 # failure and moved on. Nobody was waiting for that work any more.
 #
 # Below DEFAULT_TIMEOUT so the worker is gone BEFORE the coordinator gives
-# up on it rather than after, which is the whole point: the next cycle then
-# finds a free lock instead of queueing behind an abandoned one.
+# up rather than after: the next cycle then finds a free lock instead of
+# queueing behind an abandoned one. Never below API_LOCK_TIMEOUT_SECONDS.
 POLL_DEADLINE_SECONDS: Final = DEFAULT_TIMEOUT - 30
 
 # Placeholder device id the web scraper falls back to when no real

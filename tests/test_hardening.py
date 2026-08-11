@@ -2370,6 +2370,27 @@ def test_lock_timeout_is_not_treated_as_a_corrupted_session():
     assert exceptions.ApiBusyError is not exceptions.WemPortalError
 
 
+def test_the_wait_for_the_lock_never_outlasts_the_budget_it_spends():
+    """A cycle handed the lock must still have time left to use it.
+
+    fetch_data measures its budget from BEFORE it queues, so whatever it
+    spends waiting is gone from what it has to spend at the portal. Were
+    the wait the longer of the two, a cycle could be handed the lock with
+    nothing left and stop at its first check - after holding an executor
+    thread for minutes, and reporting a portal too slow for one cycle when
+    the real cause was the cycle in front of it.
+
+    Equal is the sharpest setting that still holds: a waiter that runs the
+    full time is given an ApiBusyError rather than the lock, so anyone who
+    does get it waited strictly less. Each constant is documented against
+    DEFAULT_TIMEOUT and neither against the other, which is why this is
+    written down here rather than left to hold by coincidence.
+    """
+    assert (
+        wemportalapi.API_LOCK_TIMEOUT_SECONDS <= wemportalapi.POLL_DEADLINE_SECONDS
+    ), "a poll could queue longer than the budget it is queueing to spend"
+
+
 def test_disabled_installation_is_honoured_even_before_the_id_is_known():
     """The undecided-scraper-id escape must not override an EXPLICIT
     "everything is disabled" filter - that was the guard's own failure mode

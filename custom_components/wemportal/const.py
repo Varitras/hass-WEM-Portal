@@ -29,6 +29,10 @@ DEFAULT_TIMEOUT: Final = 360
 # DEFAULT_TIMEOUT: a waiter must give up before the coordinator abandons the
 # await it belongs to, otherwise every cycle leaves another parked worker
 # behind.
+#
+# Never ABOVE wemportalapi.POLL_DEADLINE_SECONDS either: a poll counts its
+# wait against the budget it is waiting to spend, so a longer wait could
+# hand it the lock with nothing left. A test holds the two together.
 API_LOCK_TIMEOUT_SECONDS: Final = DEFAULT_TIMEOUT - 30
 
 
