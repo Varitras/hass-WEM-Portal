@@ -219,7 +219,6 @@ def test_get_statistics_accepts_int_device_ids():
     api.make_api_call = lambda url, **_kwargs: (
         calls.append(url) or FakeResponse({"GroupTypeDescriptions": []})
     )
-    api.last_statistics_fetch = 0.0
     api.get_statistics(enabled_devices=[1234])
     assert calls, "statistics refresh was skipped for an int device id"
 
@@ -296,7 +295,6 @@ def _statistics_api(call_recorder, fail=False):
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
-    api.last_statistics_fetch = 0.0
 
     def make_api_call(url, **_kwargs):
         call_recorder.append(url)
@@ -330,7 +328,7 @@ def test_failed_statistics_cycle_retries_after_the_short_interval():
     api.get_statistics(enabled_devices=["1234"])
     assert len(calls) == 1
 
-    waited = time.time() - api.last_statistics_fetch
+    waited = time.monotonic() - api.last_statistics_fetch
     remaining = statistics.STATISTICS_REFRESH_INTERVAL_SECONDS - waited
 
     assert remaining <= statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
@@ -348,13 +346,54 @@ def test_failed_statistics_cycle_is_still_rate_limited():
     assert len(calls) == 1, "a failing portal was retried immediately"
 
 
+def test_the_statistics_guard_reads_the_clock_it_stamped():
+    """A wall clock is corrected - by NTP shortly after a boot, most
+    reliably - and a correction forward makes the hourly stamp look old
+    enough to fetch again. Weishaupt counts requests per IP, so a guard
+    that drops open is exactly the traffic it exists to prevent.
+
+    Asserted from the other side, which needs no clock to jump: a stamp
+    left on the monotonic clock, read as wall-clock time, lands decades in
+    the past and opens the guard immediately.
+    """
+    calls = []
+    api = _statistics_api(calls)
+    api.last_statistics_fetch = time.monotonic()
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert calls == [], "the hourly statistics guard was read on another clock"
+
+
+def test_statistics_are_fetched_on_the_first_cycle_after_a_reboot(monkeypatch):
+    """ "Never fetched" is not "fetched at zero".
+
+    Zero on a monotonic clock is the moment the machine booted, so a zero
+    default would hold the guard shut until the box had been up for a full
+    interval - no statistics at all for the first hour after every
+    restart, and nothing in the log to say why. Pinning the interval above
+    the current uptime is what makes that deterministic here instead of
+    depending on how long the test machine happens to have been running.
+    """
+    monkeypatch.setattr(
+        statistics,
+        "STATISTICS_REFRESH_INTERVAL_SECONDS",
+        time.monotonic() + 3600,
+    )
+    calls = []
+    api = _statistics_api(calls)
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert calls, "a freshly started account was treated as already fetched"
+
+
 def _statistics_api_with_groups(groups, read_answer):
     """An api whose refresh lists `groups` and whose group reads go through
     `read_answer(group_id)` - returning a payload or raising."""
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
-    api.last_statistics_fetch = 0.0
 
     def make_api_call(url, **kwargs):
         if url == statistics.API_STATISTICS_REFRESH_URL:
@@ -370,7 +409,7 @@ def _statistics_api_with_groups(groups, read_answer):
 def _remaining_wait(api):
     """How long until statistics would be fetched again."""
     return statistics.STATISTICS_REFRESH_INTERVAL_SECONDS - (
-        time.time() - api.last_statistics_fetch
+        time.monotonic() - api.last_statistics_fetch
     )
 
 
@@ -471,7 +510,7 @@ def test_statistics_timestamp_is_kept_when_nothing_was_attempted():
     api.get_statistics(enabled_devices=["1234"])
 
     assert calls == []
-    waited = time.time() - api.last_statistics_fetch
+    waited = time.monotonic() - api.last_statistics_fetch
     assert waited < 5, "timestamp should record this attempt as 'just now'"
 
 
@@ -502,7 +541,6 @@ def test_empty_enabled_devices_polls_nothing():
             {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
         )
     )
-    api.last_statistics_fetch = 0.0
 
     api.get_data(enabled_devices=[])
     api.get_statistics(enabled_devices=[])
@@ -5252,7 +5290,7 @@ def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
     api._fetch_circuit_times("1234")
     stamp = api._last_circuit_times_fetch[("1234", ModuleRef(0, 1), "Heizprogramm1")]
 
-    waited = time.time() - stamp
+    waited = time.monotonic() - stamp
     assert waited >= wemportalapi.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS - (
         wemportalapi.CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS + 5
     ), "the retry was pushed out further than the retry interval"
@@ -5301,7 +5339,41 @@ def test_a_successful_schedule_keeps_the_full_interval():
     api._fetch_circuit_times("1234")
     stamp = api._last_circuit_times_fetch[("1234", ModuleRef(0, 1), "Heizprogramm1")]
 
-    assert time.time() - stamp < 5, "a successful fetch was back-dated like a failure"
+    assert time.monotonic() - stamp < 5, (
+        "a successful fetch was back-dated like a failure"
+    )
+
+
+def test_the_schedule_guard_reads_the_clock_it_stamped():
+    """The per-programme half of the clock rule the statistics guard has:
+    a stamp left on the monotonic clock must not read as decades old.
+    """
+    api, calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}]
+    )
+    key = ("1234", ModuleRef(0, 1), "Heizprogramm1")
+    api._last_circuit_times_fetch[key] = time.monotonic()
+
+    api._fetch_circuit_times("1234")
+
+    assert calls == [], "the schedule guard was read on another clock"
+
+
+def test_a_schedule_is_fetched_on_the_first_cycle_after_a_reboot(monkeypatch):
+    """The per-programme half of the zero-is-not-never rule: a missing key
+    means never fetched, not "fetched when the machine booted"."""
+    monkeypatch.setattr(
+        wemportalapi,
+        "CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS",
+        time.monotonic() + 3600,
+    )
+    api, calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}]
+    )
+
+    api._fetch_circuit_times("1234")
+
+    assert calls, "a programme never fetched was treated as just fetched"
 
 
 # --- the fetch has to recognise a programme the portal types as a switch

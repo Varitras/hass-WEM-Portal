@@ -332,7 +332,7 @@ def test_a_failed_due_schedule_refresh_drops_the_stale_attributes():
     api = _schedule_row_api()
     module = {"Index": 1, "Type": 1, "Name": "Circuit"}
 
-    api._record_schedule_attempt("1234", module, "Programme", time.time(), False)
+    api._record_schedule_attempt("1234", module, "Programme", time.monotonic(), False)
 
     row = api.data["1234"]["Circuit-Programme"]
     assert row.circuit_times_day is None, "stale detail still overrules the raw plan"
@@ -345,7 +345,7 @@ def test_a_successful_schedule_refresh_keeps_its_attributes():
     api = _schedule_row_api()
     module = {"Index": 1, "Type": 1, "Name": "Circuit"}
 
-    api._record_schedule_attempt("1234", module, "Programme", time.time(), True)
+    api._record_schedule_attempt("1234", module, "Programme", time.monotonic(), True)
 
     row = api.data["1234"]["Circuit-Programme"]
     assert row.circuit_times_day == [{"Day": 1}]

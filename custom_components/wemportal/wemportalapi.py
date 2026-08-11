@@ -2504,18 +2504,18 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         ) == WemDataType.PROGRAM or looks_like_schedule(row_value)
 
     @property
-    def last_statistics_fetch(self) -> float:
+    def last_statistics_fetch(self) -> float | None:
         """When the statistics were last ASKED for, across reloads.
 
         On the account state rather than on this object, because every
         options save replaces this object and the portal's hourly limit
         does not care. Kept as a property so the statistics mixin goes on
-        reading and writing one plain attribute.
+        reading and writing one plain attribute. None means never asked.
         """
         return self._account_state.statistics_fetched_at
 
     @last_statistics_fetch.setter
-    def last_statistics_fetch(self, when: float) -> None:
+    def last_statistics_fetch(self, when: float | None) -> None:
         self._account_state.statistics_fetched_at = when
 
     @property
@@ -2546,10 +2546,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         Heating schedules rarely change - only through the WEM Portal app
         directly, since this integration shows them read-only - so refetching
         one on every coordinator cycle is load for nothing.
+
+        Monotonic, and a missing key is "never fetched" rather than zero -
+        AccountState says why each of those matters.
         """
         key = _schedule_throttle_key(device_id, module, parameter_id)
-        last_fetch = self._last_circuit_times_fetch.get(key, 0)
-        return time.time() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
+        last_fetch = self._last_circuit_times_fetch.get(key)
+        if last_fetch is None:
+            return True
+        return time.monotonic() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
 
     def _stamp_answered_modules(self, device_id, values) -> None:
         """Note WHEN each module last appeared in a values answer.
@@ -2725,7 +2730,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                         continue
                     if not self._schedule_is_due(device_id, module, parameter_id):
                         continue
-                    attempted_at = time.time()
+                    attempted_at = time.monotonic()
                     fetched = False
                     try:
                         fetched = self._read_one_schedule(

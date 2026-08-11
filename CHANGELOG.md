@@ -144,6 +144,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **The two hourly portal limits no longer follow the wall clock.**
+  Statistics and heating schedules are each asked for at most once an hour,
+  and both measured that hour on a clock that can be corrected - NTP right
+  after a boot being the reliable case. A correction forward made every
+  stamp look old enough to fetch again. Weishaupt counts requests per IP,
+  so a limit that drops open is exactly the traffic it exists to prevent.
+  Both now read a clock that cannot jump.
 
 ## [1.11.0b4] – 2026-08-09
 

@@ -66,7 +66,10 @@ class AccountState:
     # Monotonic like expert_blocked_until: this registry lives and dies with
     # the process, so a wall clock would only add an NTP step as a way to
     # release them early.
-    statistics_fetched_at: float = 0.0
+    # "Never fetched" is None (and a missing key), NOT zero: on a monotonic
+    # clock zero is the moment the machine booted, so a zero stamp would
+    # hold both guards shut for the first hour after every restart.
+    statistics_fetched_at: float | None = None
     circuit_times_fetched_at: dict[tuple[Any, ...], float] = field(default_factory=dict)
     # One warning per subject, surviving the reload that rebuilds the
     # objects doing the warning.

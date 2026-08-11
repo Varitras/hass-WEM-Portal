@@ -52,7 +52,7 @@
     "label": "recovery must not clobber the rate limits",
     "path": "custom_components/wemportal/transport.py",
     "old": "        # failures being recovered from may have left the module view partial.\n        self._devices_fetched_this_session = False\n",
-    "new": "        # failures being recovered from may have left the module view partial.\n        self._devices_fetched_this_session = False\n        self.last_statistics_fetch = 0.0\n",
+    "new": "        # failures being recovered from may have left the module view partial.\n        self._devices_fetched_this_session = False\n        self.last_statistics_fetch = None\n",
     "tests": "recovery_resets_the_connection"
   },
   {
@@ -2803,7 +2803,42 @@
     "label": "rate limits: an hourly gate must outlive the reload",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        return self._account_state.statistics_fetched_at",
-    "new": "        return 0.0",
+    "new": "        return None",
     "tests": "hourly_gates_survive_the_reload_that_rebuilds_the_api"
+  },
+  {
+    "label": "rate limits: the statistics guard must read the clock it stamped",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        now = time.monotonic()",
+    "new": "        now = time.time()",
+    "tests": "statistics_guard_reads_the_clock_it_stamped"
+  },
+  {
+    "label": "rate limits: the schedule guard must read the clock it stamped",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        return time.monotonic() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS",
+    "new": "        return time.time() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS",
+    "tests": "schedule_guard_reads_the_clock_it_stamped"
+  },
+  {
+    "label": "rate limits: a schedule attempt must be stamped on the guard's clock",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                    attempted_at = time.monotonic()",
+    "new": "                    attempted_at = time.time()",
+    "tests": "failed_schedule_is_tried_again_after_the_retry_interval or successful_schedule_keeps_the_full_interval"
+  },
+  {
+    "label": "rate limits: never fetched must not read as fetched at boot",
+    "path": "custom_components/wemportal/models.py",
+    "old": "    statistics_fetched_at: float | None = None",
+    "new": "    statistics_fetched_at: float | None = 0.0",
+    "tests": "statistics_are_fetched_on_the_first_cycle_after_a_reboot"
+  },
+  {
+    "label": "rate limits: a schedule never fetched must not read as fetched at boot",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        last_fetch = self._last_circuit_times_fetch.get(key)\n        if last_fetch is None:\n            return True\n",
+    "new": "        last_fetch = self._last_circuit_times_fetch.get(key, 0)\n",
+    "tests": "schedule_is_fetched_on_the_first_cycle_after_a_reboot"
   }
 ]

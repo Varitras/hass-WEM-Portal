@@ -346,7 +346,7 @@
     "data": {
       "1234": {}
     },
-    "retry_shortened": false
+    "retry_shortened": true
   },
   "routine_rejection_does_not_stop_the_rest": {
     "calls": [

@@ -265,8 +265,13 @@ class WemPortalStatistics:
         failure would otherwise cost a full hour of statistics, so a cycle that
         failed for every device shortens the wait to
         STATISTICS_RETRY_INTERVAL_SECONDS instead (see the end of this method).
+
+        Monotonic, not wall clock: the stamp lives in AccountState, which
+        dies with the process, and a wall clock corrected forward - NTP
+        right after a boot - would read every stamp as an hour old and
+        release the guard for free.
         """
-        now = time.time()
+        now = time.monotonic()
         if (
             self.last_statistics_fetch is not None
             and (now - self.last_statistics_fetch) < STATISTICS_REFRESH_INTERVAL_SECONDS
