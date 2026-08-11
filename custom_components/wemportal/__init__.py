@@ -87,7 +87,9 @@ def _migrate_device_unique_ids(registry, config_entry, device_id, data) -> bool:
 
         new_id = get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id)
         old_ids = _possible_old_unique_ids(config_entry, device_id, unique_id, values)
-        if _adopt_entity_under_its_old_id(registry, values.platform, old_ids, new_id):
+        if _adopt_entity_under_its_old_id(
+            registry, config_entry, values.platform, old_ids, new_id
+        ):
             change = True
     return change
 
@@ -123,18 +125,30 @@ def _possible_old_unique_ids(config_entry, device_id, unique_id, values) -> list
     return possible_old_ids
 
 
-def _adopt_entity_under_its_old_id(registry, platform, old_ids, new_id) -> bool:
-    """Give the first entity found under an old id the current one.
+def _adopt_entity_under_its_old_id(
+    registry, config_entry, platform, old_ids, new_id
+) -> bool:
+    """Give the first entity of THIS account found under an old id the
+    current one.
 
     Stops at the first hit whether or not it changed anything: the entity has
     been identified, and carrying on would match the same one again under
     another of its old spellings.
+
+    The account check is not decoration. The old shapes predate the account
+    prefix, so they are identical on every WEM account - searched
+    registry-wide, the entry that loads first would adopt the other
+    account's entity, rename it onto its own id, and remove the entity that
+    was already correct.
     """
     for old_id in old_ids:
         if not old_id:
             continue
         name_id = registry.async_get_entity_id(platform, DOMAIN, old_id)
         if name_id is None:
+            continue
+        found = registry.async_get(name_id)
+        if found is None or found.config_entry_id != config_entry.entry_id:
             continue
 
         new_entity_id = registry.async_get_entity_id(platform, DOMAIN, new_id)

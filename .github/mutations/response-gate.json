@@ -2756,5 +2756,12 @@
     "old": "            DEVICE_VALUES_STALE_AFTER_POLLS * self.scan_interval_api.total_seconds(),\n",
     "new": "            0,\n",
     "tests": "long_poll_interval_gets_a_staleness_limit_it_can_reach"
+  },
+  {
+    "label": "migration: another account's entity must not be adopted",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        if found is None or found.config_entry_id != config_entry.entry_id:\n            continue\n",
+    "new": "",
+    "tests": "migration_leaves_another_accounts_entity_alone"
   }
 ]

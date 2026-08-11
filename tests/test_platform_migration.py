@@ -29,9 +29,12 @@ class FakeConfigEntry:
 class FakeRegistry:
     """Just enough registry: a lookup by (platform, unique_id) and a remove."""
 
-    def __init__(self, entries):
+    def __init__(self, entries, owners=None):
         self.entries = dict(entries)
+        # Every entity belongs to this entry unless a test says otherwise.
+        self.owners = dict(owners or {entity: ENTRY_ID for entity in entries.values()})
         self.removed = []
+        self.renamed = []
         self.domains_asked = set()
 
     def async_get_entity_id(self, platform, domain, unique_id):
@@ -40,6 +43,21 @@ class FakeRegistry:
 
     def async_remove(self, entity_id):
         self.removed.append(entity_id)
+
+    def async_get(self, entity_id):
+        """Which config entry an entity belongs to.
+
+        The migration searches by unique_id shapes that predate the account
+        prefix, so the registry can answer with an entity of a DIFFERENT WEM
+        account. Only this object knows that, which is why the fake has to.
+        """
+        import types
+
+        owner = self.owners.get(entity_id)
+        return None if owner is None else types.SimpleNamespace(config_entry_id=owner)
+
+    def async_update_entity(self, entity_id, new_unique_id):
+        self.renamed.append((entity_id, new_unique_id))
 
 
 def _uid(key):
@@ -145,3 +163,35 @@ def test_a_value_without_a_platform_counts_as_a_sensor():
     _run(registry, {"Heat pump-Outside": Reading(friendly_name="Outside")})
 
     assert registry.removed == []
+
+
+def test_the_migration_leaves_another_accounts_entity_alone():
+    """The old unique_id shapes predate the account prefix, so they are the
+    same on every WEM account.
+
+    Searched registry-wide, the first entry loaded could therefore adopt the
+    other account's entity - renaming it onto its own id, and removing the
+    entity that was already correct. Two WEM accounts is unusual; losing the
+    other one's entities is not something to find out about afterwards.
+    """
+    from custom_components.wemportal import _migrate_device_unique_ids
+
+    other_account = "entry-2"
+    registry = FakeRegistry(
+        # Registered under a shape from before the account prefix existed.
+        {("sensor", "Outside"): "sensor.other_account_outside"},
+        owners={"sensor.other_account_outside": other_account},
+    )
+
+    changed = _migrate_device_unique_ids(
+        registry,
+        FakeConfigEntry(),
+        DEVICE,
+        {"Outside": Reading(value=1.0, platform="sensor", parameter_id="Outside")},
+    )
+
+    assert registry.renamed == [], (
+        f"an entity of another WEM account was migrated: {registry.renamed}"
+    )
+    assert registry.removed == []
+    assert changed is False
