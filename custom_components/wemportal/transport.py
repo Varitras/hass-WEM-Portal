@@ -440,6 +440,12 @@ class WemPortalTransport:
             # forbidden_count) still works.
             self._activate_cooldown()
             server_status, server_message = self.get_response_details(response)
+            # Not at odds with the "no extra request" note above: this login
+            # is spent after the cooldown, when the session has idled the 15
+            # minutes at which the expert path stops trusting one
+            # (EXPERT_SESSION_MAX_AGE_SECONDS) - and a failed reuse costs two
+            # requests where a fresh login costs one. Assumed, not measured:
+            # that number is the web session's, this is the mobile API's.
             self.valid_login = False
             forbidden_error = ForbiddenError(
                 f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
