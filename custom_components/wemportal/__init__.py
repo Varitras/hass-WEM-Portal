@@ -16,7 +16,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import device_registry, entity_registry, issue_registry
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
@@ -303,13 +303,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     # real API device id, else the placeholder) and the coordinator persists
     # it. Existing installs therefore lock in whatever id they already use,
     # so nobody loses history at upgrade.
-    scraper_device_id = None
     try:
         scraper_device_id = await get_scraper_device_store(
             hass, entry.entry_id
         ).async_load()
     except Exception as exc:  # noqa: BLE001
-        _LOGGER.debug("Could not load stored scraper device id: %s", exc)
+        # Not swallowed. Carrying on with None does not mean "no id yet" - it
+        # means the api decides one again, and where that decision lands
+        # somewhere else, every scraped sensor gets a new unique_id and its
+        # history is orphaned. Refusing to set up is recoverable and Home
+        # Assistant retries on its own; losing the history is not.
+        raise ConfigEntryNotReady(
+            "The stored scraper device id could not be read. Setting up "
+            "without it would re-decide the id and move every scraped "
+            f"sensor to a new one, so this account is not loaded: {exc}"
+        ) from exc
 
     # Creating API object
     api = WemPortalApi(

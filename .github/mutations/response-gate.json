@@ -2735,5 +2735,12 @@
     "old": "            \", \".join(sorted(data)) if isinstance(data, dict) else type(data).__name__,",
     "new": "            data,",
     "tests": "request_log_names_the_fields_it_sent_not_their_values"
+  },
+  {
+    "label": "scraper id: an unreadable store must not silently re-decide the id",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        raise ConfigEntryNotReady(\n            \"The stored scraper device id could not be read. Setting up \"\n            \"without it would re-decide the id and move every scraped \"\n            f\"sensor to a new one, so this account is not loaded: {exc}\"\n        ) from exc",
+    "new": "        scraper_device_id = None\n        _LOGGER.debug(\"Could not load stored scraper device id: %s\", exc)",
+    "tests": "unreadable_scraper_device_id_stops_setup_instead_of_re_deciding"
   }
 ]

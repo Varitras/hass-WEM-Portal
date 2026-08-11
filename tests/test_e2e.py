@@ -3600,3 +3600,41 @@ async def test_the_rescan_option_makes_no_portal_requests(hass):
     await _open_options(hass, entry, "rescan_parameters")
 
     assert calls == []
+
+
+async def test_an_unreadable_scraper_device_id_stops_setup_instead_of_re_deciding(
+    hass, monkeypatch
+):
+    """The stored id is what keeps scraped sensors on one device across mode
+    switches - and with it, their history.
+
+    A read that fails was logged at debug and setup carried on as if nothing
+    had ever been stored, which makes the api decide the id again. Where
+    that decision now lands somewhere else, every scraped sensor gets a new
+    unique_id: new entities, and the old history orphaned. Refusing to set
+    up is recoverable; that is not.
+    """
+    import custom_components.wemportal as integration
+
+    class _UnreadableStore:
+        async def async_load(self):
+            raise HomeAssistantError("the file is not readable")
+
+    # The module that READS the name, not the one that defines it: __init__
+    # imports it by name, so patching coordinator would leave this test
+    # watching something the setup path never looks at.
+    monkeypatch.setattr(
+        integration,
+        "get_scraper_device_store",
+        lambda *_args, **_kwargs: _UnreadableStore(),
+    )
+
+    entry = _entry(hass)
+    # Home Assistant catches ConfigEntryNotReady itself and parks the entry
+    # for a retry, so the state is what says whether setup refused.
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY, (
+        "setup carried on without the stored id, which re-decides it"
+    )
