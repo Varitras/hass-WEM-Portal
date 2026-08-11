@@ -90,6 +90,60 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **The service dialog explains word values.** Home Assistant renders the
   translations, not `services.yaml` - so the hint that "Aus" works lived
   only where nobody saw it. Both translations now say it.
+- **Two heating circuits no longer share one reading.** A parameter id
+  identifies a parameter within its module, and two circuits are two
+  modules of one type with one parameter catalogue - so the same id appears
+  twice on a device. It was used bare, so the second circuit wrote its
+  value into the first circuit's sensor and got no entity of its own. One
+  circuit was publishing the other's temperature, the other was missing,
+  and nothing said so.
+- **The second circuit's weekly programme is read at all.** The hourly
+  refresh was throttled per device and parameter id, without the module -
+  so whichever circuit was fetched first blocked the other one, on that
+  cycle and on every cycle after it.
+- **A weekly programme keeps the week the portal reported.** The programme
+  is fetched once an hour, the values every few minutes, and the value read
+  rebuilt the row without the schedule - so the readable week survived
+  roughly one cycle in twelve and the sensor fell back to the raw JSON in
+  between.
+- **A parameter the portal stops offering stops being shown as current.**
+  Its last value used to stand unchanged for the rest of the session, with
+  nothing in the log. It is now dropped when the portal's own parameter
+  list no longer contains it, and the entity says so instead.
+- **"Re-scan parameters" survives saving the settings form.** The request
+  was kept in memory only, and saving the form reloads the entry - which
+  rebuilt that memory from disk. The most natural next click undid it, as
+  did any restart before the next update.
+- **A rate-limit block is reported for as long as it holds.** The repair
+  issue is now driven by the block itself rather than by whichever error
+  happened to surface, so it appears while polling is paused and clears
+  when it resumes.
+- **An expert parameter id is one id however it is spelled.** The same
+  hexadecimal id in upper and lower case counted as two - two slots, two
+  entities, and a write that did not reach the configured one.
+- **One unreadable row costs one row.** A module or parameter id the portal
+  sent in a shape that cannot be used aborted the rest of that device;
+  every remaining reading of the device was lost with it. And a device list
+  in which no row at all can be read is now reported as the portal-side
+  error it is, instead of being adopted as an empty account.
+- **A reading that arrives later still gets its entity.** Entities were
+  decided once, during setup. A device that was unreachable at that moment,
+  a parameter found by the daily re-discovery, or statistics whose first
+  attempt failed produced values that no entity ever showed - until the
+  entry was reloaded by hand. They now appear on their own.
+- **A dropdown writes the value that belongs to the option you picked.**
+  The value was chosen by the position of the chosen name in a second list.
+  Where the portal offers the same display name twice, picking one wrote
+  the other one's value into the heating system while the entity showed
+  what was clicked. Unresolvable cases now refuse the write and say why.
+- **A control whose parameter is gone refuses to write.** The entity
+  outlives the reading it was built from and keeps the address it was given
+  at the time, so a click could still send a write for a parameter the
+  portal no longer answers for.
+- **A disabled expert entity no longer errors on every poll.** An entity
+  switched off in the entity registry is still built and handed to the
+  auto-poll, which then tried to publish state for something Home Assistant
+  had never added.
 
 ## [1.11.0b4] – 2026-08-09
 
