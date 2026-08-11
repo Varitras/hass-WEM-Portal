@@ -129,3 +129,39 @@ def test_the_workflow_still_runs_ruff():
     assert re.search(r'pip install "ruff==[\d.]+"', workflow), (
         "an unpinned Ruff lets the CI enforce whatever it decides this week"
     )
+
+
+def _minimum_job_label() -> str:
+    """The name of the matrix job that tests the oldest supported release."""
+    workflow = (
+        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "test.yaml"
+    ).read_text(encoding="utf-8")
+    labels = re.findall(r'- name: "(minimum[^"]*)"', workflow)
+    assert len(labels) == 1, f"expected one minimum job, found {labels}"
+    return labels[0]
+
+
+def test_the_minimum_job_names_the_version_hacs_declares():
+    """Three places say which Home Assistant is the oldest supported one -
+    hacs.json, the pinned plugin release, and the job's own name - and the
+    only thing holding them together was a comment saying "raise both
+    together, never one alone".
+
+    The pin cannot be checked here without asking PyPI which Home Assistant
+    a plugin release ships, and this file stays network-free on purpose. The
+    label can: raise hacs.json alone and the job goes on announcing the
+    version it no longer tests, which is the half that lies to a reader.
+    """
+    import json
+
+    declared = json.loads(
+        (Path(__file__).resolve().parents[1] / "hacs.json").read_text(encoding="utf-8")
+    )["homeassistant"]
+    # "2024.12.0" -> "2024.12"; the label names the release, not the patch.
+    release = ".".join(declared.split(".")[:2])
+
+    assert release in _minimum_job_label(), (
+        f"hacs.json declares {declared} as the minimum, but the matrix job is "
+        f'called "{_minimum_job_label()}". Raise the job name AND its pinned '
+        "plugin release together - the pin is what decides what is tested."
+    )

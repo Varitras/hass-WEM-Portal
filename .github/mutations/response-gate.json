@@ -2791,5 +2791,12 @@
     "old": "    if not (PACKAGE / str(name.value)).exists():\n        return set()\n",
     "new": "",
     "tests": "the_scan_catches_the_blindness_it_was_written_for"
+  },
+  {
+    "label": "ci: the minimum job must name what hacs.json declares",
+    "path": "hacs.json",
+    "old": "\"homeassistant\": \"2024.12.0\"",
+    "new": "\"homeassistant\": \"2025.6.0\"",
+    "tests": "the_minimum_job_names_the_version_hacs_declares"
   }
 ]
