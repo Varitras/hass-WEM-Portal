@@ -2099,6 +2099,21 @@ try:
             self._apply_state(state)
             self.async_write_ha_state()
 
+        @callback
+        def forget_value(self):
+            """Stop showing a value no read can confirm any more.
+
+            This entity restores its last value after a restart and is no
+            coordinator row, so no ageing pass elsewhere reaches it: once
+            the auto-poll stops answering, the dashboard keeps the last
+            number that worked with nothing behind it. Only the value goes,
+            the rule the api and scrape paths follow.
+            """
+            if not self._is_in_home_assistant():
+                return
+            self._attr_native_value = None
+            self.async_write_ha_state()
+
         def _is_in_home_assistant(self) -> bool:
             """Whether Home Assistant actually took this entity.
 

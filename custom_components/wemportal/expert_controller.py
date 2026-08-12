@@ -56,6 +56,13 @@ JITTER_FRACTION = 0.20
 # Consecutive misses before the user is told to check the configured id.
 FAILURES_BEFORE_NOTIFYING = 3
 
+# Consecutive cycles in which the read produced nothing at all before the
+# values stop being shown. Two rather than three: the poll runs hourly, so
+# three would be three hours of a number nobody confirmed - and unlike a
+# single id failing, a dead batch says nothing about which parameter is at
+# fault, so there is no per-id notification covering it either.
+BATCH_FAILURES_BEFORE_VALUES_ARE_STALE = 2
+
 
 def poll_interval_minutes(entry) -> int:
     """The configured poll interval, never below the floor and never a value
@@ -103,6 +110,10 @@ class ExpertController:
         # one id was missing from the answer - see apply_read.
         self.fail_counts: dict[str, int] = {}
         self.fail_notified: set[str] = set()
+        # Consecutive cycles whose read produced nothing at all. Separate
+        # from the per-id tally on purpose: a dead batch is not evidence
+        # about any single id, but it is evidence about every VALUE.
+        self._batch_failures = 0
 
         self._data: Any = None
         self._hass: HomeAssistant | None = None
@@ -269,7 +280,12 @@ class ExpertController:
                 # the per-id counters below mean "the portal answered, but
                 # not for this id". Feeding an outage through them would
                 # blame every configured id for a problem that is not theirs.
+                # The read itself never got anywhere - a web login that
+                # failed, a session that broke. Counted like a dead batch:
+                # the values are just as unconfirmed as when the portal
+                # answers and every id comes back empty.
                 _LOGGER.warning("Expert auto-poll read failed: %s", exc)
+                self._register_batch_failure()
                 return
             finally:
                 if lock is not None:
@@ -280,6 +296,39 @@ class ExpertController:
             # Always reschedule the next run (with fresh jitter), even if this
             # cycle failed - a transient error must not stop future polls.
             self._schedule_next()
+
+    def _note_batch_outcome(self, results: dict, whole_batch_failed: bool) -> None:
+        """What this cycle says about the values as a whole.
+
+        A different question from the per-id tally beside it: one outage is
+        not evidence about any single parameter, but it is evidence about
+        every value. Anything that answered clears the streak.
+        """
+        if any(state is not None for state in results.values()):
+            self._batch_failures = 0
+            return
+        if whole_batch_failed:
+            self._register_batch_failure()
+
+    def _register_batch_failure(self) -> None:
+        """One more cycle that produced no answer at all.
+
+        The per-id tally deliberately skips these - one outage is not
+        evidence about any single parameter - which left nothing happening
+        for the values themselves. They are the last ones a read confirmed,
+        and after this many cycles that is no longer a claim worth making.
+        """
+        self._batch_failures += 1
+        if self._batch_failures < BATCH_FAILURES_BEFORE_VALUES_ARE_STALE:
+            return
+        _LOGGER.warning(
+            "Expert auto-poll: %d cycles in a row produced no answer. The "
+            "parameter values are no longer current and are shown as unknown "
+            "rather than as the values they had then.",
+            self._batch_failures,
+        )
+        for entity in self.entities:
+            entity.forget_value()
 
     def apply_read(self, results: dict) -> None:
         """Hand a batch to the entities and keep the per-id failure tally.
@@ -315,6 +364,7 @@ class ExpertController:
             entityvalue for entityvalue, state in results.items() if state is None
         ]
         whole_batch_failed = len(results) >= 2 and len(failed) == len(results)
+        self._note_batch_outcome(results, whole_batch_failed)
         if whole_batch_failed:
             _LOGGER.warning(
                 "Expert auto-poll: all %d configured parameter(s) failed to "

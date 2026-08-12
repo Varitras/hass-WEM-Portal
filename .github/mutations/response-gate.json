@@ -205,8 +205,8 @@
   {
     "label": "poll: an outage must not be counted against individual parameters",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                return",
-    "new": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                results = {}",
+    "old": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                return",
+    "new": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                results = {}",
     "tests": "failed_read_does_not_count"
   },
   {
@@ -2725,8 +2725,8 @@
   {
     "label": "expert poll: an entity HA never added must not be published",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            if not self._is_in_home_assistant():\n                return\n",
-    "new": "",
+    "old": "            if state is None:\n                return\n            if not self._is_in_home_assistant():\n                return\n",
+    "new": "            if state is None:\n                return\n",
     "tests": "auto_poll_does_not_publish_state_for_an_entity_ha_never_added"
   },
   {
@@ -2910,5 +2910,12 @@
     "old": "    failure = await hass.async_add_executor_job(\n        begin.data.api.reread_device_values, begin.device_id\n    )\n",
     "new": "    failure = None\n",
     "tests": "service_publishes_what_the_portal_kept"
+  },
+  {
+    "label": "expert poll: a dead batch leaving the values on display",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        for entity in self.entities:\n            entity.forget_value()\n",
+    "new": "",
+    "tests": "run_of_failed_batches_stops_showing_the_expert_value"
   }
 ]

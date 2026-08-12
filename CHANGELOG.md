@@ -144,6 +144,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **An expert parameter stops showing a value the poll can no longer
+  confirm.** These entities restore their last value after a restart and are
+  not coordinator readings, so none of the freshness rules elsewhere reached
+  them. When the auto-poll produced nothing at all - a web login that
+  failed, a session that broke - the per-parameter tally was deliberately
+  left alone, because one outage says nothing about any single parameter.
+  The result was that nothing happened at all: the dashboard kept a
+  plausible number with nothing behind it, and the next attempt was an hour
+  away. After two such cycles the values go to unknown; name and range stay.
 - **The holiday service shows what the portal kept, not what it was asked
   for.** A write that returns without an error was accepted, which is not
   the same as stored: on this endpoint a range ending before it starts comes

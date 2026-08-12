@@ -643,6 +643,43 @@ def test_the_auto_poll_does_not_publish_state_for_an_entity_ha_never_added():
     )
 
 
+def test_a_run_of_failed_batches_stops_showing_the_expert_value():
+    """The expert number restores its last value and keeps it while reads fail.
+
+    An expert entity is a RestoreNumber of its own - it is not a coordinator
+    row, so none of the ageing passes reach it. When the whole read produces
+    nothing (a web login that fails, a session that broke) the per-id tally
+    is deliberately left alone, because one outage is not evidence about any
+    single id. That left nothing at all happening: the dashboard kept showing
+    a plausible number with nothing behind it, and the auto-poll only tries
+    again an hour later.
+
+    Two, not three: at an hourly poll three would be three hours of a value
+    nobody confirmed. One is still normal and must change nothing.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+    entity.apply_read_state(_read_state(21.0, [20.0, 21.0, 22.0]))
+    controller.entities = [entity]
+    assert entity.native_value == 21.0, "the control case never read anything"
+
+    # Two ids so the batch rule applies at all - with one configured
+    # parameter "all of them failed" is true every time it fails.
+    dead_batch = {entity.entityvalue: None, "b" * 36: None}
+
+    controller.apply_read(dead_batch)
+    assert entity.native_value == 21.0, "a single failed batch is not an outage"
+
+    controller.apply_read(dead_batch)
+
+    assert entity.native_value is None, (
+        "the entity still shows a value no read has confirmed"
+    )
+
+
 def _read_state(current, options):
     from custom_components.wemportal import expert_writer
 
