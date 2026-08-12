@@ -27,7 +27,7 @@ PACKAGE = TESTS.parents[0] / "custom_components" / "wemportal"
 # emptying it - fails the index test below.
 #
 # This list is the answer to "what stops the old problems coming back",
-# for whoever asks that question in six months without this conversation.
+# for whoever asks that question in six months.
 GUARD_FILES = {
     "test_account_state.py": "no mutable module-level state outside the registry",
     "test_budgets.py": "no module or function grows past its frozen budget",
