@@ -157,12 +157,31 @@ async def _write_holiday(hass: HomeAssistant, call) -> None:
         )
     )
 
-    # Only now, and for BOTH rows: change_value raises when the portal
-    # refuses, so nothing below runs on a write that did not happen. Leaving
-    # the rows behind would make the next write send the old dates back as
-    # companions - the defect this service exists alongside.
-    begin.row.value = begin_epoch
-    end.row.value = end_epoch
+    # Ask what was kept rather than publishing what was asked for. Returning
+    # without raising means the portal ACCEPTED the request: measured on this
+    # endpoint, a range ending before it starts comes back as Status 0 and is
+    # discarded. That one pair is refused above, but the check covers only
+    # the rejection somebody measured. One read for the whole device, at a
+    # service used a few times a year.
+    failure = await hass.async_add_executor_job(
+        begin.data.api.reread_device_values, begin.device_id
+    )
+    if failure is not None:
+        # The write itself went through, so this is not a failed service
+        # call - what is unknown is whether it was kept, and an unknown
+        # answer is not the written day. Both rows, because both were sent:
+        # leaving either behind would make the next write send a date the
+        # portal may never have taken back as a companion.
+        _LOGGER.warning(
+            "Wrote the holiday from %s to %s but could not read it back (%s). "
+            "Both dates are shown as unknown until the next update says what "
+            "the portal actually stored.",
+            begin_day,
+            end_day,
+            failure,
+        )
+        begin.row.value = None
+        end.row.value = None
     begin.data.coordinator.async_update_listeners()
 
     _LOGGER.info(

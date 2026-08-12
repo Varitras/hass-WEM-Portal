@@ -1038,9 +1038,9 @@
   {
     "label": "holiday: leaving the end out of the coordinator must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "    end.row.value = end_epoch",
-    "new": "    pass",
-    "tests": "the_written_range_reaches_the_coordinator"
+    "old": "        end.row.value = None\n",
+    "new": "",
+    "tests": "read_back_that_fails_leaves_neither_date_asserted"
   },
   {
     "label": "holiday: recording a range the portal refused must be noticed",
@@ -2903,5 +2903,12 @@
     "old": "            _LOGGER.warning(\"Can't find %s\", self._attr_unique_id)\n",
     "new": "            _LOGGER.warning(\"Can't find %s\", self._attr_unique_id)\n            _LOGGER.debug(\"Sensor data %s\", self.coordinator.data)\n",
     "tests": "no_log_call_hands_over_a_whole_store"
+  },
+  {
+    "label": "holiday: publishing the requested range without asking back",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    failure = await hass.async_add_executor_job(\n        begin.data.api.reread_device_values, begin.device_id\n    )\n",
+    "new": "    failure = None\n",
+    "tests": "service_publishes_what_the_portal_kept"
   }
 ]

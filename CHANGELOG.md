@@ -144,6 +144,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **The holiday service shows what the portal kept, not what it was asked
+  for.** A write that returns without an error was accepted, which is not
+  the same as stored: on this endpoint a range ending before it starts comes
+  back as success and is discarded. That one pair is refused before it is
+  sent, but the single date entity has been reading its value back since it
+  turned out that check cannot cover everything. The service now does the
+  same - one read for the whole device, at something used a few times a
+  year. If the read-back fails, both dates go to unknown rather than
+  claiming a holiday nobody confirmed.
 - **A debug log no longer carries the whole installation.** Seven log calls
   handed over an entire data structure - the account's readings keyed by
   device id, or a device's module list - as a bare argument. Each was added
