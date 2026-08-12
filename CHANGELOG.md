@@ -144,6 +144,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **A scrape that arrives later still takes over its reading.** In `both`
+  mode the first cycle often has no scrape yet - it is not due, or it
+  failed. The merge then finds no scraped row for an API reading and points
+  it at itself, correctly for that moment, but never looked again. A scrape
+  arriving on a later cycle therefore produced a second entity for the same
+  measurement, refreshing on a different schedule. The mapping is now
+  rebuilt whenever the set of scraped rows changes, which costs no requests.
 - **One unusable module id no longer costs the whole device its reading.**
   A `ModuleIndex` the portal sends as a list is dropped where the readings
   are built, but the freshness bookkeeping right after it used the same

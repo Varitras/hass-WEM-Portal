@@ -976,6 +976,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         """
         previous = self._previous_scraper_keys
         self._previous_scraper_keys = set(scraped_keys)
+        # The merge cache answers "which scraped row shows this api reading",
+        # falling back to the reading's own key when there is none. Both
+        # answers describe THIS scrape's rows, so a changed inventory - the
+        # first successful scrape included - makes them answers from before.
+        # Rebuilding is a pass over the rows, not a request.
+        if previous != set(scraped_keys):
+            self.scraping_mapper.clear()
         if not previous:
             # First cycle of this session: nothing to compare against.
             return set()

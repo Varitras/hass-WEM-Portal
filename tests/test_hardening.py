@@ -5408,6 +5408,37 @@ def test_a_successful_schedule_keeps_the_full_interval():
     )
 
 
+def test_a_scrape_that_arrives_late_invalidates_the_merge_cache():
+    """The fallback was decided when there was nothing to merge into.
+
+    In `both` mode the first cycle often has no scrape yet - it is not due,
+    or it failed. The merge then finds no scraped row naming the same thing
+    and caches the api reading's own key as the target. That answer is
+    correct for that moment and never revisited: the guard is "is this key
+    cached", so a scrape arriving later leaves the reading pointing at
+    itself, and the same value ends up on two entities that refresh on
+    different schedules - exactly what the merge exists to prevent.
+
+    The second half matters as much: an unchanged inventory must NOT clear
+    the cache, or every cycle would redo the name matching for nothing.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    scraped = {"heat_pump-outside": Reading(value=1.0, platform="sensor")}
+
+    api.scraping_mapper[(ModuleRef(0, 1), "Outside")] = ["Heat pump-Outside"]
+    api._merge_webscraping_data("1234", scraped)
+
+    assert api.scraping_mapper == {}, (
+        "the first scrape of the session left the fallback mapping in place"
+    )
+
+    api.scraping_mapper[(ModuleRef(0, 1), "Outside")] = ["heat_pump-outside"]
+    api._merge_webscraping_data("1234", scraped)
+
+    assert api.scraping_mapper, "an unchanged scrape inventory dropped the cache"
+
+
 def test_a_module_id_sent_as_a_list_does_not_cost_the_devices_read():
     """The same portal answer the mapper already guards against, two lines on.
 
