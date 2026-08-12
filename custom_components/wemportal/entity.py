@@ -133,6 +133,11 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         # shared, so the address of the parameter is too.
         self._module_index = entity_data.module_index
         self._module_type = entity_data.module_type
+        # What this entity was built as. The re-discovery can reclassify a
+        # parameter, and the listener then builds an entity of the new
+        # platform for the same row - so "the row is still there" stopped
+        # being the same question as "the row is still mine".
+        self._platform = entity_data.platform
 
     async def async_write_parameter(self, value, together_with=None) -> None:
         """The one way an entity changes a value on the portal.
@@ -224,7 +229,9 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         """
         device = (self.coordinator.data or {}).get(self._device_id)
         row = device.get(self._data_key) if isinstance(device, dict) else None
-        return row if isinstance(row, Reading) else None
+        if not isinstance(row, Reading) or row.platform != self._platform:
+            return None
+        return row
 
     @property
     def device_info(self) -> DeviceInfo:

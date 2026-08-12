@@ -149,6 +149,30 @@ def test_a_control_whose_reading_is_gone_does_not_write():
     assert reached_the_portal == [], "a write was sent for a reading that is gone"
 
 
+def test_a_control_does_not_write_when_its_row_became_another_platform():
+    """The row can stay and still stop belonging to this entity.
+
+    The daily re-discovery re-reads what the portal says a parameter is, and
+    that classification decides the platform. When it changes, the listener
+    builds an entity of the NEW platform for the same row - and the old one
+    stays loaded until the next reload, holding the module address it was
+    built with. The existing gate only asks whether a row is still there,
+    which it is, so a leftover switch could go on sending 0/1 to a parameter
+    the portal now describes as something else.
+    """
+    entity, reached_the_portal = _entity_that_can_actually_write(
+        WemPortalNumber, platform="number"
+    )
+    entity.coordinator.data["1234"]["Pump"].platform = "date"
+
+    with pytest.raises(HomeAssistantError):
+        _run(entity.async_write_parameter, 21.0)
+
+    assert reached_the_portal == [], (
+        "a write was sent for a row that is no longer this platform's"
+    )
+
+
 def test_the_chosen_name_writes_the_value_that_belongs_to_it():
     entity, written = _select_capturing_its_writes(
         options=["0", "1"], options_names=["Aus", "Ein"]

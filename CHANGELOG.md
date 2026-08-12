@@ -144,6 +144,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **A control stops writing once its parameter belongs to another platform.**
+  The daily re-discovery re-reads what the portal says a parameter is, and
+  that decides whether it becomes a switch, a number or a date. When the
+  answer changes, the entity for the new platform appears - and the old one
+  stayed loaded and writeable until the next reload, still holding the
+  address it was built with. The write gate asked whether the reading was
+  still there, which it was; it now also asks whether it is still this
+  entity's.
 - **An expert parameter id is one parameter, however it is spelled.** Hex
   ids carry no meaning in their case, and the integration already knew that
   in two places - the duplicate check built its set that way, and the

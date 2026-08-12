@@ -2868,5 +2868,12 @@
     "old": "            if canonical_entityvalue(entity.entityvalue) == wanted:",
     "new": "            if entity.entityvalue == entityvalue:",
     "tests": "service_write_finds_its_entity_in_any_spelling"
+  },
+  {
+    "label": "controls: a row that changed platform still counting as mine",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        if not isinstance(row, Reading) or row.platform != self._platform:",
+    "new": "        if not isinstance(row, Reading):",
+    "tests": "control_does_not_write_when_its_row_became_another_platform"
   }
 ]
