@@ -2,7 +2,7 @@
 Weishaupt webscraping and API library
 """
 
-from typing import Final
+from typing import Any, Final
 import logging
 
 import copy
@@ -439,9 +439,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         # edge-triggered rather than repeated every cycle.
         self._last_connection_status = {}
         self.scraping_mapper = {}
-        # Both hourly gates live on the account state, not here: a reload
-        # rebuilds this object and the portal's limit does not reset with
-        # it. See the two properties below.
+        # The two hourly gates. Here rather than on the account state, so
+        # they are forgotten by the same reload that forgets the readings
+        # they guard - see the note in models.AccountState for why keeping
+        # them was worse. "Never fetched" is None and a missing key, never
+        # zero: on the monotonic clock these are read on, zero is the moment
+        # the machine booted.
+        self.last_statistics_fetch: float | None = None
+        self._last_circuit_times_fetch: dict[tuple[Any, ...], float] = {}
         # In-memory cookie cache shared by the short-lived expert clients,
         # so they can continue an existing web session instead of logging in
         # for every single operation (see expert_writer._try_cached_session).
@@ -2502,35 +2507,6 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         return parameter_data.get(
             "DataType"
         ) == WemDataType.PROGRAM or looks_like_schedule(row_value)
-
-    @property
-    def last_statistics_fetch(self) -> float | None:
-        """When the statistics were last ASKED for, across reloads.
-
-        On the account state rather than on this object, because every
-        options save replaces this object and the portal's hourly limit
-        does not care. Kept as a property so the statistics mixin goes on
-        reading and writing one plain attribute. None means never asked.
-        """
-        return self._account_state.statistics_fetched_at
-
-    @last_statistics_fetch.setter
-    def last_statistics_fetch(self, when: float | None) -> None:
-        self._account_state.statistics_fetched_at = when
-
-    @property
-    def _last_circuit_times_fetch(self) -> dict:
-        """When each heating schedule was last fetched, across reloads.
-
-        Keyed by device, module and parameter - these rarely change, this
-        integration shows them read-only, and asking again costs two
-        requests per programme.
-        """
-        return self._account_state.circuit_times_fetched_at
-
-    @_last_circuit_times_fetch.setter
-    def _last_circuit_times_fetch(self, fetched_at: dict) -> None:
-        self._account_state.circuit_times_fetched_at = fetched_at
 
     def _values_stale_after_seconds(self) -> float:
         """How long a device or module may stay silent before what it last

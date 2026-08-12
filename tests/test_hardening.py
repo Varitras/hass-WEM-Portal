@@ -4826,6 +4826,11 @@ TRANSPORT_FIELDS = frozenset(
 # fresher, and dropping it would restart the staleness clock on every
 # recovery - so a device that never answers again would keep publishing its
 # last values for another full window after each reset.
+# The two hourly gates follow `data`, by the one rule that decides where they
+# live: a gate is worth keeping exactly as long as the readings it guards are.
+# A recovery keeps the readings, so it keeps the gates. A reload keeps
+# neither, which is why they sit on the api object rather than on the account
+# state - see models.AccountState.
 PRESERVED_FIELDS = frozenset(
     {
         # The account's reload-surviving memory. A transport recovery must
@@ -4852,6 +4857,8 @@ PRESERVED_FIELDS = frozenset(
         "_previous_scraper_keys",
         "_last_connection_status",
         "scraping_mapper",
+        "last_statistics_fetch",
+        "_last_circuit_times_fetch",
         "expert_cookies",
         "spider_wait_interval",
         "spider_retry_count",
@@ -6681,34 +6688,30 @@ def test_a_write_without_companions_is_unchanged():
     }
 
 
-def test_the_hourly_gates_survive_the_reload_that_rebuilds_the_api():
-    """The portal's rate limit does not reset because we rebuilt our objects.
+def test_a_reload_fetches_statistics_again_because_the_data_did_not_survive():
+    """A gate is only worth keeping while the data it guards is still there.
 
-    Both hourly gates lived on the api instance, and every options save is a
-    reload that replaces it. Saving the settings therefore bought a fresh
-    statistics round and a fresh set of schedule reads each time - in the one
-    area where the cost is an IP the portal refuses for twelve hours.
+    Every options save is a reload, and a reload builds a new api with no
+    readings at all: async_setup_entry passes the module cache and the
+    scraper id, never `existing_data`. A gate that outlived that reload
+    therefore held back the one fetch that could have refilled the
+    statistics sensors - they sat on unknown for up to an hour, with
+    nothing in the log to say why.
 
-    The account state exists for exactly this: its docstring says a backoff
-    must not be forgotten by the very reinstantiation it caused. These two
-    were the only portal-side limits not kept there.
+    What the gate saves is roughly eleven requests per options save
+    against a limit of ten thousand per twelve hours. That is not worth
+    an hour of missing readings, so the gate is deliberately forgotten
+    with the data it belongs to.
     """
-    from custom_components.wemportal.models import ModuleRef
+    calls = []
+    first = _statistics_api(calls)
+    first.get_statistics(enabled_devices=["1234"])
+    assert len(calls) == 1, "the first cycle did not fetch at all"
 
-    stamped = time.monotonic()
-    schedule_key = ("1234", ModuleRef(0, 1), "P")
-    first = _api()
-    first.last_statistics_fetch = stamped
-    first._last_circuit_times_fetch[schedule_key] = stamped
+    # The reload: same account, new api object, no data carried over.
+    after_the_reload = _statistics_api(calls)
+    after_the_reload.get_statistics(enabled_devices=["1234"])
 
-    after_the_reload = _api()
-
-    # Against the value that was STAMPED, not against the other object's
-    # answer: comparing the two objects passes just as happily when both
-    # forget, which is exactly the break this is about.
-    assert after_the_reload.last_statistics_fetch == stamped, (
-        "a rebuilt api forgot the hourly statistics gate"
-    )
-    assert after_the_reload._last_circuit_times_fetch.get(schedule_key) == stamped, (
-        "a rebuilt api forgot when it last read the schedules"
+    assert len(calls) == 2, (
+        "the rebuilt api kept the gate but not the readings it guards"
     )

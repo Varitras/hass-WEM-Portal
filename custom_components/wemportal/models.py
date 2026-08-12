@@ -60,17 +60,15 @@ class AccountState:
     # Monotonic deadline of the expert (web) 403 backoff. Per account, with
     # a test pinning that one account's backoff does not spread to another.
     expert_blocked_until: float = 0.0
-    # The two hourly limits the portal imposes on this account's data. They
-    # lived on the api object, which a reload replaces - and every options
-    # save is a reload, so saving twice bought two extra statistics rounds.
-    # Monotonic like expert_blocked_until: this registry lives and dies with
-    # the process, so a wall clock would only add an NTP step as a way to
-    # release them early.
-    # "Never fetched" is None (and a missing key), NOT zero: on a monotonic
-    # clock zero is the moment the machine booted, so a zero stamp would
-    # hold both guards shut for the first hour after every restart.
-    statistics_fetched_at: float | None = None
-    circuit_times_fetched_at: dict[tuple[Any, ...], float] = field(default_factory=dict)
+    # NOT here either, and that is a decision rather than an oversight: the
+    # two hourly gates on statistics and schedules. They were moved here and
+    # moved back out. A reload builds a new api with no readings - it gets
+    # the module cache and the scraper id, never the data - so a gate that
+    # survived it held back the very fetch that would have refilled the
+    # sensors, leaving them unknown for up to an hour. What it saved was
+    # about eleven requests per options save against ten thousand per twelve
+    # hours. The gates belong with the data they guard, and that is the api
+    # object.
     # One warning per subject, surviving the reload that rebuilds the
     # objects doing the warning.
     duplicate_rows_reported: set[str] = field(default_factory=set)

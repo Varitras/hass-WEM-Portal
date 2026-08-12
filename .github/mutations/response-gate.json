@@ -2800,11 +2800,11 @@
     "tests": "the_minimum_job_names_the_version_hacs_declares"
   },
   {
-    "label": "rate limits: an hourly gate must outlive the reload",
+    "label": "rate limits: a rebuilt api must not start throttled",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        return self._account_state.statistics_fetched_at",
-    "new": "        return None",
-    "tests": "hourly_gates_survive_the_reload_that_rebuilds_the_api"
+    "old": "        self.last_statistics_fetch: float | None = None",
+    "new": "        self.last_statistics_fetch: float | None = time.monotonic()",
+    "tests": "reload_fetches_statistics_again_because_the_data_did_not_survive"
   },
   {
     "label": "rate limits: the statistics guard must read the clock it stamped",
@@ -2829,9 +2829,9 @@
   },
   {
     "label": "rate limits: never fetched must not read as fetched at boot",
-    "path": "custom_components/wemportal/models.py",
-    "old": "    statistics_fetched_at: float | None = None",
-    "new": "    statistics_fetched_at: float | None = 0.0",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.last_statistics_fetch: float | None = None",
+    "new": "        self.last_statistics_fetch: float | None = 0.0",
     "tests": "statistics_are_fetched_on_the_first_cycle_after_a_reboot"
   },
   {
