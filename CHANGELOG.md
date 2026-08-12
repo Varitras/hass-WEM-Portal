@@ -144,6 +144,16 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **A web half that stopped working says so.** In `both` mode a failing
+  scrape is deliberately swallowed, so it cannot cost the readings the API
+  half delivers - and with it went every trace that half the integration had
+  stopped. Nothing reached the coordinator, each successful API cycle reset
+  its counters, and on a fresh setup there were no scraped entities whose
+  absence could be noticed. The log line asked the user to check the
+  credentials, which the options form does not even contain. There is now a
+  repair issue at the same threshold that stops presenting scraped values as
+  current, naming the two things that actually help: check whether the
+  portal's web page opens in a browser, or switch to API-only mode.
 - **An expert parameter stops showing a value the poll can no longer
   confirm.** These entities restore their last value after a restart and are
   not coordinator readings, so none of the freshness rules elsewhere reached

@@ -2508,8 +2508,8 @@
   {
     "label": "rate limit: the issue must clear on the success that ends it",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "        async_delete_issue(self.hass, DOMAIN, issue_id)",
-    "new": "        pass",
+    "old": "                translation_key=\"rate_limited\",\n            )\n            return\n        async_delete_issue(self.hass, DOMAIN, issue_id)\n",
+    "new": "                translation_key=\"rate_limited\",\n            )\n            return\n        pass\n",
     "tests": "rate_limit_becomes_a_repair_issue_until_the_block_lapses"
   },
   {
@@ -2917,5 +2917,12 @@
     "old": "        for entity in self.entities:\n            entity.forget_value()\n",
     "new": "",
     "tests": "run_of_failed_batches_stops_showing_the_expert_value"
+  },
+  {
+    "label": "web report: a working scrape must take the report back down",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                translation_key=\"web_scrape_failing\",\n            )\n            return\n        async_delete_issue(self.hass, DOMAIN, issue_id)\n",
+    "new": "                translation_key=\"web_scrape_failing\",\n            )\n            return\n        pass\n",
+    "tests": "web_half_that_stopped_working_becomes_a_repair_issue"
   }
 ]

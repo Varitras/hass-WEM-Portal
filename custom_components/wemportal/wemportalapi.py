@@ -584,6 +584,23 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             return False
         return row_name in (self._previous_scraper_keys or ())
 
+    def web_scrape_is_failing(self) -> bool:
+        """Whether the web half has stopped delivering, as a question about
+        STATE - the same shape as is_rate_limited, and for the same reason.
+
+        In `both` mode a failing scrape is swallowed so it cannot cost the
+        api readings. Nothing therefore propagates, each successful api
+        cycle clears the coordinator's counters, and on a fresh setup there
+        are no scraped entities whose absence could be noticed.
+
+        The threshold is the one that stops presenting the scraped values as
+        current, so the report appears exactly when they cease to be
+        trustworthy - and only where a scrape was expected at all.
+        """
+        if self.mode == "api":
+            return False
+        return self.spider_retry_count >= SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
+
     def _forget_scraped_values(self):
         """Stop presenting readings from a scrape that stopped working.
 

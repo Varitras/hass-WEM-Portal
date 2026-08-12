@@ -62,6 +62,12 @@ MAX_BACKOFF_SECONDS = 6 * 3600  # 6 hours
 # pins that, and requires the translation_key to be a literal at the call).
 RATE_LIMIT_ISSUE = "rate_limited"
 
+# The same, for the web half of `both` mode having stopped delivering. Its
+# own issue because the answer for the user is a different one: the api half
+# is still working, so this is about web access or the mode, not the portal
+# refusing this network.
+WEB_SCRAPE_ISSUE = "web_scrape_failing"
+
 # Consecutive auth failures per config entry, kept OUTSIDE the coordinator.
 #
 # A failed first refresh makes Home Assistant retry the whole setup, and
@@ -270,6 +276,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         except TimeoutError as exc:
             self.num_failed += 1
             self._sync_rate_limit_issue()
+            self._sync_web_scrape_issue()
             self._reset_auth_failures()
             _LOGGER.warning(
                 "Fetching WEM Portal data timed out after %ds. Note the "
@@ -305,6 +312,29 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 is_fixable=False,
                 severity=IssueSeverity.WARNING,
                 translation_key="rate_limited",
+            )
+            return
+        async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    def _sync_web_scrape_issue(self) -> None:
+        """Report a web half that has stopped delivering, withdraw it if not.
+
+        Separate from the rate-limit report beside it: that one says the
+        portal is refusing this network and polling is paused. This one says
+        the api half is fine and the web half is not, which points at web
+        access or at switching the mode - a different answer for the user.
+
+        Idempotent in both directions, like its sibling.
+        """
+        issue_id = f"{self.config_entry.entry_id}_{WEB_SCRAPE_ISSUE}"
+        if self.api.web_scrape_is_failing():
+            async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=IssueSeverity.WARNING,
+                translation_key="web_scrape_failing",
             )
             return
         async_delete_issue(self.hass, DOMAIN, issue_id)
@@ -446,3 +476,4 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             finally:
                 self.last_try = monotonic()
                 self._sync_rate_limit_issue()
+                self._sync_web_scrape_issue()

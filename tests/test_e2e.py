@@ -306,6 +306,51 @@ async def test_disabling_expert_write_drops_its_registry_entries(hass):
     )
 
 
+async def test_a_web_half_that_stopped_working_becomes_a_repair_issue(
+    hass, monkeypatch
+):
+    """In `both` mode the scrape failing must not cost the api readings, so
+    it is swallowed - and with it every trace that half the integration
+    stopped working.
+
+    Nothing propagates to the coordinator, its counters are reset by each
+    successful api cycle, and the warning comes only on an actual attempt -
+    which grows further apart with each failure. On a fresh `both` setup
+    there are no scraped entities either, so nothing goes unknown and no
+    ageing warning appears. The whole thing looks healthy.
+
+    Asked of the STATE, like the rate limit beside it, and at the same
+    threshold that stops presenting the scraped values as current - so the
+    report appears exactly when they cease to be trustworthy.
+    """
+    from homeassistant.helpers import issue_registry
+
+    from custom_components.wemportal.wemportalapi import (
+        SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE,
+    )
+
+    entry = await _setup(hass, _entry(hass, {**BASE_OPTIONS, CONF_MODE: "both"}))
+    issue_id = f"{entry.entry_id}_web_scrape_failing"
+    registry = issue_registry.async_get(hass)
+    coordinator = entry.runtime_data.coordinator
+
+    coordinator.api.spider_retry_count = SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert (DOMAIN, issue_id) in registry.issues, (
+        "the web half stopped delivering and nothing said so"
+    )
+
+    coordinator.api.spider_retry_count = 0
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert (DOMAIN, issue_id) not in registry.issues, (
+        "the report outlived the failure it reports on"
+    )
+
+
 async def test_a_rate_limit_becomes_a_repair_issue_until_the_block_lapses(
     hass, monkeypatch
 ):

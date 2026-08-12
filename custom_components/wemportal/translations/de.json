@@ -108,6 +108,10 @@
       "title": "WEM Portal weist Anfragen ab (Rate-Limit)",
       "description": "Das WEM Portal weist Anfragen aus diesem Netz gerade ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Die Abfrage pausiert und läuft von selbst wieder an; jeder weitere Versuch verlängert die Sperre. An Benutzername und Passwort liegt es nicht. Diese Meldung verschwindet mit der nächsten erfolgreichen Aktualisierung."
     },
+    "web_scrape_failing": {
+      "title": "Der Webzugriff auf das WEM Portal funktioniert nicht",
+      "description": "Dieses Konto ruft sowohl die mobile API als auch die Weboberfläche ab, und der Webteil ist mehrmals hintereinander fehlgeschlagen. Der API-Teil ist davon nicht betroffen und liefert weiter, seine Sensoren sind also aktuell - die Werte von der Webseite sind es nicht und werden als unbekannt angezeigt. Beides sind getrennte Anmeldungen: dass die eine funktioniert, sagt nichts über die andere. Prüfen Sie, ob sich die Weboberfläche des Portals mit diesen Zugangsdaten im Browser öffnen lässt, oder stellen Sie die Integration in den Optionen auf reinen API-Betrieb um. Dieser Hinweis verschwindet von selbst, sobald ein Web-Abruf wieder gelingt."
+    },
     "expert_poll_unreadable_id": {
       "title": "Fachmann-Parameter „{name}“ kann nicht angefragt werden",
       "description": "Die konfigurierte ID für „{name}“ ist keine lesbare Parameter-ID und wurde deshalb nie angefragt. In den Integrationsoptionen korrigieren oder leeren."
