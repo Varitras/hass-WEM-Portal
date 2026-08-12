@@ -4,7 +4,17 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.12.0b1] – 2026-08-12
+
+The theme is identity and freshness: which circuit, which module and which
+spelling a reading belongs to, and how long a value that stopped arriving may
+still be presented as current. Beside it, three failures that were visible
+only in the log - a rate-limit block, a web half that stopped delivering, an
+expert parameter that will not read - are repair issues now, in your language.
+Underneath, the integration was taken apart and put back together: transport,
+statistics and the data model are their own modules, with structural guards
+and a mutation run that keeps them that way. None of that is visible from the
+outside, which is why this is a pre-release.
 
 ### Added
 - **A rate-limit block now shows up in Repairs, in your language.** A 403
