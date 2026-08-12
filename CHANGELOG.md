@@ -144,6 +144,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **A debug log no longer carries the whole installation.** Seven log calls
+  handed over an entire data structure - the account's readings keyed by
+  device id, or a device's module list - as a bare argument. Each was added
+  while debugging something and then stayed, and a debug log is what people
+  paste into an issue. The lines that name what is happening remain; for the
+  data itself there is the diagnostics download, which is anonymised.
 - **A scrape that arrives later still takes over its reading.** In `both`
   mode the first cycle often has no scrape yet - it is not due, or it
   failed. The merge then finds no scraped row for an API reading and points

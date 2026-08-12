@@ -2889,5 +2889,19 @@
     "old": "        if previous != set(scraped_keys):\n            self.scraping_mapper.clear()\n",
     "new": "",
     "tests": "scrape_that_arrives_late_invalidates_the_merge_cache"
+  },
+  {
+    "label": "logs: dumping the account's readings from the parameter read",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            _LOGGER.debug(\"Fetching api parameters data for device %s\", device_id)\n",
+    "new": "            _LOGGER.debug(\"Fetching api parameters data for device %s\", device_id)\n            _LOGGER.debug(self.data)\n",
+    "tests": "no_log_call_hands_over_a_whole_store or parameter_read_does_not_log_the_whole_account"
+  },
+  {
+    "label": "logs: dumping the coordinator from a platform error path",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            _LOGGER.warning(\"Can't find %s\", self._attr_unique_id)\n",
+    "new": "            _LOGGER.warning(\"Can't find %s\", self._attr_unique_id)\n            _LOGGER.debug(\"Sensor data %s\", self.coordinator.data)\n",
+    "tests": "no_log_call_hands_over_a_whole_store"
   }
 ]

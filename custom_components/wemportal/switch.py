@@ -99,6 +99,5 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
         except KeyError:
             self._attr_is_on = None
             _LOGGER.warning("Can't find %s", self._attr_unique_id)
-            _LOGGER.debug("Sensor data %s", self.coordinator.data)
 
         self.async_write_ha_state()

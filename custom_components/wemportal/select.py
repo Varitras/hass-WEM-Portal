@@ -208,7 +208,6 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
         except KeyError:
             self._attr_current_option = None
             _LOGGER.warning("Can't find %s", self._attr_unique_id)
-            _LOGGER.debug("Sensor data %s", self.coordinator.data)
         except (ValueError, TypeError):
             self._attr_current_option = None
             _LOGGER.warning(

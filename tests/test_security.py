@@ -376,3 +376,82 @@ def test_a_request_log_names_the_fields_it_sent_not_their_values(caplog):
     assert "DeviceID" in text, "a log that names nothing is not worth writing"
     assert "4711" not in text, "the installation's device id went into the log"
     assert "23.5" not in text, "the value written went into the log"
+
+
+def test_no_log_call_hands_over_a_whole_store():
+    """Scanned over the package, because this grew back seven times.
+
+    Two in the parameter read (`self.data` and the device's modules, as
+    bare arguments with no format string) and one in each of the five
+    platform error paths, all saying "here is everything, work it out".
+    Each was added while debugging one problem and then stayed. What ends
+    up in the log is every reading of every device, keyed by the
+    installation's device ids - and a debug log is the thing people paste
+    into an issue.
+
+    A single one of them is easy to add back and impossible to notice in
+    review, which is why this asks the package rather than the file that
+    happened to have the last one.
+    """
+    import ast
+    import pathlib
+
+    package = pathlib.Path(__file__).resolve().parents[1] / "custom_components"
+    package = package / "wemportal"
+
+    def _is_logger_call(node):
+        callee = node.func
+        return (
+            isinstance(callee, ast.Attribute)
+            and isinstance(callee.value, ast.Name)
+            and callee.value.id == "_LOGGER"
+        )
+
+    def _names_a_whole_store(argument):
+        # self.data / self.modules, and the entity side's coordinator.data.
+        if not isinstance(argument, ast.Attribute):
+            return False
+        return argument.attr in {"data", "modules"}
+
+    offenders = []
+    for path in sorted(package.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call) or not _is_logger_call(node):
+                continue
+            if any(_names_a_whole_store(argument) for argument in node.args):
+                offenders.append(f"{path.name}:{node.lineno}")
+
+    assert not offenders, (
+        f"log call(s) handing over a whole data structure: {offenders}. Name "
+        "the key or the count instead - the anonymised diagnostics download "
+        "is the supported way to hand over the data itself."
+    )
+
+
+def test_the_parameter_read_does_not_log_the_whole_account(caplog):
+    """The same rule as above, one layer up and far more of it.
+
+    The parameter read logged `self.data` as a bare argument - no format
+    string, no context - which is every reading of every device, keyed by
+    the installation's device ids. It sat directly under a line that
+    already names the device being fetched, so it added nothing a reader
+    needs and everything a shared log should not carry. The anonymised
+    diagnostics download exists for the case where somebody really does
+    need the data.
+    """
+    from custom_components.wemportal.models import Reading
+
+    api = WemPortalApi("user@example.org", "secret")
+    api.modules = {"1234": {}}
+    api.data = {
+        "1234": {
+            "ConnectionStatus": 0,
+            "Outside": Reading(value=23.5, friendly_name="Outside"),
+        }
+    }
+
+    with caplog.at_level(logging.DEBUG):
+        api.get_parameters()
+
+    assert "1234" in caplog.text, "a log that names nothing is not worth writing"
+    assert "23.5" not in caplog.text, "the account's readings went into the log"

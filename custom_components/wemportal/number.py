@@ -243,7 +243,6 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         except KeyError:
             self._attr_native_value = None
             _LOGGER.warning("Can't find %s", self._attr_unique_id)
-            _LOGGER.debug("Sensor data %s", self.coordinator.data)
 
         self.async_write_ha_state()
 

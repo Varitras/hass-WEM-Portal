@@ -1866,8 +1866,6 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             if device_data.get("ConnectionStatus") != 0:
                 continue
             _LOGGER.debug("Fetching api parameters data for device %s", device_id)
-            _LOGGER.debug(self.data)
-            _LOGGER.debug(self.modules[device_id])
             self._discover_device_parameters(device_id)
 
     def change_value(
