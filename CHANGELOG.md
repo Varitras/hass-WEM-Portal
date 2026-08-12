@@ -144,6 +144,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **An expert parameter id is one parameter, however it is spelled.** Hex
+  ids carry no meaning in their case, and the integration already knew that
+  in two places - the duplicate check built its set that way, and the
+  service checks its argument that way. Both then compared the raw spelling
+  against it. Two slots differing only in case could pass the save as
+  unrelated parameters, and a service call in another case wrote the value,
+  got it confirmed, and left the entity showing the old one.
 - **A password changed while Home Assistant runs is noticed.** The old
   session keeps working until it expires; the re-login that follows is then
   turned down, and that rejection left the integration still believing it

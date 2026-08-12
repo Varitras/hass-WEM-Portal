@@ -57,6 +57,7 @@ from .const import (
 from .exceptions import AuthError, ExpertOperationAborted, ForbiddenError
 from .expert_options import (
     discovery_option_list,
+    canonical_entityvalue,
     duplicate_entityvalues,
     expert_client_options,
 )
@@ -537,9 +538,11 @@ class WemportalOptionsFlow(OptionsFlow):
         duplicates = duplicate_entityvalues(slot_ids)
         if duplicates:
             for slot in range(1, EXPERT_SLOT_COUNT + 1):
-                if (
-                    user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot) or ""
-                ).strip() in duplicates:
+                # Canonical on BOTH sides: the set is built that way, so a raw
+                # comparison marked a slot only where the spellings happened to
+                # match, and two that both differ from it went through as new.
+                slot_id = user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)
+                if canonical_entityvalue(slot_id) in duplicates:
                     errors[CONF_EXPERT_SLOT_ID_TEMPLATE % slot] = (
                         "duplicate_entityvalue"
                     )

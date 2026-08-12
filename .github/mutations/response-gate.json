@@ -2263,8 +2263,8 @@
   {
     "label": "expert: a verified write applied to every entity but its own",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "            if entity.entityvalue == entityvalue:",
-    "new": "            if entity.entityvalue != entityvalue:",
+    "old": "            if canonical_entityvalue(entity.entityvalue) == wanted:",
+    "new": "            if canonical_entityvalue(entity.entityvalue) != wanted:",
     "tests": "a_service_write_reaches_the_entity_that_shows_the_parameter"
   },
   {
@@ -2854,5 +2854,19 @@
     "old": "        # spent itself on 401s instead of raising an AuthError to count.\n        self.valid_login = False\n",
     "new": "        # spent itself on 401s instead of raising an AuthError to count.\n",
     "tests": "rejected_login_gives_up_the_session_it_had_already_replaced"
+  },
+  {
+    "label": "expert slots: comparing a raw spelling against a canonical set",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                slot_id = user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)\n                if canonical_entityvalue(slot_id) in duplicates:\n",
+    "new": "                slot_id = user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)\n                if (slot_id or \"\").strip() in duplicates:\n",
+    "tests": "options_flow_rejects_two_spellings_of_one_entityvalue"
+  },
+  {
+    "label": "expert write-back: finding the entity by raw spelling only",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            if canonical_entityvalue(entity.entityvalue) == wanted:",
+    "new": "            if entity.entityvalue == entityvalue:",
+    "tests": "service_write_finds_its_entity_in_any_spelling"
   }
 ]

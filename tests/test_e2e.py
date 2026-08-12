@@ -768,6 +768,43 @@ async def test_a_service_write_reaches_the_entity_that_shows_the_parameter(
     )
 
 
+async def test_a_service_write_finds_its_entity_in_any_spelling(hass, monkeypatch):
+    """The id that got past the allowlist has to find its entity too.
+
+    The service checks its argument against the configured ids
+    canonically, so a caller who types the id in another case is let
+    through - correctly, it is the same parameter. Handing that raw
+    argument on to the entity lookup then found nothing, because the
+    entity holds the spelling from the options. The write happened, the
+    portal confirmed it, and the entity went on showing the old value
+    until the next auto-poll, which is off by default.
+    """
+    await _setup(hass, _entry(hass, _expert_options()))
+
+    def written(self, entityvalue, value, **_kwargs):
+        return expert_writer.ExpertParameterState(value, [10.0, 20.0, 30.0], {})
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", written)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_EXPERT_PARAMETER,
+        {"entityvalue": EV_A.upper(), "value": 30},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    shown = [
+        state
+        for state in hass.states.async_all("number")
+        if "expert_parameter_1" in state.entity_id
+    ]
+    assert shown, "no expert number entity was created for the configured slot"
+    assert shown[0].state == "30.0", (
+        "the write was verified but its entity was looked up by raw spelling"
+    )
+
+
 async def test_the_service_can_set_the_option_that_is_not_a_number(hass, monkeypatch):
     """The whole way in for a value that sits beside the scale.
 
@@ -1271,6 +1308,35 @@ async def test_options_flow_rejects_duplicate_entityvalue(hass):
             **{
                 CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
                 CONF_EXPERT_SLOT_ID_TEMPLATE % 2: EV_A,
+            }
+        ),
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"][CONF_EXPERT_SLOT_ID_TEMPLATE % 1] == "duplicate_entityvalue"
+    assert result["errors"][CONF_EXPERT_SLOT_ID_TEMPLATE % 2] == "duplicate_entityvalue"
+
+
+async def test_options_flow_rejects_two_spellings_of_one_entityvalue(hass):
+    """Neither slot has to be spelled the canonical way for it to be a duplicate.
+
+    The duplicate set is built canonically - two spellings collapse to one
+    entry - but the loop that marks the offending slots compared the raw
+    value against that set. Both slots below differ from the canonical
+    spelling, so neither matched, no error was set, and the save went
+    through with one parameter in two slots. A single UPPERCASE slot beside
+    a lowercase one happened to work, because the lowercase one IS the
+    canonical spelling and matched - which is why this went unnoticed.
+    """
+    entry = await _setup(hass, _entry(hass))
+
+    result = await _open_options(hass, entry, "configure")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        _configure_input(
+            **{
+                CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A.upper(),
+                CONF_EXPERT_SLOT_ID_TEMPLATE % 2: "aA" * 18,
             }
         ),
     )

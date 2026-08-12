@@ -42,7 +42,7 @@ LINE_LIMIT = 900
 LINE_BUDGETS = {
     "wemportalapi.py": 2735,
     "expert_writer.py": 2351,
-    "config_flow.py": 923,
+    "config_flow.py": 926,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to
@@ -61,7 +61,7 @@ COMPLEXITY_BUDGETS = {
     "sensor.py::_parse_schedule": 21,
     "wemportalapi.py::WemPortalApi._fetch_parameter_values": 19,
     "__init__.py::async_setup_entry": 18,
-    "config_flow.py::WemportalOptionsFlow._validate_configure_input": 18,
+    "config_flow.py::WemportalOptionsFlow._validate_configure_input": 17,
     "mapper.py::_writeable_entity": 17,
 }
 

@@ -37,6 +37,7 @@ from .const import (
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
 )
 from .exceptions import ExpertOperationAborted
+from .expert_options import canonical_entityvalue
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -364,9 +365,15 @@ class ExpertController:
         MISSING from the batch as a failed read, so handing it this single
         result would count a miss against every other configured parameter
         and, after three writes, notify about ids that were never asked for.
+
+        Compared canonically, like the allowlist that let this id through:
+        a caller who spells it in another case addresses the same parameter,
+        so the raw comparison found no entity and left it on the old value
+        after a write the portal had already confirmed.
         """
+        wanted = canonical_entityvalue(entityvalue)
         for entity in self.entities:
-            if entity.entityvalue == entityvalue:
+            if canonical_entityvalue(entity.entityvalue) == wanted:
                 entity.apply_read_state(state)
 
     def _report_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
