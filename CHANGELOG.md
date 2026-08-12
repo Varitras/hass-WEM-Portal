@@ -144,6 +144,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **One unusable module id no longer costs the whole device its reading.**
+  A `ModuleIndex` the portal sends as a list is dropped where the readings
+  are built, but the freshness bookkeeping right after it used the same
+  answer again without that guard. The failure landed inside the device's
+  read, so values that had just been mapped correctly were reported as a
+  failed read - the device counted as failed for that cycle and its
+  readings began ageing towards unknown.
 - **A control stops writing once its parameter belongs to another platform.**
   The daily re-discovery re-reads what the portal says a parameter is, and
   that decides whether it becomes a switch, a number or a date. When the

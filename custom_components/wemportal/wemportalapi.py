@@ -2549,11 +2549,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         for module in values.get("Modules") or []:
             if not isinstance(module, dict):
                 continue
-            module_key = ModuleRef(
-                module_index=module.get("ModuleIndex"),
-                module_type=module.get("ModuleType"),
-            )
-            module_entry = known_modules.get(module_key)
+            key = ModuleRef(module.get("ModuleIndex"), module.get("ModuleType"))
+            # Around the LOOKUP, like mapper._described_module: an id the
+            # portal sent as a list builds a ModuleRef without complaint and
+            # only raises where something hashes it.
+            try:
+                module_entry = known_modules.get(key)
+            except TypeError:
+                continue
             if module_entry is not None:
                 module_entry["values_answered_at"] = time.monotonic()
 

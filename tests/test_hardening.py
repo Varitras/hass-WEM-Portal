@@ -5408,6 +5408,37 @@ def test_a_successful_schedule_keeps_the_full_interval():
     )
 
 
+def test_a_module_id_sent_as_a_list_does_not_cost_the_devices_read():
+    """The same portal answer the mapper already guards against, two lines on.
+
+    mapper._described_module wraps BOTH the build and the lookup, because
+    `ModuleIndex: []` builds a ModuleRef without complaint and only raises
+    when something hashes it. The freshness stamp built one the same way and
+    looked it up unguarded - inside _fetch_parameter_values' try, so the
+    readings that had just been mapped correctly were reported back as a
+    failed read. The device then counted as failed for that cycle and its
+    values started ageing towards unknown.
+
+    Asserts the good module too: skipping the whole loop would pass a test
+    that only checks for the absence of a crash.
+    """
+    api = _api()
+    answered = ModuleRef(module_index=0, module_type=1)
+    api.modules = {"1234": {answered: {"Index": 0, "Type": 1, "Name": "Circuit"}}}
+    values = {
+        "Modules": [
+            {"ModuleIndex": [], "ModuleType": 1},
+            {"ModuleIndex": 0, "ModuleType": 1},
+        ]
+    }
+
+    api._stamp_answered_modules("1234", values)
+
+    assert "values_answered_at" in api.modules["1234"][answered], (
+        "the unusable entry took the module that answered beside it"
+    )
+
+
 def test_the_schedule_guard_reads_the_clock_it_stamped():
     """The per-programme half of the clock rule the statistics guard has:
     a stamp left on the monotonic clock must not read as decades old.
