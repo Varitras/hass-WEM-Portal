@@ -1572,6 +1572,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         # cycle either way - but a web-only row has no api half, so wiping
         # here took those values away for as long as the scrape was not due
         # or was in its backoff.
+        # Rows of a module that has since disappeared come across with the
+        # rest, and the per-module ageing walks the NEW list, so nothing
+        # owns them. Left that way on purpose: reconciling here would drop
+        # good values whenever one answer omits a module, and it would miss
+        # the case that actually turns up - a RENAMED module keeps its index
+        # and type, so only its row keys change. They do age out with the
+        # device the next time it stops answering.
         new_data[device_id_str] = {
             **previously_known_readings.get(device_id_str, {}),
             "ConnectionStatus": connection_status,
