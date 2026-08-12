@@ -2847,5 +2847,12 @@
     "old": "POLL_DEADLINE_SECONDS: Final = DEFAULT_TIMEOUT - 30",
     "new": "POLL_DEADLINE_SECONDS: Final = DEFAULT_TIMEOUT - 60",
     "tests": "wait_for_the_lock_never_outlasts_the_budget_it_spends"
+  },
+  {
+    "label": "login: a rejected login must give up the session claim",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        # spent itself on 401s instead of raising an AuthError to count.\n        self.valid_login = False\n",
+    "new": "        # spent itself on 401s instead of raising an AuthError to count.\n",
+    "tests": "rejected_login_gives_up_the_session_it_had_already_replaced"
   }
 ]

@@ -144,6 +144,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   switched off in the entity registry is still built and handed to the
   auto-poll, which then tried to publish state for something Home Assistant
   had never added.
+- **A password changed while Home Assistant runs is noticed.** The old
+  session keeps working until it expires; the re-login that follows is then
+  turned down, and that rejection left the integration still believing it
+  was signed in. Every cycle after it skipped signing in and spent itself on
+  refused requests, which the per-device handlers swallow - so nothing ever
+  counted as an authentication failure and the re-authentication dialog
+  never appeared. It stayed quietly dead until someone reloaded it by hand.
 - **The two hourly portal limits no longer follow the wall clock.**
   Statistics and heating schedules are each asked for at most once an hour,
   and both measured that hour on a clock that can be corrected - NTP right

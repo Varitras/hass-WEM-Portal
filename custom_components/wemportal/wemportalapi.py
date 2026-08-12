@@ -1226,6 +1226,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         self.session = requests.Session()
         self.session.cookies.clear()
         self.session.headers.update(self.headers)
+        # The session this claim belonged to was just closed, so the claim
+        # goes with it. Here rather than per failure branch: the rejection
+        # path cleared nothing, so the next cycle skipped the login and
+        # spent itself on 401s instead of raising an AuthError to count.
+        self.valid_login = False
         # Initialized BEFORE the try block: if the POST itself fails with a
         # pure network error (connection reset, DNS, timeout), `response`
         # would otherwise not exist yet and the error handler below would

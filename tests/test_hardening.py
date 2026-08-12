@@ -105,6 +105,42 @@ def test_api_login_post_has_timeout(monkeypatch):
     )
 
 
+def test_a_rejected_login_gives_up_the_session_it_had_already_replaced(monkeypatch):
+    """A login the portal turns down must not leave a claim to be signed in.
+
+    api_login closes the old session and builds a new one BEFORE it sends,
+    so from that point a leftover `valid_login` describes something that no
+    longer exists. The rejection path - HTTP 200 with a status the portal
+    refuses - raised without clearing it, and only the two network branches
+    below did.
+
+    What that cost: a password changed while Home Assistant runs is not
+    noticed until the session expires. The 401 then triggers a re-login
+    from inside a partial read, that re-login is rejected, and its
+    AuthError is swallowed by the broad handler around that partial read.
+    With `valid_login` still true the next cycle skips the login entirely
+    and spends itself on 401s - so the coordinator never sees an AuthError,
+    never counts one, and never offers the reauth dialog. The integration
+    stays quietly dead until someone reloads it by hand.
+
+    Cleared here, the next cycle logs in through _ensure_api_session, whose
+    AuthError reaches the coordinator unchanged (see the WemPortalError
+    re-raise in _fetch_data).
+    """
+    api = _api()
+    # The state the re-login path is actually in: a session that WAS good.
+    api.valid_login = True
+    session = RecordingSession(post_json={"Status": 1})
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+
+    with pytest.raises(exceptions.AuthError):
+        api.api_login()
+
+    assert api.valid_login is False, (
+        "a rejected login left the api claiming a session it had replaced"
+    )
+
+
 CACHED_MODULES = {
     "1234": {
         (0, 1): {
