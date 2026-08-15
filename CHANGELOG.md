@@ -8,6 +8,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A module the portal stops listing has its readings aged out too.** The
+  pass that does the ageing walked the current module list and read a stamp
+  kept inside each module's entry - so a module that dropped out of that list
+  took its own stamp with it and was never visited again. Its readings were
+  then the only ones nothing could touch: not refreshed, because a module
+  without a description is skipped, and not aged, because the pass could not
+  see them. They stood on the dashboard as current indefinitely. Readings the
+  web scrape still feeds are unaffected, as before.
 - **Switching the scraper's device off clears its repair issue.** The poll
   already skips a disabled device, so nothing was being attempted - but the
   report asked only whether the last attempts had failed, and only a scrape

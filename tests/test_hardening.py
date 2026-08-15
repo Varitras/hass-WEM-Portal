@@ -5208,6 +5208,10 @@ TRANSPORT_FIELDS = frozenset(
 # fresher, and dropping it would restart the staleness clock on every
 # recovery - so a device that never answers again would keep publishing its
 # last values for another full window after each reset.
+# _module_answered_at is the same clock one level down, per module, and
+# follows it for the same reason. Dropping it would be worse here than at the
+# device level: an unstamped module is exempt from ageing altogether ("no
+# evidence"), so a reset would not restart the clock but switch it off.
 # The two hourly gates follow `data`, by the one rule that decides where they
 # live: a gate is worth keeping exactly as long as the readings it guards are.
 # A recovery keeps the readings, so it keeps the gates. A reload keeps
@@ -5223,6 +5227,7 @@ PRESERVED_FIELDS = frozenset(
         "_first_cycle_done",
         "_deadline",
         "_last_device_read",
+        "_module_answered_at",
         "data",
         "username",
         "password",
@@ -5811,7 +5816,7 @@ def test_a_module_id_sent_as_a_list_does_not_cost_the_devices_read():
 
     api._stamp_answered_modules("1234", values)
 
-    assert "values_answered_at" in api.modules["1234"][answered], (
+    assert answered in api._module_answered_at["1234"], (
         "the unusable entry took the module that answered beside it"
     )
 

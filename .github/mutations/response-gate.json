@@ -2501,8 +2501,8 @@
   {
     "label": "freshness: the module stamp never written",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if module_entry is not None:\n                module_entry[\"values_answered_at\"] = time.monotonic()",
-    "new": "            if module_entry is not None:\n                pass",
+    "old": "                answered[key] = time.monotonic()",
+    "new": "                pass",
     "tests": "an_answering_module_is_stamped_and_a_silent_one_is_not"
   },
   {
@@ -2527,11 +2527,11 @@
     "tests": "a_weekly_programme_survives_the_module_aging"
   },
   {
-    "label": "freshness: the monotonic stamp leaking into the persisted cache",
-    "path": "custom_components/wemportal/utils.py",
-    "old": "                if field != \"values_answered_at\"",
-    "new": "                if True",
-    "tests": "the_freshness_stamp_stays_out_of_the_persisted_cache"
+    "label": "freshness: a module that left the device list losing its stamp",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        answered = self._module_answered_at.setdefault(device_id, {})",
+    "new": "        answered = self.modules.setdefault(device_id, {})",
+    "tests": "a_module_the_portal_stopped_listing_still_ages_out or the_freshness_stamp_is_not_in_the_module_list_to_begin_with"
   },
   {
     "label": "schedule: stale detail kept overruling the raw plan on failure",
@@ -2984,8 +2984,8 @@
   {
     "label": "freshness: an unusable module id taking the answer with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            try:\n                module_entry = known_modules.get(key)\n            except TypeError:\n                continue\n",
-    "new": "            module_entry = known_modules.get(key)\n",
+    "old": "            try:\n                answered[key] = time.monotonic()\n            except TypeError:\n                continue\n",
+    "new": "            answered[key] = time.monotonic()\n",
     "tests": "module_id_sent_as_a_list_does_not_cost_the_devices_read"
   },
   {

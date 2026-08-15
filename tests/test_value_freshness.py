@@ -141,7 +141,7 @@ def test_a_reading_the_mapper_wrote_ages_out_like_any_other():
         "precondition: the first cycle wrote both modules' readings"
     )
 
-    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - AGED
+    api._module_answered_at.setdefault("1234", {})[MODULE_B] = time.monotonic() - AGED
     api._fetch_parameter_values("1234")
 
     assert api.data["1234"]["Circuit-Komfort"].value is None, (
@@ -150,6 +150,59 @@ def test_a_reading_the_mapper_wrote_ages_out_like_any_other():
     assert api.data["1234"]["Heat pump-AktRaumSoll"].value == 21.5, (
         "the answering module was aged along with the silent one"
     )
+
+
+def test_a_module_the_portal_stopped_listing_still_ages_out(monkeypatch):
+    """The one module the ageing pass could never reach: the one that is gone.
+
+    The pass walks the CURRENT module list, and the stamp it reads lives
+    inside each module's entry - so a module that drops out of the device
+    list takes its own stamp with it and is never visited again. Its
+    readings then sit on the dashboard forever: not refreshed, because the
+    mapper skips a module it has no description for, and not aged, because
+    the only pass that would do it cannot see them.
+
+    Driven through the real stamping call and a clock that moves, so it
+    holds whatever the stamps are stored in.
+    """
+    api = _two_module_api()
+    api.data["1234"]["Circuit-Komfort"].value = 24.0
+    api.data["1234"]["Heat pump-AktRaumSoll"].value = 21.5
+    api._stamp_answered_modules(
+        "1234",
+        {
+            "Modules": [
+                {"ModuleIndex": 0, "ModuleType": 1},
+                {"ModuleIndex": 1, "ModuleType": 1},
+            ]
+        },
+    )
+    # The portal stops listing module B - a re-discovery that no longer
+    # describes it is all it takes.
+    del api.modules["1234"][MODULE_B]
+    later = time.monotonic() + AGED
+    monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: later)
+
+    api._forget_unanswered_module_values("1234")
+
+    assert api.data["1234"]["Circuit-Komfort"].value is None, (
+        "a module that left the device list kept its readings on display "
+        "with nothing able to refresh or age them"
+    )
+
+
+def test_a_module_that_is_still_listed_and_answering_keeps_its_readings():
+    """The control case for the one above: being visited is not the same as
+    being aged."""
+    api = _two_module_api()
+    api.data["1234"]["Circuit-Komfort"].value = 24.0
+    api._stamp_answered_modules(
+        "1234", {"Modules": [{"ModuleIndex": 1, "ModuleType": 1}]}
+    )
+
+    api._forget_unanswered_module_values("1234")
+
+    assert api.data["1234"]["Circuit-Komfort"].value == 24.0
 
 
 def test_a_row_the_scrape_still_feeds_is_not_aged_by_its_module():
@@ -166,7 +219,7 @@ def test_a_row_the_scrape_still_feeds_is_not_aged_by_its_module():
     api.data["1234"]["Circuit-Komfort"].value = 24.0
     api._previous_scraper_keys = {"Circuit-Komfort"}
     api.spider_retry_count = 0
-    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - AGED
+    api._module_answered_at.setdefault("1234", {})[MODULE_B] = time.monotonic() - AGED
 
     api._forget_unanswered_module_values("1234")
 
@@ -176,7 +229,7 @@ def test_a_row_the_scrape_still_feeds_is_not_aged_by_its_module():
 
     # Once the scrape has given up too, nothing is keeping the row fresh.
     api.spider_retry_count = wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
-    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - AGED
+    api._module_answered_at.setdefault("1234", {})[MODULE_B] = time.monotonic() - AGED
 
     api._forget_unanswered_module_values("1234")
 
@@ -219,7 +272,7 @@ def test_the_module_the_portal_stopped_answering_for_ages_out(caplog):
     stamp cannot see this case - the device DID answer.
     """
     api = _two_module_api()
-    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - AGED
+    api._module_answered_at.setdefault("1234", {})[MODULE_B] = time.monotonic() - AGED
     _answer_only_module_a(api)
 
     with caplog.at_level(logging.WARNING):
@@ -245,14 +298,14 @@ def test_an_answering_module_is_stamped_and_a_silent_one_is_not():
 
     api._fetch_parameter_values("1234")
 
-    assert "values_answered_at" in api.modules["1234"][MODULE_A]
-    assert "values_answered_at" not in api.modules["1234"][MODULE_B]
+    assert MODULE_A in api._module_answered_at["1234"]
+    assert MODULE_B not in api._module_answered_at["1234"]
 
 
 def test_a_module_answered_recently_is_left_alone():
     """The counter-half: within the TTL nothing is touched."""
     api = _two_module_api()
-    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - 60
+    api._module_answered_at.setdefault("1234", {})[MODULE_B] = time.monotonic() - 60
     _answer_only_module_a(api)
 
     api._fetch_parameter_values("1234")
@@ -282,7 +335,7 @@ def test_a_weekly_programme_survives_the_module_aging():
         module_index=1,
         module_type=1,
     )
-    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - AGED
+    api._module_answered_at.setdefault("1234", {})[MODULE_B] = time.monotonic() - AGED
     _answer_only_module_a(api)
 
     api._fetch_parameter_values("1234")
@@ -293,16 +346,30 @@ def test_a_weekly_programme_survives_the_module_aging():
     )
 
 
-def test_the_freshness_stamp_stays_out_of_the_persisted_cache():
-    """The stamp is monotonic time: meaningless across restarts, and worse,
-    it changes every cycle - persisted, it would defeat the fingerprint that
-    keeps the module cache from being rewritten 288 times a day."""
-    serialized = serialize_modules(
-        {"1234": {MODULE_A: {"Name": "Heat pump", "values_answered_at": 12.5}}}
+def test_the_freshness_stamp_is_not_in_the_module_list_to_begin_with():
+    """Stronger than filtering it out on the way to disk: it never gets in.
+
+    The stamp is monotonic time - meaningless across restarts, and it changes
+    every cycle, so persisted it would defeat the fingerprint that keeps the
+    module cache from being rewritten 288 times a day. It used to live inside
+    each module's entry and be dropped again by serialize_modules. That is
+    also what made it unreachable: the list is replaced wholesale on every
+    re-discovery, so a module that dropped out took its own stamp with it -
+    and its readings were then the only ones nothing could age.
+    """
+    api = _two_module_api()
+    api._stamp_answered_modules(
+        "1234", {"Modules": [{"ModuleIndex": 1, "ModuleType": 1}]}
     )
 
-    assert "values_answered_at" not in serialized["1234"]["0:1"]
-    assert serialized["1234"]["0:1"]["Name"] == "Heat pump"
+    assert MODULE_B in api._module_answered_at["1234"], (
+        "the stamp was not recorded at all, so this proves nothing below"
+    )
+    assert all(
+        "values_answered_at" not in entry for entry in api.modules["1234"].values()
+    ), "the stamp is back inside the module list, where a re-discovery drops it"
+    # And what does go to disk is the module list unchanged.
+    assert serialize_modules(api.modules)["1234"]["1:1"]["Name"] == "Circuit"
 
 
 # --- a failed due schedule refresh drops its stale detail ---------------
@@ -365,7 +432,9 @@ def test_a_long_poll_interval_gets_a_staleness_limit_it_can_reach():
     api.scan_interval_api = timedelta(seconds=45 * 60)
     # Silent for 35 minutes: past the old fixed limit, well inside one
     # interval of this installation.
-    api.modules["1234"][MODULE_B]["values_answered_at"] = time.monotonic() - 35 * 60
+    api._module_answered_at.setdefault("1234", {})[MODULE_B] = (
+        time.monotonic() - 35 * 60
+    )
     _answer_only_module_a(api)
 
     api._fetch_parameter_values("1234")

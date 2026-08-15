@@ -347,6 +347,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         # straight to normal polling. `None` means "no cache available" and
         # preserves the original behavior of doing a full discovery.
         self.modules = copy.deepcopy(cached_modules) if cached_modules else None
+        # When each module was last named in a values answer, per device.
+        # Deliberately NOT inside self.modules: the list is replaced wholesale
+        # on every re-discovery, and a module that drops out of it is exactly
+        # the one whose readings then have nothing left to refresh OR age
+        # them. See _stamp_answered_modules.
+        self._module_answered_at: dict[str, dict[ModuleRef, float]] = {}
         # Monotonic timestamp until which ALL outbound requests are
         # paused, activated after receiving a 403 (rate limit/forbidden)
         # from the server anywhere in a cycle. This is a strictly
@@ -2601,25 +2607,28 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
     def _stamp_answered_modules(self, device_id, values) -> None:
         """Note WHEN each module last appeared in a values answer.
 
-        Monotonic like the device-level stamp, and deliberately kept out of
-        the persisted cache (see serialize_modules): it is meaningless
-        across restarts and changes every cycle, which would defeat the
-        fingerprint that keeps the cache from being rewritten daily.
+        Kept BESIDE the module list rather than inside it, and that is the
+        whole point of the separate dict: a module that drops out of the
+        device list used to take its own stamp with it, so the ageing pass -
+        which reads those stamps - never visited its readings again. They
+        were then neither refreshed (the mapper skips a module it has no
+        description for) nor aged, and sat on the dashboard as current for
+        good. Outliving the list is exactly what makes them reachable.
+
+        Monotonic, and never persisted: it is meaningless across restarts.
         """
-        known_modules = self.modules.get(device_id, {})
+        answered = self._module_answered_at.setdefault(device_id, {})
         for module in values.get("Modules") or []:
             if not isinstance(module, dict):
                 continue
             key = ModuleRef(module.get("ModuleIndex"), module.get("ModuleType"))
-            # Around the LOOKUP, like mapper._described_module: an id the
+            # Around the ASSIGNMENT, like mapper._described_module: an id the
             # portal sent as a list builds a ModuleRef without complaint and
             # only raises where something hashes it.
             try:
-                module_entry = known_modules.get(key)
+                answered[key] = time.monotonic()
             except TypeError:
                 continue
-            if module_entry is not None:
-                module_entry["values_answered_at"] = time.monotonic()
 
     def _forget_unanswered_module_values(self, device_id) -> None:
         """Stop presenting a module's readings once IT has stopped answering.
@@ -2637,10 +2646,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         """
         now = time.monotonic()
         device_rows = self.data.get(device_id) or {}
-        for module_key, module_entry in self.modules.get(device_id, {}).items():
-            answered_at = module_entry.get("values_answered_at")
-            if answered_at is None:
-                continue
+        answered = self._module_answered_at.get(device_id, {})
+        # Over the STAMPS, not over the module list: a module the portal has
+        # stopped listing is exactly the one whose readings nothing else can
+        # reach, and walking the list skipped it.
+        for module_key, answered_at in list(answered.items()):
             stale_for = now - answered_at
             if stale_for < self._values_stale_after_seconds():
                 continue
@@ -2654,7 +2664,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 continue
             # Reset, so the next silence is measured from here rather than
             # repeating this warning every cycle - same as the device level.
-            module_entry["values_answered_at"] = now
+            answered[module_key] = now
             _LOGGER.warning(
                 "Device %s module %d/%d has not been in an answer for %d "
                 "minutes. Its %d reading(s) are no longer current and are "
