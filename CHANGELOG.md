@@ -331,7 +331,9 @@ outside, which is why this is a pre-release.
   so a limit that drops open is exactly the traffic it exists to prevent.
   Both now read a clock that cannot jump.
 
-## [1.11.0b4] – 2026-08-09
+## [1.11.0] – 2026-08-09
+
+Same code as prerelease 1.11.0b4; only the version number changed.
 
 ### Security
 - **A device id no longer travels in the message that asks you to report it.**
