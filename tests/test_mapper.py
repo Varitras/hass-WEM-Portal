@@ -125,6 +125,27 @@ def test_unparsable_bounds_fall_back_instead_of_raising():
     assert get_min_max("x", WemDataType.NUMBER_STEP_ONE, "n/a", "n/a") == (0.0, 100.0)
 
 
+def test_a_parameter_with_no_id_falls_back_instead_of_raising():
+    """The name is what the guess is made from - and there may not be one.
+
+    `Reading.parameter_id` is optional, and the mapper hands exactly that
+    field in. With no bounds from the portal and a data type that is not a
+    switch, the guess reached `.lower()` on None and took the whole device's
+    read down with an AttributeError. Nothing to guess from is not an error;
+    it is the case the widest default exists for.
+
+    Found by widening the mypy scope to mapper.py, which is the reason the
+    scope is worth widening.
+    """
+    assert get_min_max(None, WemDataType.NUMBER_STEP_ONE, None, None) == (0.0, 100.0)
+
+
+def test_a_parameter_with_no_data_type_still_answers():
+    """Same shape one argument over: the type is read from the portal's
+    answer and can be absent."""
+    assert get_min_max("Komfort", None, None, None) == (5.0, 35.0)
+
+
 # --- platform mapping -------------------------------------------------
 
 

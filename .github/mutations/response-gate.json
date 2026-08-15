@@ -679,6 +679,13 @@
     "tests": "disappearing_parameter_clears_the_day_instead_of_keeping_it"
   },
   {
+    "label": "mapper: a parameter the portal named nothing for crashing the read",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    parameter_lower = (parameter_id or \"\").lower()",
+    "new": "    parameter_lower = parameter_id.lower()",
+    "tests": "a_parameter_with_no_id_falls_back_instead_of_raising"
+  },
+  {
     "label": "discovery: a disabled device asked for its parameter definitions",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            if not self._device_is_enabled(device_id, enabled_devices):\n                continue",

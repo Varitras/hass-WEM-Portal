@@ -15,6 +15,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   least one request per module - and a disabled device paid all of it, on
   every install whose cache is incomplete and once a day after that. The
   portal counts requests per IP.
+- **A parameter the portal names nothing for no longer costs the whole
+  device its readings.** Where the portal sends no bounds, the plausible
+  range is guessed from the parameter's name - and that name is optional.
+  With none, the guess raised and took every reading of that device down
+  with it for the cycle. Found by type-checking the module that builds the
+  readings, which is now part of what CI checks.
 - **Removing a duplicate entry of an account no longer wipes the other
   one's memory.** Old installations may still carry two entries of the same
   account, and both share what that account remembers - the rate-limit

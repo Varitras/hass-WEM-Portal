@@ -14,18 +14,30 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def get_min_max(
-    parameter_id: str, data_type: int, min_value, max_value
+    parameter_id: str | None,
+    data_type: int | None,
+    min_value: object,
+    max_value: object,
 ) -> tuple[float, float]:
+    """Plausible bounds for a control the portal gave none for.
+
+    Both of the first two arrive from the portal's answer and both may be
+    absent - `Reading.parameter_id` is optional and the mapper hands exactly
+    that field in. Annotated as such rather than assumed: read as `str`, the
+    name-based guess below reached `.lower()` on None and took the whole
+    device's read down with it. Nothing to guess from is not an error, it is
+    what the widest default is for.
+    """
     try:
         if min_value is not None and max_value is not None:
-            return float(min_value), float(max_value)
+            return float(min_value), float(max_value)  # type: ignore[arg-type]
     except (ValueError, TypeError):
         pass
 
     if data_type == WemDataType.SWITCH:
         return 0.0, 1.0
 
-    parameter_lower = parameter_id.lower()
+    parameter_lower = (parameter_id or "").lower()
     if "ww" in parameter_lower or "warmwasser" in parameter_lower:
         return 30.0, 65.0
     if any(
