@@ -667,9 +667,16 @@
   {
     "label": "date: keeping a vanished day must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "        except KeyError:\n            self._attr_native_value = None",
-    "new": "        except KeyError:\n            pass",
+    "old": "        if row is None:\n            self._attr_native_value = None",
+    "new": "        if row is None:\n            pass",
     "tests": "disappearing_parameter_clears_the_day_instead_of_keeping_it"
+  },
+  {
+    "label": "holiday: writing an epoch to a row that is no longer a date",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if row.platform != \"date\":",
+    "new": "    if False:",
+    "tests": "a_row_the_portal_no_longer_calls_a_date_is_refused"
   },
   {
     "label": "scrape freshness: carrying the old value over again must be noticed",

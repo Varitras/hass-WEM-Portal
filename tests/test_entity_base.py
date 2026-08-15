@@ -173,6 +173,71 @@ def test_a_control_does_not_write_when_its_row_became_another_platform():
     )
 
 
+# What each platform publishes, asked the way Home Assistant asks it. The
+# attribute behind it differs per platform, and pinning the attribute would
+# make this test agree with an implementation detail rather than with what a
+# dashboard shows.
+DISPLAYED_VALUE = {
+    "sensor": lambda entity: entity.native_value,
+    "number": lambda entity: entity.native_value,
+    "date": lambda entity: entity.native_value,
+    "select": lambda entity: entity.current_option,
+    "switch": lambda entity: entity.is_on,
+}
+
+
+def _entity_showing_a_value(name):
+    """One entity per platform, built so it actually publishes something.
+
+    select resolves its reading against its option list, and the numeric
+    value the shared fixture carries is not one of them - so it sits at None
+    whatever the guard below does. A subject that publishes nothing anyway
+    would make the test pass for a reason that has nothing to do with what it
+    claims to check, which is why the control case beside it exists.
+    """
+    return _entity(
+        PLATFORMS[name], platform=name, value="1" if name == "select" else 1.0
+    )
+
+
+@pytest.mark.parametrize("name", sorted(PLATFORMS))
+def test_a_row_that_became_another_platform_is_not_displayed(name):
+    """The reading half of the write gate above.
+
+    Both entities exist at once after a reclassification - the listener builds
+    the new platform's entity while the old one stays until the next reload -
+    and both read the same row. The write path asks whether the row is still
+    this entity's; the update handlers only asked whether it was there, so the
+    leftover entity went on rendering someone else's value as its own type: a
+    holiday epoch shown as a switch that is on, a 0/1 shown as a date in 1970.
+
+    Parametrised over all five because the handlers are five copies of the
+    same lookup - which is exactly how the availability rule once reached
+    three platforms out of four.
+    """
+    entity = _entity_showing_a_value(name)
+    entity.async_write_ha_state = lambda: None
+    entity.coordinator.data["1234"]["Pump"].platform = "something else"
+
+    entity._handle_coordinator_update()
+
+    assert DISPLAYED_VALUE[name](entity) is None, (
+        f"{name} published a value from a row that is no longer its own"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(PLATFORMS))
+def test_a_row_of_this_platform_is_still_displayed(name):
+    """The control case: without it, an entity that publishes nothing at all
+    would satisfy the test above."""
+    entity = _entity_showing_a_value(name)
+    entity.async_write_ha_state = lambda: None
+
+    entity._handle_coordinator_update()
+
+    assert DISPLAYED_VALUE[name](entity) is not None
+
+
 def test_the_chosen_name_writes_the_value_that_belongs_to_it():
     entity, written = _select_capturing_its_writes(
         options=["0", "1"], options_names=["Aus", "Ein"]

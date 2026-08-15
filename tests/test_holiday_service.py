@@ -300,6 +300,30 @@ def test_an_entity_that_is_not_a_date_is_refused(monkeypatch):
     assert "not a date entity" in str(excinfo.value)
 
 
+async def test_a_row_the_portal_no_longer_calls_a_date_is_refused(monkeypatch):
+    """The entity says date; the row is what decides what the parameter is.
+
+    Both halves of the check are needed because they answer different
+    questions. The entity_id above says how Home Assistant files the entity,
+    and the daily re-discovery can reclassify the parameter underneath it -
+    the date entity then stays loaded until the next reload while the row it
+    points at has become a switch or a number. The entity's own write path
+    gained that check; this service resolves the row by hand and kept only
+    "is it a Reading", so it could still send a holiday epoch to a parameter
+    the portal now describes as something else.
+    """
+    rows = {
+        "Circuit-U_Beginn": replace(BEGIN_ROW, platform="switch"),
+        "Circuit-U_Ende": replace(END_ROW),
+    }
+    hass, api, _rows = _world(monkeypatch, rows=rows)
+
+    with pytest.raises(HomeAssistantError):
+        await holiday._write_holiday(hass, _call())
+
+    assert api.calls == [], "an epoch was written to a row that is not a date"
+
+
 async def test_a_write_into_an_unloading_entry_is_refused(monkeypatch):
     """The same gate the entities pass through: a call can land inside a
     teardown, and the write would start into a session about to close."""

@@ -193,21 +193,24 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
 
-        try:
-            entity_data = self.coordinator.data[self._device_id][self._data_key]
-            # Options BEFORE the value, for the same reason number refreshes
-            # its bounds: rediscovery can add an option, and a device already
-            # ON it read as unknown against the construction-time list -
-            # indistinguishable from a failed read.
-            if entity_data.options is not None:
-                self._options = entity_data.options
-            if entity_data.options_names is not None:
-                self._options_names = entity_data.options_names
-            value = entity_data.value
-            self._attr_current_option = self._resolve_option(value)
-        except KeyError:
+        row = self._coordinator_row()
+        if row is None:
             self._attr_current_option = None
             _LOGGER.warning("Can't find %s", self._attr_unique_id)
+            self.async_write_ha_state()
+            return
+
+        # Options BEFORE the value, for the same reason number refreshes its
+        # bounds: rediscovery can add an option, and a device already ON it
+        # read as unknown against the construction-time list -
+        # indistinguishable from a failed read.
+        if row.options is not None:
+            self._options = row.options
+        if row.options_names is not None:
+            self._options_names = row.options_names
+        value = row.value
+        try:
+            self._attr_current_option = self._resolve_option(value)
         except (ValueError, TypeError):
             self._attr_current_option = None
             _LOGGER.warning(

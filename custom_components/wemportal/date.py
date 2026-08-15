@@ -178,15 +178,13 @@ class WemPortalDate(WemPortalEntity, DateEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        try:
-            self._attr_native_value = epoch_to_date(
-                self.coordinator.data[self._device_id][self._data_key].value
-            )
-            _LOGGER.debug(
-                "Update date: %s: %s", self._attr_name, self._attr_native_value
-            )
-        except KeyError:
+        row = self._coordinator_row()
+        if row is None:
             self._attr_native_value = None
             _LOGGER.warning("Can't find %s", self._attr_unique_id)
+            self.async_write_ha_state()
+            return
 
+        self._attr_native_value = epoch_to_date(row.value)
+        _LOGGER.debug("Update date: %s: %s", self._attr_name, self._attr_native_value)
         self.async_write_ha_state()

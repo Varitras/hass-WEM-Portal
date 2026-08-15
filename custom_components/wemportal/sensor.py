@@ -326,19 +326,6 @@ def _schedule_summary(row):
 class WemPortalSensor(WemPortalEntity, RestoreSensor):
     """Representation of a WEM Portal Sensor."""
 
-    def _current_row(self) -> Reading | None:
-        """The coordinator row behind this entity, or None.
-
-        A weekly programme is read from more than its value - the schedule
-        fetch adds the device's own view of it to the same row - so the
-        value alone is no longer enough to build the state from.
-        """
-        try:
-            row = self.coordinator.data[self._device_id][self._data_key]
-        except (KeyError, TypeError):
-            return None
-        return row if isinstance(row, Reading) else None
-
     def _validated_native_value(self, value, unit):
         """Return a Home Assistant-safe native value."""
         effective_unit = unit
@@ -386,7 +373,9 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 )
                 return None
             if value.startswith("{"):
-                summary = _schedule_summary(self._current_row())
+                # The whole row, not just this value: the schedule fetch adds
+                # the device's own view of the programme to the same row.
+                summary = _schedule_summary(self._coordinator_row())
                 # Home Assistant refuses a state longer than this, and a
                 # refused state is no reading at all. Seven days that differ
                 # from one another, three windows each, can get there. The
@@ -501,26 +490,26 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
 
-        try:
-            entity_data = self.coordinator.data[self._device_id][self._data_key]
-            value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
-            self._attr_native_value = self._validated_native_value(value, unit)
-
-            # set unit if it references a valid non-trivial unit of measurement
-            if unit not in (None, ""):
-                self._attr_native_unit_of_measurement = unit
-
-            _LOGGER.debug(
-                'Update sensor: %s: "%s" [%s]',
-                self._attr_name,
-                self._attr_native_value,
-                self._attr_native_unit_of_measurement,
-            )
-
-        except KeyError:
+        row = self._coordinator_row()
+        if row is None:
             self._attr_native_value = None
             _LOGGER.warning("Can't find %s", self._attr_unique_id)
+            self.async_write_ha_state()
+            return
 
+        value, unit = fix_value_and_unit(row.value, row.unit)
+        self._attr_native_value = self._validated_native_value(value, unit)
+
+        # set unit if it references a valid non-trivial unit of measurement
+        if unit not in (None, ""):
+            self._attr_native_unit_of_measurement = unit
+
+        _LOGGER.debug(
+            'Update sensor: %s: "%s" [%s]',
+            self._attr_name,
+            self._attr_native_value,
+            self._attr_native_unit_of_measurement,
+        )
         self.async_write_ha_state()
 
     @property
@@ -556,7 +545,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         """Return the state attributes of this device."""
         attributes: dict[str, Any] = {}
 
-        entity_data = self._current_row()
+        entity_data = self._coordinator_row()
         if entity_data is None:
             return attributes
         if entity_data.circuit_times_day is not None:

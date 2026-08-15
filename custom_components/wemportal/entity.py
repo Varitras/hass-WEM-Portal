@@ -222,10 +222,16 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
     def _coordinator_row(self) -> Reading | None:
         """This parameter's row in the coordinator's data, or None.
 
-        Three callers ask the same two-step question - the device, then the
-        parameter - and each guards against the answer not being a reading,
+        Every caller asks the same two-step question - the device, then the
+        parameter - and guards against the answer not being a reading,
         because a malformed or half-built update must not raise into a write
         path.
+
+        The platform check is what makes "the row is there" and "the row is
+        mine" two different questions, and it belongs to the DISPLAY path as
+        much as to the write path: after a reclassification both entities are
+        loaded and both find the row, so an update handler doing its own
+        lookup rendered someone else's value as its own type.
         """
         device = (self.coordinator.data or {}).get(self._device_id)
         row = device.get(self._data_key) if isinstance(device, dict) else None

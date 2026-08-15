@@ -34,6 +34,15 @@ THE_SHARED_WAY = "async_add_readings_as_they_appear"
 # coordinator's data itself is doing the thing this guard exists against.
 THE_OLD_WAY = "coordinator.data.items()"
 
+# The shared lookup, and the raw one it replaced. `_coordinator_row` asks two
+# questions - is the row there, and is it still THIS platform's - and the
+# second one is what a raw subscript cannot answer. After a reclassification
+# both the old and the new entity are loaded and both find the row, so a
+# platform reaching into the dict itself renders someone else's value as its
+# own type: a holiday epoch as a switch that is on, a 0/1 as a date in 1970.
+THE_SHARED_LOOKUP = "_coordinator_row()"
+THE_RAW_LOOKUP = "coordinator.data[self._device_id]"
+
 
 def _platform_sources() -> dict:
     sources = {}
@@ -74,6 +83,42 @@ def test_no_platform_walks_the_coordinator_data_itself():
         f"{offenders} still walk(s) the coordinator's data during setup "
         f"({THE_OLD_WAY}). One place decides which readings become entities."
     )
+
+
+def test_no_platform_reaches_into_the_coordinator_for_its_own_row():
+    """Reading a row and owning a row are two different questions.
+
+    The platform check was added to the write path when a reclassification
+    turned out to leave both entities loaded - and every one of the five
+    display paths kept its own raw subscript, so the leftover entity went on
+    publishing the new platform's value as its own type. Five copies of a
+    lookup is five chances for the next one to drift back out, which is the
+    same way the availability rule once reached three platforms out of four.
+
+    Not limited to the update handler on purpose: the second offender this
+    caught was a sensor helper feeding `extra_state_attributes`, which no
+    test of the update handler would ever have looked at.
+    """
+    offenders = [
+        name for name, source in _platform_sources().items() if THE_RAW_LOOKUP in source
+    ]
+
+    assert not offenders, (
+        f"{offenders} read(s) the coordinator's dict directly "
+        f"({THE_RAW_LOOKUP}), which cannot tell a row that is still this "
+        f"platform's from one that is not. Use {THE_SHARED_LOOKUP} in "
+        "entity.py."
+    )
+
+
+def test_the_lookup_scan_would_notice_the_shape_it_exists_for():
+    """The two shapes, spelled out as they appear in a platform module. A
+    guard nobody has seen fail is a guard nobody knows works."""
+    raw = "            row = self.coordinator.data[self._device_id][self._data_key]\n"
+    shared = "        row = self._coordinator_row()\n"
+
+    assert THE_RAW_LOOKUP in raw and THE_SHARED_LOOKUP not in raw
+    assert THE_RAW_LOOKUP not in shared and THE_SHARED_LOOKUP in shared
 
 
 class _Coordinator:

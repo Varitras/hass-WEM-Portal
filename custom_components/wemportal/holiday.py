@@ -100,6 +100,17 @@ def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
             f"{entity_id} has no reading yet, so there is nothing to write "
             "against. Wait for the next update."
         )
+    # The entity_id above says how Home Assistant files the entity; the row
+    # says what the portal currently calls the parameter, and the daily
+    # re-discovery can change that underneath a loaded entity. The entities'
+    # own write path asks the same question - without it here, the service
+    # could still send an epoch to a parameter that has become a switch.
+    if row.platform != "date":
+        raise HomeAssistantError(
+            f"{entity_id} is filed as a date, but the portal now describes "
+            f"that parameter as a {row.platform}. Reload the integration to "
+            "pick up the change; nothing was written."
+        )
     return DateTarget(entity_id, entry, data, device_id, data_key, row)
 
 

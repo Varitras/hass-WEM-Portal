@@ -211,39 +211,39 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
 
-        try:
-            entity_data = self.coordinator.data[self._device_id][self._data_key]
-            value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
-
-            # Metadata BEFORE the value. Rediscovery replaces the parameter
-            # descriptions once a day and the mapper delivers fresh bounds
-            # with every cycle - published only at construction, a value the
-            # device newly accepts was refused by Home Assistant's own range
-            # check before this integration was ever asked.
-            if entity_data.min_value is not None:
-                self._attr_native_min_value = entity_data.min_value
-            if entity_data.max_value is not None:
-                self._attr_native_max_value = entity_data.max_value
-            if entity_data.step is not None:
-                self._attr_native_step = entity_data.step
-
-            self._attr_native_value = self._validated_native_value(value)
-
-            # set unit if it references a valid non-trivial unit of measurement
-            if unit not in (None, ""):
-                self._attr_native_unit_of_measurement = unit
-
-            _LOGGER.debug(
-                'Update number: %s: "%s" [%s]',
-                self._attr_name,
-                self._attr_native_value,
-                self._attr_native_unit_of_measurement,
-            )
-
-        except KeyError:
+        row = self._coordinator_row()
+        if row is None:
             self._attr_native_value = None
             _LOGGER.warning("Can't find %s", self._attr_unique_id)
+            self.async_write_ha_state()
+            return
 
+        value, unit = fix_value_and_unit(row.value, row.unit)
+
+        # Metadata BEFORE the value. Rediscovery replaces the parameter
+        # descriptions once a day and the mapper delivers fresh bounds with
+        # every cycle - published only at construction, a value the device
+        # newly accepts was refused by Home Assistant's own range check
+        # before this integration was ever asked.
+        if row.min_value is not None:
+            self._attr_native_min_value = row.min_value
+        if row.max_value is not None:
+            self._attr_native_max_value = row.max_value
+        if row.step is not None:
+            self._attr_native_step = row.step
+
+        self._attr_native_value = self._validated_native_value(value)
+
+        # set unit if it references a valid non-trivial unit of measurement
+        if unit not in (None, ""):
+            self._attr_native_unit_of_measurement = unit
+
+        _LOGGER.debug(
+            'Update number: %s: "%s" [%s]',
+            self._attr_name,
+            self._attr_native_value,
+            self._attr_native_unit_of_measurement,
+        )
         self.async_write_ha_state()
 
     @property

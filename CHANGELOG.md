@@ -4,6 +4,20 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A reclassified parameter is no longer shown by the entity it left
+  behind.** The daily re-discovery can decide that a parameter the portal
+  used to describe as a date is a switch, and both entities are loaded until
+  the next reload. Only the write path asked whether the row still belonged
+  to the entity reading it - each of the five display paths reached into the
+  coordinator's data directly, so the entity that was left over published the
+  new platform's value as its own type: a holiday epoch as a switch that is
+  on, a 0/1 as a date in 1970. The holiday service resolved its rows the same
+  way and could send an epoch to a parameter that is no longer a date.
+
 ## [1.12.0b1] – 2026-08-12
 
 The theme is identity and freshness: which circuit, which module and which
