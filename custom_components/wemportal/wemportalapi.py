@@ -1939,10 +1939,23 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         would let it interleave with a running cycle on the same session.
 
         Same polarity as _fetch_parameter_values: None means it worked.
+
+        Including the refused login, which that method raises for the poll's
+        benefit. This is the one caller that is NOT a poll: it runs after a
+        write the portal has already accepted, and both callers decide what
+        to publish from the return value. Raised past them, the service call
+        reports a failure for a value that reached the heating system - and
+        their `_forget_written_value()` never runs, so the value recorded
+        before this read stands as verified, which is the single claim the
+        read-back exists to prevent. The failure is not lost: api_login gives
+        up `valid_login` before raising, so the next cycle logs in and the
+        coordinator counts it there.
         """
         self._acquire_api_lock("value re-read")
         try:
             return self._fetch_parameter_values(str(device_id))
+        except AuthError as exc:
+            return str(exc)
         finally:
             self._api_lock.release()
 

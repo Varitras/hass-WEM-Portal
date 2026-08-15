@@ -32,7 +32,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   once per cycle, every request after that one went out on the dead session
   and spent another refused login finding out. On an installation with
   several devices that is a login attempt per device and path, against a
-  portal that counts requests per IP.
+  portal that counts requests per IP. The read-back after a write is the one
+  place that still takes a refused login as an answer rather than an error:
+  the write went through, and reporting it as failed would invite a retry
+  while leaving the unconfirmed value on display as verified.
 - **A reclassified parameter is no longer shown by the entity it left
   behind.** The daily re-discovery can decide that a parameter the portal
   used to describe as a date is a switch, and both entities are loaded until

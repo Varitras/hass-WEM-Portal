@@ -795,6 +795,39 @@ def test_a_dead_batch_is_announced_once_rather_than_every_hour(caplog):
     )
 
 
+def test_a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise():
+    """The shield is right for the poll and wrong for this one caller.
+
+    `reread_device_values` is not a poll: it runs AFTER a write the portal has
+    already accepted, and its two callers - the date entity and the holiday
+    service - decide what to publish from its RETURN VALUE. Letting the
+    AuthError fly past them means the service call is reported as failed
+    although the value reached the heating system, and - worse - the
+    `_forget_written_value()` in their failure branch never runs, so the value
+    recorded before the read-back stands as verified. That is the one claim
+    the read-back exists to prevent.
+
+    The next poll still counts the failure: api_login clears `valid_login`
+    before it raises, so the cycle after this one logs in and reaches the
+    coordinator with it.
+    """
+    import types
+
+    api = _api()
+    # The lock is not what is under test, and releasing one this test never
+    # took raises on its own.
+    api._acquire_api_lock = lambda _what: None
+    api._api_lock = types.SimpleNamespace(release=lambda: None)
+    api._fetch_parameter_values = _refused_relogin
+
+    failure = api.reread_device_values("1234")
+
+    assert isinstance(failure, str) and failure, (
+        "the read-back raised instead of reporting, so the caller's failure "
+        "branch never ran"
+    )
+
+
 def test_a_disabled_scraper_device_does_not_keep_the_web_report_standing():
     """The report says the web half has stopped delivering. A device the user
     switched off is not delivering either, and that is not a fault.

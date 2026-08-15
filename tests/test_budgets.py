@@ -45,7 +45,7 @@ LINE_BUDGETS = {
     # filter the web-scrape report now asks about. The direction is
     # unchanged: the weekly-programme path is the next thing that could
     # leave, the way statistics did.
-    "wemportalapi.py": 2802,
+    "wemportalapi.py": 2815,
     "expert_writer.py": 2366,
     "config_flow.py": 926,
 }

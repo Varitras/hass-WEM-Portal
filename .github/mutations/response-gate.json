@@ -693,6 +693,13 @@
     "tests": "a_dead_batch_is_announced_once_rather_than_every_hour"
   },
   {
+    "label": "auth: a refused re-login raised past the post-write read-back",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        except AuthError as exc:\n            return str(exc)",
+    "new": "        except UnknownAuthError as exc:\n            return str(exc)",
+    "tests": "a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise"
+  },
+  {
     "label": "auth: a refused re-login reported as one device failing",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        except AuthError:\n            # Not this device failing: an account is one login.",
