@@ -207,19 +207,20 @@ def _remove_entities_from_a_previous_platform(
             registry.async_remove(stale)
 
 
-def _take_the_readings_not_migrated_yet(device_id, rows, migrated: set) -> dict:
-    """One device's readings this migration has not handled yet, marked as
-    handled on the way out.
+def _take_the_readings_not_migrated_yet(device_id, rows, migrated: dict) -> dict:
+    """One device's readings whose platform has changed since last time,
+    recorded as handled on the way out.
 
-    Keyed by the PLATFORM as well as the reading, and that is the whole
-    point of the third element: the re-discovery can reclassify a parameter
+    `migrated` holds the platform each reading was LAST handled as, not every
+    platform it has ever had. The re-discovery can reclassify a parameter
     while the entry stays loaded, and that is the moment the entity of the
-    platform it used to be has to come down. Keyed by the reading alone, a
-    row seen once would never be looked at again and the old entity would
-    sit in the registry unavailable beside the working one - the exact state
-    this migration exists to remove.
+    platform it used to be has to come down - so a row has to be looked at
+    again whenever its platform differs from the recorded one. A set of every
+    combination ever seen answered "already done" for a platform the row had
+    held before and come back to, which is exactly the round trip a value
+    that decides the platform produces (see mapper._writeable_entity).
 
-    Marking here rather than at the call site because the two belong
+    Recording here rather than at the call site because the two belong
     together: a reading handed out twice is migrated twice, and the registry
     lookup behind it costs up to eight queries.
     """
@@ -227,10 +228,10 @@ def _take_the_readings_not_migrated_yet(device_id, rows, migrated: set) -> dict:
     for key, row in rows.items():
         if not isinstance(row, Reading):
             continue
-        seen_as = (device_id, key, row.platform)
-        if seen_as in migrated:
+        handled_as = migrated.get((device_id, key))
+        if handled_as == row.platform:
             continue
-        migrated.add(seen_as)
+        migrated[(device_id, key)] = row.platform
         fresh[key] = row
     return fresh
 
@@ -239,7 +240,7 @@ async def migrate_unique_ids(
     hass: HomeAssistant, config_entry: ConfigEntry, coordinator
 ):
     registry = entity_registry.async_get(hass)
-    migrated: set[tuple[str, str, str]] = set()
+    migrated: dict[tuple[str, str], str] = {}
 
     @callback
     def _migrate_the_readings_not_seen_yet() -> bool:

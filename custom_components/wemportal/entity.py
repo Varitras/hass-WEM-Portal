@@ -28,16 +28,20 @@ from .utils import build_device_info, device_is_reachable, device_model
 API_FAILURES_TOLERATED: Final = 1
 
 
-def _readings_of(data, platform: str):
-    """Every (device id, key, reading) the coordinator holds for a platform.
+def _readings_of(data):
+    """Every (device id, key, reading) the coordinator holds.
 
     Not every entry is a reading - the raw ConnectionStatus travels in the
     same dict as a plain int - so the isinstance test is the filter, not a
     precaution.
+
+    Unfiltered by platform on purpose: the caller has to see the rows that
+    are NOT its own, because a row leaving this platform is what tells it to
+    forget the row.
     """
     for device_id, rows in (data or {}).items():
         for key, reading in rows.items():
-            if isinstance(reading, Reading) and reading.platform == platform:
+            if isinstance(reading, Reading):
                 yield device_id, key, reading
 
 
@@ -62,12 +66,27 @@ def async_add_readings_as_they_appear(
     take its history with it for what is often one bad cycle.
     """
     coordinator = config_entry.runtime_data.coordinator
+    # What this platform currently HAS an entity for - not what it has ever
+    # seen. The difference decides whether a control survives a flicker: a
+    # parameter's platform is read from the value of that cycle, so one odd
+    # answer moves a row to `sensor` and the next one moves it back, and the
+    # migration takes the abandoned registry entry down in between. An
+    # add-only memo then never rebuilt it, and the control stayed gone until
+    # the entry was reloaded.
     known: set[tuple[str, str]] = set()
 
     @callback
     def _add_the_ones_without_an_entity() -> None:
         fresh = []
-        for device_id, key, reading in _readings_of(coordinator.data, platform):
+        for device_id, key, reading in _readings_of(coordinator.data):
+            if reading.platform != platform:
+                # Deliberately NOT the same as "the row is gone". A row that
+                # is merely absent keeps its place, because its entity is
+                # still registered and showing unknown; only a row that has
+                # gone to another platform loses one, because that is the
+                # case where the entity is taken away.
+                known.discard((device_id, key))
+                continue
             if (device_id, key) in known:
                 continue
             known.add((device_id, key))

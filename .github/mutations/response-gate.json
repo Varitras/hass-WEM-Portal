@@ -751,9 +751,16 @@
   {
     "label": "migration: a reclassification after setup must be noticed",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "        seen_as = (device_id, key, row.platform)",
-    "new": "        seen_as = (device_id, key, \"\")",
-    "tests": "a_reclassification_after_setup_takes_the_old_entity_down"
+    "old": "        handled_as = migrated.get((device_id, key))\n        if handled_as == row.platform:",
+    "new": "        handled_as = migrated.get((device_id, key))\n        if handled_as is not None:",
+    "tests": "a_reclassification_after_setup_takes_the_old_entity_down or a_platform_that_flickers_gets_its_control_entity_back"
+  },
+  {
+    "label": "entities: a control must come back after its platform flickers",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "                known.discard((device_id, key))",
+    "new": "                pass",
+    "tests": "a_platform_that_flickers_gets_its_control_entity_back"
   },
   {
     "label": "scrape freshness: carrying the old value over again must be noticed",

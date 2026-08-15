@@ -52,7 +52,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   brand new entity - with none of the history its old one carries, and
   nothing about the result looking wrong. Reclassifying a parameter while
   Home Assistant runs now also takes down the entity of the platform it no
-  longer is, which used to need a restart.
+  longer is, and builds the one it has become - both ways round, which
+  matters because the platform is read from the value of that cycle: a
+  holiday date answered once without a number is a plain sensor for one
+  cycle and a date again on the next.
 
 ## [1.12.0b1] – 2026-08-12
 

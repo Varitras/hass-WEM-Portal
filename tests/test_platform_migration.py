@@ -274,6 +274,67 @@ async def test_a_reclassification_after_setup_takes_the_old_entity_down(monkeypa
     )
 
 
+def _entry_with_a_coordinator(coordinator):
+    """A config entry the entity builder accepts, sharing `coordinator`."""
+    import types
+
+    entry = FakeConfigEntry()
+    entry.runtime_data = types.SimpleNamespace(coordinator=coordinator)
+    return entry
+
+
+async def test_a_platform_that_flickers_gets_its_control_entity_back(monkeypatch):
+    """The two halves have to agree, and this is the case that proves they do.
+
+    A parameter's platform is decided from the value of THAT cycle, not from
+    the description: mapper._writeable_entity asks
+    `value.get("NumericValue") is not None`, and tests/fixtures/mapper_golden
+    pins both outcomes for one and the same descriptor - `numeric` gives a
+    date, `empty`/`energy_missing` give a plain sensor. So one cycle in which
+    the portal answers a holiday date with no NumericValue takes the row from
+    date to sensor and the next one takes it back.
+
+    Removal is per-cycle and platform-aware; building was neither, so that
+    one flicker deleted the date entity's REGISTRY entry - its name, its area,
+    its entity_id - and nothing ever built it again. The control was gone for
+    the life of the config entry, and both memos are add-only, so a restart
+    was the only way back.
+
+    Driven through the real migration AND the real entity builder in the order
+    setup wires them, because the defect lives between the two and neither
+    alone can show it.
+    """
+    import custom_components.wemportal as wemportal
+    from custom_components.wemportal.entity import async_add_readings_as_they_appear
+
+    registry = FakeRegistry(
+        {("date", _uid("Heat pump-U_Beginn")): "date.holiday_begin"}
+    )
+    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+
+    as_date = {DEVICE: {"Heat pump-U_Beginn": Reading(value=1.0, platform="date")}}
+    as_sensor = {DEVICE: {"Heat pump-U_Beginn": Reading(value=1.0, platform="sensor")}}
+    coordinator = FakeCoordinator(data=as_date)
+    entry = _entry_with_a_coordinator(coordinator)
+
+    # The migration listener is registered before the platforms are forwarded,
+    # so it runs first on every cycle - as it does in async_setup_entry.
+    await wemportal.migrate_unique_ids(None, entry, coordinator)
+    built = []
+    async_add_readings_as_they_appear(
+        entry, built.extend, "date", lambda *arguments: arguments
+    )
+    assert len(built) == 1, "the control case never built the date entity"
+
+    coordinator.publish(as_sensor)
+    coordinator.publish(as_date)
+
+    assert len(built) == 2, (
+        "the date entity was removed on the flicker and never rebuilt - the "
+        "control is gone until the entry is reloaded"
+    )
+
+
 def test_the_migration_leaves_another_accounts_entity_alone():
     """The old unique_id shapes predate the account prefix, so they are the
     same on every WEM account.
