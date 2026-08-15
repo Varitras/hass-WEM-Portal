@@ -8,6 +8,17 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A password changed while Home Assistant runs is noticed a cycle sooner,
+  and costs far fewer refused logins.** A session that expires mid-cycle is
+  renewed from inside whatever request noticed, so a rejected login surfaces
+  in the middle of a partial read - where a handler whose job is to keep the
+  poll going caught it. Two things followed: the re-authentication dialog
+  stayed a cycle further away, because the count it needs is reset by any
+  cycle that ends another way; and since the session flag is only checked
+  once per cycle, every request after that one went out on the dead session
+  and spent another refused login finding out. On an installation with
+  several devices that is a login attempt per device and path, against a
+  portal that counts requests per IP.
 - **A reclassified parameter is no longer shown by the entity it left
   behind.** The daily re-discovery can decide that a parameter the portal
   used to describe as a date is a switch, and both entities are loaded until

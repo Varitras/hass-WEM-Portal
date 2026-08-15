@@ -14,7 +14,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Final
 
-from .exceptions import ForbiddenError, WemPortalError
+from .exceptions import AuthError, ForbiddenError, WemPortalError
 from .models import Reading
 from .translations import translate
 from .utils import latest_statistics_entry
@@ -230,6 +230,19 @@ class WemPortalStatistics:
                 # the groups rather than the block. Let it out instead: the
                 # coordinator has a handler for exactly this.
                 raise
+            # skipcq: PYL-W0706 - shields the catch-all, not redundant
+            except AuthError:
+                # Same shape as the refusal above, and the same answer. The
+                # session can expire mid-cycle, and transport then logs in
+                # again from inside whatever request noticed - so a rejected
+                # login surfaces HERE, in the middle of a partial read,
+                # rather than at the top of the cycle. Kept, it costs twice:
+                # the coordinator's consecutive-failure count is reset
+                # instead of raised, so the reauth dialog stays one cycle
+                # further away, and every request after this one goes out on
+                # the dead session and spends another refused login finding
+                # that out.
+                raise
             except Exception as exc:  # noqa: BLE001
                 # Status 3001 = this statistics group isn't valid for
                 # the queried module. The refresh call lists such
@@ -293,6 +306,12 @@ class WemPortalStatistics:
             try:
                 self._fetch_device_statistics(device_id)
                 succeeded += 1
+            # skipcq: PYL-W0706 - shields the catch-all, not redundant
+            except AuthError:
+                # An account is one login, so a refused one says nothing
+                # about this device - and every device after it would spend
+                # another login attempt finding that out.
+                raise
             except Exception as exc:  # noqa: BLE001
                 # Broad: one device's statistics failing must not stop
                 # the others. `succeeded` stays unincremented, which is

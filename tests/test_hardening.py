@@ -1895,6 +1895,104 @@ def test_the_deadline_is_not_swallowed_by_the_statistics_fetch(monkeypatch):
     assert len(calls) == 2, "the group read was never reached, so no handler was"
 
 
+def _refused_relogin(*_args, **_kwargs):
+    """Stand-in for make_api_call when the 401 re-login is refused.
+
+    Where this comes from in practice: the session expires, transport logs in
+    again from inside whatever request noticed, and the portal rejects it -
+    a password changed while Home Assistant was running. The AuthError
+    therefore surfaces in the middle of a partial read, not at the top of the
+    cycle where the login normally happens.
+    """
+    raise exceptions.AuthError("Login failed: Invalid username or password.")
+
+
+def test_a_refused_relogin_is_not_reported_as_one_device_failing():
+    """The AuthError has to reach the coordinator, and these handlers are
+    what stands between.
+
+    Two things go wrong when one of them keeps it. The coordinator counts
+    consecutive auth failures before it offers the reauth dialog, and a cycle
+    that swallowed the error resets that count instead of raising it. Worse,
+    only `_ensure_api_session` looks at `valid_login`, and it has already run
+    for this cycle: every further request goes out on the dead session,
+    collects its own 401, and triggers another refused login. One per device
+    and path, against a portal that counts requests per IP.
+
+    Four handlers rather than one because they are four copies of the same
+    shape - the same reason the deadline needed four tests above.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"p1": {}}}}}
+    api.make_api_call = _refused_relogin
+
+    with pytest.raises(exceptions.AuthError):
+        api._fetch_parameter_values("1234")
+
+
+def test_a_refused_relogin_is_not_reported_as_an_unreadable_status():
+    api = _offline_api(0)
+    api.make_api_call = _refused_relogin
+
+    with pytest.raises(exceptions.AuthError):
+        api._fetch_device_status("1234")
+
+
+def test_a_refused_relogin_is_not_swallowed_by_the_schedule_fetch():
+    """Stubbed past the recognition and throttle steps for the same reason as
+    the deadline test above: what is under test is the handler around the
+    read."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"p1": {}}}}}
+    api._is_schedule_parameter = lambda *_args: True
+    api._schedule_is_due = lambda *_args: True
+    api._record_schedule_attempt = lambda *_args: None
+    api._read_one_schedule = _refused_relogin
+
+    with pytest.raises(exceptions.AuthError):
+        api._fetch_circuit_times("1234")
+
+
+def test_a_refused_relogin_is_not_swallowed_by_the_statistics_fetch(monkeypatch):
+    """The refresh call has to succeed first, or nothing reaches a handler -
+    the trap the deadline version of this test fell into."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _seconds: None)
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    calls = []
+
+    def refresh_then_refuse(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            return FakeResponse({"GroupTypeDescriptions": [{"GroupType": 1}]})
+        raise exceptions.AuthError("Login failed: Invalid username or password.")
+
+    api.make_api_call = refresh_then_refuse
+
+    with pytest.raises(exceptions.AuthError):
+        api._fetch_device_statistics("1234")
+
+    assert len(calls) == 2, "the group read was never reached, so no handler was"
+
+
+def test_a_refused_relogin_survives_the_statistics_device_loop(monkeypatch):
+    """The outer handler of the same path, which exists so one device's
+    statistics failing does not stop the others. An account is one login, so
+    a refused one is not that device's problem - and every device after it
+    would spend another login attempt finding that out."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _seconds: None)
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api._fetch_device_statistics = _refused_relogin
+
+    with pytest.raises(exceptions.AuthError):
+        api.get_statistics(None)
+
+
 class _BudgetedPage:
     """A main page that carries no form fields, so the scrape stops after
     one request - the timeout it was given is all this needs to see."""

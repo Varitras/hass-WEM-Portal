@@ -2237,6 +2237,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             if previous is not None and previous != "online":
                 _LOGGER.info("Device %s is back online.", device_id)
 
+        # skipcq: PYL-W0706 - shields the catch-all, not redundant
+        except AuthError:
+            # A rejected login is not an unreadable status; see AuthError.
+            raise
         except Exception as exc:  # noqa: BLE001
             # Broad: an unreadable status must not stop the poll. The
             # caller treats "unknown" as reachable, which is the safe
@@ -2515,6 +2519,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             self._stamp_answered_modules(device_id, values)
             self._forget_unanswered_module_values(device_id)
             return None
+        # skipcq: PYL-W0706 - shields the catch-all, not redundant
+        except AuthError:
+            # Not this device failing: an account is one login. Returned as
+            # a reason string here, it stops being an error anyone can
+            # count; see AuthError.
+            raise
         except Exception as exc:  # noqa: BLE001
             # Broad: one device's parameter read failing must not take
             # the other devices' readings with it. The reason goes to the
@@ -2729,6 +2739,34 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         # above - there the fetch is the only source there is.
         return True
 
+    def _read_and_record_one_schedule(self, device_id, module, parameter_id) -> None:
+        """Read one weekly programme, and stamp the attempt either way.
+
+        The stamp is what the throttle reads, so it has to be written whether
+        the read worked or not - otherwise a programme that fails every time
+        is retried every cycle, which is the traffic the throttle exists to
+        prevent.
+        """
+        attempted_at = time.monotonic()
+        fetched = False
+        try:
+            fetched = self._read_one_schedule(device_id, module, parameter_id)
+        # skipcq: PYL-W0706 - shields the catch-all, not redundant
+        except AuthError:
+            # A refused login is not one programme failing, and the rest
+            # would each spend another one; see AuthError.
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # Broad: one heating program failing is not a reason to skip the
+            # rest.
+            _LOGGER.warning(
+                "Failed to fetch CircuitTimes for %s: %s", parameter_id, exc
+            )
+        finally:
+            self._record_schedule_attempt(
+                device_id, module, parameter_id, attempted_at, fetched
+            )
+
     def _fetch_circuit_times(self, device_id: str) -> None:
         """Fetch the device's own view of every weekly programme it has,
         throttled per programme."""
@@ -2743,24 +2781,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                         continue
                     if not self._schedule_is_due(device_id, module, parameter_id):
                         continue
-                    attempted_at = time.monotonic()
-                    fetched = False
-                    try:
-                        fetched = self._read_one_schedule(
-                            device_id, module, parameter_id
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        # Broad: one heating program failing is not a reason
-                        # to skip the rest.
-                        _LOGGER.warning(
-                            "Failed to fetch CircuitTimes for %s: %s",
-                            parameter_id,
-                            exc,
-                        )
-                    finally:
-                        self._record_schedule_attempt(
-                            device_id, module, parameter_id, attempted_at, fetched
-                        )
+                    self._read_and_record_one_schedule(device_id, module, parameter_id)
+        # skipcq: PYL-W0706 - shields the catch-all, not redundant
+        except AuthError:
+            # The outer half of the same rule: extra detail may be lost, a
+            # login that is being refused may not be hidden. See AuthError.
+            raise
         except Exception as exc:  # noqa: BLE001
             # Broad: heating programs are extra detail on top of the
             # readings. Losing them must never cost the update itself.

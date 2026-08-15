@@ -672,6 +672,48 @@
     "tests": "disappearing_parameter_clears_the_day_instead_of_keeping_it"
   },
   {
+    "label": "auth: a refused re-login reported as one device failing",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        except AuthError:\n            # Not this device failing: an account is one login.",
+    "new": "        except UnknownAuthError:\n            # Not this device failing: an account is one login.",
+    "tests": "a_refused_relogin_is_not_reported_as_one_device_failing"
+  },
+  {
+    "label": "auth: a refused re-login reported as an unreadable status",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        except AuthError:\n            # A rejected login is not an unreadable status; see AuthError.",
+    "new": "        except UnknownAuthError:\n            # A rejected login is not an unreadable status; see AuthError.",
+    "tests": "a_refused_relogin_is_not_reported_as_an_unreadable_status"
+  },
+  {
+    "label": "auth: a refused re-login lost inside the schedule read",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        except AuthError:\n            # A refused login is not one programme failing",
+    "new": "        except UnknownAuthError:\n            # A refused login is not one programme failing",
+    "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
+  },
+  {
+    "label": "auth: a refused re-login lost around the schedule loop",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        except AuthError:\n            # The outer half of the same rule",
+    "new": "        except UnknownAuthError:\n            # The outer half of the same rule",
+    "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
+  },
+  {
+    "label": "auth: a refused re-login reported as one statistics read failing",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "            except AuthError:\n                # Same shape as the refusal above",
+    "new": "            except ForbiddenError:\n                # Same shape as the refusal above",
+    "tests": "a_refused_relogin_is_not_swallowed_by_the_statistics_fetch"
+  },
+  {
+    "label": "auth: a refused re-login lost in the statistics device loop",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "            except AuthError:\n                # An account is one login",
+    "new": "            except ForbiddenError:\n                # An account is one login",
+    "tests": "a_refused_relogin_survives_the_statistics_device_loop"
+  },
+  {
     "label": "holiday: writing an epoch to a row that is no longer a date",
     "path": "custom_components/wemportal/holiday.py",
     "old": "    if row.platform != \"date\":",
@@ -2844,8 +2886,8 @@
   {
     "label": "rate limits: a schedule attempt must be stamped on the guard's clock",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                    attempted_at = time.monotonic()",
-    "new": "                    attempted_at = time.time()",
+    "old": "        attempted_at = time.monotonic()",
+    "new": "        attempted_at = time.time()",
     "tests": "failed_schedule_is_tried_again_after_the_retry_interval or successful_schedule_keeps_the_full_interval"
   },
   {

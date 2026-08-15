@@ -40,7 +40,11 @@ LINE_LIMIT = 900
 # shrinking; expert_writer is a Telerik form protocol written out longhand,
 # where the length is mostly literal field ids.
 LINE_BUDGETS = {
-    "wemportalapi.py": 2767,
+    # Raised once, for the AuthError shields the poll path needs in front of
+    # its catch-alls and the schedule read they were pulled out into. The
+    # direction is unchanged: the weekly-programme path is the next thing
+    # that could leave, the way statistics did.
+    "wemportalapi.py": 2795,
     "expert_writer.py": 2366,
     "config_flow.py": 926,
 }
@@ -59,7 +63,9 @@ COMPLEXITY_BUDGETS = {
     "__init__.py::_async_register_expert_service": 22,
     "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,
-    "wemportalapi.py::WemPortalApi._fetch_parameter_values": 19,
+    # 19 before the AuthError shield in front of its catch-all, which is
+    # exactly the one branch.
+    "wemportalapi.py::WemPortalApi._fetch_parameter_values": 20,
     "__init__.py::async_setup_entry": 18,
     "config_flow.py::WemportalOptionsFlow._validate_configure_input": 17,
     "mapper.py::_writeable_entity": 17,
