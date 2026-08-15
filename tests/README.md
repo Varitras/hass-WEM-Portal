@@ -47,6 +47,7 @@ exists because the thing it prevents actually happened here.
 | `test_budgets.py` | No module or function grows past its frozen budget |
 | `test_durations.py` | No single test quietly starts taking minutes (budget in `durations.py`, enforced from `conftest.py`), and a run that stops making progress is cut off rather than only measured |
 | `test_guards.py` | No guard binds itself to one source file; every guard is listed; `check.sh` matches CI |
+| `test_mypy_scope.py` | Every module is in the mypy scope or carries a written reason why not yet |
 | `test_account_state.py` | No mutable module-level state outside the one sanctioned registry |
 | `test_platform_entities.py` | Every platform creates entities through the shared helper, so a reading that arrives on a later cycle still gets one - and reads its row through the shared lookup, so a reclassified row is not published by the entity it no longer belongs to |
 | `test_portal_boundaries.py` | Every `.json()` read and HTML parse sits in a declared boundary function |

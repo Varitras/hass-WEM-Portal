@@ -32,6 +32,7 @@ GUARD_FILES = {
     "test_account_state.py": "no mutable module-level state outside the registry",
     "test_budgets.py": "no module or function grows past its frozen budget",
     "test_durations.py": "no test quietly starts taking minutes",
+    "test_mypy_scope.py": "every module is type-checked or says why it is not yet",
     "test_platform_entities.py": "every platform adds entities as readings appear, and reads its rows through the shared lookup",
     "test_portal_boundaries.py": "every json read and html parse is a declared boundary",
     "test_portal_values.py": "comma normalisation lives in exactly one place",
