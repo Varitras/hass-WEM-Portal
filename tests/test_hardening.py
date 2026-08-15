@@ -754,6 +754,45 @@ def test_a_reading_sibling_does_not_keep_a_dead_slot_showing_its_value():
     )
 
 
+def test_a_verified_write_ends_the_failure_streak_it_disproves():
+    """A write the portal confirmed is the strongest possible read.
+
+    The poll's own recovery path clears the tally and takes the repair issue
+    down; the write route never touched it, so the report stayed up for a
+    parameter that had just demonstrably worked. Since the value is now
+    emptied from the per-id branch as well, the leftover streak has a second
+    effect: `fail_notified` still holds the id, so the NEXT run of failures
+    finds it already reported and never empties the freshly confirmed value.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _showing_expert_entity(controller)
+    cleared = []
+    controller._clear_read_failure_issue = cleared.append
+
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+    assert entity.native_value is None, "the control case never built a streak"
+
+    controller.apply_verified_write(entity.entityvalue, _read_state(30.0, [30.0]))
+
+    assert cleared == [entity.entityvalue], "the repair issue was left standing"
+    assert controller.fail_counts.get(entity.entityvalue, 0) == 0
+    assert entity.entityvalue not in controller.fail_notified
+    assert entity.native_value == 30.0
+
+    # And the streak can build again, which is what the cleared bookkeeping
+    # is for: the confirmed value must not become permanent.
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+
+    assert entity.native_value is None, (
+        "a value confirmed once was never emptied again, because the old "
+        "streak still counted as reported"
+    )
+
+
 def test_a_dead_batch_is_announced_once_rather_than_every_hour(caplog):
     """Past the threshold the count keeps rising, and the condition stays
     true.

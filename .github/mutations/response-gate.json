@@ -219,9 +219,16 @@
   {
     "label": "poll: a recovery must clear the streak",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "                self.fail_counts.pop(entityvalue, None)\n                self.fail_notified.discard(entityvalue)",
-    "new": "                pass",
+    "old": "        self.fail_counts.pop(entityvalue, None)\n        self.fail_notified.discard(entityvalue)",
+    "new": "        pass",
     "tests": "recovered_parameter_clears"
+  },
+  {
+    "label": "expert write: a confirmed write must end the streak it disproves",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "                self._note_the_id_answered(entity.entityvalue)",
+    "new": "                pass",
+    "tests": "a_verified_write_ends_the_failure_streak_it_disproves"
   },
   {
     "label": "poll: a failed cycle must still arm the next one",
@@ -2613,8 +2620,8 @@
   {
     "label": "poll fail: the recovery must take the issue down",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "                if was_reported:\n                    self._clear_read_failure_issue(entityvalue)",
-    "new": "                if was_reported:\n                    pass",
+    "old": "        if was_reported:\n            self._clear_read_failure_issue(entityvalue)",
+    "new": "        if was_reported:\n            pass",
     "tests": "recovered_parameter_clears_its_failure_streak"
   },
   {

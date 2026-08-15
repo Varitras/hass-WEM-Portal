@@ -21,7 +21,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   working one, where the sibling's answer reset the count every cycle. Both
   raised a repair issue and went on displaying a restored number behind it.
   The value now goes when its own id has missed three reads in a row, once
-  per run rather than every hour.
+  per run rather than every hour. A write the portal read back ends that run
+  the same way a successful poll does - it is the stronger answer of the two,
+  and until now the repair issue stayed up for a parameter that had just
+  demonstrably worked.
 - **A password changed while Home Assistant runs is noticed a cycle sooner,
   and costs far fewer refused logins.** A session that expires mid-cycle is
   renewed from inside whatever request noticed, so a rejected login surfaces

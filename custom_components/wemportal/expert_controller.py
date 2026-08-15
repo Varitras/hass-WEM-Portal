@@ -412,14 +412,31 @@ class ExpertController:
                     # once per streak rather than every cycle.
                     entity.forget_value()
             elif state is not None:
-                # Read BEFORE the discard below forgets it: only a streak
-                # that was actually reported has an issue to take down.
-                was_reported = entityvalue in self.fail_notified
-                self.fail_counts.pop(entityvalue, None)
-                self.fail_notified.discard(entityvalue)
-                if was_reported:
-                    self._clear_read_failure_issue(entityvalue)
+                self._note_the_id_answered(entityvalue)
             entity.apply_read_state(state)
+
+    def _note_the_id_answered(self, entityvalue: str) -> None:
+        """Everything a confirmed answer for one id undoes.
+
+        Shared by the poll and by a verified write, because a write the
+        portal read back is the strongest answer there is - stronger than a
+        poll, which only asks. The write route used to update the entity and
+        nothing else, so the repair issue stayed up for a parameter that had
+        just demonstrably worked, and the id stayed in `fail_notified` - which
+        is what decides whether the NEXT run of failures may empty the value.
+        A parameter written once would then have kept its number for good.
+
+        The batch tally goes too: it counts cycles that produced no answer at
+        all, and this is one.
+        """
+        # Read BEFORE the discard below forgets it: only a streak that was
+        # actually reported has an issue to take down.
+        was_reported = entityvalue in self.fail_notified
+        self.fail_counts.pop(entityvalue, None)
+        self.fail_notified.discard(entityvalue)
+        self._batch_failures = 0
+        if was_reported:
+            self._clear_read_failure_issue(entityvalue)
 
     def apply_verified_write(self, entityvalue: str, state) -> None:
         """Show what a write read back on the entity holding that id.
@@ -443,6 +460,9 @@ class ExpertController:
         wanted = canonical_entityvalue(entityvalue)
         for entity in self.entities:
             if canonical_entityvalue(entity.entityvalue) == wanted:
+                # Under the entity's own spelling, because that is the one
+                # the tally and the issue id were built from.
+                self._note_the_id_answered(entity.entityvalue)
                 entity.apply_read_state(state)
 
     def _report_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
