@@ -17,6 +17,17 @@ versioning follows [Semantic Versioning](https://semver.org/).
   new platform's value as its own type: a holiday epoch as a switch that is
   on, a 0/1 as a date in 1970. The holiday service resolved its rows the same
   way and could send an epoch to a parameter that is no longer a date.
+- **A reading that arrives after setup keeps its recorded history.** The
+  migration from the old unique_id formats ran once, during setup - and the
+  readings it has to reach are precisely the ones that are not there yet: a
+  device unreachable at that moment, the parameter re-discovery that waits
+  for the second cycle on purpose, the hourly statistics that appear minutes
+  later. The half that builds the entities was given a listener for those,
+  the half that migrates them was not, so a reading that showed up late got a
+  brand new entity - with none of the history its old one carries, and
+  nothing about the result looking wrong. Reclassifying a parameter while
+  Home Assistant runs now also takes down the entity of the platform it no
+  longer is, which used to need a restart.
 
 ## [1.12.0b1] – 2026-08-12
 

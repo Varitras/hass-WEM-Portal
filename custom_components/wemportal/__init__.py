@@ -15,7 +15,7 @@ import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import device_registry, entity_registry, issue_registry
 from homeassistant.helpers.service import async_register_admin_service
@@ -207,31 +207,83 @@ def _remove_entities_from_a_previous_platform(
             registry.async_remove(stale)
 
 
+def _take_the_readings_not_migrated_yet(device_id, rows, migrated: set) -> dict:
+    """One device's readings this migration has not handled yet, marked as
+    handled on the way out.
+
+    Keyed by the PLATFORM as well as the reading, and that is the whole
+    point of the third element: the re-discovery can reclassify a parameter
+    while the entry stays loaded, and that is the moment the entity of the
+    platform it used to be has to come down. Keyed by the reading alone, a
+    row seen once would never be looked at again and the old entity would
+    sit in the registry unavailable beside the working one - the exact state
+    this migration exists to remove.
+
+    Marking here rather than at the call site because the two belong
+    together: a reading handed out twice is migrated twice, and the registry
+    lookup behind it costs up to eight queries.
+    """
+    fresh = {}
+    for key, row in rows.items():
+        if not isinstance(row, Reading):
+            continue
+        seen_as = (device_id, key, row.platform)
+        if seen_as in migrated:
+            continue
+        migrated.add(seen_as)
+        fresh[key] = row
+    return fresh
+
+
 async def migrate_unique_ids(
     hass: HomeAssistant, config_entry: ConfigEntry, coordinator
 ):
     registry = entity_registry.async_get(hass)
-    # Nothing to migrate yet if the first refresh came back empty (e.g. no
-    # devices found, or every device failed this cycle) - guard against
-    # this instead of crashing with an IndexError on an empty keys() list,
-    # which would otherwise abort the entire integration setup.
-    if not coordinator.data:
-        _LOGGER.debug("Skipping unique_id migration: coordinator has no data yet.")
-        return
-    # Migrate EVERY device, not just the first: with multiple devices the
-    # others' old unique_ids (and their history) were previously left behind.
-    change = False
-    for device_id in coordinator.data:
-        if _migrate_device_unique_ids(
-            registry, config_entry, device_id, coordinator.data[device_id]
-        ):
-            change = True
-        # After the id migration, not before: that step may still move an old
-        # entry onto the current unique_id, and removing it first would throw
-        # away the history it exists to preserve.
-        _remove_entities_from_a_previous_platform(
-            registry, config_entry, device_id, coordinator.data[device_id]
-        )
+    migrated: set[tuple[str, str, str]] = set()
+
+    @callback
+    def _migrate_the_readings_not_seen_yet() -> bool:
+        """Both migration steps, for whatever the coordinator holds now.
+
+        Bound to a listener rather than run once, because the readings this
+        has to reach are exactly the ones that are not there during setup: a
+        device unreachable at that moment is skipped by get_parameters, the
+        parameter re-discovery waits for the second cycle on purpose, and the
+        hourly statistics arrive minutes later. The entity-building half was
+        given a listener for those; this half was not, so a legacy reading
+        that showed up late got a new entity under the current unique_id -
+        with none of the history the old one carries, and nothing about the
+        result looking wrong.
+
+        Only what is new: every cycle delivers the same rows, and each one
+        costs up to eight registry lookups.
+        """
+        change = False
+        # Migrate EVERY device, not just the first: with multiple devices the
+        # others' old unique_ids (and their history) were previously left
+        # behind.
+        for device_id, rows in (coordinator.data or {}).items():
+            fresh = _take_the_readings_not_migrated_yet(device_id, rows, migrated)
+            if not fresh:
+                continue
+            if _migrate_device_unique_ids(registry, config_entry, device_id, fresh):
+                change = True
+            # After the id migration, not before: that step may still move an
+            # old entry onto the current unique_id, and removing it first
+            # would throw away the history it exists to preserve.
+            _remove_entities_from_a_previous_platform(
+                registry, config_entry, device_id, fresh
+            )
+        return change
+
+    change = _migrate_the_readings_not_seen_yet()
+    # Registered here rather than after the platforms are forwarded, so this
+    # runs BEFORE the listener that builds the entities: an entity added
+    # first would be registered under the current unique_id, and the old
+    # entry the migration exists to rename would be the one left over.
+    config_entry.async_on_unload(
+        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)
+    )
 
     if change:
         # A debounced refresh is enough to update the migrated entities.

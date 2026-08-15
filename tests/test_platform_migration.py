@@ -25,6 +25,9 @@ DEVICE = "1234"
 class FakeConfigEntry:
     entry_id = ENTRY_ID
 
+    def async_on_unload(self, remove) -> None:
+        """Home Assistant keeps these; nothing here unloads."""
+
 
 class FakeRegistry:
     """Just enough registry: a lookup by (platform, unique_id) and a remove."""
@@ -163,6 +166,112 @@ def test_a_value_without_a_platform_counts_as_a_sensor():
     _run(registry, {"Heat pump-Outside": Reading(friendly_name="Outside")})
 
     assert registry.removed == []
+
+
+class FakeCoordinator:
+    """Enough of the coordinator to hand out an update and be asked for one."""
+
+    def __init__(self, data):
+        self.data = data
+        self.listeners: list = []
+        self.refreshes = 0
+
+    def async_add_listener(self, update):
+        self.listeners.append(update)
+        return lambda: self.listeners.remove(update)
+
+    async def async_request_refresh(self):
+        self.refreshes += 1
+
+    def publish(self, data):
+        """A later cycle, as the coordinator delivers one."""
+        self.data = data
+        for update in list(self.listeners):
+            update()
+
+
+async def test_a_reading_that_appears_later_is_migrated_too(monkeypatch):
+    """Migration ran once, during setup - and the readings it has to reach
+    are precisely the ones that are not there yet.
+
+    A device unreachable at that moment is skipped by get_parameters, the
+    parameter re-discovery deliberately waits for the second cycle, and the
+    hourly statistics appear minutes later. The listener that builds entities
+    for those was added and fixed exactly that half; this one never ran again,
+    so a legacy entity that showed up late got a brand new entity - under the
+    current unique_id, with none of the history the old one carries. Nothing
+    looks wrong afterwards: there IS an entity, it just starts at zero.
+    """
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry({("sensor", "Outside"): "sensor.old_outside"})
+    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    coordinator = FakeCoordinator(data={})
+
+    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    coordinator.publish(
+        {
+            DEVICE: {
+                "Outside": Reading(value=1.0, platform="sensor", parameter_id="Outside")
+            }
+        }
+    )
+
+    assert registry.renamed == [("sensor.old_outside", _uid("Outside"))], (
+        "a reading that arrived after setup kept none of its entity's history"
+    )
+
+
+async def test_a_reading_already_migrated_is_not_walked_again(monkeypatch):
+    """Every cycle delivers the same rows, and the registry lookup costs eight
+    queries per reading. Only what is new is worth asking about."""
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry({("sensor", "Outside"): "sensor.old_outside"})
+    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    rows = {
+        DEVICE: {
+            "Outside": Reading(value=1.0, platform="sensor", parameter_id="Outside")
+        }
+    }
+    coordinator = FakeCoordinator(data=rows)
+
+    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    coordinator.publish(rows)
+    coordinator.publish(rows)
+
+    assert len(registry.renamed) == 1, (
+        f"the same reading was migrated {len(registry.renamed)} times"
+    )
+
+
+async def test_a_reclassification_after_setup_takes_the_old_entity_down(monkeypatch):
+    """The reclassification the re-discovery performs does not wait for a
+    restart, and the record of what was already migrated must not hide it.
+
+    Keyed by reading alone, a row seen once is never looked at again - so the
+    entity of the platform it USED to be stays in the registry, unavailable,
+    beside the working one. That is the state this whole file exists to
+    remove; it just had a way back in through the door the listener opened.
+    """
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry(
+        {("switch", _uid("Heat pump-U_Beginn")): "switch.holiday_begin"}
+    )
+    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    coordinator = FakeCoordinator(
+        data={DEVICE: {"Heat pump-U_Beginn": Reading(platform="switch")}}
+    )
+
+    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    assert registry.removed == [], "the entity that was still correct was removed"
+
+    coordinator.publish({DEVICE: {"Heat pump-U_Beginn": Reading(platform="date")}})
+
+    assert registry.removed == ["switch.holiday_begin"], (
+        "the entity of the platform the parameter no longer is stayed behind"
+    )
 
 
 def test_the_migration_leaves_another_accounts_entity_alone():

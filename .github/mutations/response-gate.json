@@ -679,6 +679,20 @@
     "tests": "a_row_the_portal_no_longer_calls_a_date_is_refused"
   },
   {
+    "label": "migration: a reading that arrives later must be migrated too",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )",
+    "new": "    pass",
+    "tests": "a_reading_that_appears_later_is_migrated_too"
+  },
+  {
+    "label": "migration: a reclassification after setup must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        seen_as = (device_id, key, row.platform)",
+    "new": "        seen_as = (device_id, key, \"\")",
+    "tests": "a_reclassification_after_setup_takes_the_old_entity_down"
+  },
+  {
     "label": "scrape freshness: carrying the old value over again must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            self.data[str(device_id)][key] = new_val\n",
