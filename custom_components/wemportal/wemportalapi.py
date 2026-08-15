@@ -721,6 +721,21 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             self.scraper_device_id = SCRAPER_FALLBACK_DEVICE_ID
         return self.scraper_device_id
 
+    @staticmethod
+    def _device_is_enabled(device_id, enabled_devices) -> bool:
+        """Whether the caller's filter admits this device.
+
+        The two meanings the coordinator builds, spelled out once: `None` is
+        "no filter, poll everything" - a fresh install before any device is
+        known - and an explicit empty list is "every known device is
+        disabled". Compared as strings because the portal's ids arrive as
+        both, and the filter is built from the keys of a different dict than
+        the one being walked here.
+        """
+        if enabled_devices is None:
+            return True
+        return str(device_id) in {str(enabled) for enabled in enabled_devices}
+
     def _scraper_enabled(self, enabled_devices) -> bool:
         """Whether the web scraper's pseudo-device is in the caller's filter.
 
@@ -817,7 +832,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 f"connection for the next one instead of holding it."
             )
 
-    def _discover_parameters_if_due(self):
+    def _discover_parameters_if_due(self, enabled_devices=None):
         """Read the per-module parameter definitions, if any are due.
 
         Two different reasons to run it, with different urgency.
@@ -832,25 +847,23 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         Home Assistant then complains about. Nothing is lost by waiting one
         interval for something that is a day old already.
         """
-        missing = any(
-            "parameters" not in module
-            for modules in self.modules.values()
+        due = [
+            module
+            for device_id, modules in self.modules.items()
+            if self._device_is_enabled(device_id, enabled_devices)
             for module in modules.values()
-        )
-        stale = any(
-            self._parameters_are_stale(module)
-            for modules in self.modules.values()
-            for module in modules.values()
-        )
+        ]
+        missing = any("parameters" not in module for module in due)
+        stale = any(self._parameters_are_stale(module) for module in due)
         if not (missing or (stale and self._first_cycle_done)):
             return
         _LOGGER.info(
             "Reading parameter definitions from the portal (%s).",
             "some are missing" if missing else "the cached ones are due",
         )
-        self.get_parameters()
+        self.get_parameters(enabled_devices)
 
-    def _ensure_api_session(self):
+    def _ensure_api_session(self, enabled_devices=None):
         """Everything the API paths need before they can read anything."""
         if not self.valid_login:
             self.api_login()
@@ -865,7 +878,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         # Only run the slow, rate-limited per-module discovery if something
         # actually needs it. With a valid persisted cache this is skipped
         # entirely after a restart, which is what makes startup fast again.
-        self._discover_parameters_if_due()
+        self._discover_parameters_if_due(enabled_devices)
 
     def _scrape_is_due(self, enabled_devices) -> bool:
         """Whether `both` mode should scrape this cycle.
@@ -947,7 +960,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         self.check_cooldown()
         try:
             if self.mode != "web":
-                self._ensure_api_session()
+                self._ensure_api_session(enabled_devices)
 
             if self.mode == "web":
                 self._collect_web(enabled_devices)
@@ -1895,13 +1908,22 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 raise
             self._store_module_description(device_id, key, values, response)
 
-    def get_parameters(self):
+    def get_parameters(self, enabled_devices=None):
+        """Read the per-module parameter definitions of every enabled device.
+
+        The filter matters more here than anywhere else this integration
+        honours it: discovery sleeps five seconds and spends at least one
+        request PER MODULE, and the portal counts requests per IP. A device
+        the user switched off used to pay all of that, daily.
+        """
         if self.modules is None:
             _LOGGER.debug(
                 "get_parameters() called with no module data available yet; skipping."
             )
             return
         for device_id, device_data in self.data.items():
+            if not self._device_is_enabled(device_id, enabled_devices):
+                continue
             if device_data.get("ConnectionStatus") != 0:
                 continue
             _LOGGER.debug("Fetching api parameters data for device %s", device_id)

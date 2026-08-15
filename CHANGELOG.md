@@ -4,6 +4,18 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A device you switched off is no longer asked for its parameter
+  definitions.** The filter reached the readings and stopped there: the
+  discovery in between was called without it. That discovery is the most
+  expensive thing this integration does - five seconds of waiting and at
+  least one request per module - and a disabled device paid all of it, on
+  every install whose cache is incomplete and once a day after that. The
+  portal counts requests per IP.
+
 ## [1.12.0b2] – 2026-08-15
 
 Eight repairs found by auditing 1.12.0b1 and then auditing the repairs. Three

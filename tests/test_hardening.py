@@ -6387,6 +6387,69 @@ def _discovery_api(answers, fetched_at=None):
     return api, calls
 
 
+def _two_device_discovery_api():
+    """Two devices, neither with parameter definitions - so discovery is due
+    for both and the filter is the only thing that can tell them apart."""
+    api = _api()
+    api.data = {
+        "1234": {"ConnectionStatus": 0},
+        "9999": {"ConnectionStatus": 0},
+    }
+    api.modules = {
+        device_id: {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump"}}
+        for device_id in ("1234", "9999")
+    }
+    asked = []
+    api._discover_device_parameters = asked.append
+    return api, asked
+
+
+def test_a_disabled_device_is_not_asked_for_its_parameter_definitions():
+    """The filter reached the readings and stopped there.
+
+    The coordinator works out which devices the user has switched off and
+    hands the list to fetch_data, which passes it to the value reads - but
+    the discovery in between was called without it. Discovery is the most
+    expensive thing this integration does: five seconds of sleep and at least
+    one request PER MODULE, and the portal counts requests per IP. A disabled
+    device paid all of it, once a day and on every install whose cache is
+    incomplete.
+    """
+    api, asked = _two_device_discovery_api()
+
+    api.get_parameters(["1234"])
+
+    assert asked == ["1234"], f"a disabled device was asked anyway: {asked}"
+
+
+def test_no_filter_still_means_every_device():
+    """`None` is "no filter" and an empty list is "every device is off" - the
+    two must not collapse into each other here either."""
+    api, asked = _two_device_discovery_api()
+    api.get_parameters(None)
+    assert sorted(asked) == ["1234", "9999"]
+
+    api, asked = _two_device_discovery_api()
+    api.get_parameters([])
+    assert asked == []
+
+
+def test_discovery_is_not_even_started_for_disabled_devices_alone():
+    """The step before: if the only device with definitions missing is one
+    the user switched off, nothing is due at all.
+
+    Without this the cycle announces "Reading parameter definitions from the
+    portal" and then reads none - which reads like a portal problem in the
+    log rather than a filter doing its job.
+    """
+    api, asked = _two_device_discovery_api()
+    api._first_cycle_done = True
+
+    api._discover_parameters_if_due([])
+
+    assert asked == []
+
+
 def test_a_fresh_parameter_list_is_not_re_read():
     api, calls = _discovery_api([], fetched_at=time.time())
 
@@ -6632,7 +6695,9 @@ def _cycle_api(fetched_at):
     api._devices_fetched_this_session = True
     api.valid_login = True
     read = []
-    api.get_parameters = lambda: read.append("read")
+    # Takes the device filter like the real one: what is under test here is
+    # WHETHER the discovery runs, not which devices it covers.
+    api.get_parameters = lambda *_args: read.append("read")
     api.get_data = lambda *_args, **_kwargs: None
     return api, read
 
