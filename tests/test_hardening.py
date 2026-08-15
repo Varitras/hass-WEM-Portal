@@ -609,7 +609,7 @@ def test_none_enabled_devices_still_polls_everything():
     assert calls, "an unfiltered poll must still happen"
 
 
-def _expert_entity(api, entry_id="e1"):
+def _expert_entity(api, entry_id="e1", entityvalue="A" * 36):
     """An expert number entity wired to `api` through its entry's runtime data."""
     import types
 
@@ -618,8 +618,26 @@ def _expert_entity(api, entry_id="e1"):
 
     entry = types.SimpleNamespace(entry_id=entry_id, data={}, options={})
     entry.runtime_data = WemPortalData(api=api, coordinator=None)
-    entity = expert_writer.WemPortalExpertNumber(entry, "expert_parameter_3", "A" * 36)
+    entity = expert_writer.WemPortalExpertNumber(
+        entry, "expert_parameter_3", entityvalue
+    )
     entity.hass = types.SimpleNamespace(data={})
+    return entity
+
+
+def _showing_expert_entity(controller, entityvalue="A" * 36, value=21.0):
+    """One configured expert entity of `controller`, already showing a value.
+
+    The repair report is stubbed out rather than satisfied: it needs a real
+    hass and an entry, and what these tests ask about is the value on the
+    dashboard, not the issue beside it.
+    """
+    entity = _expert_entity(_api(), entityvalue=entityvalue)
+    entity.async_write_ha_state = lambda: None
+    entity.apply_read_state(_read_state(value, [20.0, value, 22.0]))
+    controller.entities = list(controller.entities) + [entity]
+    controller._report_read_failure = lambda *_args: None
+    assert entity.native_value == value, "the control case never read anything"
     return entity
 
 
@@ -677,6 +695,103 @@ def test_a_run_of_failed_batches_stops_showing_the_expert_value():
 
     assert entity.native_value is None, (
         "the entity still shows a value no read has confirmed"
+    )
+
+
+def test_the_only_configured_expert_slot_stops_showing_a_value_it_cannot_read():
+    """The batch rule needs two ids to mean anything - and the ageing rule
+    was bolted onto it.
+
+    With one configured parameter "all of them failed" is true every time it
+    fails, so the batch rule deliberately does not apply. The per-id tally
+    does apply and raises a repair after three misses, but nothing ever
+    emptied the value: a single-slot installation kept its restored number on
+    the dashboard for as long as the portal refused to read it, which is
+    exactly the installation with the least other information about it.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _showing_expert_entity(controller)
+
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+
+    assert entity.native_value is None, (
+        "the only configured parameter kept a value no read has confirmed"
+    )
+
+
+def test_a_reading_sibling_does_not_keep_a_dead_slot_showing_its_value():
+    """Freshness was decided by the batch counter, and any answer at all
+    cleared it.
+
+    Two configured parameters where one answers every cycle and the other
+    never does is not an outage - it is one broken id, which the per-id tally
+    reports. But the value only ever went away through the batch counter, and
+    the working sibling reset that on every cycle, so the broken one showed
+    its last number indefinitely with a repair issue open beside it.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    answering = _showing_expert_entity(controller, entityvalue="A" * 36, value=21.0)
+    silent = _showing_expert_entity(controller, entityvalue="B" * 36, value=55.0)
+
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read(
+            {
+                answering.entityvalue: _read_state(21.0, [20.0, 21.0, 22.0]),
+                silent.entityvalue: None,
+            }
+        )
+
+    assert silent.native_value is None, (
+        "a slot that never reads kept its value because a sibling did"
+    )
+    assert answering.native_value == 21.0, (
+        "the working parameter lost its value along with the broken one"
+    )
+
+
+def test_a_dead_batch_is_announced_once_rather_than_every_hour(caplog):
+    """Past the threshold the count keeps rising, and the condition stays
+    true.
+
+    Announcing again each cycle repeats a warning about a state the user has
+    already been told about and rewrites the state of every configured
+    entity for a value that is already gone - the same shape as the unknown
+    sensor value that used to be logged on every single cycle.
+    """
+    import logging
+
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _showing_expert_entity(controller)
+    dead_batch = {entity.entityvalue: None, "C" * 36: None}
+
+    def _announcements():
+        return [
+            record for record in caplog.records if "no longer current" in record.message
+        ]
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(expert_controller.BATCH_FAILURES_BEFORE_VALUES_ARE_STALE):
+            controller.apply_read(dead_batch)
+        # The control case. Without it a rule that never announces at all
+        # would satisfy the assertion below - and caplog collects from the
+        # start of the test, so the clearing has to happen here rather than
+        # be assumed.
+        assert len(_announcements()) == 1, "the values were never announced as stale"
+        caplog.clear()
+
+        controller.apply_read(dead_batch)
+        controller.apply_read(dead_batch)
+
+    assert _announcements() == [], (
+        f"the values were announced as stale again {len(_announcements())} "
+        "more times after the user had been told"
     )
 
 

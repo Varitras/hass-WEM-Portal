@@ -8,6 +8,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An expert parameter that keeps failing to read stops showing its last
+  number.** Only a run of cycles in which *nothing at all* answered emptied
+  those values, which left out the two cases where it matters most: a single
+  configured parameter, where "all of them failed" is true every time one
+  does and the rule therefore does not apply, and one broken id beside a
+  working one, where the sibling's answer reset the count every cycle. Both
+  raised a repair issue and went on displaying a restored number behind it.
+  The value now goes when its own id has missed three reads in a row, once
+  per run rather than every hour.
 - **A password changed while Home Assistant runs is noticed a cycle sooner,
   and costs far fewer refused logins.** A session that expires mid-cycle is
   renewed from inside whatever request noticed, so a rejected login surfaces

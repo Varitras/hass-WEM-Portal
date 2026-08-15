@@ -53,7 +53,10 @@ EXPERT_POLL_FAIL_ISSUE = "expert_poll_fail"
 # configured.
 JITTER_FRACTION = 0.20
 
-# Consecutive misses before the user is told to check the configured id.
+# Consecutive misses before the user is told to check the configured id -
+# and before the value that id last read stops being shown. One threshold
+# for both because they answer the same question: after this many failures
+# in a row, nothing about that parameter is worth asserting any more.
 FAILURES_BEFORE_NOTIFYING = 3
 
 # Consecutive cycles in which the read produced nothing at all before the
@@ -319,7 +322,13 @@ class ExpertController:
         and after this many cycles that is no longer a claim worth making.
         """
         self._batch_failures += 1
-        if self._batch_failures < BATCH_FAILURES_BEFORE_VALUES_ARE_STALE:
+        # Exactly ON the threshold, not from then on. The count keeps rising
+        # while the outage lasts and the condition stays true, so `>=` said
+        # the same thing again every hour and rewrote the state of every
+        # configured entity for a value that was already gone. Safe here in
+        # a way it was not for the scraped rows: nothing refills an expert
+        # value except a read that works, and that resets the count.
+        if self._batch_failures != BATCH_FAILURES_BEFORE_VALUES_ARE_STALE:
             return
         _LOGGER.warning(
             "Expert auto-poll: %d cycles in a row produced no answer. The "
@@ -392,6 +401,16 @@ class ExpertController:
                     self._report_read_failure(
                         entity, self.fail_counts[entityvalue], unreadable_id
                     )
+                    # The value goes with the report, and for the same
+                    # reason. Ageing used to hang off the batch counter
+                    # alone, which needs at least two configured ids to
+                    # apply and is cleared by any sibling that answers - so
+                    # the two installations where a value most needed
+                    # emptying were the two it never reached: a single
+                    # configured parameter, and one broken id beside a
+                    # working one. Guarded by fail_notified, so this happens
+                    # once per streak rather than every cycle.
+                    entity.forget_value()
             elif state is not None:
                 # Read BEFORE the discard below forgets it: only a streak
                 # that was actually reported has an issue to take down.

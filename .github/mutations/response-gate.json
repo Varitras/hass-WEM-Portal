@@ -672,6 +672,20 @@
     "tests": "disappearing_parameter_clears_the_day_instead_of_keeping_it"
   },
   {
+    "label": "expert poll: a single dead slot leaving its value on display",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "                    entity.forget_value()",
+    "new": "                    pass",
+    "tests": "the_only_configured_expert_slot_stops_showing_a_value_it_cannot_read or a_reading_sibling_does_not_keep_a_dead_slot_showing_its_value"
+  },
+  {
+    "label": "expert poll: repeating the stale announcement every cycle",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        if self._batch_failures != BATCH_FAILURES_BEFORE_VALUES_ARE_STALE:",
+    "new": "        if self._batch_failures < BATCH_FAILURES_BEFORE_VALUES_ARE_STALE:",
+    "tests": "a_dead_batch_is_announced_once_rather_than_every_hour"
+  },
+  {
     "label": "auth: a refused re-login reported as one device failing",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        except AuthError:\n            # Not this device failing: an account is one login.",
