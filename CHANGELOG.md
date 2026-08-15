@@ -4,7 +4,15 @@ All notable changes to this fork are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.12.0b2] – 2026-08-15
+
+Eight repairs found by auditing 1.12.0b1 and then auditing the repairs. Three
+of them are faults this pre-release introduced rather than inherited, and one
+of those could take a control away for good: the platform of a parameter is
+read from the value of each cycle, so a single odd answer moved a row to a
+plain sensor - and the entity of the platform it had been was deleted with
+nothing left to build it again. If you are running 1.12.0b1, this is the
+reason to update.
 
 ### Fixed
 
