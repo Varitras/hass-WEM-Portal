@@ -43,7 +43,6 @@ from .transport import WemPortalTransport
 from .exceptions import (
     ApiBusyError,
     AuthError,
-    ExpiredSessionError,
     ForbiddenError,
     ParameterChangeError,
     PollDeadlineExceeded,
@@ -1215,14 +1214,6 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             raise AuthError(
                 "AuthenticationError: Could not login with provided username and password. "
                 "Check if your config contains the right credentials"
-            ) from exc
-
-        except ExpiredSessionError as exc:
-            # Handle errors due to expired session (fresh start next cycle).
-            self.webscraping_cookie = None
-            self._reset_scraper()
-            raise ExpiredSessionError(
-                "ExpiredSessionError: Session expired. Next update will try to login again."
             ) from exc
 
         except Exception as exc:
