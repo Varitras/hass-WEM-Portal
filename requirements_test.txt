@@ -23,4 +23,10 @@
 # minimum - is caught by the "minimum" job of the test workflow, which pins
 # the plugin release matching hacs.json.
 pytest-homeassistant-custom-component
+# Declared rather than inherited. It arrives through the plugin above today,
+# and tests/test_e2e.py already relies on it (`pytest.mark.timeout(120)`) - so
+# the day that transitive dependency changes, a marker nothing registers
+# becomes a silent no-op and the timeout is simply gone. The matrix jobs do
+# not install this file at all, which is why they name it themselves.
+pytest-timeout
 -r requirements_runtime.txt

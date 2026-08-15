@@ -43,6 +43,59 @@ def test_a_test_over_the_budget_is_reported():
     ]
 
 
+def test_a_hung_test_is_cut_off_rather_than_only_measured():
+    """The half this file cannot do.
+
+    Everything else here measures a test AFTER it has returned - which a
+    deadlock, or a patch that landed on a name nothing reads, never does. The
+    run then goes to whatever limit CI enforces with no idea which test is
+    stuck. pytest-timeout kills it and prints the stack, so the two are
+    complements, not alternatives: this one says WHICH test hangs, the budget
+    says which one got slow.
+
+    Checked as configuration rather than by hanging a test on purpose - the
+    cheapest way to prove that would take the kill limit to demonstrate it.
+    """
+    import configparser
+
+    config = configparser.ConfigParser()
+    config.read(REPO / "pytest.ini", encoding="utf-8")
+    limit = config.getint("pytest", "timeout", fallback=None)
+
+    assert limit is not None, "nothing cuts off a run that stops making progress"
+    assert config.get("pytest", "timeout_method", fallback=None) == "thread", (
+        "the default signal method does not fire for a wait inside a worker "
+        "thread, which is where the waits this exists for live"
+    )
+    from .durations import SLOW_TEST_SECONDS
+
+    assert limit > SLOW_TEST_SECONDS, (
+        f"the kill limit ({limit}s) is at or below the reporting budget "
+        f"({SLOW_TEST_SECONDS}s), so an ordinary slow test is failed rather "
+        "than reported"
+    )
+
+
+def test_the_timeout_plugin_is_declared_where_each_run_installs_from():
+    """A transitive dependency that everything relies on and nothing names.
+
+    tests/test_e2e.py already carries `pytest.mark.timeout(120)`. If the
+    plugin stops arriving through pytest-homeassistant-custom-component, that
+    marker becomes a no-op that raises no error - the exact shape of failure
+    this repository keeps getting caught by.
+    """
+    assert "pytest-timeout" in (REPO / "requirements_test.txt").read_text(
+        encoding="utf-8"
+    )
+    workflow = (REPO / ".github" / "workflows" / "test.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "pytest-timeout" in workflow, (
+        "the matrix jobs do not install requirements_test.txt, so they have "
+        "to name the plugin themselves"
+    )
+
+
 def test_the_budget_is_wired_into_the_session_and_not_just_written_down():
     """A green run with an impossible budget must come back red.
 
