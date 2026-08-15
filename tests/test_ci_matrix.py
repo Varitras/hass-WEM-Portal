@@ -165,3 +165,51 @@ def test_the_minimum_job_names_the_version_hacs_declares():
         f'called "{_minimum_job_label()}". Raise the job name AND its pinned '
         "plugin release together - the pin is what decides what is tested."
     )
+
+
+CHECK_MIN_HA = REPO / ".github" / "scripts" / "check_min_ha.py"
+
+
+def _load_min_ha_check():
+    """The version comparison, without importing Home Assistant.
+
+    The script reads homeassistant.const at import time, which is the point
+    of it - here only the comparison is wanted, so it is loaded as source.
+    """
+    namespace: dict = {}
+    source = CHECK_MIN_HA.read_text(encoding="utf-8")
+    body = source[source.index("def feature_release") : source.index("def main")]
+    exec(compile(body, str(CHECK_MIN_HA), "exec"), namespace)  # noqa: S102
+    return namespace["feature_release"]
+
+
+def test_a_patch_release_still_counts_as_the_declared_minimum():
+    """hacs.json names a patch; the plugin pins whichever patch of that
+    feature release it ships. Comparing them literally would fail the job for
+    being right."""
+    feature_release = _load_min_ha_check()
+
+    assert feature_release("2024.12.3") == feature_release("2024.12.0")
+    assert feature_release("2025.1.0") != feature_release("2024.12.0")
+
+
+def test_the_minimum_job_actually_checks_the_version_it_installed():
+    """The half the offline test above cannot do.
+
+    Only PyPI knows which Home Assistant a given plugin release ships, so
+    nothing here can tell whether the pin still matches hacs.json - the job
+    would go on announcing a minimum it no longer tests. Inside the job the
+    version is installed and can just be read, which is what this wires up.
+    """
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "check_min_ha.py" in workflow, (
+        "the minimum job does not verify the Home Assistant it installed, so "
+        "a wrong pin runs green under the right label"
+    )
+    assert re.search(r"if:\s*matrix\.check-declared-minimum", workflow), (
+        "the check has to be bound to the minimum job, not run for every one"
+    )
+    assert "check-declared-minimum: true" in workflow, (
+        "no matrix entry opts into the check, so it never runs"
+    )

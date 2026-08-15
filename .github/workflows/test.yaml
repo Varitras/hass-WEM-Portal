@@ -80,6 +80,9 @@ jobs:
         include:
           - name: "minimum HA 2024.12"
             python-version: "3.12"
+            # This job is the one with a version it MUST be running; the
+            # current job has no fixed expectation to check against.
+            check-declared-minimum: true
             # Pinned to the plugin release that ships exactly the Home
             # Assistant version hacs.json declares as the minimum. Raise both
             # together, never one alone.
@@ -108,6 +111,9 @@ jobs:
           pip install "$PHCC_SPEC" pytest-timeout -r requirements_runtime.txt
       - name: Show the Home Assistant version under test
         run: python -c "from homeassistant.const import __version__; print(__version__)"
+      - name: The minimum job must run the version hacs.json declares
+        if: matrix.check-declared-minimum
+        run: python .github/scripts/check_min_ha.py
       # -m "" cancels the `-m "not e2e"` default from pytest.ini, so the slow
       # end-to-end tests against a real Home Assistant run here. Without it
       # the marker would become a silent coverage gap.
