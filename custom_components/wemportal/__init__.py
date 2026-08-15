@@ -47,6 +47,7 @@ from .models import (
     WemPortalConfigEntry,
     WemPortalData,
     forget_account_state,
+    is_still_serving,
 )
 from .utils import clamped_scan_interval, close_api_sessions, deserialize_modules
 from .wemportalapi import WemPortalApi
@@ -529,7 +530,7 @@ def _async_release_expert_service(hass: HomeAssistant, config_entry) -> None:
     still_enabled = any(
         other.entry_id != config_entry.entry_id
         and other.options.get(CONF_EXPERT_WRITE, False)
-        and getattr(other, "runtime_data", None) is not None
+        and is_still_serving(other)
         for other in hass.config_entries.async_entries(DOMAIN)
     )
     if not still_enabled:

@@ -700,6 +700,13 @@
     "tests": "a_dead_batch_is_announced_once_rather_than_every_hour"
   },
   {
+    "label": "lifecycle: two entries unloading at once keeping the shared services",
+    "path": "custom_components/wemportal/models.py",
+    "old": "    return data is not None and data.why_not_current(config_entry) is None",
+    "new": "    return data is not None",
+    "tests": "two_entries_unloading_at_once_still_release_the_shared_services"
+  },
+  {
     "label": "auth: a refused re-login raised past the post-write read-back",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        except AuthError as exc:\n            return str(exc)",

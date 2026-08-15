@@ -38,7 +38,7 @@ from .const import (
     DOMAIN,
 )
 from .date import date_to_epoch
-from .models import Reading, raise_if_not_writable
+from .models import Reading, is_still_serving, raise_if_not_writable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -238,8 +238,7 @@ def async_release_holiday_service(hass: HomeAssistant, config_entry) -> None:
     if not hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY):
         return
     still_loaded = any(
-        other.entry_id != config_entry.entry_id
-        and getattr(other, "runtime_data", None) is not None
+        other.entry_id != config_entry.entry_id and is_still_serving(other)
         for other in hass.config_entries.async_entries(DOMAIN)
     )
     if not still_loaded:

@@ -867,6 +867,74 @@ def test_a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise():
     )
 
 
+def _two_entries_being_unloaded(both_unloading=True, expert=True):
+    """Two loaded accounts, both in the middle of their teardown.
+
+    `runtime_data` is still readable at that point - Home Assistant only
+    drops it after async_unload_entry RETURNS - which is the whole reason
+    this case exists.
+    """
+    import types
+
+    from custom_components.wemportal.const import CONF_EXPERT_WRITE
+    from custom_components.wemportal.models import WemPortalData
+
+    entries = []
+    for entry_id in ("e1", "e2"):
+        entry = types.SimpleNamespace(
+            entry_id=entry_id, options={CONF_EXPERT_WRITE: expert}
+        )
+        entry.runtime_data = WemPortalData(api=None, coordinator=None)
+        if both_unloading or entry_id == "e1":
+            entry.runtime_data.begin_unload()
+        entries.append(entry)
+
+    removed = []
+    hass = types.SimpleNamespace(
+        services=types.SimpleNamespace(
+            has_service=lambda _domain, _service: True,
+            async_remove=lambda domain, service: removed.append(service),
+        ),
+        config_entries=types.SimpleNamespace(async_entries=lambda _domain: entries),
+    )
+    return hass, entries, removed
+
+
+def test_two_entries_unloading_at_once_still_release_the_shared_services():
+    """Each one saw the other's runtime_data and concluded somebody was still
+    there, so neither took the domain service down.
+
+    Left registered with nothing loaded behind it, the service resolves no
+    target and every call fails - and `unloading` is set at the very top of
+    the teardown precisely so this window can be seen.
+    """
+    import custom_components.wemportal as integration
+    from custom_components.wemportal import holiday
+
+    hass, entries, removed = _two_entries_being_unloaded()
+
+    integration._async_release_expert_service(hass, entries[0])
+    holiday.async_release_holiday_service(hass, entries[0])
+
+    assert len(removed) == 2, (
+        f"a shared service was left registered with nothing to serve it: {removed}"
+    )
+
+
+def test_an_entry_that_stays_loaded_keeps_the_shared_services():
+    """The control case: releasing on the first unload would take the service
+    away from an account that is still running."""
+    import custom_components.wemportal as integration
+    from custom_components.wemportal import holiday
+
+    hass, entries, removed = _two_entries_being_unloaded(both_unloading=False)
+
+    integration._async_release_expert_service(hass, entries[0])
+    holiday.async_release_holiday_service(hass, entries[0])
+
+    assert removed == [], "the loaded account lost the services it still needs"
+
+
 def test_a_disabled_scraper_device_does_not_keep_the_web_report_standing():
     """The report says the web half has stopped delivering. A device the user
     switched off is not delivering either, and that is not a fault.

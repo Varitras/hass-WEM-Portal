@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Two accounts unloading at the same time no longer leave a service
+  behind.** Each asked whether any other entry was still loaded, and Home
+  Assistant only drops that mark once an unload has finished - so each saw
+  the other as running and neither released the shared expert and holiday
+  services. They stayed registered with nothing able to answer them.
 - **A module the portal stops listing has its readings aged out too.** The
   pass that does the ageing walked the current module list and read a stamp
   kept inside each module's entry - so a module that dropped out of that list

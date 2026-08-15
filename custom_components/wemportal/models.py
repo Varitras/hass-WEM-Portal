@@ -263,6 +263,21 @@ class WemPortalData:
 WemPortalConfigEntry = ConfigEntry[WemPortalData]
 
 
+def is_still_serving(config_entry: ConfigEntry) -> bool:
+    """Whether this entry can still answer a call for a domain-wide service.
+
+    `runtime_data is not None` is not that question, and the difference only
+    shows when two entries come down together: Home Assistant drops
+    runtime_data AFTER async_unload_entry returns, so each of the two saw the
+    other as loaded, neither released the shared service, and it stayed
+    registered with nothing behind it. `unloading` is set at the very top of
+    the teardown, which is exactly the window that has to be visible - and
+    why_not_current already knows it, along with the reload case.
+    """
+    data: WemPortalData | None = getattr(config_entry, "runtime_data", None)
+    return data is not None and data.why_not_current(config_entry) is None
+
+
 def raise_if_not_writable(config_entry: ConfigEntry, what: str) -> WemPortalData:
     """The gate every write from an entity passes through.
 
