@@ -15,6 +15,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   least one request per module - and a disabled device paid all of it, on
   every install whose cache is incomplete and once a day after that. The
   portal counts requests per IP.
+- **Removing a duplicate entry of an account no longer wipes the other
+  one's memory.** Old installations may still carry two entries of the same
+  account, and both share what that account remembers - the rate-limit
+  backoff, the authentication-failure count, the warnings meant to appear
+  once. Removing either of them dropped all of it, so the entry that stayed
+  went back to polling as though the portal had never refused anything.
 
 ## [1.12.0b2] – 2026-08-15
 

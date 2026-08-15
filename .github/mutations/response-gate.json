@@ -2592,15 +2592,22 @@
   {
     "label": "remove: the account memory must go with its account",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "    forget_account_state(config_entry.data.get(CONF_USERNAME))",
+    "old": "    forget_account_state(username)",
     "new": "    pass",
-    "tests": "removing_the_entry_deletes_its_stores"
+    "tests": "removing_the_entry_deletes_its_stores or removing_the_last_entry_of_an_account_does_drop_its_state"
+  },
+  {
+    "label": "remove: a duplicate entry's removal taking the shared account memory",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    if shared_with:\n        _LOGGER.debug(",
+    "new": "    if False:\n        _LOGGER.debug(",
+    "tests": "removing_one_of_two_entries_of_an_account_keeps_the_shared_state"
   },
   {
     "label": "remove: a never-loaded entry's issues must still be cleared",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "    _async_delete_entry_issues(hass, config_entry.entry_id)\n    forget_account_state(config_entry.data.get(CONF_USERNAME))",
-    "new": "    forget_account_state(config_entry.data.get(CONF_USERNAME))",
+    "old": "    _async_delete_entry_issues(hass, config_entry.entry_id)\n    _forget_account_state_if_last_entry(hass, config_entry)",
+    "new": "    _forget_account_state_if_last_entry(hass, config_entry)",
     "tests": "removing_a_never_loaded_entry_still_clears_its_issues"
   },
   {

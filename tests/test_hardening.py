@@ -935,6 +935,64 @@ def test_an_entry_that_stays_loaded_keeps_the_shared_services():
     assert removed == [], "the loaded account lost the services it still needs"
 
 
+def test_removing_one_of_two_entries_of_an_account_keeps_the_shared_state():
+    """The state is addressed by the ACCOUNT, and two entries can share one.
+
+    Legacy installations with a duplicate entry of the same account are
+    deliberately still allowed to load - so removing one of them dropped the
+    403 backoff, the auth-failure streak and the once-per-account warning
+    markers out from under the entry that stays. The next reload then starts
+    polling as though the portal had never refused anything.
+    """
+    import types
+
+    from custom_components.wemportal import models
+
+    models.reset_account_states_for_tests()
+    same_account = "Max@example.org"
+    kept = types.SimpleNamespace(entry_id="e2", data={"username": same_account.lower()})
+    models.account_state(same_account).auth_failures = 2
+
+    hass = types.SimpleNamespace(
+        config_entries=types.SimpleNamespace(async_entries=lambda _domain: [kept])
+    )
+    integration_forget_if_last(
+        hass, types.SimpleNamespace(entry_id="e1", data={"username": same_account})
+    )
+
+    assert models.account_state(same_account).auth_failures == 2, (
+        "the remaining entry lost the account memory the removed one shared"
+    )
+
+
+def test_removing_the_last_entry_of_an_account_does_drop_its_state():
+    """The other half - without it, never forgetting would pass just as well
+    and the state would outlive the account for the life of the process."""
+    import types
+
+    from custom_components.wemportal import models
+
+    models.reset_account_states_for_tests()
+    models.account_state("solo@example.org").auth_failures = 2
+    hass = types.SimpleNamespace(
+        config_entries=types.SimpleNamespace(async_entries=lambda _domain: [])
+    )
+
+    integration_forget_if_last(
+        hass,
+        types.SimpleNamespace(entry_id="e1", data={"username": "solo@example.org"}),
+    )
+
+    assert models.account_state("solo@example.org").auth_failures == 0
+
+
+def integration_forget_if_last(hass, config_entry):
+    """The production call under test, by its real name."""
+    import custom_components.wemportal as integration
+
+    integration._forget_account_state_if_last_entry(hass, config_entry)
+
+
 def test_a_disabled_scraper_device_does_not_keep_the_web_report_standing():
     """The report says the web half has stopped delivering. A device the user
     switched off is not delivering either, and that is not a fault.

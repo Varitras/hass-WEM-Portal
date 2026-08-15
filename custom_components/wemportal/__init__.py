@@ -44,6 +44,7 @@ from .coordinator import (
 from .exceptions import ExpertOperationAborted
 from .models import (
     Reading,
+    account_unique_id,
     WemPortalConfigEntry,
     WemPortalData,
     forget_account_state,
@@ -870,4 +871,29 @@ async def async_remove_entry(
     await get_modules_store(hass, config_entry.entry_id).async_remove()
     await get_scraper_device_store(hass, config_entry.entry_id).async_remove()
     _async_delete_entry_issues(hass, config_entry.entry_id)
-    forget_account_state(config_entry.data.get(CONF_USERNAME))
+    _forget_account_state_if_last_entry(hass, config_entry)
+
+
+def _forget_account_state_if_last_entry(hass: HomeAssistant, config_entry) -> None:
+    """Drop the account memory only once no entry is left that shares it.
+
+    The two stores above belong to one entry and go with it. This one does
+    not: it is addressed by the normalised account, and a legacy duplicate
+    entry of the same account is still allowed to load. Removing one of those
+    used to take the 403 backoff, the auth-failure streak and the
+    once-per-account warning markers away from the entry that stays, which
+    then polled as though the portal had never refused anything.
+    """
+    username = config_entry.data.get(CONF_USERNAME)
+    account = account_unique_id(username)
+    shared_with = any(
+        other.entry_id != config_entry.entry_id
+        and account_unique_id(other.data.get(CONF_USERNAME)) == account
+        for other in hass.config_entries.async_entries(DOMAIN)
+    )
+    if shared_with:
+        _LOGGER.debug(
+            "Another entry still uses this account; keeping its remembered state."
+        )
+        return
+    forget_account_state(username)
