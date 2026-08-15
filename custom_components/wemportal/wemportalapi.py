@@ -584,7 +584,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             return False
         return row_name in (self._previous_scraper_keys or ())
 
-    def web_scrape_is_failing(self) -> bool:
+    def web_scrape_is_failing(self, enabled_devices=None) -> bool:
         """Whether the web half has stopped delivering, as a question about
         STATE - the same shape as is_rate_limited, and for the same reason.
 
@@ -596,8 +596,17 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         The threshold is the one that stops presenting the scraped values as
         current, so the report appears exactly when they cease to be
         trustworthy - and only where a scrape was expected at all.
+
+        "Expected at all" includes the device filter, and that one is not
+        symmetrical: the poll skips a disabled scraper device, so nothing is
+        attempted - and the count that raised the report can never come down
+        either, because only a scrape that WORKS resets it. Asked without the
+        filter, the report stood for as long as the user left the device off,
+        with no action available that would clear it.
         """
         if self.mode == "api":
+            return False
+        if not self._scraper_enabled(enabled_devices):
             return False
         return self.spider_retry_count >= SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
 

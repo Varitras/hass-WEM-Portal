@@ -672,6 +672,13 @@
     "tests": "disappearing_parameter_clears_the_day_instead_of_keeping_it"
   },
   {
+    "label": "web report: a scrape nobody is attempting reported as failing",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not self._scraper_enabled(enabled_devices):\n            return False\n        return self.spider_retry_count >= SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE",
+    "new": "        return self.spider_retry_count >= SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE",
+    "tests": "a_disabled_scraper_device_does_not_keep_the_web_report_standing"
+  },
+  {
     "label": "expert poll: a single dead slot leaving its value on display",
     "path": "custom_components/wemportal/expert_controller.py",
     "old": "                    entity.forget_value()",

@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Switching the scraper's device off clears its repair issue.** The poll
+  already skips a disabled device, so nothing was being attempted - but the
+  report asked only whether the last attempts had failed, and only a scrape
+  that works resets that count. The issue therefore stood for as long as the
+  device stayed off, with nothing the user could do about it.
 - **An expert parameter that keeps failing to read stops showing its last
   number.** Only a run of cycles in which *nothing at all* answered emptied
   those values, which left out the two cases where it matters most: a single
@@ -118,9 +123,10 @@ outside, which is why this is a pre-release.
   Freshness was tracked per device, so as long as module A kept answering,
   the readings of a module B missing from every answer were presented as
   current indefinitely - the only symptom was a number that never changed.
-  Each module now carries its own freshness; after the same 30-minute
-  tolerance the silent module's readings go unknown, with one warning naming
-  the module, while everything that answers is untouched.
+  Each module now carries its own freshness; after the same tolerance - half
+  an hour, or two API intervals where those are longer - the silent module's
+  readings go unknown, with one warning naming the module, while everything
+  that answers is untouched.
 - **A weekly programme whose refresh keeps failing shows the current raw
   plan, not last week's detail.** The schedule sensor prefers the fetched
   detail (`CircuitTimesDay`) over the raw value, and a failed refresh kept

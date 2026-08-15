@@ -276,7 +276,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         except TimeoutError as exc:
             self.num_failed += 1
             self._sync_rate_limit_issue()
-            self._sync_web_scrape_issue()
+            self._sync_web_scrape_issue(device_filter)
             self._reset_auth_failures()
             _LOGGER.warning(
                 "Fetching WEM Portal data timed out after %ds. Note the "
@@ -316,7 +316,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             return
         async_delete_issue(self.hass, DOMAIN, issue_id)
 
-    def _sync_web_scrape_issue(self) -> None:
+    def _sync_web_scrape_issue(self, device_filter) -> None:
         """Report a web half that has stopped delivering, withdraw it if not.
 
         Separate from the rate-limit report beside it: that one says the
@@ -324,10 +324,13 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         the api half is fine and the web half is not, which points at web
         access or at switching the mode - a different answer for the user.
 
+        Takes the same filter the poll used, because a scrape that is not
+        being attempted cannot be failing - see web_scrape_is_failing.
+
         Idempotent in both directions, like its sibling.
         """
         issue_id = f"{self.config_entry.entry_id}_{WEB_SCRAPE_ISSUE}"
-        if self.api.web_scrape_is_failing():
+        if self.api.web_scrape_is_failing(device_filter):
             async_create_issue(
                 self.hass,
                 DOMAIN,
@@ -476,4 +479,4 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             finally:
                 self.last_try = monotonic()
                 self._sync_rate_limit_issue()
-                self._sync_web_scrape_issue()
+                self._sync_web_scrape_issue(device_filter)

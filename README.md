@@ -181,7 +181,9 @@ poll with an error now and then and the next one succeeds; at a 30-minute
 interval, going unavailable for that would cost half an hour of every graph.
 The second consecutive failure does show as unavailable. A device that stops
 answering while others still respond is handled separately: its readings are
-shown as unknown after half an hour, so nothing old is presented as current.
+shown as unknown after half an hour, or after two API intervals if those are
+longer, so nothing old is presented as current and a single missed cycle is
+still survivable at any interval.
 
 **What this means for your settings:** the intervals below are floors, not
 recommendations. Halving an interval doubles the requests. If you run several

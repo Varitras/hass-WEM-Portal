@@ -795,6 +795,30 @@ def test_a_dead_batch_is_announced_once_rather_than_every_hour(caplog):
     )
 
 
+def test_a_disabled_scraper_device_does_not_keep_the_web_report_standing():
+    """The report says the web half has stopped delivering. A device the user
+    switched off is not delivering either, and that is not a fault.
+
+    The poll already honours the filter and skips the scrape entirely - so
+    the failure count that raised the report can never come down again,
+    because only a scrape that WORKS resets it. The repair stood for as long
+    as the device stayed off, with no action available that would clear it.
+    """
+    api = _api(config={"mode": "both"}, scraper_device_id="1234")
+    api.spider_retry_count = wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
+
+    assert api.web_scrape_is_failing(None) is True, (
+        "the control case never reported a failing scrape at all"
+    )
+    assert api.web_scrape_is_failing(["1234"]) is True, (
+        "an enabled scraper device stopped reporting its own failure"
+    )
+    assert api.web_scrape_is_failing([]) is False
+    assert api.web_scrape_is_failing(["9999"]) is False, (
+        "the report stood for a device that is not being polled"
+    )
+
+
 def _read_state(current, options):
     from custom_components.wemportal import expert_writer
 

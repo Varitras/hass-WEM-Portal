@@ -40,11 +40,12 @@ LINE_LIMIT = 900
 # shrinking; expert_writer is a Telerik form protocol written out longhand,
 # where the length is mostly literal field ids.
 LINE_BUDGETS = {
-    # Raised once, for the AuthError shields the poll path needs in front of
-    # its catch-alls and the schedule read they were pulled out into. The
-    # direction is unchanged: the weekly-programme path is the next thing
-    # that could leave, the way statistics did.
-    "wemportalapi.py": 2795,
+    # Raised for the AuthError shields the poll path needs in front of its
+    # catch-alls, the schedule read they were pulled out into, and the device
+    # filter the web-scrape report now asks about. The direction is
+    # unchanged: the weekly-programme path is the next thing that could
+    # leave, the way statistics did.
+    "wemportalapi.py": 2802,
     "expert_writer.py": 2366,
     "config_flow.py": 926,
 }
