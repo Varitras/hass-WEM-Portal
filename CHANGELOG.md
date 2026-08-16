@@ -8,6 +8,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The unavailable entity left behind by a parameter that changed platform
+  is now removed even when it predates the current id format.** A parameter
+  reclassified between releases - holiday begin and end went from switches to
+  dates - leaves its old registry entry sitting unavailable beside the working
+  one. That was already cleaned up, but only for entities registered under the
+  current unique_id; one registered by an older release was searched for only
+  on the platform the parameter is today, so it was found by neither half and
+  stayed for good.
 - **A login page served without its form is no longer reported as a wrong
   password on the expert path either.** The password has not been sent at
   that point - the missing fields are what it would be sent with. The web

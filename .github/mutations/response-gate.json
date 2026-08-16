@@ -527,8 +527,8 @@
   {
     "label": "migration: deleting the entity that is currently correct must be noticed",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "            if platform == current:\n                continue",
-    "new": "            if False:\n                continue",
+    "old": "        if platform == current:\n            continue",
+    "new": "        if False:\n            continue",
     "tests": "entity_that_is_currently_correct or unchanged_platform_removes_nothing"
   },
   {
@@ -539,11 +539,25 @@
     "tests": "entity_left_behind_by_a_platform_change"
   },
   {
-    "label": "migration: reaching outside our own unique_ids must be noticed",
+    "label": "migration: removing another account's entity must be noticed",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "            stale = registry.async_get_entity_id(platform, DOMAIN, entity_unique_id)",
-    "new": "            stale = registry.async_get_entity_id(platform, DOMAIN, unique_id)",
-    "tests": "only_our_own_unique_ids_are_touched"
+    "old": "            entry = registry.async_get(stale)\n            if entry is None or entry.config_entry_id != config_entry.entry_id:\n                continue",
+    "new": "            pass",
+    "tests": "legacy_id_is_only_followed_into_this_account"
+  },
+  {
+    "label": "migration: not following the old id shapes here must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            *_possible_old_unique_ids(config_entry, device_id, unique_id, values),\n",
+    "new": "",
+    "tests": "legacy_id_on_a_platform_the_parameter_no_longer_is"
+  },
+  {
+    "label": "migration: handing the same leftover out twice must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if stale is None or stale in found:",
+    "new": "            if stale is None:",
+    "tests": "one_leftover_under_several_old_shapes"
   },
   {
     "label": "cooldown: storing the global backoff per instance again must be noticed",

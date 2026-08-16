@@ -84,6 +84,67 @@ def test_the_entity_left_behind_by_a_platform_change_is_removed():
     assert registry.removed == ["switch.heat_pump_holiday_begin"]
 
 
+def test_a_legacy_id_on_a_platform_the_parameter_no_longer_is_goes_too():
+    """The leftover that neither half of the migration could see.
+
+    Both halves search under ONE id shape. The rename looks for the old shapes,
+    but only on the platform the parameter is today; the removal looks on every
+    other platform, but only under the current id. An entity registered by an
+    old release AND reclassified since falls between them: registered as
+    `<device>-<key>` under switch, wanted as a date, found by neither.
+
+    Renaming it is not an option - a registry entry cannot change its domain,
+    so the switch entity can never become the date one and its history goes
+    with the reclassification either way. Removing it is the same trade the
+    current-id case already makes, and the alternative is an unavailable
+    entity sitting beside the working one for the life of the installation.
+    """
+    registry = FakeRegistry(
+        {
+            ("switch", f"{DEVICE}-Heat pump-U_Beginn"): "switch.holiday_begin",
+            ("date", _uid("Heat pump-U_Beginn")): "date.holiday_begin",
+        }
+    )
+
+    _run(registry, {"Heat pump-U_Beginn": Reading(platform="date")})
+
+    assert registry.removed == ["switch.holiday_begin"]
+
+
+def test_a_legacy_id_is_only_followed_into_this_account():
+    """The old shapes carry no account prefix, so they name the same entity on
+    every WEM account - and this half REMOVES what it finds."""
+    registry = FakeRegistry(
+        {("switch", f"{DEVICE}-Heat pump-U_Beginn"): "switch.other_accounts_begin"},
+        owners={"switch.other_accounts_begin": "entry-2"},
+    )
+
+    _run(registry, {"Heat pump-U_Beginn": Reading(platform="date")})
+
+    assert registry.removed == [], (
+        f"another WEM account's entity was removed: {registry.removed}"
+    )
+
+
+def test_one_leftover_under_several_old_shapes_is_removed_once():
+    """The shapes overlap - a parameter whose key IS its ParameterID answers
+    the same entity twice. Home Assistant's registry raises on the second
+    removal, so the pass has to hand out each entity once."""
+    registry = FakeRegistry(
+        {
+            ("switch", "U_Beginn"): "switch.holiday_begin",
+            ("switch", f"{DEVICE}-U_Beginn"): "switch.holiday_begin",
+        }
+    )
+
+    _run(
+        registry,
+        {"U_Beginn": Reading(platform="date", parameter_id="U_Beginn")},
+    )
+
+    assert registry.removed == ["switch.holiday_begin"]
+
+
 def test_the_entity_that_is_currently_correct_is_never_removed():
     registry = FakeRegistry(
         {
@@ -108,21 +169,17 @@ def test_an_unchanged_platform_removes_nothing():
     assert registry.removed == []
 
 
-def test_only_our_own_unique_ids_are_touched():
-    """The lookup must use the FULL unique_id, not the bare data key.
+def test_only_ids_this_parameter_could_have_had_are_asked_for():
+    """Nothing outside the shapes this integration has itself registered.
 
-    The bare key is not a hypothetical: releases before the current id format
-    registered entities under exactly that, which is why the migration next
-    door still looks for it. An entry found under it belongs to an entity we
-    are supposed to be preserving history for - removing it here would delete
-    the very thing the migration exists to keep.
-
-    Another config entry's copy of the same parameter is the same mistake one
-    step further out.
+    An id belonging to another integration or to another config entry names an
+    entity we know nothing about, and this pass removes what it finds - so the
+    shapes searched are the ones the id builder produces for THIS entry and
+    THIS parameter, never a registry-wide sweep for something that looks
+    similar.
     """
     registry = FakeRegistry(
         {
-            ("switch", "Heat pump-U_Beginn"): "switch.registered_under_the_bare_key",
             ("switch", "some-other-integrations-id"): "switch.someone_elses",
             (
                 "switch",

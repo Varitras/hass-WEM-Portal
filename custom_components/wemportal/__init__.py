@@ -171,6 +171,36 @@ def _adopt_entity_under_its_old_id(
     return False
 
 
+def _entities_of_this_entry_on_other_platforms(
+    registry, config_entry, current, unique_ids
+) -> list:
+    """This account's registry entries for one parameter, on every platform it
+    is not.
+
+    Each id is asked for once per platform, and each entity is handed out once
+    however many ids answered with it: the shapes overlap - a parameter whose
+    key IS its ParameterID produces the same one twice - and Home Assistant's
+    registry raises on a second removal.
+
+    The account check is what makes searching the old shapes safe here. They
+    predate the account prefix, so they name the same entity on every WEM
+    account, and unlike the rename next door this caller REMOVES what it finds.
+    """
+    found = []
+    for platform in PLATFORMS:
+        if platform == current:
+            continue
+        for unique_id in unique_ids:
+            stale = registry.async_get_entity_id(platform, DOMAIN, unique_id)
+            if stale is None or stale in found:
+                continue
+            entry = registry.async_get(stale)
+            if entry is None or entry.config_entry_id != config_entry.entry_id:
+                continue
+            found.append(stale)
+    return found
+
+
 def _remove_entities_from_a_previous_platform(
     registry, config_entry, device_id, data
 ) -> None:
@@ -182,27 +212,32 @@ def _remove_entities_from_a_previous_platform(
     not carry the platform, the old switch entry survives the change and sits
     in the registry unavailable, next to the working date entity.
 
-    Only entries under OUR unique_id and OUR own platforms are touched, and
-    only the ones the current data says belong to a different platform now.
+    The old id shapes are searched too, because the two halves of this
+    migration each see only one: the rename looks for the old shapes but only
+    on the platform the parameter is today, and this half looked on every other
+    platform but only under the current id. An entity registered by an old
+    release AND reclassified since fell between the two and stayed for good.
+    Renaming it was never the answer - a registry entry cannot change its
+    domain - so it goes on the same terms as the rest.
+
+    Only entries of THIS account, under OUR id shapes and OUR own platforms,
+    and only the ones the current data says belong to a different platform now.
     """
     for unique_id, values in data.items():
         if not isinstance(values, Reading):
             continue
         current = values.platform
-        entity_unique_id = get_wemportal_unique_id(
-            config_entry.entry_id, device_id, unique_id
-        )
-        for platform in PLATFORMS:
-            if platform == current:
-                continue
-            stale = registry.async_get_entity_id(platform, DOMAIN, entity_unique_id)
-            if stale is None:
-                continue
+        unique_ids = [
+            get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id),
+            *_possible_old_unique_ids(config_entry, device_id, unique_id, values),
+        ]
+        for stale in _entities_of_this_entry_on_other_platforms(
+            registry, config_entry, current, unique_ids
+        ):
             _LOGGER.info(
-                "%s is a %s now, not a %s - removing the entity it left behind.",
+                "%s is a %s now - removing the entity it left behind.",
                 stale,
                 current,
-                platform,
             )
             registry.async_remove(stale)
 
