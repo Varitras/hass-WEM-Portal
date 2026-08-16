@@ -3001,6 +3001,33 @@ def test_portal_units_are_normalised_to_home_assistant_spelling():
     assert unit_to_device_class(unit) == "pressure"
 
 
+def test_a_flow_rate_the_portal_spells_with_a_comma_is_still_a_number():
+    """The one unit read out of the VALUE rather than the unit field, and the
+    only one parsed with a bare float(): a scraped cell spells its decimals
+    with a comma, so "0,55m3/h" raised where every other reading in the
+    package goes through the shared parser. The raise leaves the platform
+    mid-update, so it costs more than the one reading.
+    """
+    from custom_components.wemportal.utils import fix_value_and_unit
+
+    assert fix_value_and_unit("0,55m3/h", "m3/h") == (0.55, "m³/h")
+
+
+def test_a_flow_rate_without_a_number_in_it_is_not_a_crash():
+    """The portal writes a placeholder where a sensor has nothing to say.
+
+    It comes back as the text it is, and whether a sensor may show that is
+    decided one layer up - `_validated_native_value` already refuses a
+    non-numeric state for a numeric sensor. What must not happen here is the
+    raise that took the whole platform update with it.
+    """
+    from custom_components.wemportal.utils import fix_value_and_unit
+
+    value, _unit = fix_value_and_unit("---m3/h", "m3/h")
+
+    assert value == "---m3/h", "a placeholder must survive as what it is"
+
+
 def test_a_unit_the_portal_spells_its_own_way_gets_both_halves():
     """A device class without a state class is a sensor Home Assistant shows
     and the Energy Dashboard refuses.

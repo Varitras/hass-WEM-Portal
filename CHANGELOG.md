@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A flow-rate reading written with a decimal comma no longer breaks the
+  update.** "m3/h" is the one unit read out of the value rather than the unit
+  field, and it was the only one parsed with a bare conversion instead of the
+  shared parser every other number goes through - so a scraped "0,55m3/h"
+  raised, out of a platform mid-update, costing more than the one reading.
 - **A lasting outage no longer leaves the last readings standing as
   current.** One failed cycle is tolerated on purpose - the portal answers
   one with "Unbekannter Fehler" now and then and the next one succeeds. But

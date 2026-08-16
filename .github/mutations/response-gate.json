@@ -1904,6 +1904,13 @@
     "tests": "a_cycle_that_ran_out_of_time_keeps_its_connection"
   },
   {
+    "label": "flow rate: parsed on its own instead of through the shared parser",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        flow_rate = parse_portal_number(value.replace(\"m3/h\", \"\"))",
+    "new": "        flow_rate = float(value.replace(\"m3/h\", \"\"))",
+    "tests": "a_flow_rate_the_portal_spells_with_a_comma_is_still_a_number"
+  },
+  {
     "label": "tolerance: the crossing is counted but never published",
     "path": "custom_components/wemportal/coordinator.py",
     "old": "        if self.num_failed == API_FAILURES_TOLERATED + 1:\n            self.async_update_listeners()",

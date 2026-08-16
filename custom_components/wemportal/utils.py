@@ -289,11 +289,17 @@ def fix_value_and_unit(value, unit):
         of its unit of measurement (e.g., a status text)
     """
 
-    # special case: volume flow rate
+    # special case: volume flow rate, the one unit that is read out of the
+    # value instead of the unit field. Through the shared parser like every
+    # other number here: a scraped cell spells its decimals with a comma, and
+    # a bare float() raised on it - out of a platform mid-update, so it cost
+    # more than the reading it could not parse. A value carrying the unit but
+    # no number (the portal's placeholder) falls through to the handling
+    # below, which keeps it as the text it is.
     if isinstance(value, str) and value.endswith("m3/h"):
-        return float(
-            value.replace("m3/h", "")
-        ), UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
+        flow_rate = parse_portal_number(value.replace("m3/h", ""))
+        if flow_rate is not None:
+            return flow_rate, UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
 
     # special case: no unit of measurement
     if unit is None:
