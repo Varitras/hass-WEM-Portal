@@ -6637,6 +6637,27 @@ def test_discovery_is_not_even_started_for_disabled_devices_alone():
     assert asked == []
 
 
+def test_the_filter_survives_the_handover_to_the_session_setup():
+    """The leg between the two tests above, and the one nothing watched.
+
+    The filter travels fetch_data -> _ensure_api_session -> discovery. Both
+    ends were covered and the handover was not: dropping the argument here
+    left every test green while a device the user switched off was asked for
+    its definitions again. Found by an audit of THIS repair, not of the code
+    it repaired - the test sat one step behind the line that can regress.
+    """
+    api, asked = _two_device_discovery_api()
+    # Past the parts _ensure_api_session does before the discovery, so the
+    # handover is what this exercises and not the login.
+    api.valid_login = True
+    api._devices_fetched_this_session = True
+    api._first_cycle_done = True
+
+    api._ensure_api_session(["1234"])
+
+    assert asked == ["1234"], f"a disabled device was asked anyway: {asked}"
+
+
 def test_a_fresh_parameter_list_is_not_re_read():
     api, calls = _discovery_api([], fetched_at=time.time())
 
