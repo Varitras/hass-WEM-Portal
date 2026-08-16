@@ -7,7 +7,7 @@ import logging
 import asyncio
 from time import monotonic
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -36,7 +36,7 @@ from .exceptions import (
     PortalMaintenanceError,
     WemPortalError,
 )
-from .models import account_state, is_still_serving
+from .models import account_state
 from .utils import device_identifier, serialize_modules
 from .wemportalapi import WemPortalApi
 
@@ -194,11 +194,20 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         handed to whatever entry reuses the id - or wrote the OLD api's
         modules over what the reloaded entry had already saved.
 
+        Absent runtime_data means two opposite things, which is what the
+        first version of this got wrong: during SETUP it has not been
+        published yet - and that is the cycle which discovers everything, so
+        barring it wrote nothing down at all - while after an unload it has
+        been taken away again. The entry's own state tells the two apart.
+
         Asked of both save paths rather than of the caller: they are what
         touches the disk, and a third one added later would otherwise have to
         remember this on its own.
         """
-        return is_still_serving(self.config_entry)
+        data = getattr(self.config_entry, "runtime_data", None)
+        if data is not None:
+            return data.coordinator is self
+        return self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS
 
     async def _async_save_scraper_device_id(self) -> None:
         """Persist the stable scraper device id once it has been decided.

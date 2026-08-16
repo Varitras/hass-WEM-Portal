@@ -183,6 +183,35 @@ async def test_unload_cleans_up(hass):
     assert not hasattr(entry, "runtime_data")
 
 
+async def test_the_very_first_cycle_writes_what_it_discovered(
+    hass, hass_storage, monkeypatch
+):
+    """The setup cycle is the one that discovers everything, and it was the
+    one cycle barred from writing any of it down.
+
+    runtime_data is published AFTER the first refresh returns, and the guard
+    that keeps a cycle from writing for an entry that is gone reads exactly
+    that - so during setup it said "not mine" and skipped the save. The two
+    repairs cancelled out: keeping the progress of a cycle that ran out of
+    time is worth nothing if the FIRST cycle never saves at all.
+
+    Every other test here starts after setup, which is why none of them
+    could see it.
+    """
+
+    def discovering(self, *_args, **_kwargs):
+        # What the setup cycle finds: the module list the cache exists for.
+        self.modules = {"1234": {(0, 1): {"Name": "Heat pump", "parameters": {}}}}
+        return {"1234": {"Outside temperature": _sensor()}}
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", discovering)
+    entry = await _setup(hass, _entry(hass))
+
+    assert f"{DOMAIN}_{entry.entry_id}_modules" in hass_storage, (
+        "the setup cycle discovered the modules and wrote none of them down"
+    )
+
+
 async def test_a_cycle_that_ran_out_of_time_still_keeps_what_it_discovered(
     hass, hass_storage, monkeypatch
 ):

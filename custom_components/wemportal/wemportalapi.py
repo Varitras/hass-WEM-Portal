@@ -66,6 +66,7 @@ from .utils import (
     looks_like_schedule,
     maintenance_notice,
     portal_list,
+    schedule_fetch_still_feeds,
     short_device_id,
 )
 
@@ -572,7 +573,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(
                 row.value
             )
-            if is_programme and row.circuit_times_day is not None:
+            if is_programme and schedule_fetch_still_feeds(row):
                 continue
             yield row_name, row
 

@@ -912,9 +912,23 @@
   {
     "label": "stores: a cycle outliving its entry writing them back",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "        return is_still_serving(self.config_entry)",
+    "old": "        return self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS",
     "new": "        return True",
     "tests": "a_poll_that_outlives_the_entry_does_not_rebuild_its_stores"
+  },
+  {
+    "label": "stores: the setup cycle barred from writing what it discovers",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        return self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS",
+    "new": "        return False",
+    "tests": "the_very_first_cycle_writes_what_it_discovered"
+  },
+  {
+    "label": "freshness: a missing programme exempted whether or not anything feeds it",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if is_programme and schedule_fetch_still_feeds(entry):",
+    "new": "            if is_programme:",
+    "tests": "a_programme_nobody_refreshes_any_more_ages_out_here_too"
   },
   {
     "label": "discovery: the device filter dropped at the handover",
@@ -954,7 +968,7 @@
   {
     "label": "freshness: clearing a heating schedule must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if parameter.get(\"DataType\") == WemDataType.PROGRAM or looks_like_schedule(\n                entry_value\n            ):\n                continue\n",
+    "old": "            if is_programme and schedule_fetch_still_feeds(entry):\n                continue\n",
     "new": "",
     "tests": "a_heating_schedule_is_not_cleared_by_the_value_read"
   },
@@ -1759,16 +1773,9 @@
   {
     "label": "freshness: a schedule typed as a switch loses its exemption",
     "path": "custom_components/wemportal/mapper.py",
-    "old": " or looks_like_schedule(\n                entry_value\n            )",
+    "old": " or looks_like_schedule(entry_value)",
     "new": "",
     "tests": "a_schedule_typed_as_a_switch_is_not_cleared_either"
-  },
-  {
-    "label": "freshness: every switch treated as a schedule",
-    "path": "custom_components/wemportal/mapper.py",
-    "old": "looks_like_schedule(\n                entry_value\n            )",
-    "new": "True",
-    "tests": "an_ordinary_switch_the_portal_dropped_is_still_cleared"
   },
   {
     "label": "net: a read-only parameter turned into a control",
@@ -2711,14 +2718,14 @@
   {
     "label": "freshness: a programme exempted whether or not anything refreshes it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if is_programme and row.circuit_times_day is not None:",
+    "old": "            if is_programme and schedule_fetch_still_feeds(row):",
     "new": "            if is_programme:",
     "tests": "a_weekly_programme_nobody_refreshes_any_more_ages_with_its_module"
   },
   {
     "label": "freshness: the programme exemption dropped from the module aging",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(\n                row.value\n            )\n            if is_programme and row.circuit_times_day is not None:\n                continue",
+    "old": "            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(\n                row.value\n            )\n            if is_programme and schedule_fetch_still_feeds(row):\n                continue",
     "new": "            pass",
     "tests": "a_weekly_programme_the_schedule_fetch_still_feeds_survives_the_aging"
   },

@@ -8,7 +8,13 @@ from dataclasses import replace
 from .const import WemDataType
 from .models import ModuleRef, Reading
 from .translations import friendly_name_mapper, translate
-from .utils import looks_like_schedule, portal_list, sanitize_value, unit_to_icon
+from .utils import (
+    looks_like_schedule,
+    portal_list,
+    sanitize_value,
+    schedule_fetch_still_feeds,
+    unit_to_icon,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -607,9 +613,13 @@ def _clear_unanswered(
             # the value, so the exemption applied to nobody who has one. Same
             # mistake, same fix as the schedule fetch itself.
             entry_value = entry.value if isinstance(entry, Reading) else None
-            if parameter.get("DataType") == WemDataType.PROGRAM or looks_like_schedule(
-                entry_value
-            ):
+            # A condition, not a category - see schedule_fetch_still_feeds,
+            # which both ageing passes now ask so they cannot drift apart
+            # again.
+            is_programme = parameter.get(
+                "DataType"
+            ) == WemDataType.PROGRAM or looks_like_schedule(entry_value)
+            if is_programme and schedule_fetch_still_feeds(entry):
                 continue
             if isinstance(entry, Reading) and entry.value is not None:
                 entry.value = None

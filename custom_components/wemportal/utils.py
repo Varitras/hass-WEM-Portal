@@ -152,6 +152,22 @@ def build_device_info(entry_id, device_id, sw_version=None, model=None):
     return info
 
 
+def schedule_fetch_still_feeds(row) -> bool:
+    """Whether a weekly programme is still being refreshed by its own fetch.
+
+    Both ageing passes exempt programmes, because the hourly schedule fetch
+    owns their staleness - and that fetch drops its own detail the moment a
+    due refresh fails. So the exemption is a CONDITION, not a category: a
+    programme without detail is one nothing refreshes any more.
+
+    Shared because the two passes have to answer this identically, and the
+    first repair reached only one of them: the other went on exempting a
+    programme neither source fed, which kept a pre-outage plan on display
+    without limit. See models.Reading.circuit_times_day.
+    """
+    return isinstance(row, Reading) and row.circuit_times_day is not None
+
+
 def portal_list(payload, key):
     """The list the portal sent under `key`, empty if it sent none.
 

@@ -507,6 +507,47 @@ def test_a_device_whose_module_list_is_null_is_not_a_crash():
     assert _process(_modules(_parameter("P1")), {"Modules": None}) == {}
 
 
+def _programme_left_out_of_the_answer(circuit_times_day):
+    """The module answers, but without its programme parameter."""
+    return _process(
+        _modules(_parameter("Programme", DataType=WemDataType.PROGRAM)),
+        _values(),
+        existing={
+            "Heat pump-Programme": Reading(
+                parameter_id="Programme",
+                value="MoDiMi",
+                data_type=WemDataType.PROGRAM,
+                circuit_times_day=circuit_times_day,
+            )
+        },
+    )
+
+
+def test_a_programme_the_schedule_fetch_still_feeds_survives_a_missing_value():
+    """Programmes are exempt from this ageing because the schedule fetch owns
+    their staleness - and the detail it attached is the evidence that it is
+    still delivering."""
+    data = _programme_left_out_of_the_answer(circuit_times_day=[{"Day": 1}])
+
+    assert data["Heat pump-Programme"].value == "MoDiMi"
+
+
+def test_a_programme_nobody_refreshes_any_more_ages_out_here_too():
+    """The sibling of the module-level ageing, and the half left behind.
+
+    That one learned to treat the exemption as a CONDITION: it holds while
+    the schedule fetch is still delivering, and that fetch drops its own
+    detail when a due refresh fails. Here the exemption stayed a category, so
+    a programme neither source refreshes went on showing its pre-outage plan
+    - the very case the other repair was about.
+    """
+    data = _programme_left_out_of_the_answer(circuit_times_day=None)
+
+    assert data["Heat pump-Programme"].value is None, (
+        "a programme neither source has refreshed is still shown as current"
+    )
+
+
 def test_a_value_read_keeps_the_schedule_detail_the_hourly_fetch_attached():
     """The programme fetch runs once an hour, the value read every cycle.
 

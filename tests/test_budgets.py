@@ -68,7 +68,10 @@ COMPLEXITY_LIMIT = 15
 # produced pass-through helpers rather than smaller thoughts.
 COMPLEXITY_BUDGETS = {
     "expert_writer.py::WemPortalExpertClient.parse_parameter_form": 29,
-    "mapper.py::_clear_unanswered": 25,
+    # 25 -> 26: the programme exemption became a condition here too, so the
+    # branch gained one `and`. Tried as a nested `if` first, which cost four
+    # instead of one - nesting is what this measure counts.
+    "mapper.py::_clear_unanswered": 26,
     "__init__.py::_async_register_expert_service": 22,
     "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,
