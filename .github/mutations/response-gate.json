@@ -1953,6 +1953,13 @@
     "tests": "a_cycle_that_ran_out_of_time_keeps_its_connection"
   },
   {
+    "label": "flow rate: the portal's own spelling left without a device class",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        \"m3/h\": SensorDeviceClass.VOLUME_FLOW_RATE,",
+    "new": "        \"m3/h_\": SensorDeviceClass.VOLUME_FLOW_RATE,",
+    "tests": "the_portals_spelling_of_a_flow_rate_carries_its_device_class"
+  },
+  {
     "label": "flow rate: parsed on its own instead of through the shared parser",
     "path": "custom_components/wemportal/utils.py",
     "old": "        flow_rate = parse_portal_number(value.replace(\"m3/h\", \"\"))",

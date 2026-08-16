@@ -8,6 +8,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A flow-rate sensor gets the icon its device class calls for.** The unit
+  lookup matches case-insensitively, which covers "BAR" for "bar" but not
+  "m3/h" for "m³/h" - a different character. That left the one unit the
+  portal spells its own way without a device class, and the fallback icon
+  "mdi:flash" was pinned on it, which overrides whatever the device class
+  would have given it.
 - **A portal that refuses this network stops the parameter discovery at
   once.** The log promised a budget of three refusals, and the code could
   never spend more than one: the first 403 pauses every request, so the

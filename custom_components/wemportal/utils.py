@@ -392,6 +392,14 @@ def unit_to_device_class(unit):
         UnitOfTime.HOURS: SensorDeviceClass.DURATION,
         UnitOfFrequency.HERTZ: SensorDeviceClass.FREQUENCY,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorDeviceClass.VOLUME_FLOW_RATE,
+        # The portal's own spelling of the same unit. Case folding covers
+        # "BAR" for "bar" but not a different CHARACTER, so this was the one
+        # unit the portal writes that went unrecognised - and unit_to_icon
+        # then pinned its "mdi:flash" default on it, which beats the icon the
+        # device class would have given it. Listed rather than translated at
+        # the callers: both questions are asked in several places, and they
+        # have to agree wherever they are asked.
+        "m3/h": SensorDeviceClass.VOLUME_FLOW_RATE,
     }
     return {_unit_lookup_key(key): value for key, value in mapping.items()}.get(
         _unit_lookup_key(unit)

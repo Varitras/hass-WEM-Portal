@@ -3099,6 +3099,28 @@ def test_portal_units_are_normalised_to_home_assistant_spelling():
     assert unit_to_device_class(unit) == "pressure"
 
 
+def test_the_portals_spelling_of_a_flow_rate_carries_its_device_class():
+    """The unit lookup matches case-insensitively, which covers "BAR" for
+    "bar" - but not "m3/h" for "m³/h", a different character.
+
+    Every other unit the portal writes is recognised in its raw spelling, so
+    this one fell through alone: no device class, and unit_to_icon therefore
+    pinned its "mdi:flash" default on it - an explicit icon, which always
+    beats the one Home Assistant derives from the device class the sensor
+    ends up with. The same unit as the decimal-comma crash above, for the
+    same underlying reason: it is the one unit read out of the VALUE.
+    """
+    from custom_components.wemportal.utils import (
+        unit_to_device_class,
+        unit_to_icon,
+    )
+
+    assert unit_to_device_class("m3/h") == unit_to_device_class("m³/h")
+    assert unit_to_icon("m3/h") is None, (
+        "a flow-rate sensor was given an icon that overrides its device class"
+    )
+
+
 def test_a_flow_rate_the_portal_spells_with_a_comma_is_still_a_number():
     """The one unit read out of the VALUE rather than the unit field, and the
     only one parsed with a bare float(): a scraped cell spells its decimals
