@@ -31,7 +31,9 @@ PACKAGE = TESTS.parents[0] / "custom_components" / "wemportal"
 GUARD_FILES = {
     "test_account_state.py": "no mutable module-level state outside the registry",
     "test_budgets.py": "no module or function grows past its frozen budget",
+    "test_ci_matrix.py": "the CI matrix tests the Home Assistant releases it claims to",
     "test_durations.py": "no test quietly starts taking minutes",
+    "test_mutation_harness.py": "the mutation run fails loudly instead of reporting success",
     "test_mypy_scope.py": "every module is type-checked or says why it is not yet",
     "test_platform_entities.py": "every platform adds entities as readings appear, and reads its rows through the shared lookup",
     "test_portal_boundaries.py": "every json read and html parse is a declared boundary",
@@ -256,6 +258,59 @@ def test_every_guard_is_described_in_the_readme():
     )
 
 
+# What CI runs, and the text that proves each one is INVOKED - one needle per
+# side, because the two files spell the same call differently: the workflow
+# runs `mypy`, check.sh runs `"$PYTHON" -m mypy`.
+#
+# The needles have to be that precise on BOTH sides. check.sh prints a banner
+# per gate, so `mypy` alone matched `echo "== mypy =="` there and the guard
+# stayed green with the call deleted; and the workflow names its jobs after
+# their tool, so the same word matches `name: mypy` in a job that runs
+# nothing. A needle that is merely mentioned makes this guard read the table
+# of contents instead of the chapter - on whichever side it is too loose.
+TOOL_INVOCATIONS = {
+    # name: (what invoking it looks like in the workflow, and in check.sh)
+    "ruff check": ("run: ruff check", "ruff check"),
+    "ruff format --check": ("run: ruff format --check", "ruff format --check"),
+    "mypy": ("run: mypy", "-m mypy"),
+    "pytest": ("run: pytest tests/", "-m pytest tests/"),
+    "mutate.py": ("mutate.py .github/mutations", "mutate.py .github/mutations"),
+}
+
+
+def _tools_ci_runs_and_the_local_check_does_not(workflow: str, check: str) -> set:
+    """The gap between the two, by tool name."""
+    in_ci = {
+        name
+        for name, (in_workflow, _) in TOOL_INVOCATIONS.items()
+        if in_workflow in workflow
+    }
+    return {name for name in in_ci if TOOL_INVOCATIONS[name][1] not in check}
+
+
+def test_every_tool_is_recognised_on_the_ci_side_too():
+    """The other half of the same blindness.
+
+    A needle that no longer matches the workflow empties `in_ci` instead of
+    failing, and the comparison then holds vacuously for that tool - the
+    guard reports nothing missing because it is looking for nothing.
+    """
+    workflow = (TESTS.parents[0] / ".github" / "workflows" / "test.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    unseen = [
+        name
+        for name, (in_workflow, _) in TOOL_INVOCATIONS.items()
+        if in_workflow not in workflow
+    ]
+
+    assert not unseen, (
+        f"{unseen} are no longer recognised in the workflow, so the check "
+        "below silently stops asking about them."
+    )
+
+
 def test_the_local_check_runs_every_tool_ci_runs():
     """`check.sh` is only worth trusting while it is the same set of gates.
 
@@ -270,20 +325,27 @@ def test_the_local_check_runs_every_tool_ci_runs():
         encoding="utf-8"
     )
 
-    tools = {
-        "ruff check": "ruff check",
-        "ruff format --check": "ruff format --check",
-        "mypy": "mypy",
-        "pytest": "pytest tests/",
-        "mutate.py": "mutate.py",
-    }
-    in_ci = {name for name, needle in tools.items() if needle in workflow}
-    missing_locally = {name for name in in_ci if tools[name] not in check}
+    missing_locally = _tools_ci_runs_and_the_local_check_does_not(workflow, check)
 
     assert not missing_locally, (
         f"CI runs {missing_locally} but .github/scripts/check.sh does not. "
         "Add it there too, or the local run promises more than it checks."
     )
+
+
+def test_the_comparison_is_not_satisfied_by_a_banner():
+    """A guard that passes proves nothing.
+
+    The shape it exists to catch, spelled out: a check.sh that still ANNOUNCES
+    the gate but no longer runs it. Read for the tool name alone, that text
+    satisfied the comparison - which is how this guard came to be green about
+    a mypy run that was not there.
+    """
+    banner_only = '#!/bin/sh\necho "== mypy =="\necho "== ruff =="\n'
+
+    assert _tools_ci_runs_and_the_local_check_does_not(
+        "        run: mypy\n", banner_only
+    ) == {"mypy"}
 
 
 def _scans_the_package(source: str) -> bool:
