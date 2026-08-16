@@ -647,37 +647,47 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
     whole process, so those sleeps returned instantly and no order was even
     made likely. Each case now waits for the one after it, so plan order is
     the one order that cannot come out by luck.
+
+    FOUR cases, and the one that survives is not in the middle. Three of them
+    with the survivor between two caught ones answers [caught, SURVIVED,
+    caught] - which reads the same backwards, so reversing the order produced
+    byte-identical output and the assertion could not see it. The forced order
+    was real; there was simply nothing for it to reveal.
     """
     monkeypatch.setattr(mutate, "REPO", tmp_path)
     monkeypatch.setattr(
         mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
     )
 
-    finished = [threading.Event() for _ in range(3)]
+    cases = 4
+    survivor = 1
+    finished = [threading.Event() for _ in range(cases)]
 
     def slowest_first(selector, paths=None, root=None):
         # WHICH case this is comes from the mutated file in this worker's own
         # tree, not from the worker's number: the pool hands cases to whatever
         # worker is free, so the two are only incidentally the same.
         mutated = (root / "module.py").read_text(encoding="utf-8")
-        index = next(number for number in range(3) if f"value{number} = 2" in mutated)
-        # All three run at once (--jobs 3 below), so the last case is free to
+        index = next(
+            number for number in range(cases) if f"value{number} = 2" in mutated
+        )
+        # All four run at once (--jobs below), so the last case is free to
         # finish first and the first one finishes last.
-        if index < 2:
+        if index < cases - 1:
             assert finished[index + 1].wait(timeout=WAIT_FOR_A_WORKER_SECONDS), (
-                f"case{index + 1} never finished - all three cases have to run "
-                "at once for this order to be reachable at all"
+                f"case{index + 1} never finished - all {cases} cases have to "
+                "run at once for this order to be reachable at all"
             )
         finished[index].set()
         # A DIFFERENT answer per case, which is the point. With every case
         # answering the same, a result attached to the wrong case produces
         # identical output and the assertion below cannot see it - the whole
-        # thing passed while proving only that three lines were printed.
-        return index != 1
+        # thing passed while proving only that some lines were printed.
+        return index != survivor
 
     monkeypatch.setattr(mutate, "run_tests", slowest_first)
-    plan = _plan_of(3, tmp_path)
-    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "3"])
+    plan = _plan_of(cases, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", str(cases)])
 
     assert mutate.main() == 1, "a surviving case must fail the run"
 
@@ -687,9 +697,8 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
         if line.startswith(("caught", "SURVIVED"))
     ]
     assert reported == [
-        ("caught", "case0"),
-        ("SURVIVED", "case1"),
-        ("caught", "case2"),
+        ("SURVIVED" if number == survivor else "caught", f"case{number}")
+        for number in range(cases)
     ], "results were reported in finishing order, or attached to the wrong case"
 
 
