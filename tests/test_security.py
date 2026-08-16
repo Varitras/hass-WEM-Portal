@@ -210,6 +210,45 @@ def test_every_cookieless_session_form_is_redacted(url):
     assert redacted.endswith("/Web/Default.aspx")
 
 
+def test_no_captured_installation_name_travels_in_a_menu_client_state():
+    """The submenu client state is a captured browser field, replayed.
+
+    Its entries pair a label with a deployment code - "Overview"/110,
+    "Expert"/223 - except the one naming the INSTALLATION, whose code is
+    empty because the label is all it ever was. expert_writer blanks that
+    label for exactly this reason; the scraper's copy of the same field
+    still carried the name from the session it was recorded in, and sent it
+    back to the portal on every expert navigation.
+
+    Stated as the invariant rather than by searching for the name itself:
+    a test that names it would put it back into the repository.
+    """
+    import ast
+    import json
+    import pathlib
+
+    package = pathlib.Path(wemportalapi.__file__).parent
+    offenders = []
+    checked = 0
+    for source in sorted(package.glob("*.py")):
+        for node in ast.walk(ast.parse(source.read_text("utf-8"))):
+            spelled_out = isinstance(node, ast.Constant) and isinstance(node.value, str)
+            if not spelled_out or '"logEntries"' not in node.value:
+                continue
+            checked += 1
+            for entry in json.loads(node.value)["logEntries"]:
+                data = entry.get("Data") or {}
+                if not data.get("value") and data.get("text"):
+                    offenders.append(f"{source.name}: {data['text'][:3]}...")
+
+    assert checked, "no client state was examined - the scan found nothing to check"
+
+    assert not offenders, (
+        f"a label with no deployment code is an installation name: {offenders}. "
+        "Blank it - the portal selects by index, not by that text."
+    )
+
+
 def test_no_module_imports_the_expert_client_at_module_level():
     """The lazy import has to be structural, or it quietly stops being lazy.
 
