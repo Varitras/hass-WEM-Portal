@@ -255,6 +255,52 @@ def test_every_selector_clause_names_a_real_test():
             )
 
 
+# How many tests one clause may select before it stops naming anything. A
+# clause is matched as a SUBSTRING, so an ordinary word picks up whatever
+# else happens to contain it: `word` selected 24 tests across four files,
+# and any one of them failing would have counted as this mutation being
+# noticed. Three leaves room for a deliberate family of names.
+CLAUSE_BREADTH_LIMIT = 3
+
+
+def test_no_selector_clause_is_a_word_that_means_anything():
+    """The fourth silent-pass route: a clause too wide to be evidence.
+
+    The two checks above ask whether a clause matches SOMETHING. This one
+    asks whether it matches something in particular - a mutation whose
+    selector drags in two dozen unrelated tests is reported as caught by
+    whichever of them happens to be red, and says nothing about the code it
+    broke.
+    """
+    plan = json.loads(
+        (SCRIPT.parent.parent / "mutations" / "response-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    names = set()
+    for module in (Path(__file__).parent).glob("test_*.py"):
+        names.update(
+            re.findall(
+                r"^\s*(?:async )?def (test_\w+)",
+                module.read_text(encoding="utf-8"),
+                re.MULTILINE,
+            )
+        )
+
+    too_wide = []
+    for case in plan:
+        for clause in re.split(r"\s+(?:or|and)\s+", case["tests"]):
+            clause = clause.strip()
+            selected = [name for name in names if clause in name]
+            if len(selected) > CLAUSE_BREADTH_LIMIT:
+                too_wide.append(f"{clause!r} selects {len(selected)}")
+
+    assert not too_wide, (
+        f"selector clause(s) too wide to be evidence: {too_wide}. Name the "
+        "test the mutation is actually about."
+    )
+
+
 def test_the_shipped_plan_still_matches_the_code():
     """The plan is only useful while its snippets exist. Left to rot it would
     fail at the worst moment - when someone finally runs it."""

@@ -62,6 +62,25 @@ def test_no_reading_is_accessed_like_a_dict():
     )
 
 
+def test_the_scan_catches_both_shapes_it_exists_for():
+    """A guard that passes proves nothing.
+
+    Both spellings fed to the detector directly, because the package is
+    clean - so the test above passes whether the scan works or not, and
+    would go on passing if the walk stopped matching. Written as source
+    rather than by mutating a real file: what is under test is the pattern,
+    not any module in particular.
+    """
+    caught = _dict_key_accesses(
+        ast.parse("row['friendlyName']\nrow.get('step')\nrow.value\nrow['Unit']\n")
+    )
+
+    assert [key for _line, key in caught] == ["friendlyName", "step"], (
+        f"the scan reported {caught} - it has to see the subscript AND the "
+        "get(), and leave attribute access and portal keys alone"
+    )
+
+
 def test_the_scan_still_knows_the_reading_fields():
     """Self-protection: if Reading loses the fields these keys map to, the
     forbidden list above guards a type that no longer exists."""

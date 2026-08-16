@@ -453,6 +453,39 @@ def test_a_refused_network_leaves_the_statistics_loop(caplog):
     )
 
 
+def test_a_statistics_refresh_that_lists_no_groups_as_null_is_not_an_error(caplog):
+    """The same null the value read already learned to expect.
+
+    A device with no statistics comes back as `GroupTypeDescriptions: null`,
+    and a default for a missing key does not cover a key that is present and
+    null - so the loop over it raised a TypeError.
+
+    Asserted on the LOG, not on the readings: the device loop's catch-all
+    swallows that TypeError, so the data looks the same either way and a
+    test reading it passes without the fix. What the failure costs is a
+    warning about a device that had nothing to report, and a statistics
+    fetch back-dated for a retry that has nothing to retry.
+    """
+    import logging
+
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {"GroupTypeDescriptions": None}
+    )
+
+    with caplog.at_level(logging.WARNING):
+        api.get_statistics(enabled_devices=["1234"])
+
+    complaints = [
+        record.getMessage()
+        for record in caplog.records
+        if "Error processing Statistics" in record.getMessage()
+    ]
+    assert not complaints, f"a device with nothing to report was an error: {complaints}"
+
+
 def _statistics_api_with_groups(groups, read_answer):
     """An api whose refresh lists `groups` and whose group reads go through
     `read_answer(group_id)` - returning a payload or raising."""

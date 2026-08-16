@@ -515,7 +515,7 @@
     "path": "custom_components/wemportal/mapper.py",
     "old": "                common, value.get(\"NumericValue\") is not None",
     "new": "                common, True",
-    "tests": "mapper_output_is_unchanged or holiday_date or word"
+    "tests": "mapper_output_is_unchanged or holiday_date or an_unbounded_parameter_that_answered_with_a_word_is_not_a_date"
   },
   {
     "label": "mapper: an optionless dropdown must be noticed",
@@ -1853,6 +1853,13 @@
     "old": "        unloading = self._data is not None and self._data.unloading\n        if self._stopped or unloading:",
     "new": "        if self._stopped:",
     "tests": "the_auto_poll_stops_at_the_START_of_an_unload"
+  },
+  {
+    "label": "stats: the group list read as an absent key again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        group_types = portal_list(refresh_resp, \"GroupTypeDescriptions\")",
+    "new": "        group_types = refresh_resp.get(\"GroupTypeDescriptions\", [])",
+    "tests": "a_statistics_refresh_that_lists_no_groups_as_null_is_not_an_error"
   },
   {
     "label": "harness: a slow test able to pass for a caught mutation again",

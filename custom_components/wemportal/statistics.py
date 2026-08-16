@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Final
 from .exceptions import AuthError, ForbiddenError, WemPortalError
 from .models import Reading
 from .translations import translate
-from .utils import latest_statistics_entry
+from .utils import latest_statistics_entry, portal_list
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +58,10 @@ class WemPortalStatistics:
         data: dict[str, dict[str, Any]]
         modules: dict[str, Any]
         language: str
-        last_statistics_fetch: float
+        # Optional, because "never fetched in this session" is a state the
+        # gate below reads explicitly. Declared as a plain float, the one
+        # thing this declaration exists to make visible was wrong.
+        last_statistics_fetch: float | None
 
         def make_api_call(self, url: str, **kwargs: Any) -> Any: ...
 
@@ -189,7 +192,7 @@ class WemPortalStatistics:
             API_STATISTICS_REFRESH_URL, data={"DeviceID": int(device_id)}, do_retry=True
         ).json()
 
-        group_types = refresh_resp.get("GroupTypeDescriptions", [])
+        group_types = portal_list(refresh_resp, "GroupTypeDescriptions")
         headers = {"X-Api-Version": "2.0.0.0"}
         read = 0
         failed = 0
