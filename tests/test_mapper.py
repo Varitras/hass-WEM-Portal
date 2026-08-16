@@ -458,6 +458,55 @@ def test_a_parameter_id_the_portal_sent_as_a_dict_costs_only_that_value():
     )
 
 
+def test_a_module_whose_value_list_is_null_costs_only_that_module():
+    """Third shape of the same failure, and the one the portal itself
+    produces: a module with nothing to report comes back as `Values: null`.
+
+    `.get("Values", [])` returns the default only for an ABSENT key - a
+    present null comes back as None, and iterating that raises past every
+    guard here. One quiet module then costs the whole device its readings,
+    every cycle, for as long as the portal keeps sending it that way.
+    """
+    # Both modules KNOWN: an unknown one is skipped before its values are
+    # ever read, so a test using one would pass without reaching the line
+    # under test.
+    modules = {
+        DEVICE: {
+            SECOND_MODULE_KEY: {"Name": "Circuit", "parameters": {}},
+            MODULE_KEY: {
+                "Name": "Heat pump",
+                "parameters": {"P1": _parameter("P1")},
+            },
+        }
+    }
+    values = {
+        "Modules": [
+            {
+                "ModuleIndex": SECOND_MODULE_KEY[0],
+                "ModuleType": SECOND_MODULE_KEY[1],
+                "Values": None,
+            },
+            {
+                "ModuleIndex": MODULE_KEY[0],
+                "ModuleType": MODULE_KEY[1],
+                "Values": [_value("P1", numeric=21.0)],
+            },
+        ]
+    }
+
+    data = _process(modules, values)
+
+    assert data["Heat pump-P1"].value == 21.0, (
+        "a module with nothing to say took the whole device's readings with it"
+    )
+
+
+def test_a_device_whose_module_list_is_null_is_not_a_crash():
+    """The same null one level up. Nothing to read is not an error - the
+    device simply reported nothing this cycle."""
+    assert _process(_modules(_parameter("P1")), {"Modules": None}) == {}
+
+
 def test_a_value_read_keeps_the_schedule_detail_the_hourly_fetch_attached():
     """The programme fetch runs once an hour, the value read every cycle.
 

@@ -65,6 +65,7 @@ from .utils import (
     error_state_and_detail,
     looks_like_schedule,
     maintenance_notice,
+    portal_list,
     short_device_id,
 )
 
@@ -2270,7 +2271,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 icon="mdi:network",
             )
 
-            errors = status_response.get("Errors", [])
+            errors = portal_list(status_response, "Errors")
             has_errors = "Yes" if errors else "No"
             error_message, error_detail = error_state_and_detail(errors)
 
@@ -2807,8 +2808,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             )
             self.data[device_id][sensor_name] = row
 
-        row.circuit_times_day = schedule_resp.get("CircuitTimesDay", [])
-        row.possible_values = schedule_resp.get("PossibleValues", [])
+        row.circuit_times_day = portal_list(schedule_resp, "CircuitTimesDay")
+        row.possible_values = portal_list(schedule_resp, "PossibleValues")
         # The value is NOT touched. This fetch adds detail to a row the value
         # read already filled; writing "Active" over it replaced a readable
         # week with a placeholder once an hour, until the next cycle put the

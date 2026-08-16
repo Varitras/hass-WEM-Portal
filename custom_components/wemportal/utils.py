@@ -152,6 +152,22 @@ def build_device_info(entry_id, device_id, sw_version=None, model=None):
     return info
 
 
+def portal_list(payload, key):
+    """The list the portal sent under `key`, empty if it sent none.
+
+    `payload.get(key, [])` covers an ABSENT key only. The portal also
+    answers with an explicit null - a module with nothing to report comes
+    back as `"Values": null` - and that returns None, which the reads then
+    iterate. One quiet module cost the whole device its readings that way,
+    every cycle, for as long as the portal kept answering like that.
+
+    Shared rather than an `or []` at each site: the sites are in three
+    modules, and the next reader of a portal list is the one who would not
+    know to add it.
+    """
+    return payload.get(key) or []
+
+
 def parse_portal_number(value):
     """The number a portal value carries, or None if it carries none.
 

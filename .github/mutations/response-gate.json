@@ -896,9 +896,16 @@
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
   {
+    "label": "portal lists: an explicit null read as an absent key again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return payload.get(key) or []",
+    "new": "    return payload.get(key, [])",
+    "tests": "a_module_whose_value_list_is_null_costs_only_that_module"
+  },
+  {
     "label": "freshness: clearing a module the portal never answered for must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "    for module in values_json.get(\"Modules\", []):\n        try:\n            module_key = ModuleRef(\n                module_index=module[\"ModuleIndex\"], module_type=module[\"ModuleType\"]\n            )",
+    "old": "    for module in portal_list(values_json, \"Modules\"):\n        try:\n            module_key = ModuleRef(\n                module_index=module[\"ModuleIndex\"], module_type=module[\"ModuleType\"]\n            )",
     "new": "    for module_key in modules_dict.get(device_id, {}):\n        try:\n            module = {}",
     "tests": "module_the_portal_did_not_answer_for_is_left_alone"
   },
@@ -1248,8 +1255,8 @@
   {
     "label": "programme: overwriting the week with a placeholder must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        row.possible_values = schedule_resp.get(\"PossibleValues\", [])",
-    "new": "        row.possible_values = schedule_resp.get(\"PossibleValues\", [])\n        row.value = \"Active\"",
+    "old": "        row.possible_values = portal_list(schedule_resp, \"PossibleValues\")",
+    "new": "        row.possible_values = portal_list(schedule_resp, \"PossibleValues\")\n        row.value = \"Active\"",
     "tests": "the_fetch_adds_to_the_programme_instead_of_replacing_it"
   },
   {

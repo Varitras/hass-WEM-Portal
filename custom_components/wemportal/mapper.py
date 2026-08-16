@@ -8,7 +8,7 @@ from dataclasses import replace
 from .const import WemDataType
 from .models import ModuleRef, Reading
 from .translations import friendly_name_mapper, translate
-from .utils import looks_like_schedule, sanitize_value, unit_to_icon
+from .utils import looks_like_schedule, portal_list, sanitize_value, unit_to_icon
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -314,7 +314,7 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> t
     parsed_sensors = {}
     controls = set()
 
-    for module in values_json.get("Modules", []):
+    for module in portal_list(values_json, "Modules"):
         device_module = _described_module(device_id, module, modules_dict)
         if device_module is None:
             continue
@@ -337,7 +337,7 @@ def _read_module_values(device_id, module, device_module, language, api_data) ->
     parsed_sensors = {}
     controls = set()
 
-    for value in module.get("Values", []):
+    for value in portal_list(module, "Values"):
         described = _described_parameter(value, device_module)
         if described is None:
             continue
@@ -579,7 +579,7 @@ def _clear_unanswered(
     if not device_data:
         return
 
-    for module in values_json.get("Modules", []):
+    for module in portal_list(values_json, "Modules"):
         try:
             module_key = ModuleRef(
                 module_index=module["ModuleIndex"], module_type=module["ModuleType"]

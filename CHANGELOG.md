@@ -8,6 +8,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A module with nothing to report no longer costs the whole device its
+  readings.** Such a module comes back as `"Values": null`, and a default
+  for a missing key does not cover a key that is present and null - so the
+  read raised, every cycle, for as long as the portal answered that way.
+  Every list the portal sends is now read through one place that knows the
+  difference.
 - **An expert parameter with fractional steps takes the values it offers
   again.** The step is measured as the distance between two options, and a
   subtraction of two decimals carries their float error: a heating curve's
