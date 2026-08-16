@@ -6,6 +6,7 @@ import time
 
 from curl_cffi import requests
 from lxml import html
+from lxml.etree import LxmlError
 
 from .const import (
     GITHUB_PROJECT_URL,
@@ -642,9 +643,19 @@ class WemPortalScraper:
         """
         _LOGGER.debug("Parsing expert page HTML (%s)", source)
         output = {}
-        tree = html.fromstring(html_content)
+        try:
+            panels = html.fromstring(html_content).xpath(PANEL_XPATH)
+        except LxmlError:
+            # Inside the promise `required` makes, not above it: an answer
+            # that is not HTML at all raised straight out of here, past the
+            # reuse path's own handling one frame up - so the full login that
+            # exists for "this session did not get us there" never ran. A page
+            # that parses to nothing and one that does not parse mean the same
+            # thing to that caller, and the branch below already says what
+            # each of the two callers does about it.
+            panels = []
 
-        for div in tree.xpath(PANEL_XPATH):
+        for div in panels:
             panel = self._panel_rows(div)
             if panel is None:
                 continue

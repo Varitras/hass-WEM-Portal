@@ -8,6 +8,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An answer that is not HTML at all no longer costs the whole scrape.**
+  The cheap session-reuse attempt is allowed to come back with "this is not
+  the expert page" so a fresh login can follow - but a body the parser
+  cannot read raised past that, and the fallback never ran.
 - **A portal blocking this network during the energy statistics is reported
   as that.** The group loop deliberately let the refusal out so the
   coordinator could act on it; the device loop above caught it again, logged

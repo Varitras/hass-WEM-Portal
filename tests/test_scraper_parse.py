@@ -494,6 +494,31 @@ def _reuse_scraper(post_response):
     return scraper
 
 
+def test_a_page_that_does_not_parse_leaves_the_reuse_path_its_fallback(scraper):
+    """`required=False` promises "tell me if this is not the expert page"
+    instead of raising - and the parse itself sat outside that promise.
+
+    A body that is not HTML at all raises out of the parser, one frame above
+    the reuse path's own error handling, so the full login it exists to fall
+    back to never ran. A page that parses to nothing and a page that does not
+    parse mean the same thing to that caller: this session did not get us
+    there, log in fresh.
+    """
+    assert (
+        scraper.parse_expert_page("", source="the reused session", required=False)
+        is None
+    )
+
+
+def test_a_page_that_does_not_parse_after_a_full_login_is_still_an_error(scraper):
+    """The other caller has nothing left to try, so it must still hear about
+    it - the same split the empty page already makes."""
+    from custom_components.wemportal.exceptions import ServerError
+
+    with pytest.raises(ServerError):
+        scraper.parse_expert_page("")
+
+
 def test_an_error_page_is_not_accepted_as_the_expert_page():
     """The reuse path checked for a 403 and for a redirect to the login, but
     never at the status code itself, so a 500 was parsed like a real page.

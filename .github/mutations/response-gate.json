@@ -1855,6 +1855,13 @@
     "tests": "the_auto_poll_stops_at_the_START_of_an_unload"
   },
   {
+    "label": "scrape: an unparseable page raising past the reuse fallback",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        except LxmlError:",
+    "new": "        except ZeroDivisionError:",
+    "tests": "a_page_that_does_not_parse_leaves_the_reuse_path_its_fallback"
+  },
+  {
     "label": "stats: a refusal caught again by the device loop's catch-all",
     "path": "custom_components/wemportal/statistics.py",
     "old": "            except ForbiddenError:\n                # Same shape, and the shield the group loop above is missing",
