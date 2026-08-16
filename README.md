@@ -168,7 +168,9 @@ every retry during it makes it last longer.
 
 The integration is built around that:
 
-- A `403` from the portal pauses **all** outbound requests for 15 minutes.
+- A `403` seen by the **normal polling** pauses all outbound requests for 15
+  minutes. One on an expert request pauses only that feature - it is not
+  proof of an IP-wide block (see [Expert parameters](#expert-parameters)).
 - The setup and re-authentication dialogs refuse to send anything while that
   pause is active, and say so — deleting and re-adding the integration to "fix"
   a block is the one thing that reliably prolongs it.

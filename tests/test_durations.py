@@ -84,15 +84,37 @@ def test_the_timeout_plugin_is_declared_where_each_run_installs_from():
     marker becomes a no-op that raises no error - the exact shape of failure
     this repository keeps getting caught by.
     """
-    assert "pytest-timeout" in (REPO / "requirements_test.txt").read_text(
-        encoding="utf-8"
+
+    def _named_outside_a_comment(text, needle):
+        """Lines that actually ASK for `needle`, not ones that mention it.
+
+        Both files talk about this plugin in prose - the workflow explains in
+        a comment why these jobs name it at all - so a substring search over
+        the whole file is satisfied by the explanation of the thing rather
+        than the thing. Same shape as a guard reading its own banner.
+        """
+        return [
+            line
+            for line in text.splitlines()
+            if needle in line and not line.strip().startswith("#")
+        ]
+
+    requirements = (REPO / "requirements_test.txt").read_text(encoding="utf-8")
+    assert _named_outside_a_comment(requirements, "pytest-timeout"), (
+        "requirements_test.txt only mentions the plugin, it does not require it"
     )
+
     workflow = (REPO / ".github" / "workflows" / "test.yaml").read_text(
         encoding="utf-8"
     )
-    assert "pytest-timeout" in workflow, (
+    installs = [
+        line
+        for line in _named_outside_a_comment(workflow, "pytest-timeout")
+        if "pip install" in line
+    ]
+    assert installs, (
         "the matrix jobs do not install requirements_test.txt, so they have "
-        "to name the plugin themselves"
+        "to name the plugin in a pip install of their own"
     )
 
 

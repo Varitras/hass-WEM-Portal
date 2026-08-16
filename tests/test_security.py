@@ -249,6 +249,52 @@ def test_no_captured_installation_name_travels_in_a_menu_client_state():
     )
 
 
+def _module_level_expert_imports(source: str) -> list:
+    """Line numbers where `source` pulls the expert client at module level.
+
+    Three spellings reach the same module, and the scan knew two: it matched
+    `from .expert_writer import x` and `import ...expert_writer`, but not
+    `from . import expert_writer` - which is what a package-relative import
+    looks like when the NAME rather than the path carries the module, and
+    the very form this repository uses elsewhere. A guard that knows two of
+    three ways in is a guard whichever way is left open.
+    """
+    import ast
+
+    found = []
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.ImportFrom):
+            names = [alias.name for alias in node.names]
+            if (node.module or "").endswith("expert_writer") or (
+                "expert_writer" in names
+            ):
+                found.append(node.lineno)
+        elif isinstance(node, ast.Import):
+            found += [
+                node.lineno for alias in node.names if "expert_writer" in alias.name
+            ]
+    return found
+
+
+def test_the_import_scan_knows_every_way_in():
+    """A guard that passes proves nothing - and this one passed while blind
+    to a third of the spellings it exists to catch."""
+    every_form = (
+        "from .expert_writer import WemPortalExpertClient\n"
+        "from . import expert_writer\n"
+        "import custom_components.wemportal.expert_writer\n"
+    )
+
+    assert _module_level_expert_imports(every_form) == [1, 2, 3]
+    # And a function-local one is exactly what the rule ASKS for.
+    assert (
+        _module_level_expert_imports(
+            "def load():\n    from . import expert_writer\n    return expert_writer\n"
+        )
+        == []
+    )
+
+
 def test_no_module_imports_the_expert_client_at_module_level():
     """The lazy import has to be structural, or it quietly stops being lazy.
 
@@ -265,21 +311,15 @@ def test_no_module_imports_the_expert_client_at_module_level():
     always present. The property that IS checkable is structural - nobody
     reaches it without asking.
     """
-    import ast
     from pathlib import Path
 
     package = Path(__file__).resolve().parents[1] / "custom_components" / "wemportal"
     offenders = []
     for module in sorted(package.glob("*.py")):
-        for node in ast.parse(module.read_text(encoding="utf-8")).body:
-            if isinstance(node, ast.ImportFrom) and node.module == "expert_writer":
-                offenders.append(f"{module.name}:{node.lineno}")
-            elif isinstance(node, ast.Import):
-                offenders += [
-                    f"{module.name}:{node.lineno}"
-                    for alias in node.names
-                    if "expert_writer" in alias.name
-                ]
+        offenders += [
+            f"{module.name}:{line}"
+            for line in _module_level_expert_imports(module.read_text(encoding="utf-8"))
+        ]
 
     assert not offenders, (
         "expert_writer is imported at module level in "
