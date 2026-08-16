@@ -3617,6 +3617,39 @@ def test_statistics_entry_is_chosen_by_date_not_position():
     assert latest_statistics_entry(out_of_order)["Value"] == 8.0
 
 
+def test_todays_empty_entry_does_not_hide_yesterdays_reading():
+    """The portal ships the current day with no value until it has one.
+
+    Picked by date alone, that empty entry won - and the caller then reached
+    PAST this whole answer for its own last stored value, which is older
+    than the number sitting right here. The newest entry that carries a
+    reading is the one that answers the question.
+    """
+    from custom_components.wemportal.utils import latest_statistics_entry
+
+    today_is_still_empty = [
+        {"Date": "2026-04-26T00:00:00", "Value": 90.0},
+        {"Date": "2026-04-27T00:00:00", "Value": 100.0},
+        {"Date": "2026-04-28T00:00:00", "Value": None},
+    ]
+
+    assert latest_statistics_entry(today_is_still_empty)["Value"] == 100.0
+
+
+def test_an_answer_without_any_reading_still_reports_the_gap():
+    """The counter-case: with no value anywhere the caller has to see the
+    empty entry, because keeping its own last one is then correct - and
+    inventing a zero would read as a meter reset."""
+    from custom_components.wemportal.utils import latest_statistics_entry
+
+    nothing_yet = [
+        {"Date": "2026-04-27T00:00:00", "Value": None},
+        {"Date": "2026-04-28T00:00:00", "Value": None},
+    ]
+
+    assert latest_statistics_entry(nothing_yet)["Value"] is None
+
+
 def test_statistics_falls_back_to_the_last_entry_without_dates():
     """No Date means no better information - keep the previous behaviour
     rather than guessing."""
@@ -6060,6 +6093,31 @@ def test_a_failing_schedule_is_not_refetched_on_every_cycle():
     )
 
 
+def test_an_answer_without_a_week_is_not_a_delivered_schedule():
+    """Any JSON object counted as a schedule, `{}` included.
+
+    Three things went wrong at once for an answer with no week in it: the
+    hour of throttle was spent on it, the sensor threw the empty list away
+    and fell back to the raw plan - and, since the ageing pass exempts a
+    programme "while the fetch still feeds it", an empty list read as being
+    fed, so the row could not age out either.
+    """
+    api, _calls = _circuit_times_api([{"JobID": 7}, {}] * 5, value="MoDiMi")
+
+    api._fetch_circuit_times("1234")
+
+    assert not api.data["1234"][SCHEDULE_ROW].circuit_times_day, (
+        "an empty answer was stored as the week, which reads as still being fed"
+    )
+    # A success stamps the attempt at NOW and buys a full hour; a failure is
+    # back-dated to the shorter retry. So the distance from now is what says
+    # which of the two this counted as.
+    stamped = next(iter(api._last_circuit_times_fetch.values()))
+    assert time.monotonic() - stamped > 60, (
+        "an answer with no week was stamped as a delivered schedule"
+    )
+
+
 def test_a_refresh_without_a_job_id_also_counts_as_an_attempt():
     """The early `continue` costs a request just like a raised error does."""
     api, calls = _circuit_times_api([{"NoJobID": True}] * 10)
@@ -6118,10 +6176,13 @@ def test_two_circuits_with_the_same_programme_id_are_both_fetched():
 
 
 def test_a_successful_schedule_keeps_the_full_interval():
+    # A real week, not `CircuitTimesDay: []` as this used to send: an answer
+    # with no week in it is a failed read now, so an empty list here would be
+    # testing the throttle against the wrong outcome.
     api, _calls = _circuit_times_api(
         [
             {"JobID": 7},
-            {"CircuitTimesDay": [], "PossibleValues": []},
+            {"CircuitTimesDay": [{"Day": 1}], "PossibleValues": []},
         ]
     )
 
@@ -6288,7 +6349,7 @@ def test_a_row_only_this_fetch_knows_about_still_gets_a_placeholder():
     """Where the value read never delivered the programme, this fetch is the
     only source there is - and a row needs some state to show."""
     api, _calls = _circuit_times_api(
-        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}],
+        [{"JobID": 7}, {"CircuitTimesDay": [{"Day": 1}], "PossibleValues": []}],
     )
 
     api._fetch_circuit_times("1234")

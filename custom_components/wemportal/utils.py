@@ -165,7 +165,11 @@ def schedule_fetch_still_feeds(row) -> bool:
     programme neither source fed, which kept a pre-outage plan on display
     without limit. See models.Reading.circuit_times_day.
     """
-    return isinstance(row, Reading) and row.circuit_times_day is not None
+    # Truthiness, not `is not None`: an empty list is what a portal answer
+    # with no week produces, and that is not being fed either. The schedule
+    # read now refuses such an answer outright, so this is the second lock on
+    # the same door - cheap, and the two failed independently before.
+    return isinstance(row, Reading) and bool(row.circuit_times_day)
 
 
 def portal_list(payload, key):
@@ -541,7 +545,7 @@ def device_model(api, device_id):
 
 
 def latest_statistics_entry(values):
-    """Pick the newest statistics entry by its Date, not by list position.
+    """Pick the newest statistics entry that carries a reading.
 
     The API returns one entry per day and the newest happens to be last, so
     the code used values[-1] and never looked at Date. That is an assumption
@@ -549,6 +553,14 @@ def latest_statistics_entry(values):
     placeholder, would silently yield the wrong day's reading. Sorting by the
     Date the entry carries removes the assumption; entries without a usable
     Date fall back to the previous positional behaviour.
+
+    "That carries a reading" is the second half, and it was missing. The
+    portal ships the current day with `Value: null` until it has one, so
+    picking by date alone answered null for an answer that also contained
+    yesterday's number - and the caller then reached past this whole
+    response for its own last stored value, which is older still. Only when
+    NO entry has a value is that fallback the right one, and this returns
+    the newest dateless entry then, so the caller still sees the null.
     """
     if not values:
         return None
@@ -557,7 +569,8 @@ def latest_statistics_entry(values):
         return values[-1]
     # ISO-8601 ("2026-04-27T00:00:00") sorts correctly as text, so no date
     # parsing - and thus no locale or format surprises - is needed.
-    return max(dated, key=lambda entry: str(entry["Date"]))
+    with_a_reading = [entry for entry in dated if entry.get("Value") is not None]
+    return max(with_a_reading or dated, key=lambda entry: str(entry["Date"]))
 
 
 _MORE = " (+{} more)"

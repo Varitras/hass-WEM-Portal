@@ -1869,6 +1869,27 @@
     "tests": "an_expert_login_page_without_its_form_is_not_blamed_on_the_password"
   },
   {
+    "label": "stats: today's empty entry hiding yesterday's reading again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    with_a_reading = [entry for entry in dated if entry.get(\"Value\") is not None]\n    return max(with_a_reading or dated, key=lambda entry: str(entry[\"Date\"]))",
+    "new": "    return max(dated, key=lambda entry: str(entry[\"Date\"]))",
+    "tests": "todays_empty_entry_does_not_hide_yesterdays_reading"
+  },
+  {
+    "label": "schedule: any json object accepted as a delivered week",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not isinstance(days, list) or not days:",
+    "new": "        if False:",
+    "tests": "an_answer_without_a_week_is_not_a_delivered_schedule"
+  },
+  {
+    "label": "schedule: an empty week reading as still being fed",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return isinstance(row, Reading) and bool(row.circuit_times_day)",
+    "new": "    return isinstance(row, Reading) and row.circuit_times_day is not None",
+    "tests": "an_empty_week_does_not_count_as_being_fed"
+  },
+  {
     "label": "stats: the group list read as an absent key again",
     "path": "custom_components/wemportal/statistics.py",
     "old": "        group_types = portal_list(refresh_resp, \"GroupTypeDescriptions\")",

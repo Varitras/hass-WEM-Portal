@@ -2793,6 +2793,26 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             do_retry=True,
         ).json()
 
+        # What the portal actually delivered, before any of this counts as a
+        # successful read. `{}` and `{"Status": 3}` are both answers it gives,
+        # and both used to be stored and stamped as a fresh schedule: the hour
+        # of throttle was spent, the sensor threw the empty week away and fell
+        # back to the raw plan, and - since the ageing pass learned to exempt a
+        # programme "while the fetch still feeds it" - an empty list read as
+        # being fed. Not a list, or an empty one, is a failed read.
+        days = (
+            schedule_resp.get("CircuitTimesDay")
+            if isinstance(schedule_resp, dict)
+            else None
+        )
+        if not isinstance(days, list) or not days:
+            _LOGGER.debug(
+                "Schedule %s: the portal answered without a week; treating it "
+                "as a failed read rather than an empty schedule.",
+                parameter_id,
+            )
+            return False
+
         sensor_name = f"{module['Name']}-{parameter_id}"
         row = self.data[device_id].get(sensor_name)
         if not isinstance(row, Reading):
@@ -2811,7 +2831,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             )
             self.data[device_id][sensor_name] = row
 
-        row.circuit_times_day = portal_list(schedule_resp, "CircuitTimesDay")
+        row.circuit_times_day = days
         row.possible_values = portal_list(schedule_resp, "PossibleValues")
         # The value is NOT touched. This fetch adds detail to a row the value
         # read already filled; writing "Active" over it replaced a readable

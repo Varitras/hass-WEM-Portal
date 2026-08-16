@@ -337,6 +337,24 @@ def _programme_row(api, circuit_times_day):
     _answer_only_module_a(api)
 
 
+def test_an_empty_week_does_not_count_as_being_fed():
+    """Asked of the function, not through a caller.
+
+    The schedule read refuses an answer with no week now, so no caller can
+    produce this any more - and that is exactly why the contract belongs
+    here: the two guards failed independently once already, and a test that
+    goes through the write path would stop covering this one.
+    """
+    from custom_components.wemportal.utils import schedule_fetch_still_feeds
+
+    assert not schedule_fetch_still_feeds(
+        Reading(parameter_id="P", circuit_times_day=[])
+    )
+    assert schedule_fetch_still_feeds(
+        Reading(parameter_id="P", circuit_times_day=[{"Day": 1}])
+    )
+
+
 def test_a_weekly_programme_the_schedule_fetch_still_feeds_survives_the_aging():
     """Programme rows are governed by the schedule fetch, which has its own
     staleness rule - the same split _clear_unanswered already makes. The
