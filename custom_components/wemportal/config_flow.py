@@ -61,7 +61,7 @@ from .expert_options import (
     duplicate_entityvalues,
     expert_client_options,
 )
-from .coordinator import get_modules_store
+from .coordinator import forget_auth_failures, get_modules_store
 from .utils import close_api_sessions, serialize_modules
 from .wemportalapi import WemPortalApi
 
@@ -299,6 +299,15 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 new_data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
                 failure = await self._credential_error(entry, new_data)
                 if failure is None:
+                    # The portal just accepted these credentials, so the
+                    # failures that led here are answered. Nothing else does
+                    # it: the count is dropped on unload, and an entry whose
+                    # setup failed - which is how most reauth prompts arise -
+                    # is not loaded, so its reload unloads nothing. Left
+                    # standing, the next login page the portal hands out was
+                    # the fourth in a row and asked for the same password
+                    # again.
+                    forget_auth_failures(entry)
                     # Reloads even when the entry is unchanged, which is the
                     # whole point here: someone re-entering the SAME password
                     # is telling us the portal rejected a login it should

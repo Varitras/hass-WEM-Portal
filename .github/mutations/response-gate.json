@@ -896,6 +896,13 @@
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
   {
+    "label": "reauth: accepted credentials still carrying the old failure streak",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                    forget_auth_failures(entry)",
+    "new": "                    pass",
+    "tests": "a_successful_reauth_clears_the_auth_failure_streak"
+  },
+  {
     "label": "portal lists: an explicit null read as an absent key again",
     "path": "custom_components/wemportal/utils.py",
     "old": "    return payload.get(key) or []",

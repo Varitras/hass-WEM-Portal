@@ -47,7 +47,7 @@ LINE_BUDGETS = {
     # leave, the way statistics did.
     "wemportalapi.py": 2877,
     "expert_writer.py": 2419,
-    "config_flow.py": 926,
+    "config_flow.py": 935,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to

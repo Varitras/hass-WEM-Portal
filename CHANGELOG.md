@@ -8,6 +8,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Re-entering your password no longer leaves the failed logins that asked
+  for it standing.** The count that escalates to a credentials prompt is
+  kept on the account so it survives the reloads a failing setup causes -
+  and nothing cleared it when the prompt was answered correctly. The very
+  next login page the portal handed out was then the fourth in a row and
+  asked for the same password again.
 - **A weekly programme nothing is refreshing any more ages out like every
   other reading.** Programmes were exempt from the ageing that follows a
   module going silent, on the grounds that the hourly schedule fetch keeps

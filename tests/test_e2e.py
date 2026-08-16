@@ -2941,6 +2941,56 @@ async def test_reauth_reloads_the_entry_exactly_once(hass, monkeypatch):
     assert reloads == [entry.entry_id], f"reloaded {len(reloads)} times"
 
 
+async def test_a_successful_reauth_clears_the_auth_failure_streak(hass, monkeypatch):
+    """The streak outlives a reload on purpose - and that is what bit here.
+
+    It is kept on the account rather than the coordinator because a failed
+    SETUP triggers a reload that would otherwise reset it, so the escalation
+    to a reauth prompt could never be reached. Nothing then cleared it when
+    that prompt was answered CORRECTLY: the count is dropped on unload, and
+    an entry whose setup failed is not loaded, so its reload unloads nothing.
+
+    A cycle that succeeds afterwards does clear it, which is why this drives
+    the case where the next one does NOT: the portal hands out one more login
+    page. That single failure arrived on top of three the new credentials had
+    already answered, so it escalated straight back to a reauth prompt - for
+    a password the portal had just accepted.
+    """
+    from custom_components.wemportal.exceptions import AuthError
+    from custom_components.wemportal.models import account_state
+
+    def refusing_portal(self, *_args, **_kwargs):
+        raise AuthError("Login failed")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", refusing_portal)
+    entry = _entry(hass)
+    # Seeded past the escalation threshold, so the first cycle raises
+    # ConfigEntryAuthFailed and the entry ends up NOT loaded - which is the
+    # state this is about: nothing unloads, so nothing clears the count.
+    account_state(USER).auth_failures = 3
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is not ConfigEntryState.LOADED, (
+        "the entry loaded, so the reload would clear the count on its own"
+    )
+
+    # The credentials check passes - fetch_data keeps failing, so the reload
+    # after the reauth runs into one more login page.
+    monkeypatch.setattr(WemPortalApi, "api_login", lambda self: None)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "new-secret"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reauth_successful"
+    assert account_state(USER).auth_failures == 1, (
+        f"the accepted credentials started at {account_state(USER).auth_failures} "
+        "failed logins, so one more asks for them again"
+    )
+
+
 async def test_adding_a_configured_account_says_so(hass):
     """AbortFlow is how Home Assistant ENDS a flow, not an error in it.
 
