@@ -638,12 +638,13 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
             still holds the old entry and api. Identity plus the unloading
             flag covers both: a different object means the configuration this
             write belongs to is gone, whatever its id says.
+
+            The reason and nothing more: asked before every request, the
+            confirming read included, it cannot say how far the write got.
             """
             reason = data.why_not_current(target_entry)
             if reason is not None:
-                raise ExpertOperationAborted(
-                    f"{reason} before the write reached the portal"
-                )
+                raise ExpertOperationAborted(reason)
 
         def _do_write():
             # Own short-lived session per write; honors the shared 403

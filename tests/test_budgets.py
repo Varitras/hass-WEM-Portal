@@ -46,7 +46,7 @@ LINE_BUDGETS = {
     # unchanged: the weekly-programme path is the next thing that could
     # leave, the way statistics did.
     "wemportalapi.py": 2870,
-    "expert_writer.py": 2366,
+    "expert_writer.py": 2419,
     "config_flow.py": 926,
 }
 

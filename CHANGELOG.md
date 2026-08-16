@@ -8,6 +8,17 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An expert parameter with fractional steps takes the values it offers
+  again.** The step is measured as the distance between two options, and a
+  subtraction of two decimals carries their float error: a heating curve's
+  0.05 was published as 0.04999999999999982. The write path then matched the
+  value against the option list exactly, so most of what the entity could be
+  set to came back as "not allowed" - naming a range that contains it.
+- **An expert write interrupted by a reload no longer denies what it
+  already did.** The abort gate is asked before every request, the read that
+  confirms the write included, and said "stopped before the write reached
+  the portal" in every case - including after the heating system had taken
+  the value. It now says what happened at that point.
 - **A flow-rate reading written with a decimal comma no longer breaks the
   update.** "m3/h" is the one unit read out of the value rather than the unit
   field, and it was the only one parsed with a bare conversion instead of the

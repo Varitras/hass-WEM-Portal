@@ -1990,9 +1990,37 @@
   {
     "label": "expert: the widest gap taken as the step, hiding values between",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "    return min(gaps) if gaps else None",
-    "new": "    return max(gaps) if gaps else None",
+    "old": "    return round(min(gaps), PORTAL_DECIMALS) if gaps else None",
+    "new": "    return round(max(gaps), PORTAL_DECIMALS) if gaps else None",
     "tests": "an_unevenly_spaced_option_list_takes_its_smallest_gap"
+  },
+  {
+    "label": "expert: the step published with the float noise of its subtraction",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "    return round(min(gaps), PORTAL_DECIMALS) if gaps else None",
+    "new": "    return min(gaps) if gaps else None",
+    "tests": "a_fractional_step_is_the_gap_and_not_the_float_noise_of_it"
+  },
+  {
+    "label": "expert: the option list matched exactly, refusing the entity's own grid",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if math.isclose(option, value, rel_tol=FLOAT_NOISE, abs_tol=FLOAT_NOISE):",
+    "new": "        if option == value:",
+    "tests": "every_value_the_grid_produces_is_one_the_write_path_takes"
+  },
+  {
+    "label": "expert: a tolerance wide enough to write a value nobody asked for",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "FLOAT_NOISE: Final = 1e-9",
+    "new": "FLOAT_NOISE: Final = 0.5",
+    "tests": "a_value_between_two_options_is_still_refused"
+  },
+  {
+    "label": "expert: an abort after the postback reported as a write that never left",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                raise ExpertOperationAborted(\n                    f\"{aborted}. The value was posted and the portal accepted \"\n                    \"it; only the confirming read did not run.\"\n                ) from aborted",
+    "new": "                raise aborted",
+    "tests": "an_abort_during_the_verify_does_not_deny_a_write_that_happened"
   },
   {
     "label": "expert: the read applying its step to neither caller",

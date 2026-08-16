@@ -14,6 +14,7 @@ from typing import Final
 import logging
 
 import hashlib
+import math
 import random
 import re
 import time
@@ -546,6 +547,18 @@ def parse_module_list(html_content) -> list:
 # on the rest; an enum reads "Aus" and has no number at all. Parsed by the
 # shared utils.parse_portal_number, like every other portal value.
 
+# Places of decimals a portal value is taken to have. Two on the labels seen
+# so far (0.05 steps on a heating curve); ten leaves room for anything it may
+# yet offer while still being far coarser than the error of a float
+# subtraction, which is what this exists to strip.
+PORTAL_DECIMALS: Final = 10
+
+# How far apart two numbers may be and still mean the same option. The error
+# of a float grid, not a tolerance on the value itself: the smallest step any
+# parameter has offered is 0.05, so this is six orders of magnitude away from
+# telling two real options apart.
+FLOAT_NOISE: Final = 1e-9
+
 
 def _smallest_gap(options):
     """The distance between the two closest allowed values, or None.
@@ -558,6 +571,12 @@ def _smallest_gap(options):
 
     No guard for a short list: one option produces no pair to subtract, so
     the comprehension is empty and the answer is already None.
+
+    Rounded, because a gap is the SUBTRACTION of two parsed labels and
+    carries the float error of both: the 0.05 of a heating curve came out as
+    0.04999999999999982. That is the number the entity publishes and a UI
+    builds its grid from, so the grid could not land on the very list the
+    step was derived from.
     """
     ordered = sorted(options or [])
     gaps = [
@@ -565,7 +584,26 @@ def _smallest_gap(options):
         for earlier, later in zip(ordered, ordered[1:])
         if later > earlier
     ]
-    return min(gaps) if gaps else None
+    return round(min(gaps), PORTAL_DECIMALS) if gaps else None
+
+
+def _option_meant_by(options, value):
+    """The offered option `value` names, or None if it names none of them.
+
+    Not `in`: the options are parsed from decimal labels while the value
+    arrives off a number entity's grid (min + n * step), so the two spell the
+    same reading with different float error - 0.15 against
+    0.15000000000000002. Compared exactly, a 0.05-step parameter refused most
+    of the values it can be set to, naming a range that contains them.
+
+    A tolerance for that error and nothing wider: a value the device does not
+    offer stays refused. Snapping it to the nearest one would write something
+    other than what was asked for, on a heating system.
+    """
+    for option in options or []:
+        if math.isclose(option, value, rel_tol=FLOAT_NOISE, abs_tol=FLOAT_NOISE):
+            return option
+    return None
 
 
 class ExpertParameterState:
@@ -1688,7 +1726,18 @@ class WemPortalExpertClient:
             # report the new value as selected. The value is applied
             # immediately, so a short retry budget is enough here (unlike
             # the initial read, where live values may still be loading).
-            verify = self._fetch_form(entityvalue, max_attempts=2)
+            try:
+                verify = self._fetch_form(entityvalue, max_attempts=2)
+            except ExpertOperationAborted as aborted:
+                # The gates are asked before every request, this read
+                # included - and by here the postback is through, so the
+                # heating system already has the value. Said plainly, because
+                # an abort that reads like every other one sends whoever
+                # asked for the write to repeat a change that has happened.
+                raise ExpertOperationAborted(
+                    f"{aborted}. The value was posted and the portal accepted "
+                    "it; only the confirming read did not run."
+                ) from aborted
             # A word is confirmed by the word the dialog shows, because a
             # value beside the scale leaves `current` empty by design - that
             # is what makes it special in the first place.
@@ -1743,7 +1792,8 @@ class WemPortalExpertClient:
                 state=state,
             )
 
-        if value_number not in state.options:
+        offered = _option_meant_by(state.options, value_number)
+        if offered is None:
             # Carries the state: a caller whose idea of the range is out
             # of date is precisely the caller that lands here.
             raise ParameterWriteError(
@@ -1752,7 +1802,10 @@ class WemPortalExpertClient:
                 f"({len(state.options)} discrete options).",
                 state=state,
             )
-        return state.post_value_for(value_number), None, value_number
+        # The OPTION from here on, not what was asked with: the post token is
+        # looked up by it, and so is the value the verify below compares the
+        # form against - both against the portal's own spelling.
+        return state.post_value_for(offered), None, offered
 
     # ------------------------------------------------------------------
     @staticmethod

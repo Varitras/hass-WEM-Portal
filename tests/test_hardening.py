@@ -1368,6 +1368,42 @@ def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
     assert sent["ctl00$DialogContent$ddlNewValue"] == "15"
 
 
+def test_an_abort_during_the_verify_does_not_deny_a_write_that_happened(monkeypatch):
+    """The gates are asked before every request, the verify's read included.
+
+    A teardown landing in that window - between the postback the heating
+    system has already taken and the read that confirms it - raised the same
+    abort as one raised before the write, wording and all: "stopped before
+    the write reached the portal". That denies a change that is in the device,
+    and tells whoever asked for it to do it again.
+    """
+    client, sent = _recording_write_client(
+        monkeypatch, [[("10", "1.0", True), ("15", "1.5", False)]]
+    )
+    reading_the_form = client._fetch_form
+    reads = []
+
+    def fetch_form(*args, **kwargs):
+        reads.append(1)
+        if len(reads) == 1:
+            return reading_the_form(*args, **kwargs)
+        raise exceptions.ExpertOperationAborted("The configuration was removed")
+
+    monkeypatch.setattr(client, "_fetch_form", fetch_form)
+
+    with pytest.raises(exceptions.ExpertOperationAborted) as aborted:
+        client.write_parameter("A" * 36, 1.5)
+
+    assert sent["ctl00$DialogContent$ddlNewValue"] == "15", (
+        "the write never went out, so this test proves nothing about what "
+        "happens after it"
+    )
+    assert "posted and the portal accepted" in str(aborted.value), (
+        f"a write the portal took was reported as if it had not gone out: "
+        f"{aborted.value}"
+    )
+
+
 def test_a_word_write_not_taken_by_the_portal_is_reported_as_refused(monkeypatch):
     """The verify step must compare the WORD the dialog shows.
 
@@ -1801,6 +1837,68 @@ def test_an_unevenly_spaced_option_list_takes_its_smallest_gap():
     entity.apply_read_state(_read_state(30.0, [0.0, 10.0, 20.0, 20.25, 30.0]))
 
     assert entity.native_step == 0.25
+
+
+def _heating_curve_options():
+    """A heating curve as the portal offers it: 0 to 2, 0.05 apart."""
+    return [round(index * 0.05, 10) for index in range(41)]
+
+
+def test_a_fractional_step_is_the_gap_and_not_the_float_noise_of_it():
+    """The step is a SUBTRACTION of two parsed labels, so it carries the
+    noise of both: 0.05 came out as 0.04999999999999982.
+
+    That number is what the entity publishes and what a UI then builds its
+    grid from, so the grid it produces cannot land on the option list it was
+    derived from - see the test below for what that costs.
+    """
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+
+    entity.apply_read_state(_read_state(1.0, _heating_curve_options()))
+
+    assert entity.native_step == 0.05, (
+        f"the published step is {entity.native_step!r}, which no value on the "
+        "portal's own list is a multiple of"
+    )
+
+
+def test_every_value_the_grid_produces_is_one_the_write_path_takes():
+    """The two halves have to agree, and they did not.
+
+    A number entity's value comes off a grid of min + n * step, and the write
+    path matched it against the option list with `in` - an exact float
+    comparison. 40 of the 41 values a 0.05-step curve can be set to were
+    refused as "not allowed", naming a range that contains them.
+    """
+    from custom_components.wemportal.expert_writer import WemPortalExpertClient
+
+    options = _heating_curve_options()
+    state = _read_state(1.0, options)
+    refused = []
+    for index in range(len(options)):
+        from_the_grid = min(options) + index * 0.05
+        try:
+            WemPortalExpertClient._requested_option(state, from_the_grid)
+        except Exception:  # noqa: BLE001 - any refusal is the failure here
+            refused.append(from_the_grid)
+
+    assert not refused, (
+        f"{len(refused)} of {len(options)} settable values were refused, "
+        f"starting at {refused[:3]}"
+    )
+
+
+def test_a_value_between_two_options_is_still_refused():
+    """The counter-test: the tolerance is for float noise, not for values the
+    device does not offer. Snapping 0.07 to 0.05 would write something other
+    than what was asked for - on a heating system."""
+    from custom_components.wemportal.expert_writer import WemPortalExpertClient
+
+    state = _read_state(1.0, _heating_curve_options())
+
+    with pytest.raises(exceptions.ParameterWriteError):
+        WemPortalExpertClient._requested_option(state, 0.07)
 
 
 def test_a_single_option_leaves_the_step_alone():
