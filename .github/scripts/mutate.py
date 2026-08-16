@@ -169,6 +169,14 @@ def run_tests(selector: str, paths=None, root: Path | None = None) -> bool:
                 "-m",
                 "",
                 "-x",
+                # The duration budget in conftest turns an otherwise GREEN
+                # run red, and exit code 1 is the entire evidence here - a
+                # test that merely ran slowly would be reported as a caught
+                # mutation. Useful in the everyday suite, wrong as an answer
+                # to "did anything notice", so it is switched off for this
+                # question only.
+                "--slow-test-seconds",
+                "inf",
                 "-k",
                 selector,
             ],

@@ -1855,6 +1855,13 @@
     "tests": "the_auto_poll_stops_at_the_START_of_an_unload"
   },
   {
+    "label": "harness: a slow test able to pass for a caught mutation again",
+    "path": ".github/scripts/mutate.py",
+    "old": "                \"--slow-test-seconds\",\n                \"inf\",",
+    "new": "",
+    "tests": "the_run_cannot_be_failed_by_the_duration_budget"
+  },
+  {
     "label": "scrape: an unparseable page raising past the reuse fallback",
     "path": "custom_components/wemportal/scraper.py",
     "old": "        except LxmlError:",

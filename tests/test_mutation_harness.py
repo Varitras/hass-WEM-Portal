@@ -149,6 +149,33 @@ def test_a_passing_suite_counts_as_survived(monkeypatch):
     assert mutate.run_tests("something") is False
 
 
+def test_the_run_cannot_be_failed_by_the_duration_budget(monkeypatch):
+    """Exit code 1 is the whole evidence, so nothing else may produce it.
+
+    conftest turns an otherwise GREEN run red when a single test ran past
+    the duration budget - useful in the everyday suite, and here it is a
+    false "caught": the mutation is reported as noticed because a test was
+    slow, not because anything failed. The two signals share one exit code,
+    so they have to be kept apart at the call.
+
+    Asserted on the command line because that is where the separation lives
+    - the alternative would be a real slow run inside the suite.
+    """
+    seen = {}
+
+    def record(argv, **_kwargs):
+        seen["argv"] = argv
+        return _Result(0, "3 passed")
+
+    monkeypatch.setattr(mutate.subprocess, "run", record)
+
+    mutate.run_tests("something")
+
+    assert "--slow-test-seconds" in seen["argv"], (
+        "a slow test would be reported as a caught mutation"
+    )
+
+
 def test_the_file_is_restored_even_when_the_run_explodes(tmp_path, monkeypatch):
     """A harness that leaves mutated source behind would poison every later
     run - and the next commit."""
