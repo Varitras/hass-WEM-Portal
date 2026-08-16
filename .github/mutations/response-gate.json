@@ -896,6 +896,13 @@
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
   {
+    "label": "discovery: a refused network walked into module after module",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                        device_id,\n                    )\n                    raise\n                if status_code == 400:",
+    "new": "                        device_id,\n                    )\n                    continue\n                if status_code == 400:",
+    "tests": "a_refused_discovery_stops_at_the_first_module"
+  },
+  {
     "label": "discovery: progress kept only by a cycle that finished",
     "path": "custom_components/wemportal/coordinator.py",
     "old": "                await self._async_save_modules_cache()\n                await self._async_save_scraper_device_id()",

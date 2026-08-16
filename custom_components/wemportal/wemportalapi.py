@@ -1825,30 +1825,6 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         )
         return True
 
-    def _note_rate_limited_module(self, device_id, values, forbidden_count, exc) -> int:
-        """Count one 403 against this device, and give up after three.
-
-        Returns the new strike count. Three in a row means the portal is
-        refusing this IP rather than this request, so the whole integration
-        backs off instead of walking the remaining modules into the same wall.
-        """
-        forbidden_count += 1
-        if forbidden_count >= 3:
-            _LOGGER.error(
-                "Rate limited (403) three times while fetching parameters "
-                "for device %s. Aborting.",
-                device_id,
-            )
-            self._activate_cooldown()
-            raise ForbiddenError("Rate limited during get_parameters") from exc
-        _LOGGER.warning(
-            "Rate limit warning (403) for device %s module %s. Strike %s of 3.",
-            device_id,
-            values["Index"],
-            forbidden_count,
-        )
-        return forbidden_count
-
     def _store_module_description(self, device_id, key, values, response) -> None:
         """Keep what the portal said this module has, or book why it did not.
 
@@ -1906,7 +1882,6 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
 
     def _discover_device_parameters(self, device_id) -> None:
         """Read every module description of one device that is due."""
-        forbidden_count = 0
         for key, values in self.modules[device_id].items():
             if not self._module_description_is_due(device_id, values):
                 continue
@@ -1923,10 +1898,20 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             except WemPortalError as exc:
                 status_code = self._http_status(exc)
                 if status_code == 403:
-                    forbidden_count = self._note_rate_limited_module(
-                        device_id, values, forbidden_count, exc
+                    # One refusal is the whole budget, and the code used to
+                    # promise three: make_api_call activates the shared
+                    # cooldown as soon as the portal answers 403, so the next
+                    # module's request is refused before it is sent - by a
+                    # ForbiddenError carrying no HTTP status, which misses
+                    # this branch and re-raises below. The counter could
+                    # never reach two while the log said "strike 1 of 3".
+                    _LOGGER.error(
+                        "Rate limited (403) while reading parameters for "
+                        "device %s. Discovery stops here: the portal is "
+                        "refusing this network, not this request.",
+                        device_id,
                     )
-                    continue
+                    raise
                 if status_code == 400:
                     self._note_undescribed_module(
                         device_id,

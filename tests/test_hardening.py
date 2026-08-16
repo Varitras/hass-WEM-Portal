@@ -6674,6 +6674,45 @@ def test_the_values_carried_along_are_read_after_the_wait_for_the_lock():
     )
 
 
+def test_a_refused_discovery_stops_at_the_first_module():
+    """The three-strike budget it promised could never be spent.
+
+    make_api_call activates the shared cooldown the moment the portal answers
+    403, so the NEXT module's request is refused before it is sent - by a
+    ForbiddenError carrying no HTTP status, which misses the 403 branch
+    entirely and re-raises. The counter never reached two, while the log said
+    "strike 1 of 3" and the docstring described a budget.
+
+    What must hold is the behaviour, not the counter: one refusal ends
+    discovery rather than walking the remaining modules into the same wall.
+    """
+    api = _api()
+    api.modules = {
+        "1234": {
+            (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump"},
+            (1, 1): {"Index": 1, "Type": 1, "Name": "Circuit"},
+        }
+    }
+    api._module_description_is_due = lambda *_args: True
+    asked = []
+
+    def make_api_call(url, **_kwargs):
+        asked.append(url)
+        refusal = real_requests.exceptions.HTTPError(
+            response=FakeResponse(status_code=403)
+        )
+        raise exceptions.ForbiddenError("WemPortal forbidden error") from refusal
+
+    api.make_api_call = make_api_call
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api._discover_device_parameters("1234")
+
+    assert len(asked) == 1, (
+        f"the portal was asked {len(asked)} times after refusing this network"
+    )
+
+
 def test_the_filter_survives_the_handover_to_the_session_setup():
     """The leg between the two tests above, and the one nothing watched.
 

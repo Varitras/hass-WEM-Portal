@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A portal that refuses this network stops the parameter discovery at
+  once.** The log promised a budget of three refusals, and the code could
+  never spend more than one: the first 403 pauses every request, so the
+  second was refused before it was sent and left the counter where it was.
+  What it said and what it did now match.
 - **A cycle that runs out of time keeps what it discovered.** Discovery is
   stopped where it stands when a cycle exhausts its budget, and what it had
   found by then was only written to disk by a cycle that finished. An
