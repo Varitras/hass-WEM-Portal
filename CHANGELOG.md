@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Removing the integration no longer leaves its cache behind after all.**
+  A poll runs in a thread that cannot be cancelled, so one still running
+  when the entry is removed finishes afterwards - and wrote the module cache
+  and device id straight back into storage that had just been cleaned up,
+  where they stayed for good.
 - **Re-entering your password no longer leaves the failed logins that asked
   for it standing.** The count that escalates to a credentials prompt is
   kept on the account so it survives the reloads a failing setup causes -

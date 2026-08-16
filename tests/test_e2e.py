@@ -183,6 +183,39 @@ async def test_unload_cleans_up(hass):
     assert not hasattr(entry, "runtime_data")
 
 
+async def test_a_poll_that_outlives_the_entry_does_not_rebuild_its_stores(
+    hass, hass_storage
+):
+    """A cycle runs in an executor thread and cannot be cancelled.
+
+    So a removal that lands mid-cycle deletes the stores, and the tail of
+    that cycle - which finishes on the event loop afterwards - writes them
+    straight back. What is left is a module cache and a device id in
+    .storage belonging to an entry that no longer exists, kept for good and
+    handed to the next entry that happens to reuse the id.
+    """
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    modules_key = f"{DOMAIN}_{entry.entry_id}_modules"
+    scraper_key = f"{DOMAIN}_{entry.entry_id}_scraper_device"
+    coordinator.api.modules = {"1234": {(0, 1): {"Name": "Heat pump"}}}
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert modules_key not in hass_storage, "the removal itself did not clean up"
+
+    # The tail of the cycle that was still running, arriving now.
+    await coordinator._async_save_modules_cache()
+    await coordinator._async_save_scraper_device_id()
+
+    assert modules_key not in hass_storage, (
+        "a cycle outliving its entry wrote the module cache back"
+    )
+    assert scraper_key not in hass_storage, (
+        "a cycle outliving its entry wrote the scraper device id back"
+    )
+
+
 async def test_removing_the_entry_deletes_its_stores_and_account_memory(
     hass, hass_storage
 ):

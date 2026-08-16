@@ -896,6 +896,13 @@
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
   {
+    "label": "stores: a cycle outliving its entry writing them back",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        return is_still_serving(self.config_entry)",
+    "new": "        return True",
+    "tests": "a_poll_that_outlives_the_entry_does_not_rebuild_its_stores"
+  },
+  {
     "label": "discovery: the device filter dropped at the handover",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        self._discover_parameters_if_due(enabled_devices)",

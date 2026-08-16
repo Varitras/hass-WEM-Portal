@@ -36,7 +36,7 @@ from .exceptions import (
     PortalMaintenanceError,
     WemPortalError,
 )
-from .models import account_state
+from .models import account_state, is_still_serving
 from .utils import device_identifier, serialize_modules
 from .wemportalapi import WemPortalApi
 
@@ -184,6 +184,22 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # five-minute interval, for data that changes almost never).
         self._saved_modules_snapshot: dict | None = None
 
+    def _may_still_write_to_disk(self) -> bool:
+        """Whether a cycle finishing now still owns its entry's stores.
+
+        A cycle runs in an executor thread and cannot be cancelled, so a
+        removal or reload landing mid-cycle is followed by the tail of that
+        cycle arriving on the event loop. Writing there re-created stores
+        async_remove_entry had just deleted - left in .storage for good, and
+        handed to whatever entry reuses the id - or wrote the OLD api's
+        modules over what the reloaded entry had already saved.
+
+        Asked of both save paths rather than of the caller: they are what
+        touches the disk, and a third one added later would otherwise have to
+        remember this on its own.
+        """
+        return is_still_serving(self.config_entry)
+
     async def _async_save_scraper_device_id(self) -> None:
         """Persist the stable scraper device id once it has been decided.
 
@@ -195,6 +211,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         """
         device_id = getattr(self.api, "scraper_device_id", None)
         if not device_id or device_id == self._saved_scraper_device_id:
+            return
+        if not self._may_still_write_to_disk():
             return
         try:
             await self._scraper_device_store.async_save(device_id)
@@ -213,6 +231,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         it only costs a slower next startup, never incorrect data.
         """
         if not self.api.modules:
+            return
+        if not self._may_still_write_to_disk():
             return
         try:
             serialized = serialize_modules(self.api.modules)
