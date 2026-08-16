@@ -48,6 +48,14 @@ LINE_BUDGETS = {
     "wemportalapi.py": 2885,
     "expert_writer.py": 2419,
     "config_flow.py": 935,
+    # The fourth, and new here: moving the expert client's import off the
+    # event loop needs a loader function to hand the executor. Written down
+    # rather than trimmed into the limit - three modules had already been
+    # squeezed under 900 by shortening comments in this same session, which
+    # is how a budget stops meaning anything. __init__ carries the lifecycle,
+    # the two domain services and the migrations; the services are what could
+    # leave next.
+    "__init__.py": 903,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to

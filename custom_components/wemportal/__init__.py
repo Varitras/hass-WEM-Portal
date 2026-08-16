@@ -471,7 +471,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         async_register_holiday_service(hass)
 
         if entry.options.get(CONF_EXPERT_WRITE, False):
-            _async_register_expert_service(hass)
+            await _async_register_expert_service(hass)
             entry.runtime_data.expert.setup_auto_poll(hass, entry)
     except Exception:
         # Take the platforms back down FIRST, while runtime_data is still
@@ -560,24 +560,31 @@ def _resolve_expert_entry(
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _async_register_expert_service(hass: HomeAssistant) -> None:
+def _load_expert_writer():
+    """Import the expert client module. Runs in an executor - see the caller."""
+    from . import expert_writer
+
+    return expert_writer
+
+
+async def _async_register_expert_service(hass: HomeAssistant) -> None:
     """Register wemportal.set_expert_parameter (idempotent).
 
     Takes no entry and no api on purpose: one global registration serves every
     configured account, so the handler resolves its target per call (see
     _resolve_expert_entry) and refuses when it cannot tell which is meant.
     """
-    # Function-local, like every other expert_writer import in this file:
-    # the module pulls curl_cffi and lxml (~140 ms, measured) and this
-    # file is imported whenever Home Assistant loads the integration.
-    from .expert_writer import (
-        WemPortalExpertClient,
-        entityvalue_digest,
-        short_entityvalue,
-    )
-
     if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
         return
+
+    # Deferred because the module pulls curl_cffi and lxml (~140 ms,
+    # measured) - but deferring moved only WHEN, not onto which thread, so
+    # those 140 ms were spent on the event loop. Below the idempotence check
+    # as well, so a second account does not arrange for it again.
+    expert_writer = await hass.async_add_import_executor_job(_load_expert_writer)
+    expert_client = expert_writer.WemPortalExpertClient
+    entityvalue_digest = expert_writer.entityvalue_digest
+    short_entityvalue = expert_writer.short_entityvalue
 
     async def _handle_set_expert_parameter(call):
         # Strip once at the boundary: the validity check strips internally,
@@ -652,7 +659,7 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
             from .expert_options import expert_client_options
 
             _raise_if_unloaded()
-            client = WemPortalExpertClient(
+            client = expert_client(
                 target_entry.data.get(CONF_USERNAME),
                 target_entry.data.get(CONF_PASSWORD),
                 cooldown_check=target_api.check_expert_cooldown,
@@ -767,10 +774,6 @@ def _backfill_account_unique_id(hass: HomeAssistant, entry: ConfigEntry) -> None
     """
     if entry.unique_id is not None:
         return
-    # Function-local: config_flow imports expert_writer at module level,
-    # so a top-level import here would pull curl_cffi into every setup.
-    from .config_flow import account_unique_id
-
     wanted = account_unique_id(entry.data.get(CONF_USERNAME))
     if not wanted:
         _LOGGER.debug(
