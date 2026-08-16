@@ -125,11 +125,18 @@ def _no_real_portal(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _mock_sleep(monkeypatch):
-    """Neutralise real time.sleep() in the modules that pace server load.
+    """Neutralise real time.sleep() for the whole test process.
 
     The production code deliberately sleeps between portal requests; in tests
     those waits must be instant. Mocking centrally (not per test) keeps later
     tests that hit the same code paths fast too.
+
+    Reaching only these two modules is not on offer, and the wording that
+    suggested it cost a test: both attributes ARE the one `time` module, so
+    this replaces time.sleep everywhere, for every test of the run. A test that
+    needs one thing to happen after another therefore cannot get it from a
+    sleep - it has to wait for the thing itself (tests/test_mutation_harness.py
+    does, after its sleeps turned out to be returning instantly).
     """
     monkeypatch.setattr(wemportalapi.time, "sleep", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(expert_writer.time, "sleep", lambda *_args, **_kwargs: None)

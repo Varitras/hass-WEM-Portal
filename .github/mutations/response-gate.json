@@ -2233,6 +2233,13 @@
     "tests": "results_are_reported_in_plan_order"
   },
   {
+    "label": "harness: reporting results in finishing order must be noticed",
+    "path": ".github/scripts/mutate.py",
+    "old": "            results = list(pool.map(one, cases))",
+    "new": "            import concurrent.futures as futures_module\n            pending = [pool.submit(one, case) for case in cases]\n            results = [done.result() for done in futures_module.as_completed(pending)]",
+    "tests": "results_are_reported_in_plan_order"
+  },
+  {
     "label": "freshness: the rows explaining the silence blanked with it",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):",

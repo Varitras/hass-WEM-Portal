@@ -15,12 +15,17 @@ import importlib.util
 import json
 import re
 import tempfile
-import time
+import threading
 from pathlib import Path
 
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "mutate.py"
+
+# How long one worker waits for the case behind it before the run is declared
+# stuck rather than slow. Generous: it covers the pool starting three threads
+# and copying three trees, and a run that trips it is broken, not busy.
+WAIT_FOR_A_WORKER_SECONDS = 60
 
 
 def _load():
@@ -635,11 +640,20 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
     Reporting in that order would make two runs of the same plan produce
     different output, which is a diff nobody can read - and the one case that
     SURVIVED would move around between runs.
+
+    The reverse finishing order is FORCED rather than timed. It used to be
+    staggered sleeps, which is two mistakes in one: a sleep only makes a given
+    order likely, and conftest's autouse fixture replaces time.sleep for the
+    whole process, so those sleeps returned instantly and no order was even
+    made likely. Each case now waits for the one after it, so plan order is
+    the one order that cannot come out by luck.
     """
     monkeypatch.setattr(mutate, "REPO", tmp_path)
     monkeypatch.setattr(
         mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
     )
+
+    finished = [threading.Event() for _ in range(3)]
 
     def slowest_first(selector, paths=None, root=None):
         # WHICH case this is comes from the mutated file in this worker's own
@@ -647,8 +661,14 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
         # worker is free, so the two are only incidentally the same.
         mutated = (root / "module.py").read_text(encoding="utf-8")
         index = next(number for number in range(3) if f"value{number} = 2" in mutated)
-        # case0 takes longest, so finishing order is the reverse of plan order.
-        time.sleep(0.05 * (3 - index))
+        # All three run at once (--jobs 3 below), so the last case is free to
+        # finish first and the first one finishes last.
+        if index < 2:
+            assert finished[index + 1].wait(timeout=WAIT_FOR_A_WORKER_SECONDS), (
+                f"case{index + 1} never finished - all three cases have to run "
+                "at once for this order to be reachable at all"
+            )
+        finished[index].set()
         # A DIFFERENT answer per case, which is the point. With every case
         # answering the same, a result attached to the wrong case produces
         # identical output and the assertion below cannot see it - the whole
