@@ -5376,6 +5376,10 @@ PRESERVED_FIELDS = frozenset(
         "spider_wait_interval",
         "spider_retry_count",
         "last_scraping_update",
+        # Same rule as the scrape backoff above: a recovery runs after the
+        # failures that caused it, and dropping the API interval there would
+        # spend requests fastest at the portal that is already refusing them.
+        "_last_api_read",
     }
 )
 
@@ -7354,4 +7358,77 @@ def test_a_reload_fetches_statistics_again_because_the_data_did_not_survive():
 
     assert len(calls) == 2, (
         "the rebuilt api kept the gate but not the readings it guards"
+    )
+
+
+# --- `both` mode spent the API budget at the WEB interval ---------------
+#
+# The coordinator ticks at min(web, api), so whichever of the two is shorter
+# is served on time. The scrape half has a gate for that; the API half had
+# none, so it rode along on every tick. With web=5min and api=30min that is
+# 864 instead of 144 API cycles per device and day - against a portal that
+# counts 10,000 requests per 12 hours per IP, and after the user explicitly
+# asked for the longer interval in the options.
+
+
+def _api_in_both_mode(web_seconds, api_seconds, clock):
+    """An api in `both` mode with the scrape half taken out of the picture."""
+    from homeassistant.const import CONF_SCAN_INTERVAL
+
+    from custom_components.wemportal.const import CONF_MODE, CONF_SCAN_INTERVAL_API
+
+    api = _api(
+        config={
+            CONF_MODE: "both",
+            CONF_SCAN_INTERVAL: web_seconds,
+            CONF_SCAN_INTERVAL_API: api_seconds,
+        }
+    )
+    api._scrape_is_due = lambda _enabled_devices: False
+    reads = []
+    api.get_data = lambda _enabled_devices=None: reads.append(clock.now)
+    return api, reads
+
+
+def _tick(api, clock, times, spacing):
+    """Drive `times` coordinator cycles on a fixed `spacing` grid."""
+    for _ in range(times):
+        api._collect_both(None)
+        clock.now += spacing
+
+
+def test_both_mode_does_not_read_the_api_on_every_web_cycle(monkeypatch):
+    """Seven ticks of the five-minute web interval, one half-hour API
+    interval: the API is read at the start and again half an hour later, not
+    seven times."""
+    clock = _Clock()
+    monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
+    api, reads = _api_in_both_mode(300, 1800, clock)
+    start = clock.now
+
+    _tick(api, clock, times=7, spacing=300)
+
+    assert reads == [start, start + 1800], (
+        f"the API was read on {len(reads)} of 7 web cycles; the user asked "
+        "for one read per half hour"
+    )
+
+
+def test_both_mode_reads_the_api_on_every_cycle_when_that_is_the_shorter_one(
+    monkeypatch,
+):
+    """The control case, and what decides how the gate compares: on the
+    default settings (web 30min, API 5min) the coordinator ticks at exactly
+    the API interval, so a `>` would find each tick a hair too early and
+    halve the polling the user configured.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
+    api, reads = _api_in_both_mode(1800, 300, clock)
+
+    _tick(api, clock, times=7, spacing=300)
+
+    assert len(reads) == 7, (
+        f"only {len(reads)} of 7 API cycles ran; the gate is measuring "
+        "against a grid that drifts by each cycle's own runtime"
     )

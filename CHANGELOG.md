@@ -8,6 +8,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`both` mode no longer reads the mobile API at the web interval.** With
+  the two intervals set apart - a five-minute scrape next to a half-hourly
+  API read, say - the API was read on every scrape cycle rather than on its
+  own: six times the requests that setting asks for, against a portal that
+  counts 10,000 per 12 hours and IP. The scrape half was gated for exactly
+  this; the API half was not.
 - **A device you switched off is no longer asked for its parameter
   definitions.** The filter reached the readings and stopped there: the
   discovery in between was called without it. That discovery is the most

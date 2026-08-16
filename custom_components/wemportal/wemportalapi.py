@@ -395,6 +395,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         # module) turns every restart with an expired cache into a slow
         # startup.
         self._first_cycle_done = False
+        # When the mobile API was last read, for the `both`-mode gate. None
+        # rather than 0.0: zero on the monotonic clock is the moment the
+        # machine booted, which would read as "long overdue" only by luck.
+        self._last_api_read = None
         # Tracks whether get_devices() has already run once during the
         # lifetime of this WemPortalApi instance (i.e. once per Home
         # Assistant session/restart), so it isn't repeated on every single
@@ -907,6 +911,30 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         waited = dt_util.now() - self.last_scraping_update + timedelta(seconds=10)
         return waited > self.scan_interval
 
+    def _api_read_is_due(self) -> bool:
+        """Whether `both` mode should read the mobile API this cycle.
+
+        The coordinator ticks at min(web, api) so that whichever interval is
+        shorter is served on time. Without this gate the LONGER one was
+        served just as often: a web=5min/api=30min installation spent six
+        times the API budget it had been configured for, against a portal
+        that counts 10,000 requests per 12 hours per IP.
+
+        Monotonic rather than the wall clock the scrape gate uses: nothing
+        persists this stamp, so it has no restart to survive, and a clock
+        change must not hand out a free read (or withhold one for hours).
+
+        `>=` and no jitter tolerance, unlike the scrape gate: the stamp is
+        taken inside the cycle, and Home Assistant plans the next tick from
+        when that cycle ENDED - so the grid drifts along with the stamp
+        rather than away from it. Measured with `>`, an installation whose
+        API interval IS the tick would lose every second reading.
+        """
+        if self._last_api_read is None:
+            return True
+        waited = time.monotonic() - self._last_api_read
+        return waited >= self.scan_interval_api.total_seconds()
+
     def _count_down_scrape_backoff(self):
         """One cycle closer to the next scrape attempt."""
         if self.spider_wait_interval > 0:
@@ -946,8 +974,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         else:
             self._count_down_scrape_backoff()
 
-        # Always run as a resilient fallback.
+        if not self._api_read_is_due():
+            return
         self.get_data(enabled_devices)
+        # After, not before: a cycle that raised has not read anything, and
+        # the coordinator's own error backoff decides when it may try again.
+        self._last_api_read = time.monotonic()
 
     def _fetch_data(self, enabled_devices=None):
         # Fail fast, without any network activity at all, if we're still

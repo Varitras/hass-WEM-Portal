@@ -1834,6 +1834,27 @@
     "tests": "a_description_that_arrives_clears_the_refusal"
   },
   {
+    "label": "both mode: the API read rides along on every web cycle again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not self._api_read_is_due():",
+    "new": "        if False:",
+    "tests": "both_mode_does_not_read_the_api_on_every_web_cycle"
+  },
+  {
+    "label": "both mode: the API read is never stamped, so it is always due",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self._last_api_read = time.monotonic()",
+    "new": "        pass",
+    "tests": "both_mode_does_not_read_the_api_on_every_web_cycle"
+  },
+  {
+    "label": "both mode: a tick exactly on the API interval counts as early",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        return waited >= self.scan_interval_api.total_seconds()",
+    "new": "        return waited > self.scan_interval_api.total_seconds()",
+    "tests": "both_mode_reads_the_api_on_every_cycle_when_that_is_the_shorter_one"
+  },
+  {
     "label": "scrape: a naive timestamp that hides the DST jump",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        self.last_scraping_update = dt_util.now()",
