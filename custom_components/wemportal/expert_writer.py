@@ -230,8 +230,8 @@ EXPERT_SESSION_MAX_AGE_SECONDS: Final = 900  # 15 minutes
 # (less load, less 403 exposure) and one point of failure. The module-
 # select code is KEPT (see EXPERT_MODULE_MENU_TARGET / _establish_context)
 # as a safety net for hypothetical other module layouts where a parameter
-# might not resolve without it: flip this to False (or pass wem_debug.py
-# without --skip-module-nav after inverting) to restore the module postback.
+# might not resolve without it: set this to False to restore the module
+# postback, or switch it per installation with CONF_EXPERT_ENABLE_MODULE_NAV.
 # The module is chosen by EXPERT_MODULE_ARG_HEATPUMP (icon-menu argument
 # "6" = heat pump on the reference installation), overridable per install
 # via CONF_EXPERT_MODULE_ARG.
@@ -247,8 +247,9 @@ EXPERT_SKIP_MODULE_NAV: Final = True
 # make the Fachmann level require the code again - e.g. if an account's
 # permanent Fachmann unlock expires and the code becomes mandatory per
 # session - flipping this back to False restores the full, HAR-verified
-# unlock choreography without having to reconstruct it. Set to False (and
-# via wem_debug.py --skip-security-code inverted) only to re-test that path.
+# unlock choreography without having to reconstruct it. Set to False, or
+# switch it per installation with CONF_EXPERT_ENABLE_SECURITY_CODE, only to
+# re-test that path.
 EXPERT_SKIP_SECURITY_CODE: Final = True
 
 EXPERT_SUBMENU_ARG: Final = "3"
@@ -1033,14 +1034,15 @@ class WemPortalExpertClient:
             },
         )
         # --- Fachmann security-code sub-sequence (retained safety net) ---
-        # DISABLED by default (EXPERT_SKIP_SECURITY_CODE=True in const.py).
+        # DISABLED by default (EXPERT_SKIP_SECURITY_CODE, at the top of THIS
+        # file - const.py has never held it).
         # Proven unnecessary for both read and write: the submenu ClientState
         # alone puts the session on the Fachmann level (same as the scraper,
         # which reads the expert view with no code at all). The full block
         # below is kept, not deleted, so it can be re-enabled instantly if
         # Weishaupt ever makes the code mandatory again (e.g. a per-session
-        # unlock). See the constant's comment in const.py for the full
-        # rationale. When active, it fires: timer postback -> security-code
+        # unlock). See that constant's own comment for the full rationale.
+        # When active, it fires: timer postback -> security-code
         # dialog+POST -> RAMMasterPage unlock callback.
         if self._do_security_code:
             # HAR-confirmed: after the security-code dialog opens and before

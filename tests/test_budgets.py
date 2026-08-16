@@ -46,8 +46,8 @@ LINE_BUDGETS = {
     # unchanged: the weekly-programme path is the next thing that could
     # leave, the way statistics did.
     "wemportalapi.py": 2885,
-    "expert_writer.py": 2419,
-    "config_flow.py": 935,
+    "expert_writer.py": 2421,
+    "config_flow.py": 939,
     # The fourth, and new here: moving the expert client's import off the
     # event loop needs a loader function to hand the executor. Written down
     # rather than trimmed into the limit - three modules had already been

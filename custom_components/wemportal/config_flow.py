@@ -196,8 +196,12 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     title=info[CONF_USERNAME],
                     data=user_input,
                     options={
-                        CONF_SCAN_INTERVAL: 1800,
-                        CONF_SCAN_INTERVAL_API: 300,
+                        # The constants, not the numbers: both are imported
+                        # in this file and used by the options flow below, so
+                        # a new entry and the form that edits it disagreed the
+                        # moment either default moved.
+                        CONF_SCAN_INTERVAL: DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+                        CONF_SCAN_INTERVAL_API: DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
                         CONF_LANGUAGE: user_input.get(
                             CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE
                         ),

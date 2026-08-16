@@ -1400,17 +1400,20 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         ) from exc
 
     def web_login(self):
-        """
-        Logs into the WEM Portal web interface by mimicking browser behavior.
-        Args:
-            username (str): The user's username (email).
-            password (str): The user's password.
-        Returns:
-            dict: Session cookies for the authenticated session.
+        """Log into the web interface, or raise saying why it did not work.
+
+        Takes nothing and returns nothing - the credentials come from the
+        object, and the session it opens is thrown away: this is the check
+        "would a web login succeed", asked by the config flow before an
+        entry is created. The docstring used to promise a username and
+        password parameter and a dict of session cookies, none of which this
+        has ever had.
+
         Raises:
-            AuthError: If the login credentials are invalid.
-            ForbiddenError: If access is forbidden.
-            UnknownAuthError: For other unknown login errors.
+            AuthError: the portal rejected the credentials.
+            PortalMaintenanceError: announced downtime, not a credential problem.
+            ForbiddenError: this network is refused (starts the cooldown).
+            UnknownAuthError: anything else, including an unreadable answer.
         """
         self.check_cooldown()
         session = requests.Session()

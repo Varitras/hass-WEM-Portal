@@ -19,7 +19,6 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import device_registry, entity_registry, issue_registry
 from homeassistant.helpers.service import async_register_admin_service
-from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_EXPERT_NOTIFY_ON_SUCCESS,
@@ -63,18 +62,17 @@ def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):
     return f"{config_entry_id}:{device_id}:{name}"
 
 
-# This integration is configured exclusively through the UI; async_setup only
-# prepares hass.data. Declaring that explicitly is what hassfest asks for -
-# without it, every run warns that async_setup exists without a CONFIG_SCHEMA,
-# and a stray `wemportal:` block in configuration.yaml would be accepted
-# silently instead of being rejected with a clear message.
+# This integration is configured exclusively through the UI. Declaring that
+# explicitly is what rejects a stray `wemportal:` block in configuration.yaml
+# with a clear message instead of accepting it silently.
+#
+# It used to sit beside an async_setup whose whole body was
+# `hass.data.setdefault(DOMAIN, {})`, and the comment justified the schema
+# with that function's existence. Nothing has read hass.data since the
+# rebuild moved the entry state to runtime_data (see models.py), so the
+# function did nothing and the reason given for the schema was circular. The
+# schema stands on its own; the function is gone.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-
-
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the wemportal component."""
-    hass.data.setdefault(DOMAIN, {})
-    return True
 
 
 # Migrate values from previous versions
