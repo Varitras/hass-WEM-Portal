@@ -324,25 +324,51 @@ def test_a_module_never_stamped_is_not_aged():
     assert api.data["1234"]["Circuit-Komfort"].value == 24.0
 
 
-def test_a_weekly_programme_survives_the_module_aging():
-    """Programme rows are governed by the schedule fetch, which has its own
-    staleness rule - the same split _clear_unanswered already makes."""
-    api = _two_module_api()
+def _programme_row(api, circuit_times_day):
     api.data["1234"]["Circuit-Programme"] = Reading(
         parameter_id="Programme",
         value="MoDiMi",
         data_type=6,
         module_index=1,
         module_type=1,
+        circuit_times_day=circuit_times_day,
     )
     api._module_answered_at.setdefault("1234", {})[MODULE_B] = time.monotonic() - AGED
     _answer_only_module_a(api)
+
+
+def test_a_weekly_programme_the_schedule_fetch_still_feeds_survives_the_aging():
+    """Programme rows are governed by the schedule fetch, which has its own
+    staleness rule - the same split _clear_unanswered already makes. The
+    detail it attached is the evidence that it is still delivering."""
+    api = _two_module_api()
+    _programme_row(api, circuit_times_day=[{"Day": 1}])
 
     api._fetch_parameter_values("1234")
 
     assert api.data["1234"]["Circuit-Komfort"].value is None
     assert api.data["1234"]["Circuit-Programme"].value == "MoDiMi", (
         "the programme was blanked although the schedule fetch owns it"
+    )
+
+
+def test_a_weekly_programme_nobody_refreshes_any_more_ages_with_its_module():
+    """The case the exemption did not think of, and it has no end.
+
+    The exemption rests on the schedule fetch keeping the row current. That
+    fetch drops its own detail when a due refresh fails - so a row without
+    detail is one nothing is refreshing, and the module it belongs to has
+    stopped answering too. Both of its sources are silent, and it went on
+    presenting the plan from before the outage as the current one for as long
+    as that lasted.
+    """
+    api = _two_module_api()
+    _programme_row(api, circuit_times_day=None)
+
+    api._fetch_parameter_values("1234")
+
+    assert api.data["1234"]["Circuit-Programme"].value is None, (
+        "a programme neither source has refreshed is still shown as current"
     )
 
 

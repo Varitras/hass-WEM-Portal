@@ -553,8 +553,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         Four things disqualify a row, and none of them is about the module
         having gone quiet: it is not a reading at all (the raw status gate),
         it belongs to another module, the scrape is still feeding it, or it
-        is a weekly programme - those are governed by the schedule fetch,
-        which drops its own detail when a due refresh fails.
+        is a weekly programme the schedule fetch is still feeding.
+
+        That last one is a condition, not a category. The exemption rests on
+        the schedule fetch keeping the row current, and that fetch drops its
+        own detail the moment a due refresh fails - so a programme WITHOUT
+        detail is one nothing refreshes any more. Exempting it as well left
+        the plan from before an outage standing as the current one for as
+        long as the outage lasted, with no limit at all.
         """
         for row_name, row in device_rows.items():
             if not isinstance(row, Reading):
@@ -566,7 +572,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(
                 row.value
             )
-            if is_programme:
+            if is_programme and row.circuit_times_day is not None:
                 continue
             yield row_name, row
 

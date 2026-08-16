@@ -2618,11 +2618,18 @@
     "tests": "a_module_answered_recently_is_left_alone"
   },
   {
+    "label": "freshness: a programme exempted whether or not anything refreshes it",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if is_programme and row.circuit_times_day is not None:",
+    "new": "            if is_programme:",
+    "tests": "a_weekly_programme_nobody_refreshes_any_more_ages_with_its_module"
+  },
+  {
     "label": "freshness: the programme exemption dropped from the module aging",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(\n                row.value\n            )\n            if is_programme:\n                continue",
+    "old": "            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(\n                row.value\n            )\n            if is_programme and row.circuit_times_day is not None:\n                continue",
     "new": "            pass",
-    "tests": "a_weekly_programme_survives_the_module_aging"
+    "tests": "a_weekly_programme_the_schedule_fetch_still_feeds_survives_the_aging"
   },
   {
     "label": "freshness: a module that left the device list losing its stamp",

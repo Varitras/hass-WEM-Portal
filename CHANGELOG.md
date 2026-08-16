@@ -8,6 +8,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A weekly programme nothing is refreshing any more ages out like every
+  other reading.** Programmes were exempt from the ageing that follows a
+  module going silent, on the grounds that the hourly schedule fetch keeps
+  them current. That fetch drops its own detail as soon as a due refresh
+  fails - so where both had stopped, the plan from before the outage stood
+  as the current one, without limit.
 - **A module with nothing to report no longer costs the whole device its
   readings.** Such a module comes back as `"Values": null`, and a default
   for a missing key does not cover a key that is present and null - so the
