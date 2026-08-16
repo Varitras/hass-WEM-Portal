@@ -645,7 +645,7 @@ class WemPortalScraper:
         output = {}
         try:
             panels = html.fromstring(html_content).xpath(PANEL_XPATH)
-        except LxmlError:
+        except (LxmlError, ValueError):
             # Inside the promise `required` makes, not above it: an answer
             # that is not HTML at all raised straight out of here, past the
             # reuse path's own handling one frame up - so the full login that
@@ -653,6 +653,13 @@ class WemPortalScraper:
             # that parses to nothing and one that does not parse mean the same
             # thing to that caller, and the branch below already says what
             # each of the two callers does about it.
+            #
+            # ValueError beside the lxml one, because the answers get here as
+            # TEXT: an empty body raises ParserError, but a body carrying an
+            # encoding declaration is refused as a plain ValueError - and
+            # since everything else parses somehow, those two ARE the case
+            # this exists for. Caught by the library's own name alone, it
+            # missed the answer that announces it is not a page.
             panels = []
 
         for div in panels:

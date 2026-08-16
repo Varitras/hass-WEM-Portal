@@ -184,7 +184,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         row = self._coordinator_row()
         if row is None:
             self._attr_native_value = None
-            _LOGGER.warning("Can't find %s", self._attr_unique_id)
+            self._report_no_reading()
             self.async_write_ha_state()
             return
 

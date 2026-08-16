@@ -425,6 +425,80 @@ def test_a_select_value_outside_its_options_still_warns(caplog):
     assert caplog.records, "an unresolvable option passed silently"
 
 
+def _warnings(caplog):
+    """Only what a user would see as a fault.
+
+    Filtered by level rather than trusting `caplog.at_level` to keep the rest
+    out: the debug line each platform logs while being CONSTRUCTED lands in
+    the same record list, and a test reading all of them fails for a reason
+    that has nothing to do with what it asks.
+    """
+    import logging
+
+    return [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+def _entity_whose_row_moved_platform(cls):
+    """An entity of the platform its parameter no longer is.
+
+    Built from a row of its own platform and then handed a reclassified one,
+    because that is the order it happens in: `_platform` is taken at
+    construction, and the re-discovery changes the row underneath a loaded
+    entity.
+    """
+    entity = _entity(cls)
+    entity.async_write_ha_state = lambda: None
+    rows = entity.coordinator.data["1234"]
+    rows["Pump"] = replace(rows["Pump"], platform="somewhere-else")
+    return entity
+
+
+@pytest.mark.parametrize("name", sorted(PLATFORMS))
+def test_a_row_that_moved_platform_is_not_reported_as_a_missing_one(name, caplog):
+    """ "Can't find" is the wrong thing to say, and it says it forever.
+
+    A parameter's platform is decided from the value of a single cycle, so one
+    odd answer moves a row and the next one moves it back - and a
+    reclassification that STICKS leaves this entity loaded until the next
+    reload. Both cases had every affected entity warning once per cycle about
+    a row that is right there, just not its own. The condition is known,
+    expected and self-correcting; what it is not is a fault to report.
+    """
+    import logging
+
+    entity = _entity_whose_row_moved_platform(PLATFORMS[name])
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        entity._handle_coordinator_update()
+
+    assert not _warnings(caplog), (
+        f"{name} reported a reclassified row as missing: {caplog.text}"
+    )
+    # Not silence either: the entity IS showing nothing, and the reason has to
+    # be findable. Asserted here so the fix cannot be "drop the line".
+    assert "somewhere-else" in caplog.text, (
+        f"{name} says nothing at all about why it has no value"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(PLATFORMS))
+def test_a_row_that_is_really_gone_is_still_reported(name, caplog):
+    """The other half, without which a platform that stopped warning at all
+    would pass the test above."""
+    import logging
+
+    entity = _entity(PLATFORMS[name])
+    entity.async_write_ha_state = lambda: None
+    entity.coordinator.data["1234"].pop("Pump")
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        entity._handle_coordinator_update()
+
+    assert _warnings(caplog), f"{name} lost its reading without saying so"
+
+
 def test_an_unreachable_device_takes_its_entities_with_it():
     """The availability rule now lives in one place; this is that place
     doing its job for a platform that no longer carries its own copy."""

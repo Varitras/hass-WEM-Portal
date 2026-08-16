@@ -3,6 +3,7 @@ survival on a failed device refresh, and str-normalisation of device ids.
 """
 
 import asyncio
+import contextlib
 import json
 import time
 
@@ -7832,4 +7833,38 @@ def test_both_mode_reads_the_api_on_every_cycle_when_that_is_the_shorter_one(
     assert len(reads) == 7, (
         f"only {len(reads)} of 7 API cycles ran; the gate is measuring "
         "against a grid that drifts by each cycle's own runtime"
+    )
+
+
+def test_a_failed_api_read_still_counts_against_the_interval(monkeypatch):
+    """A cycle that tried and failed spent the requests either way.
+
+    The stamp used to be skipped on failure and the coordinator's own backoff
+    named as what paces the retry - but that backoff needs THREE failures in a
+    row and any success in between sets it back to zero. A portal answering
+    every other cycle with an error therefore left the gate open on every one
+    of them, and the api half went back to being read at the WEB interval,
+    which is the traffic this gate exists to stop. Same rule the schedule
+    fetch and the statistics stamp already follow: the attempt is what costs.
+    """
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    clock = _Clock()
+    monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
+    api, attempts = _api_in_both_mode(300, 1800, clock)
+    start = clock.now
+
+    def _fail(_enabled_devices=None):
+        attempts.append(clock.now)
+        raise WemPortalError("the portal answered with nothing usable")
+
+    api.get_data = _fail
+    for _ in range(7):
+        with contextlib.suppress(WemPortalError):
+            api._collect_both(None)
+        clock.now += 300
+
+    assert attempts == [start, start + 1800], (
+        f"the api was tried on {len(attempts)} of 7 web cycles; a failed "
+        "read reopened the gate the user's interval had closed"
     )

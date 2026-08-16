@@ -81,7 +81,7 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
         row = self._coordinator_row()
         if row is None:
             self._attr_is_on = None
-            _LOGGER.warning("Can't find %s", self._attr_unique_id)
+            self._report_no_reading()
             self.async_write_ha_state()
             return
 

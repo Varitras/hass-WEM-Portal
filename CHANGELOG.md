@@ -8,6 +8,23 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A portal answer that announces itself as XML no longer costs the whole
+  scrape.** An unreadable body was already allowed to fall back to a fresh
+  login, but only when the parser refused it by its own error type - and the
+  one answer that is plainly not the page, a document carrying an encoding
+  declaration, is refused as an ordinary `ValueError` instead. That went
+  straight past the fallback.
+- **A failed API read now counts against the API interval.** In `both` mode
+  the mobile API is read on its own interval rather than on every web cycle,
+  but a cycle that FAILED left the interval unspent - and the coordinator's
+  backoff, which was supposed to pace the retry, needs three failures in a row
+  and is cleared by any success in between. A portal answering every other
+  cycle with an error therefore put the API half back on the web interval.
+- **A parameter that changed platform is no longer logged as missing once per
+  cycle.** The entity of the platform it no longer is stays loaded until the
+  next reload, and each cycle it warned "Can't find" about a reading that is
+  right there. Now said once as a debug line, naming what the parameter has
+  become; a reading that really is gone still warns.
 - **The unavailable entity left behind by a parameter that changed platform
   is now removed even when it predates the current id format.** A parameter
   reclassified between releases - holiday begin and end went from switches to

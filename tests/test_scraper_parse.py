@@ -519,6 +519,34 @@ def test_a_page_that_does_not_parse_after_a_full_login_is_still_an_error(scraper
         scraper.parse_expert_page("")
 
 
+def test_an_answer_that_declares_itself_xml_is_treated_like_any_other_non_page(
+    scraper,
+):
+    """The one non-HTML answer lxml refuses by a DIFFERENT name.
+
+    Everything else the portal could send parses somehow - the HTML parser
+    makes a paragraph out of plain text and an empty body out of JSON - so the
+    two answers that actually raise are the empty one and this: a string
+    carrying an encoding declaration, which lxml rejects with a ValueError
+    rather than an LxmlError. Caught by type, the guard above therefore missed
+    exactly the answer that says "I am not the page you asked for" out loud.
+
+    Both callers, because the split between them is the point of the guard.
+    """
+    from custom_components.wemportal.exceptions import ServerError
+
+    declared_xml = '<?xml version="1.0" encoding="utf-8"?><error>no</error>'
+
+    assert (
+        scraper.parse_expert_page(
+            declared_xml, source="the reused session", required=False
+        )
+        is None
+    )
+    with pytest.raises(ServerError):
+        scraper.parse_expert_page(declared_xml)
+
+
 def test_an_error_page_is_not_accepted_as_the_expert_page():
     """The reuse path checked for a 403 and for a redirect to the login, but
     never at the status code itself, so a 500 was parsed like a real page.

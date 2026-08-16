@@ -984,10 +984,23 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
 
         if not self._api_read_is_due():
             return
-        self.get_data(enabled_devices)
-        # After, not before: a cycle that raised has not read anything, and
-        # the coordinator's own error backoff decides when it may try again.
-        self._last_api_read = time.monotonic()
+        try:
+            self.get_data(enabled_devices)
+        finally:
+            # Whether it worked or not: what the interval bounds is requests,
+            # and a cycle that failed spent them. Skipping the stamp on
+            # failure and leaving the pacing to the coordinator's backoff read
+            # well and did not hold - that backoff wants three failures in a
+            # row and any success in between clears it, so a portal answering
+            # every other cycle with an error put the api half back on the WEB
+            # interval. Same rule as the schedule fetch and the statistics
+            # stamp, both of which book the attempt.
+            #
+            # After the read rather than before it, which is what the `>=` in
+            # _api_read_is_due is measured against: Home Assistant plans the
+            # next tick from when the cycle ENDED, so the stamp and the grid
+            # drift together instead of apart.
+            self._last_api_read = time.monotonic()
 
     def _fetch_data(self, enabled_devices=None):
         # Fail fast, without any network activity at all, if we're still

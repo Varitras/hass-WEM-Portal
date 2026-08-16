@@ -1,5 +1,6 @@
 """Shared base class for the WEM Portal entity platforms."""
 
+import logging
 from functools import partial
 
 from homeassistant.config_entries import ConfigEntry
@@ -12,6 +13,8 @@ from . import get_wemportal_unique_id
 from .coordinator import API_FAILURES_TOLERATED, WemPortalDataUpdateCoordinator
 from .models import Reading, raise_if_not_writable
 from .utils import build_device_info, device_is_reachable, device_model
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _readings_of(data):
@@ -238,11 +241,44 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         loaded and both find the row, so an update handler doing its own
         lookup rendered someone else's value as its own type.
         """
-        device = (self.coordinator.data or {}).get(self._device_id)
-        row = device.get(self._data_key) if isinstance(device, dict) else None
-        if not isinstance(row, Reading) or row.platform != self._platform:
+        row = self._row_under_this_key()
+        if row is None or row.platform != self._platform:
             return None
         return row
+
+    def _row_under_this_key(self) -> Reading | None:
+        """The row this entity was built from, whatever platform it is now.
+
+        Only the two below ask this. Everything else wants _coordinator_row,
+        which is this plus "and it is still mine".
+        """
+        device = (self.coordinator.data or {}).get(self._device_id)
+        row = device.get(self._data_key) if isinstance(device, dict) else None
+        return row if isinstance(row, Reading) else None
+
+    def _report_no_reading(self) -> None:
+        """Say why this entity has nothing to show, in the register that fits.
+
+        The four platforms each said "Can't find" and meant two different
+        things by it. A row that is simply absent is worth a warning: the
+        portal stopped answering for a parameter this installation has. A row
+        that has moved to another platform is not - it is right there, the
+        re-discovery reclassified it, and this entity is the one of the
+        platform it no longer is. Reported as missing, that condition warned
+        once per cycle for as long as the entity stayed loaded, about
+        something the migration takes care of by itself.
+        """
+        row = self._row_under_this_key()
+        if row is not None:
+            _LOGGER.debug(
+                "%s: the portal now describes this parameter as a %s, not a "
+                "%s, so this entity has nothing to show until it is rebuilt.",
+                self._attr_unique_id,
+                row.platform,
+                self._platform,
+            )
+            return
+        _LOGGER.warning("Can't find %s", self._attr_unique_id)
 
     @property
     def device_info(self) -> DeviceInfo:

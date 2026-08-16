@@ -1920,9 +1920,16 @@
   {
     "label": "scrape: an unparseable page raising past the reuse fallback",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        except LxmlError:",
+    "old": "        except (LxmlError, ValueError):",
     "new": "        except ZeroDivisionError:",
     "tests": "a_page_that_does_not_parse_leaves_the_reuse_path_its_fallback"
+  },
+  {
+    "label": "scrape: catching only the lxml half of \"this is not a page\"",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        except (LxmlError, ValueError):",
+    "new": "        except LxmlError:",
+    "tests": "an_answer_that_declares_itself_xml_is_treated_like_any_other_non_page"
   },
   {
     "label": "stats: a refusal caught again by the device loop's catch-all",
@@ -1976,9 +1983,16 @@
   {
     "label": "both mode: the API read is never stamped, so it is always due",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        self._last_api_read = time.monotonic()",
-    "new": "        pass",
+    "old": "            self._last_api_read = time.monotonic()",
+    "new": "            pass",
     "tests": "both_mode_does_not_read_the_api_on_every_web_cycle"
+  },
+  {
+    "label": "both mode: a failed API read leaving the interval unspent",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        try:\n            self.get_data(enabled_devices)\n        finally:",
+    "new": "        if True:\n            self.get_data(enabled_devices)\n        if True:",
+    "tests": "a_failed_api_read_still_counts_against_the_interval"
   },
   {
     "label": "both mode: a tick exactly on the API interval counts as early",
@@ -3229,8 +3243,8 @@
   {
     "label": "controls: a row that changed platform still counting as mine",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        if not isinstance(row, Reading) or row.platform != self._platform:",
-    "new": "        if not isinstance(row, Reading):",
+    "old": "        if row is None or row.platform != self._platform:",
+    "new": "        if row is None:",
     "tests": "control_does_not_write_when_its_row_became_another_platform"
   },
   {
@@ -3257,9 +3271,23 @@
   {
     "label": "logs: dumping the coordinator from a platform error path",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "            _LOGGER.warning(\"Can't find %s\", self._attr_unique_id)\n",
-    "new": "            _LOGGER.warning(\"Can't find %s\", self._attr_unique_id)\n            _LOGGER.debug(\"Sensor data %s\", self.coordinator.data)\n",
+    "old": "            self._report_no_reading()\n",
+    "new": "            self._report_no_reading()\n            _LOGGER.debug(\"Sensor data %s\", self.coordinator.data)\n",
     "tests": "no_log_call_hands_over_a_whole_store"
+  },
+  {
+    "label": "entity: a reclassified row reported as a missing one again",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        row = self._row_under_this_key()\n        if row is not None:",
+    "new": "        row = self._row_under_this_key()\n        if False:",
+    "tests": "row_that_moved_platform_is_not_reported_as_a_missing_one"
+  },
+  {
+    "label": "entity: a reading that really went away passing in silence",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        _LOGGER.warning(\"Can't find %s\", self._attr_unique_id)",
+    "new": "        pass",
+    "tests": "row_that_is_really_gone_is_still_reported"
   },
   {
     "label": "holiday: publishing the requested range without asking back",
