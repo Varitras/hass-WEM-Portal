@@ -896,6 +896,13 @@
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
   {
+    "label": "discovery: progress kept only by a cycle that finished",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                await self._async_save_modules_cache()\n                await self._async_save_scraper_device_id()",
+    "new": "                pass",
+    "tests": "a_cycle_that_ran_out_of_time_still_keeps_what_it_discovered"
+  },
+  {
     "label": "stores: a cycle outliving its entry writing them back",
     "path": "custom_components/wemportal/coordinator.py",
     "old": "        return is_still_serving(self.config_entry)",

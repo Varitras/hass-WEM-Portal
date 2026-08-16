@@ -183,6 +183,41 @@ async def test_unload_cleans_up(hass):
     assert not hasattr(entry, "runtime_data")
 
 
+async def test_a_cycle_that_ran_out_of_time_still_keeps_what_it_discovered(
+    hass, hass_storage, monkeypatch
+):
+    """Discovery is the slow, rate-limited part: five seconds and at least
+    one request per module, and a cycle that runs out of time is stopped
+    where it stands.
+
+    What it had found by then lives in memory and was written to disk only by
+    a cycle that finished. An installation with enough modules to exhaust the
+    budget every time therefore never persisted any of it - and started from
+    nothing after each restart, spending the same requests again against a
+    portal that counts them per IP.
+    """
+    from custom_components.wemportal.exceptions import PollDeadlineExceeded
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    modules_key = f"{DOMAIN}_{entry.entry_id}_modules"
+    hass_storage.pop(modules_key, None)
+
+    def stopped_halfway(self, *_args, **_kwargs):
+        # What the cycle had discovered before its budget ran out.
+        self.modules = {"1234": {(0, 1): {"Name": "Heat pump", "parameters": {}}}}
+        raise PollDeadlineExceeded("no time left for the remaining modules")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", stopped_halfway)
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert modules_key in hass_storage, (
+        "the modules found before the deadline were discovered again next time"
+    )
+
+
 async def test_a_poll_that_outlives_the_entry_does_not_rebuild_its_stores(
     hass, hass_storage
 ):

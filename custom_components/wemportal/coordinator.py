@@ -426,8 +426,6 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 )
                 self.num_failed = 0
                 self._reset_auth_failures()
-                await self._async_save_modules_cache()
-                await self._async_save_scraper_device_id()
                 return fetched
             except PortalMaintenanceError as exc:
                 # Announced downtime, not a credential problem. Counted as a
@@ -537,3 +535,13 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 self.last_try = monotonic()
                 self._sync_rate_limit_issue()
                 self._sync_web_scrape_issue(device_filter)
+                # Here rather than in the success branch, where they were:
+                # discovery is stopped WHERE IT STANDS when the cycle runs out
+                # of time, and what it had found by then was kept in memory
+                # only. An installation with enough modules to exhaust the
+                # budget every cycle therefore never wrote any of it down and
+                # began again from nothing after every restart - spending the
+                # same five seconds and one request per module a second time.
+                # Both saves are idempotent and skip an unchanged snapshot.
+                await self._async_save_modules_cache()
+                await self._async_save_scraper_device_id()

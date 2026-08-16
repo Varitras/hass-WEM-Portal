@@ -8,6 +8,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A cycle that runs out of time keeps what it discovered.** Discovery is
+  stopped where it stands when a cycle exhausts its budget, and what it had
+  found by then was only written to disk by a cycle that finished. An
+  installation with enough modules to run out of time every cycle therefore
+  never saved any of it and started from nothing after each restart -
+  spending five seconds and a request per module all over again.
 - **Two holiday dates written right after one another no longer undo each
   other.** A date write carries the module's other dates along unchanged,
   and that snapshot was taken before the write queued for the shared
