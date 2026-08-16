@@ -2743,6 +2743,48 @@ async def test_entities_of_an_offline_device_go_unavailable(hass, monkeypatch):
     assert _state("connection_status", "5678").state == "offline"
 
 
+async def test_an_outage_past_the_tolerance_stops_showing_the_last_reading(
+    hass, monkeypatch
+):
+    """The one-failed-cycle tolerance has to be able to expire.
+
+    Home Assistant notifies listeners on the refresh that FAILS FIRST and on
+    none after it, so an entity only ever re-reads `available` while the
+    count still sits inside the tolerance. Past it nothing is published
+    again, and the pre-outage reading stands as current for as long as the
+    outage lasts - which is the opposite of what a tolerance is.
+
+    Driven through async_refresh rather than _async_update_data: the part
+    under test is Home Assistant's own notification path, and calling the
+    update directly steps around it.
+    """
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    def reading():
+        return next(
+            state
+            for state in hass.states.async_all("sensor")
+            if "outside_temperature" in state.entity_id
+        )
+
+    entry = await _setup(hass, _entry(hass))
+    assert reading().state == "12.5", "the reading under test was never published"
+
+    def refusing_portal(self, *_args, **_kwargs):
+        raise WemPortalError("portal unavailable")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", refusing_portal)
+
+    for _ in range(3):
+        await entry.runtime_data.coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    assert reading().state == "unavailable", (
+        f"three failed cycles in, the sensor still reads {reading().state} as "
+        "a current value"
+    )
+
+
 async def test_a_differently_capitalised_account_is_still_a_duplicate(hass):
     """Portal usernames are email addresses, so casing is not meaningful -
     but the check compared them verbatim, so the same account added with a

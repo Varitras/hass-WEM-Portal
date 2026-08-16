@@ -1904,9 +1904,16 @@
     "tests": "a_cycle_that_ran_out_of_time_keeps_its_connection"
   },
   {
+    "label": "tolerance: the crossing is counted but never published",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if self.num_failed == API_FAILURES_TOLERATED + 1:\n            self.async_update_listeners()",
+    "new": "        pass",
+    "tests": "an_outage_past_the_tolerance_stops_showing_the_last_reading"
+  },
+  {
     "label": "deadline: a cycle that delivered nothing not counted as failed",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "                self.num_failed += 1\n                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
+    "old": "                self._note_failed_cycle()\n                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
     "new": "                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
     "tests": "a_cycle_that_ran_out_of_time_still_counts_as_a_failure"
   },
@@ -2347,15 +2354,15 @@
   {
     "label": "base: a single failed cycle taking every entity with it again",
     "path": "custom_components/wemportal/entity.py",
-    "old": "            or self.coordinator.num_failed <= API_FAILURES_TOLERATED",
-    "new": "            or False",
+    "old": "        return self.coordinator.num_failed <= API_FAILURES_TOLERATED",
+    "new": "        return self.coordinator.num_failed <= 0",
     "tests": "one_failed_cycle_does_not_take_every_entity_with_it"
   },
   {
     "label": "base: an open licence to show readings from a dead portal",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        return (\n            self.coordinator.last_update_success\n            or self.coordinator.num_failed <= API_FAILURES_TOLERATED\n        )",
-    "new": "        return True",
+    "old": "        return self.coordinator.num_failed <= API_FAILURES_TOLERATED\n",
+    "new": "        return True\n",
     "tests": "a_second_failed_cycle_does_take_them"
   },
   {

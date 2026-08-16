@@ -8,6 +8,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A lasting outage no longer leaves the last readings standing as
+  current.** One failed cycle is tolerated on purpose - the portal answers
+  one with "Unbekannter Fehler" now and then and the next one succeeds. But
+  Home Assistant notifies entities on the refresh that fails first and on
+  none after it, so the moment that tolerance ran out was never published:
+  every entity of the account kept showing its pre-outage value, marked
+  available, for as long as the outage lasted.
 - **`both` mode no longer reads the mobile API at the web interval.** With
   the two intervals set apart - a five-minute scrape next to a half-hourly
   API read, say - the API was read on every scrape cycle rather than on its

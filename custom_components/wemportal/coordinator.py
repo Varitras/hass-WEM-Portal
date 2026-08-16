@@ -55,6 +55,19 @@ SCRAPER_DEVICE_STORAGE_VERSION = 1
 # after repeated failures (see the backoff logic in _async_update_data).
 MAX_BACKOFF_SECONDS = 6 * 3600  # 6 hours
 
+# How many consecutive failed cycles the entities keep showing their last
+# reading through. One failed cycle used to take every entity of the account
+# unavailable at once: the portal answers a cycle with "Unbekannter Fehler"
+# now and then and the next one succeeds, so a single failure says nothing -
+# but at the default interval it costs half an hour of every graph and sends
+# automations a state change on the way out and back.
+#
+# One rather than the scrape's three, because an API cycle is the expensive
+# one: at the default interval three failures is an hour and a half of
+# readings presented as current. Here rather than with the entities that read
+# it, because what it bounds is `num_failed`, which lives here.
+API_FAILURES_TOLERATED = 1
+
 # The issue_id suffix of the repair issue that says the portal is
 # rate-limiting this installation; one constant so the create and the delete
 # site cannot drift apart. The full id is prefixed with the entry id, which
@@ -274,7 +287,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             return await self._update_within_timeout(device_filter)
         except TimeoutError as exc:
-            self.num_failed += 1
+            self._note_failed_cycle()
             self._sync_rate_limit_issue()
             self._sync_web_scrape_issue(device_filter)
             self._reset_auth_failures()
@@ -355,6 +368,30 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         self.num_auth_failed = 0
         self._account_state.auth_failures = 0
 
+    def _note_failed_cycle(self) -> None:
+        """Count this failed cycle, and publish the moment the count leaves
+        the tolerance behind.
+
+        Home Assistant notifies listeners on the refresh that fails FIRST and
+        on none after it, so an entity is only ever asked for `available`
+        again while the count is still INSIDE the tolerance. Nothing then
+        published the crossing, and every entity of the account went on
+        offering its pre-outage reading as a current value for as long as the
+        outage lasted - a tolerance that could not expire.
+
+        Once, at the crossing: the cycles after it change nothing an entity
+        shows, and telling every listener about each of them would write the
+        same state again on every cycle of an outage.
+
+        One method for all six raising paths, because each of them is a
+        failed cycle and a seventh added later would otherwise quietly skip
+        the notification - which is how this asymmetry got here in the first
+        place.
+        """
+        self.num_failed += 1
+        if self.num_failed == API_FAILURES_TOLERATED + 1:
+            self.async_update_listeners()
+
     async def _update_within_timeout(self, device_filter):
         """The guarded update itself. Split out so the timeout can be caught
         around it without moving the error handling one level in."""
@@ -379,12 +416,12 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # maintenance, so the login "fails" and three cycles of that
                 # used to escalate into a reauth prompt for credentials that
                 # were correct all along.
-                self.num_failed += 1
+                self._note_failed_cycle()
                 self._reset_auth_failures()
                 _LOGGER.warning("WEM Portal is in maintenance: %s", exc)
                 raise UpdateFailed(f"WEM Portal maintenance: {exc}") from exc
             except AuthError as exc:
-                self.num_failed += 1
+                self._note_failed_cycle()
                 self.num_auth_failed += 1
                 self._account_state.auth_failures = self.num_auth_failed
                 # Escalate to reauth only after several CONSECUTIVE auth
@@ -420,7 +457,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # really did fail to deliver readings, and the extra backoff
                 # is exactly what a portal that cannot answer in time needs.
                 # Not an auth failure: the credentials were never in doubt.
-                self.num_failed += 1
+                self._note_failed_cycle()
                 self._reset_auth_failures()
                 _LOGGER.warning("Poll cycle stopped on its own deadline: %s", exc)
                 raise UpdateFailed(str(exc)) from exc
@@ -442,7 +479,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Skipping this cycle: %s", exc)
                 raise UpdateFailed(str(exc)) from exc
             except WemPortalError as exc:
-                self.num_failed += 1
+                self._note_failed_cycle()
                 self._reset_auth_failures()
                 if self.num_failed >= 2:
                     # Reset the connection, do NOT rebuild the api object.
@@ -470,7 +507,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # handled by the outer `except TimeoutError` in
                 # _async_update_data. Do not remove that handler on the
                 # assumption this one covers it; it does not.
-                self.num_failed += 1
+                self._note_failed_cycle()
                 self._reset_auth_failures()
                 _LOGGER.warning("Unexpected error updating WEM Portal data: %s", exc)
                 raise UpdateFailed(
