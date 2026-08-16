@@ -1855,9 +1855,16 @@
     "tests": "the_auto_poll_stops_at_the_START_of_an_unload"
   },
   {
+    "label": "stats: a refusal caught again by the device loop's catch-all",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "            except ForbiddenError:\n                # Same shape, and the shield the group loop above is missing",
+    "new": "            except ZeroDivisionError:",
+    "tests": "a_refused_network_leaves_the_statistics_loop"
+  },
+  {
     "label": "stats: a refusal repeated once per remaining group",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            except ForbiddenError:",
+    "old": "            except ForbiddenError:\n                # The portal is refusing this IP, which is not a fact about",
     "new": "            except ZeroDivisionError:",
     "tests": "a_refusal_stops_the_group_loop_instead_of_repeating_itself"
   },

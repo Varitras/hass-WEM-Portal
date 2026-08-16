@@ -312,6 +312,16 @@ class WemPortalStatistics:
                 # about this device - and every device after it would spend
                 # another login attempt finding that out.
                 raise
+            # skipcq: PYL-W0706 - shields the catch-all, not redundant
+            except ForbiddenError:
+                # Same shape, and the shield the group loop above is missing
+                # its other half of: it lets a refusal out "because the
+                # coordinator has a handler for exactly this", and the
+                # catch-all below caught it again one frame further up. The
+                # block was then logged as this device's statistics problem,
+                # every remaining device was walked into it, and the
+                # coordinator never learned the network is refused.
+                raise
             except Exception as exc:  # noqa: BLE001
                 # Broad: one device's statistics failing must not stop
                 # the others. `succeeded` stays unincremented, which is

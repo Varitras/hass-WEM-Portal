@@ -8,6 +8,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A portal blocking this network during the energy statistics is reported
+  as that.** The group loop deliberately let the refusal out so the
+  coordinator could act on it; the device loop above caught it again, logged
+  it as one device's statistics problem and tried the next device.
 - **The expert service writes the parameter id you configured, not the one
   you typed.** Hex ids mean the same parameter in either case, so the check
   against your configured slots ignores case - and then the typed spelling

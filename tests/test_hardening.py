@@ -424,6 +424,35 @@ def test_statistics_are_fetched_on_the_first_cycle_after_a_reboot(monkeypatch):
     assert calls, "a freshly started account was treated as already fetched"
 
 
+def test_a_refused_network_leaves_the_statistics_loop(caplog):
+    """The inner handler lets a 403 out "because the coordinator has a
+    handler for exactly this" - and the device loop in the same file caught
+    it again with its catch-all, one frame further up.
+
+    So the refusal was logged as one device's statistics problem and every
+    remaining device was walked into the same wall, while the coordinator
+    never learned that this network is blocked. The AuthError beside it is
+    re-raised there for exactly this reason; the refusal was not.
+    """
+    api = _api()
+    api.data = {"1234": {}, "5678": {}}
+    api.modules = {"1234": {}, "5678": {}}
+    asked = []
+
+    def refusing_portal(device_id):
+        asked.append(device_id)
+        raise exceptions.ForbiddenError("WemPortal forbidden error")
+
+    api._fetch_device_statistics = refusing_portal
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api.get_statistics(enabled_devices=["1234", "5678"])
+
+    assert len(asked) == 1, (
+        f"{len(asked)} devices were asked after the portal refused this network"
+    )
+
+
 def _statistics_api_with_groups(groups, read_answer):
     """An api whose refresh lists `groups` and whose group reads go through
     `read_answer(group_id)` - returning a payload or raising."""
