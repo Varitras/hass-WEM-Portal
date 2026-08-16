@@ -5998,27 +5998,6 @@ def test_the_sessions_are_closed_even_if_the_lock_never_comes_free():
     assert closed == [True], "a session was left open because the lock was busy"
 
 
-def test_close_api_sessions_calls_the_api_rather_than_reaching_inside():
-    """The old version read `session` and `_reset_scraper` off the object with
-    getattr defaults, so renaming or moving either turned it into a silent
-    no-op that closed nothing and failed no test."""
-    from custom_components.wemportal import utils
-
-    calls = []
-
-    class Api:
-        def close_transport(self):
-            calls.append(True)
-
-    utils.close_api_sessions(Api())
-    assert calls == [True]
-
-    nothing_like_an_api = object()
-
-    with pytest.raises(AttributeError):
-        utils.close_api_sessions(nothing_like_an_api)
-
-
 # --- a heating schedule that fails must not be re-fetched every cycle ---
 
 
@@ -6891,6 +6870,26 @@ def test_a_refused_discovery_stops_at_the_first_module():
     assert len(asked) == 1, (
         f"the portal was asked {len(asked)} times after refusing this network"
     )
+
+
+def test_the_filter_reaches_the_discovery_from_the_cycle_that_starts_it():
+    """The leg before the one below, and it was untested for the same reason.
+
+    The test underneath enters at _ensure_api_session, so dropping the
+    argument where _fetch_data hands it over stayed green - the covered part
+    starts one call too late. Driven from fetch_data, which is what the
+    coordinator calls.
+    """
+    api, asked = _two_device_discovery_api()
+    api.valid_login = True
+    api._devices_fetched_this_session = True
+    api._first_cycle_done = True
+    api.get_data = lambda *_args, **_kwargs: None
+    api.get_statistics = lambda *_args, **_kwargs: None
+
+    api.fetch_data(["1234"])
+
+    assert asked == ["1234"], f"a disabled device was asked anyway: {asked}"
 
 
 def test_the_filter_survives_the_handover_to_the_session_setup():

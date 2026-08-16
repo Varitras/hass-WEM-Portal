@@ -2042,11 +2042,9 @@ async def test_submitting_no_module_is_reported(hass, monkeypatch):
 async def test_failed_first_refresh_closes_its_sessions(hass, monkeypatch):
     """The api is not in hass.data yet when the first refresh fails, so the
     normal unload path cannot close it - every setup retry leaked another."""
-    import custom_components.wemportal as wemportal_init
-
     closed = []
     monkeypatch.setattr(
-        wemportal_init, "close_api_sessions", lambda api: closed.append(api)
+        WemPortalApi, "close_transport", lambda self: closed.append(self)
     )
 
     def boom(self, *_args, **_kwargs):

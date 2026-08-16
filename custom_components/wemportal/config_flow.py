@@ -62,7 +62,7 @@ from .expert_options import (
     expert_client_options,
 )
 from .coordinator import forget_auth_failures, get_modules_store
-from .utils import close_api_sessions, serialize_modules
+from .utils import serialize_modules
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -128,7 +128,7 @@ async def validate_input(hass: HomeAssistant, data):
     finally:
         # Close the throwaway validation session(s); config-flow validation
         # otherwise left an open connection behind on every setup attempt.
-        await hass.async_add_executor_job(close_api_sessions, api)
+        await hass.async_add_executor_job(api.close_transport)
 
     return data
 

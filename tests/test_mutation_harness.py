@@ -171,8 +171,15 @@ def test_the_run_cannot_be_failed_by_the_duration_budget(monkeypatch):
 
     mutate.run_tests("something")
 
-    assert "--slow-test-seconds" in seen["argv"], (
+    argv = seen["argv"]
+    assert "--slow-test-seconds" in argv, (
         "a slow test would be reported as a caught mutation"
+    )
+    # The VALUE, not just the flag: `0` makes every test late, which would
+    # turn the budget from a false "caught" now and then into one for every
+    # single mutation - the same lie, at full volume.
+    assert argv[argv.index("--slow-test-seconds") + 1] == "inf", (
+        "the budget is still switched on for this run, just at a different threshold"
     )
 
 

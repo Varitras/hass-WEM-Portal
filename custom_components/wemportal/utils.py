@@ -107,29 +107,6 @@ def short_device_id(device_id) -> str:
     return f"…{text[-2:]}" if len(text) > 2 else text
 
 
-def close_api_sessions(api) -> None:
-    """Close a WemPortalApi's HTTP sessions, under its own lock.
-
-    Called after an entry is unloaded or reloaded, after a failed setup, and
-    after config-flow validation, so neither the API `requests` session nor
-    the persistent scraper's curl_cffi session lingers with an open
-    connection.
-
-    A plain call, deliberately. This used to reach in with
-    `getattr(api, "session", None)` and `getattr(api, "_reset_scraper", None)`,
-    which reads as defensive and is the opposite: the defaults meant that
-    renaming or moving either one turned the whole function into a silent
-    no-op, closing nothing, raising nothing, and failing no test - while the
-    docstring went on promising the sessions were closed. Naming the method
-    makes that failure an AttributeError instead of a leak.
-
-    The api owns the teardown because the api owns the lock: an operation can
-    be inside make_api_call right now, and closing its session underneath it
-    is the thing this must not do.
-    """
-    api.close_transport()
-
-
 def build_device_info(entry_id, device_id, sw_version=None, model=None):
     """Build the DeviceInfo dict for a WEM Portal sub-device.
 

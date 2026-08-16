@@ -602,13 +602,6 @@
     "tests": "sessions_are_closed_even_if_the_lock_never_comes_free"
   },
   {
-    "label": "teardown: reaching inside the api again must be noticed",
-    "path": "custom_components/wemportal/utils.py",
-    "old": "    api.close_transport()",
-    "new": "    close = getattr(api, 'close_transport', None)\n    if callable(close):\n        close()",
-    "tests": "close_api_sessions_calls_the_api_rather_than_reaching_inside"
-  },
-  {
     "label": "schedules: recording the attempt only on success must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        if fetched:\n            self._last_circuit_times_fetch[key] = attempted_at\n            return\n",
@@ -929,6 +922,13 @@
     "old": "            if is_programme and schedule_fetch_still_feeds(entry):",
     "new": "            if is_programme:",
     "tests": "a_programme_nobody_refreshes_any_more_ages_out_here_too"
+  },
+  {
+    "label": "discovery: the device filter dropped where the cycle starts",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                self._ensure_api_session(enabled_devices)",
+    "new": "                self._ensure_api_session()",
+    "tests": "the_filter_reaches_the_discovery_from_the_cycle_that_starts_it"
   },
   {
     "label": "discovery: the device filter dropped at the handover",

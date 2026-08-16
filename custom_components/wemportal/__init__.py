@@ -49,7 +49,7 @@ from .models import (
     forget_account_state,
     is_still_serving,
 )
-from .utils import clamped_scan_interval, close_api_sessions, deserialize_modules
+from .utils import clamped_scan_interval, deserialize_modules
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -405,7 +405,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # The api is not in hass.data yet, so async_unload_entry cannot close
         # it: a failed first refresh (portal down, 403, auth) would leak its
         # HTTP sessions, once more per setup retry.
-        await hass.async_add_executor_job(close_api_sessions, api)
+        await hass.async_add_executor_job(api.close_transport)
         raise
 
     # Is there an on_update function that we can add listener to?
@@ -494,7 +494,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # so a setup that fails after publishing it has to clear it itself.
         if hasattr(entry, "runtime_data"):
             del entry.runtime_data
-        await hass.async_add_executor_job(close_api_sessions, api)
+        await hass.async_add_executor_job(api.close_transport)
         # Home Assistant does not unload an entry whose setup failed, so
         # nothing else stops the coordinator - and by this point the
         # platforms have been forwarded, their entities have subscribed, and
@@ -846,7 +846,7 @@ async def async_unload_entry(
     # after this returns True. Close the API + scraper HTTP sessions so
     # they don't linger open after the entry is unloaded/reloaded.
     if data is not None:
-        await hass.async_add_executor_job(close_api_sessions, data.api)
+        await hass.async_add_executor_job(data.api.close_transport)
     # The expert service is a single domain-wide registration shared by
     # all entries. Only remove it once NO remaining loaded entry still
     # has expert write enabled - previously unloading ANY entry removed
