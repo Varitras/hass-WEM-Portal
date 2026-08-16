@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The expert service writes the parameter id you configured, not the one
+  you typed.** Hex ids mean the same parameter in either case, so the check
+  against your configured slots ignores case - and then the typed spelling
+  was what went to the portal. The configured one came out of discovery and
+  the portal has accepted it; that is the one that now travels.
 - **A flow-rate sensor gets the icon its device class calls for.** The unit
   lookup matches case-insensitively, which covers "BAR" for "bar" but not
   "m3/h" for "m³/h" - a different character. That left the one unit the

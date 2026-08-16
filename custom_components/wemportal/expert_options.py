@@ -52,9 +52,12 @@ def canonical_entityvalue(raw) -> str:
     occupy two slots, and made the service's allowlist refuse whichever
     spelling the caller did not happen to use.
 
-    Only for COMPARING. The value that goes to the portal keeps the
-    spelling the user entered - the portal is the authority on what it
-    accepts, and nothing here has established that it is as relaxed.
+    Only for COMPARING. What goes to the portal is the spelling CONFIGURED
+    in the slot - it came out of discovery, so the portal has accepted it,
+    while the caller's has proved nothing. This used to pass the typed one
+    on, which turned the same uncertainty the other way round: not knowing
+    whether the portal is as relaxed is the reason to send the id that is
+    known to work.
     """
     return (raw or "").strip().casefold()
 

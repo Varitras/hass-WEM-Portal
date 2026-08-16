@@ -924,6 +924,13 @@
     "tests": "the_filter_survives_the_handover_to_the_session_setup"
   },
   {
+    "label": "expert service: the caller's spelling sent on to the portal again",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        entityvalue = configured[canonical_entityvalue(entityvalue)]",
+    "new": "        pass",
+    "tests": "the_write_carries_the_configured_spelling_of_the_id"
+  },
+  {
     "label": "reauth: accepted credentials still carrying the old failure streak",
     "path": "custom_components/wemportal/config_flow.py",
     "old": "                    forget_auth_failures(entry)",
@@ -3133,7 +3140,7 @@
     "path": "custom_components/wemportal/expert_controller.py",
     "old": "            if canonical_entityvalue(entity.entityvalue) == wanted:",
     "new": "            if entity.entityvalue == entityvalue:",
-    "tests": "service_write_finds_its_entity_in_any_spelling"
+    "tests": "a_verified_write_finds_its_entity_in_any_spelling"
   },
   {
     "label": "controls: a row that changed platform still counting as mine",

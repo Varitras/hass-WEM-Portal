@@ -560,6 +560,23 @@ def _resolve_expert_entry(
     return candidates[0] if len(candidates) == 1 else None
 
 
+def _configured_expert_ids(config_entry) -> dict:
+    """The ids the user put in slots, keyed by their canonical spelling.
+
+    Both halves of what the service needs: the keys answer "may this be
+    written at all", the values are the spelling to send - the one discovery
+    produced and the portal has therefore accepted.
+    """
+    from .expert_options import canonical_entityvalue
+
+    configured = {}
+    for slot in range(1, EXPERT_SLOT_COUNT + 1):
+        slot_id = config_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)
+        if canonical_entityvalue(slot_id):
+            configured[canonical_entityvalue(slot_id)] = slot_id
+    return configured
+
+
 def _load_expert_writer():
     """Import the expert client module. Runs in an executor - see the caller."""
     from . import expert_writer
@@ -610,19 +627,21 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
         # and was refused for a difference that means nothing.
         from .expert_options import canonical_entityvalue
 
-        allowed = {
-            canonical_entityvalue(
-                target_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)
-            )
-            for slot in range(1, EXPERT_SLOT_COUNT + 1)
-        }
-        allowed.discard("")
-        if canonical_entityvalue(entityvalue) not in allowed:
+        configured = _configured_expert_ids(target_entry)
+        if canonical_entityvalue(entityvalue) not in configured:
             raise HomeAssistantError(
                 f"WEM Portal expert write: {short_entityvalue(entityvalue)} is not one of "
                 "the parameters configured in this integration's options. Add it "
                 "to a slot first."
             )
+        # From here on the CONFIGURED spelling, not the one that was typed.
+        # The comparison above is case-insensitive because hex ids mean the
+        # same parameter either way - and passing the caller's spelling on
+        # from there sent the portal the one thing about this write nothing
+        # had checked. The configured id came out of discovery, so the portal
+        # has accepted it; that is what makes it the safe one to send under
+        # exactly the uncertainty canonical_entityvalue's own comment names.
+        entityvalue = configured[canonical_entityvalue(entityvalue)]
 
         data = getattr(target_entry, "runtime_data", None)
         if data is None:

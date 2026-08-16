@@ -844,6 +844,39 @@ async def test_expert_service_raises_on_write_failure(hass, monkeypatch):
         )
 
 
+async def test_the_write_carries_the_configured_spelling_of_the_id(hass, monkeypatch):
+    """The allowlist compares case-insensitively - hex ids mean the same
+    parameter either way - and then the caller's spelling was what went to
+    the portal.
+
+    That reverses the safer choice. The configured id came out of discovery,
+    so the portal has accepted it; the typed one has proved nothing. The
+    comment for the canonical form argued the opposite - "nothing here has
+    established that the portal is as relaxed" - which is exactly the reason
+    to send the spelling that is known to work.
+    """
+    await _setup(hass, _entry(hass, _expert_options()))
+    sent = []
+
+    def record(self, entityvalue, value):
+        sent.append(entityvalue)
+        raise ParameterWriteError("stopping after the id was decided")
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", record)
+
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A.swapcase(), "value": 30},
+            blocking=True,
+        )
+
+    assert sent == [EV_A], (
+        f"the portal was sent {sent}, a spelling nothing has accepted before"
+    )
+
+
 async def test_a_service_write_reaches_the_entity_that_shows_the_parameter(
     hass, monkeypatch
 ):
@@ -881,29 +914,22 @@ async def test_a_service_write_reaches_the_entity_that_shows_the_parameter(
     )
 
 
-async def test_a_service_write_finds_its_entity_in_any_spelling(hass, monkeypatch):
-    """The id that got past the allowlist has to find its entity too.
+async def test_a_verified_write_finds_its_entity_in_any_spelling(hass):
+    """The write-back has to find the entity whatever case it is handed.
 
-    The service checks its argument against the configured ids
-    canonically, so a caller who types the id in another case is let
-    through - correctly, it is the same parameter. Handing that raw
-    argument on to the entity lookup then found nothing, because the
-    entity holds the spelling from the options. The write happened, the
-    portal confirmed it, and the entity went on showing the old value
-    until the next auto-poll, which is off by default.
+    Asked of apply_verified_write directly, not through the service: the
+    service now settles on the configured spelling before it writes, so
+    driving this from there can no longer produce the mismatch and would
+    leave the lookup untested. The contract is the function's own - anyone
+    holding a hex id addresses the same parameter in either case, and a raw
+    comparison left the entity on its old value after a write the portal had
+    already confirmed.
     """
-    await _setup(hass, _entry(hass, _expert_options()))
+    entry = await _setup(hass, _entry(hass, _expert_options()))
 
-    def written(self, entityvalue, value, **_kwargs):
-        return expert_writer.ExpertParameterState(value, [10.0, 20.0, 30.0], {})
-
-    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", written)
-
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_SET_EXPERT_PARAMETER,
-        {"entityvalue": EV_A.upper(), "value": 30},
-        blocking=True,
+    entry.runtime_data.expert.apply_verified_write(
+        EV_A.upper(),
+        expert_writer.ExpertParameterState(30.0, [10.0, 20.0, 30.0], {}),
     )
     await hass.async_block_till_done()
 
