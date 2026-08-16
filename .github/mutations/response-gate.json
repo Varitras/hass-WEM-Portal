@@ -1129,9 +1129,16 @@
   {
     "label": "pair: writing a holiday date on its own must be noticed",
     "path": "custom_components/wemportal/date.py",
-    "old": "            date_to_epoch(value), together_with=self._companion_dates()",
+    "old": "            date_to_epoch(value), together_with=self._companion_dates",
     "new": "            date_to_epoch(value), together_with=None",
     "tests": "the_other_date_of_the_module_travels_with_the_write"
+  },
+  {
+    "label": "pair: the carried values read before the wait for the lock again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if callable(together_with):",
+    "new": "            if False:",
+    "tests": "the_values_carried_along_are_read_after_the_wait_for_the_lock"
   },
   {
     "label": "pair: taking a companion from another module must be noticed",

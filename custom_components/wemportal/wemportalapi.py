@@ -1972,6 +1972,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         interleave with a poll cycle on the same session/state."""
         self._acquire_api_lock("parameter write")
         try:
+            if callable(together_with):
+                # Read here rather than by the caller, and that is the point:
+                # the values to carry along come from the module's other rows,
+                # and a write already in flight holds this lock while it
+                # changes one of them. Taken before the wait, this request
+                # would send the state from before that write - asking the
+                # heating system to undo it.
+                together_with = together_with()
             return self._change_value(
                 device_id,
                 parameter_id,

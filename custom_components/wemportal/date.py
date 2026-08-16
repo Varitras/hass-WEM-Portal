@@ -145,8 +145,11 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         a few times a year, not once a cycle, and the alternative is
         reporting a setting that did not happen.
         """
+        # The method, not its result: it is read once this write holds the
+        # shared api lock, so a write still in flight has finished updating
+        # the rows it is taken from. See WemPortalApi.change_value.
         await self.async_write_parameter(
-            date_to_epoch(value), together_with=self._companion_dates()
+            date_to_epoch(value), together_with=self._companion_dates
         )
 
         failure = await self.hass.async_add_executor_job(

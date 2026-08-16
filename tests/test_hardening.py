@@ -6637,6 +6637,43 @@ def test_discovery_is_not_even_started_for_disabled_devices_alone():
     assert asked == []
 
 
+def test_the_values_carried_along_are_read_after_the_wait_for_the_lock():
+    """A holiday write carries the module's other dates unchanged - and the
+    snapshot of them was taken before the write queued.
+
+    The entity reads them on the event loop; the write then waits for the
+    shared api lock in an executor thread. A write already in flight holds
+    that lock for as long as it takes the portal to answer, and finishes by
+    updating exactly the row this snapshot came from. Read before the wait,
+    the second request carries the value from before the first one - asking
+    the heating system to undo it. `_record_written_value` exists for this
+    race and cannot reach it: it updates the row after the snapshot was
+    already taken.
+    """
+    api = _api()
+    module_dates = {"HolidayBegin": 1.0}
+    taking_the_lock = api._acquire_api_lock
+
+    def acquire(what):
+        taking_the_lock(what)
+        # The write that was already in flight finishes here.
+        module_dates["HolidayBegin"] = 2.0
+
+    api._acquire_api_lock = acquire
+    carried = {}
+    api._change_value = lambda *_args, **kwargs: carried.update(
+        kwargs["together_with"] or {}
+    )
+
+    api.change_value(
+        "1234", "HolidayEnd", 0, 1, 5.0, together_with=lambda: dict(module_dates)
+    )
+
+    assert carried == {"HolidayBegin": 2.0}, (
+        f"the request carried {carried}, the state from before it waited"
+    )
+
+
 def test_the_filter_survives_the_handover_to_the_session_setup():
     """The leg between the two tests above, and the one nothing watched.
 

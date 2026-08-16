@@ -145,12 +145,20 @@ def _with_companion(data, value=END_EPOCH, module=(0, 1), platform="date"):
 
 
 def _recorder(entity):
-    """Capture what the entity hands to the write path."""
+    """Capture what the entity hands to the write path.
+
+    The companions arrive as a callable and are read once the write holds the
+    shared api lock - see WemPortalApi.change_value. Resolved here the same
+    way, so these tests keep asking what travels with the write rather than
+    how it is passed.
+    """
     seen = {}
 
     async def record(value, together_with=None):
         seen["value"] = value
-        seen["together_with"] = together_with
+        seen["together_with"] = (
+            together_with() if callable(together_with) else together_with
+        )
 
     entity.async_write_parameter = record
     return seen

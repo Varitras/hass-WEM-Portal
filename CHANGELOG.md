@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Two holiday dates written right after one another no longer undo each
+  other.** A date write carries the module's other dates along unchanged,
+  and that snapshot was taken before the write queued for the shared
+  connection - so while the first write was still running, the second one
+  had already read the value it was about to replace, and sent it back.
 - **Removing the integration no longer leaves its cache behind after all.**
   A poll runs in a thread that cannot be cancelled, so one still running
   when the entry is removed finishes afterwards - and wrote the module cache
