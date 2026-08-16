@@ -1672,6 +1672,41 @@ def test_a_login_that_succeeded_does_not_navigate_on_after_a_teardown(monkeypatc
     assert gets == [True], "the navigation went on after the entry had gone away"
 
 
+def test_an_expert_login_page_without_its_form_is_not_blamed_on_the_password(
+    monkeypatch,
+):
+    """The third half of a repair that was documented as having two.
+
+    The scraper raises ServerError where the login page comes back without
+    the fields the password would be sent WITH, and its comment says why:
+    nothing about the credentials has been established at that point, and
+    calling it an auth failure feeds a counter that ends in a reauth prompt.
+    That comment closes with "this was the half of it that got left behind"
+    - meaning the transport one. There were three: the expert client still
+    called it AuthError. Found by comparing the two clients' shapes, not by
+    reading either of them.
+    """
+    from custom_components.wemportal import expert_writer
+
+    class _Response:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Login.aspx"
+        text = "<html><body>the portal served something else</body></html>"
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            return _Response()
+
+        def post(self, *_args, **_kwargs):
+            raise AssertionError("the password went to a page with no form")
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_k: _Session())
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+
+    with pytest.raises(exceptions.ServerError):
+        client._full_login()
+
+
 def test_a_portal_error_page_on_the_expert_login_url_is_not_a_wrong_password(
     monkeypatch,
 ):

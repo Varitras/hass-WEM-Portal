@@ -1855,6 +1855,13 @@
     "tests": "the_auto_poll_stops_at_the_START_of_an_unload"
   },
   {
+    "label": "expert login: a page with no form blamed on the password again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            raise ServerError(\n                \"The WEM Portal login page came back without its form fields, \"",
+    "new": "            raise AuthError(\n                \"The WEM Portal login page came back without its form fields, \"",
+    "tests": "an_expert_login_page_without_its_form_is_not_blamed_on_the_password"
+  },
+  {
     "label": "stats: the group list read as an absent key again",
     "path": "custom_components/wemportal/statistics.py",
     "old": "        group_types = portal_list(refresh_resp, \"GroupTypeDescriptions\")",

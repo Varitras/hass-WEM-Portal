@@ -929,7 +929,17 @@ class WemPortalExpertClient:
         viewstate = tree.xpath("//*[@id='__VIEWSTATE']/@value")
         eventval = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
         if not viewstate or not eventval:
-            raise AuthError("Expert client: login form fields not found.")
+            # NOT an AuthError: the password has not been sent yet - these
+            # fields are what it would be sent WITH, so a page without them
+            # says nothing about the credentials. The scraper reached the
+            # same conclusion for the same lines, and its comment names the
+            # transport handler as "the half that got left behind" - this
+            # was the third.
+            raise ServerError(
+                "The WEM Portal login page came back without its form fields, "
+                "so there was nothing to log in with. This is a portal-side "
+                "problem, not a credential one."
+            )
 
         login_data = {
             "__VIEWSTATE": viewstate[0],

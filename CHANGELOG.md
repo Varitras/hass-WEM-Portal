@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A login page served without its form is no longer reported as a wrong
+  password on the expert path either.** The password has not been sent at
+  that point - the missing fields are what it would be sent with. The web
+  scraper already said so; the expert client still called it a credential
+  problem.
 - **An answer that is not HTML at all no longer costs the whole scrape.**
   The cheap session-reuse attempt is allowed to come back with "this is not
   the expert page" so a fresh login can follow - but a body the parser
