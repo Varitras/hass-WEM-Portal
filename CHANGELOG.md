@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **In `both` mode, a reading merged into a scraped row stops being shown as
+  current when the portal leaves it out.** The ageing pass looked for the
+  reading under the API parameter's own key - and a merged parameter has no
+  row there any more, so it found nothing and moved on while the row that
+  does carry the value kept showing the last answer indefinitely.
 - **Two date writes at once can no longer undo one another.** A date write
   carries the module's other dates along unchanged, read from the stored
   reading - and that reading was updated only after the api lock had been

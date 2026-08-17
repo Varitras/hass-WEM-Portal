@@ -405,6 +405,38 @@ def test_both_mode_remembers_the_match_in_the_scraping_mapper():
     assert scraping_mapper[(ModuleRef(*MODULE_KEY), "Outside")] == ["heat_pump-outside"]
 
 
+def test_a_merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives():
+    """The ageing pass looked under the API key, and the value is not there.
+
+    A parameter merged into a scraped row has no row of its own any more, so
+    `f"{module}-{parameter}"` finds nothing and the pass moves on - while the
+    row that actually carries the reading keeps showing what the last answer
+    said, with nothing left to age it.
+    """
+    scraping_mapper = {}
+    merged = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=12.5, unit="°C")),
+        mode="both",
+        existing=_scraped("heat_pump-outside", "Heat pump - Outside"),
+        scraping_mapper=scraping_mapper,
+    )
+    assert merged["heat_pump-outside"].value == 12.5
+
+    # The next answer leaves the parameter out entirely.
+    aged = _process(
+        _modules(_parameter("Outside")),
+        _values(),
+        mode="both",
+        existing=merged,
+        scraping_mapper=scraping_mapper,
+    )
+
+    assert aged["heat_pump-outside"].value is None, (
+        "a merged reading nothing refreshed is still shown as current"
+    )
+
+
 def test_a_module_id_the_portal_sent_as_a_list_costs_only_that_module():
     """The guard wraps building the key, not looking it up - and the lookup
     is where it breaks.

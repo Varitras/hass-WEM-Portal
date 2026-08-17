@@ -554,7 +554,7 @@ def forget_dropped_parameters(device_data, module, described) -> None:
 
 
 def _clear_unanswered(
-    device_id, values_json, modules_dict, parsed_sensors, api_data
+    device_id, values_json, modules_dict, parsed_sensors, api_data, scraping_mapper
 ) -> None:
     """Stop presenting a reading the portal did not send this cycle.
 
@@ -606,7 +606,15 @@ def _clear_unanswered(
             name = f"{device_module['Name']}-{parameter_id}"
             if name in parsed_sensors:
                 continue
-            entry = device_data.get(name)
+            # Where this parameter's reading actually LIVES, which is not
+            # necessarily under its own key: in `both` mode it is merged into
+            # the scraped row showing the same value, and that mapping is
+            # already kept - it just was not asked here. Looking under the
+            # api key alone found nothing for a merged parameter and moved
+            # on, leaving the row that does carry the reading with nothing to
+            # age it.
+            merged_into = scraping_mapper.get((module_key, parameter_id)) or [name]
+            entry = device_data.get(merged_into[0])
             # A weekly programme is exempt, and asking the DECLARED type alone
             # got the wrong installations: a 3.1.3.0 portal types every
             # programme as 2 (an ordinary switch) with the schedule as JSON in
@@ -690,5 +698,10 @@ class WemPortalDataMapper:
 
         # Last, so it sees everything this cycle actually wrote.
         _clear_unanswered(
-            device_id, values_json, modules_dict, parsed_sensors, api_data
+            device_id,
+            values_json,
+            modules_dict,
+            parsed_sensors,
+            api_data,
+            scraping_mapper,
         )

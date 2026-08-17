@@ -3414,5 +3414,12 @@
     "old": "        await data.coordinator.async_wait_for_store_writes()",
     "new": "        pass",
     "tests": "unload_waits_for_a_store_write_already_on_the_disk"
+  },
+  {
+    "label": "freshness: a merged reading aged under a key it does not live at",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            merged_into = scraping_mapper.get((module_key, parameter_id)) or [name]\n            entry = device_data.get(merged_into[0])",
+    "new": "            entry = device_data.get(name)",
+    "tests": "merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives"
   }
 ]

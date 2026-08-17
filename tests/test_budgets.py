@@ -71,7 +71,10 @@ COMPLEXITY_BUDGETS = {
     # 25 -> 26: the programme exemption became a condition here too, so the
     # branch gained one `and`. Tried as a nested `if` first, which cost four
     # instead of one - nesting is what this measure counts.
-    "mapper.py::_clear_unanswered": 26,
+    # 26 -> 27: the pass now asks WHERE a parameter's reading lives instead of
+    # assuming its own key, which is one `or` on the lookup. This function is
+    # the one to split when the merge map gets an owner of its own.
+    "mapper.py::_clear_unanswered": 27,
     "__init__.py::_async_register_expert_service": 22,
     "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,
