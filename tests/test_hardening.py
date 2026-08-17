@@ -3427,6 +3427,35 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
         api.check_cooldown()
 
 
+def test_a_page_without_a_login_form_gets_no_credentials(monkeypatch):
+    """The third copy of the same rule, and the one that was still missing.
+
+    A page that parses but carries no hidden fields has no `__VIEWSTATE` and
+    no `__EVENTVALIDATION` - the ASP.NET state a login is posted WITH. Sent
+    anyway, the credentials go to a page that cannot process them and can
+    only refuse, which then reads as a wrong password. The scraper and the
+    expert client both check this before posting; this one built its form out
+    of whatever it found and appended the username and password to it.
+    """
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_args, **_kwargs):
+            # Parses fine. Has no form.
+            return FakeResponse_html(
+                "<html><body><p>Nothing to log in with</p></body></html>"
+            )
+
+        def post(self, *_args, **_kwargs):
+            raise AssertionError("credentials were sent to a page with no login form")
+
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+
+    with pytest.raises(exceptions.UnknownAuthError):
+        _api().web_login()
+
+
 def test_a_page_that_is_neither_login_nor_session_is_not_a_wrong_password(monkeypatch):
     """The portal answers HTTP 200 for a rejected login AND for the odd error
     or interstitial page. Only the first is about the credentials; counting
@@ -4459,6 +4488,53 @@ def test_a_returning_device_becomes_eligible_for_parameter_discovery():
 
     assert api._fetch_device_status("1234") is True
     assert api.data["1234"]["ConnectionStatus"] == 0, "the discovery gate stayed stale"
+
+
+def test_a_status_answer_without_a_status_is_a_failed_read(caplog):
+    """An answer that does not say is not an answer that says "unknown".
+
+    `.get("ConnectionStatus", -1)` turned a payload with the field missing
+    into the "unknown" state - which this method reports as a SUCCESSFUL read
+    of a device that is not online, so it returned False and the parameter
+    read never ran. The error sensors went out at the same time saying there
+    are no errors, on evidence nobody had.
+
+    The path for an unreadable status is right there and does the opposite:
+    it clears what it cannot vouch for and returns True, so the parameters
+    still get their chance. This just has to reach it.
+    """
+    import logging
+
+    from custom_components.wemportal.wemportalapi import DEVICE_STATUS_ROWS
+
+    api = _api()
+    # Filled from an earlier, successful read, so the assertion below is
+    # about this answer clearing them rather than about them never existing.
+    api.data = {
+        "1234": {
+            "ConnectionStatus": 0,
+            **{f"1234-{name}": Reading(value="No") for name in DEVICE_STATUS_ROWS},
+        }
+    }
+    api.modules = {"1234": {}}
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse({})
+
+    with caplog.at_level(logging.WARNING):
+        assert api._fetch_device_status("1234") is True, (
+            "a payload with no status ended the device's cycle, so the "
+            "parameters were never read"
+        )
+
+    still_claimed = {
+        name
+        for name in DEVICE_STATUS_ROWS
+        if api.data["1234"][f"1234-{name}"].value is not None
+    }
+    assert not still_claimed, (
+        f"{sorted(still_claimed)} were published from an answer that carried "
+        "no status at all"
+    )
+    assert "Failed to fetch Device Status" in caplog.text
 
 
 # --- what counts as a successful API answer ---------------------------

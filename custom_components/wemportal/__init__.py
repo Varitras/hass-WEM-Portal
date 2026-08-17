@@ -76,7 +76,9 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 # Migrate values from previous versions
-def _migrate_device_unique_ids(registry, config_entry, device_id, data) -> bool:
+def _migrate_device_unique_ids(
+    registry, config_entry, device_id, data, contested=()
+) -> bool:
     """Migrate one device's entities from old unique_id formats to the current
     one. Returns True if any entity was updated. Factored out so migration can
     run for EVERY device, not just the first."""
@@ -86,12 +88,49 @@ def _migrate_device_unique_ids(registry, config_entry, device_id, data) -> bool:
             continue
 
         new_id = get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id)
-        old_ids = _possible_old_unique_ids(config_entry, device_id, unique_id, values)
+        old_ids = [
+            old_id
+            for old_id in _possible_old_unique_ids(
+                config_entry, device_id, unique_id, values
+            )
+            if old_id not in contested
+        ]
         if _adopt_entity_under_its_old_id(
             registry, config_entry, values.platform, old_ids, new_id
         ):
             change = True
     return change
+
+
+def _ids_claimed_by_more_than_one_reading(config_entry, per_device) -> set:
+    """The id shapes that identify no single reading of this cycle.
+
+    The old shapes carry neither device nor parameter - a bare key, a friendly
+    name, a ParameterID - so two devices with a parameter of the same name
+    propose exactly the same one, and so do two parameters whose name and
+    ParameterID cross over. Whichever the walk reaches first then adopts the
+    other's entity; and since the cleanup learned to search those shapes too,
+    it can delete it instead, one device before the device it belongs to has
+    been looked at. The current id is a claim as well, because the cleanup
+    searches under it and another reading's friendly-name shape can BE it.
+
+    Nothing is resolved here, and that is the point: an id two readings answer
+    to identifies neither, and nothing in the registry says whose history it
+    is. Leaving it alone is the only outcome that loses nothing.
+    """
+    claimed_once: set = set()
+    claimed_twice: set = set()
+    for device_id, rows in per_device.items():
+        for unique_id, values in (rows or {}).items():
+            if not isinstance(values, Reading):
+                continue
+            claimed = {
+                get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id),
+                *_possible_old_unique_ids(config_entry, device_id, unique_id, values),
+            }
+            claimed_twice |= claimed & claimed_once
+            claimed_once |= claimed
+    return claimed_twice
 
 
 def _possible_old_unique_ids(config_entry, device_id, unique_id, values) -> list:
@@ -202,7 +241,7 @@ def _entities_of_this_entry_on_other_platforms(
 
 
 def _remove_entities_from_a_previous_platform(
-    registry, config_entry, device_id, data
+    registry, config_entry, device_id, data, contested=()
 ) -> None:
     """Drop registry entries this integration no longer provides.
 
@@ -228,8 +267,15 @@ def _remove_entities_from_a_previous_platform(
             continue
         current = values.platform
         unique_ids = [
-            get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id),
-            *_possible_old_unique_ids(config_entry, device_id, unique_id, values),
+            candidate
+            for candidate in (
+                get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id),
+                *_possible_old_unique_ids(config_entry, device_id, unique_id, values),
+            )
+            # Deletion is the half where a contested id costs the most: an
+            # adoption that goes to the wrong reading is at least still an
+            # entity.
+            if candidate not in contested
         ]
         for stale in _entities_of_this_entry_on_other_platforms(
             registry, config_entry, current, unique_ids
@@ -298,17 +344,25 @@ async def migrate_unique_ids(
         # Migrate EVERY device, not just the first: with multiple devices the
         # others' old unique_ids (and their history) were previously left
         # behind.
-        for device_id, rows in (coordinator.data or {}).items():
-            fresh = _take_the_readings_not_migrated_yet(device_id, rows, migrated)
+        due = {
+            device_id: _take_the_readings_not_migrated_yet(device_id, rows, migrated)
+            for device_id, rows in (coordinator.data or {}).items()
+        }
+        # Collected across all of them before any of them is touched, because
+        # what is claimed twice can only be seen from outside a single device.
+        contested = _ids_claimed_by_more_than_one_reading(config_entry, due)
+        for device_id, fresh in due.items():
             if not fresh:
                 continue
-            if _migrate_device_unique_ids(registry, config_entry, device_id, fresh):
+            if _migrate_device_unique_ids(
+                registry, config_entry, device_id, fresh, contested
+            ):
                 change = True
             # After the id migration, not before: that step may still move an
             # old entry onto the current unique_id, and removing it first
             # would throw away the history it exists to preserve.
             _remove_entities_from_a_previous_platform(
-                registry, config_entry, device_id, fresh
+                registry, config_entry, device_id, fresh, contested
             )
         return change
 

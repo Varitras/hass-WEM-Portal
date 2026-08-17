@@ -546,10 +546,38 @@
     "tests": "legacy_id_is_only_followed_into_this_account"
   },
   {
+    "label": "status: a payload with no status read as the unknown state again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            raw_status = status_response[\"ConnectionStatus\"]",
+    "new": "            raw_status = status_response.get(\"ConnectionStatus\", -1)",
+    "tests": "status_answer_without_a_status_is_a_failed_read"
+  },
+  {
+    "label": "web login: posting credentials to a page with no form again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not {\"__VIEWSTATE\", \"__EVENTVALIDATION\"} <= form_data.keys():",
+    "new": "        if False:",
+    "tests": "page_without_a_login_form_gets_no_credentials"
+  },
+  {
+    "label": "migration: adopting under an id two readings claim must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if old_id not in contested",
+    "new": "            if True",
+    "tests": "old_id_two_devices_both_answer_to_is_left_alone"
+  },
+  {
+    "label": "migration: deleting under an id two readings claim must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if candidate not in contested",
+    "new": "            if True",
+    "tests": "old_id_two_devices_both_answer_to_is_left_alone"
+  },
+  {
     "label": "migration: not following the old id shapes here must be noticed",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "            *_possible_old_unique_ids(config_entry, device_id, unique_id, values),\n",
-    "new": "",
+    "old": "            for candidate in (\n                get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id),\n                *_possible_old_unique_ids(config_entry, device_id, unique_id, values),\n            )",
+    "new": "            for candidate in (\n                get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id),\n            )",
     "tests": "legacy_id_on_a_platform_the_parameter_no_longer_is"
   },
   {

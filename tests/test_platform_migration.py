@@ -392,6 +392,63 @@ async def test_a_platform_that_flickers_gets_its_control_entity_back(monkeypatch
     )
 
 
+async def test_an_old_id_two_devices_both_answer_to_is_left_alone(monkeypatch):
+    """The old shapes name no device, so two devices can claim the same one.
+
+    A bare key and a friendly name are what releases before the entry prefix
+    registered under, and "Pump" is "Pump" on every module of every device.
+    Whichever device the cycle happens to walk first then adopted the other's
+    entity - and since the cleanup learned to search those shapes too, it
+    could just as well DELETE it, one device before the device it belongs to
+    was even looked at.
+
+    Left alone rather than resolved: an id two readings answer to identifies
+    neither, and there is nothing in the registry that says whose history it
+    is. The entity stays where it is, under its old id, which is the one
+    outcome that loses nothing.
+    """
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry({("switch", "Pump"): "switch.the_contested_one"})
+    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    coordinator = FakeCoordinator(
+        data={
+            # Walked first, and a date today - so its CLEANUP is what reaches
+            # the switch entity above.
+            DEVICE: {"Pump": Reading(value=1.0, platform="date")},
+            "5678": {"Pump": Reading(value=1.0, platform="switch")},
+        }
+    )
+
+    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+
+    assert registry.removed == [], (
+        f"one device deleted an entity the other one may own: {registry.removed}"
+    )
+    assert registry.renamed == [], (
+        f"one device adopted an entity the other one may own: {registry.renamed}"
+    )
+
+
+async def test_an_old_id_only_one_device_answers_to_is_still_migrated(monkeypatch):
+    """The control case: without it, refusing everything would pass the test
+    above just as well."""
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry({("sensor", "Outside"): "sensor.old_outside"})
+    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    coordinator = FakeCoordinator(
+        data={
+            DEVICE: {"Outside": Reading(value=1.0, platform="sensor")},
+            "5678": {"Inside": Reading(value=1.0, platform="sensor")},
+        }
+    )
+
+    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+
+    assert registry.renamed == [("sensor.old_outside", _uid("Outside"))]
+
+
 def test_the_migration_leaves_another_accounts_entity_alone():
     """The old unique_id shapes predate the account prefix, so they are the
     same on every WEM account.

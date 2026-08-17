@@ -8,6 +8,22 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **One device can no longer adopt or delete another device's entity during
+  the unique_id migration.** The old id formats name neither a device nor a
+  parameter - a bare key, a friendly name - so two devices with a parameter of
+  the same name propose exactly the same one. Whichever the cycle walked first
+  took the other's entity, or removed it. An id more than one reading answers
+  to is now left alone, which is the only outcome that loses nothing.
+- **A device status answer that carries no status is treated as a failed
+  read.** A missing `ConnectionStatus` was read as the "unknown" state, which
+  counts as a successful read of a device that is not online: the parameter
+  read was skipped for that cycle and the fault sensors were published as "no
+  errors" on no evidence at all.
+- **No credentials are sent to a login page that has no login form.** A page
+  can parse perfectly and still carry none of the ASP.NET fields a login is
+  posted with; the password went out anyway and could only be refused, which
+  then read as a wrong password. The scraper and the expert client already
+  refused to do this.
 - **A portal answer that announces itself as XML no longer costs the whole
   scrape.** An unreadable body was already allowed to fall back to a fresh
   login, but only when the parser refused it by its own error type - and the

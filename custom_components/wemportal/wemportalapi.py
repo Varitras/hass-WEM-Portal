@@ -1495,6 +1495,17 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             element.get("name"): element.get("value", "")
             for element in page.xpath('//input[@type="hidden"][string(@name)]')
         }
+        # A page can parse perfectly and still not be a login page. These two
+        # are the ASP.NET state a login is posted WITH, so without them there
+        # is nothing to log in with - and posting anyway sends the password to
+        # a page that can only refuse it, which then reads as a wrong one. The
+        # scraper and the expert client both check this before posting; this
+        # was the third of the same three lines, and the one still missing.
+        if not {"__VIEWSTATE", "__EVENTVALIDATION"} <= form_data.keys():
+            raise UnknownAuthError(
+                "The WEM Portal login page came back without its form fields, "
+                "so no credentials were sent."
+            )
 
         # Add username and password to the form data
         form_data["ctl00$content$tbxUserName"] = self.username
@@ -2266,7 +2277,16 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 retry_transport=True,
             ).json()
 
-            raw_status = status_response.get("ConnectionStatus", -1)
+            # Indexed, not `.get(..., -1)`: an answer that does not say is not
+            # an answer that says "unknown". Defaulted, a payload with the
+            # field missing became the unknown STATE - which this method
+            # reports as a successful read of a device that is not online, so
+            # it returned False and the parameter read never ran, while the
+            # error sensors went out saying nothing is wrong on evidence
+            # nobody had. The KeyError lands in the handler below, which is
+            # the one that clears what it cannot vouch for and still lets the
+            # parameters have their chance.
+            raw_status = status_response["ConnectionStatus"]
             status_map = {0: "online", 7: "wrong_secret", 8: "busy", 50: "offline"}
             conn_status = status_map.get(raw_status, "unknown")
 
