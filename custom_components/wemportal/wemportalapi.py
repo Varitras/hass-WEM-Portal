@@ -1975,6 +1975,30 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             _LOGGER.debug("Fetching api parameters data for device %s", device_id)
             self._discover_device_parameters(device_id)
 
+    def _publish_accepted_values(
+        self, device_id, module_index, module_type, written
+    ) -> None:
+        """Bring the stored readings in line with what the portal just took.
+
+        Matched on the module ADDRESS plus the parameter id rather than on a
+        row key: which key a reading lives under depends on whether it was
+        merged into a scraped row, while the address is what the write itself
+        was addressed with. The module is part of that because two heating
+        circuits share one parameter catalogue - the same ParameterID in
+        another module is another reading, and writing one must not touch it.
+
+        Only what the portal accepted: a refused write raises before this,
+        which is what keeps the integration from being certain of a value the
+        heating system never took.
+        """
+        for row in (self.data.get(str(device_id)) or {}).values():
+            if not isinstance(row, Reading):
+                continue
+            if (row.module_index, row.module_type) != (module_index, module_type):
+                continue
+            if row.parameter_id in written:
+                row.value = written[row.parameter_id]
+
     def change_value(
         self,
         device_id,
@@ -1983,19 +2007,23 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         module_type,
         numeric_value,
         together_with=None,
-        record_written=None,
     ):
         """Change a value under the shared API lock, so a write can't
         interleave with a poll cycle on the same session/state.
 
-        Both callbacks are here rather than at the call site, and they are
-        two halves of one thing: the values to carry along come from the
-        module's other rows, so a write that is queued behind another one has
-        to READ them after the wait, and the write in front of it has to have
-        WRITTEN its own result before releasing the lock. Reading late was
-        not enough on its own - the row was still being updated by the caller
-        after this returned, so the queued write read the state from before
-        the first one and asked the heating system to undo it.
+        Reading the companions and publishing the result both belong here,
+        and they are two halves of one thing: a write queued behind another
+        has to READ the module's other rows after the wait, and the write in
+        front of it has to have WRITTEN what the portal accepted before it
+        lets go of the lock.
+
+        Publishing used to be an optional callback the caller passed in,
+        which failed twice over: the holiday service passed none at all, so
+        a two-date write published nothing, and the entity path passed one
+        for its main value only, leaving the companions it had just sent
+        showing their old readings. Whoever was next in line then read
+        exactly those and sent them back, undoing part of a write that had
+        just succeeded. This is the only place that knows the whole request.
         """
         self._acquire_api_lock("parameter write")
         try:
@@ -2017,10 +2045,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 numeric_value,
                 together_with=together_with,
             )
-            if record_written is not None:
-                # Still under the lock, and only after the portal accepted:
-                # the next writer reads this row the moment it gets in.
-                record_written()
+            # Still under the lock, and only after the portal accepted: the
+            # next writer reads these rows the moment it gets in.
+            self._publish_accepted_values(
+                device_id,
+                module_index,
+                module_type,
+                {parameter_id: numeric_value, **(together_with or {})},
+            )
             return result
         finally:
             self._api_lock.release()

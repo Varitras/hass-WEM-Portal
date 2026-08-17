@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import time
+import types
 
 import pytest
 import requests as real_requests
@@ -6918,6 +6919,106 @@ def test_discovery_is_not_even_started_for_disabled_devices_alone():
     assert asked == []
 
 
+def test_the_expert_lock_belongs_to_the_worker_not_to_its_awaiter(monkeypatch):
+    """A cancelled await must not hand the portal to the next operation.
+
+    The lock used to be taken on the event loop and released in the awaiting
+    coroutine's `finally`. A cancellation - a reload, an unload, a timeout -
+    runs that `finally` while the executor thread is still driving the
+    Fachmann session, so the next operation of the same account opened a
+    second session beside it. Held by the thread that does the work, the
+    only thing that can release it is that work finishing.
+
+    Driven with two real threads: the second call has to be refused for as
+    long as the first is inside the portal, and to succeed once it is out.
+    """
+    import threading
+
+    from custom_components.wemportal import expert_controller
+
+    entry = types.SimpleNamespace(data={}, options={})
+    api = types.SimpleNamespace(
+        check_expert_cooldown=lambda: None,
+        activate_expert_cooldown=lambda: None,
+        expert_cookies={},
+    )
+    inside_the_portal = threading.Event()
+    let_it_finish = threading.Event()
+    lock = threading.Lock()
+
+    class _Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def read_many(self, _ids):
+            inside_the_portal.set()
+            let_it_finish.wait(timeout=10)
+            return {}
+
+    monkeypatch.setattr(
+        expert_controller, "read_expert_values", expert_controller.read_expert_values
+    )
+    monkeypatch.setattr(
+        "custom_components.wemportal.expert_writer.WemPortalExpertClient", _Client
+    )
+
+    def first():
+        expert_controller.read_expert_values(entry, api, ["ev"], None, lock)
+
+    worker = threading.Thread(target=first)
+    worker.start()
+    assert inside_the_portal.wait(timeout=10), "the first read never got going"
+
+    # The awaiter of the first read is gone by now - cancelled, unloaded,
+    # timed out. The work is not.
+    with pytest.raises(expert_controller.ExpertBusy):
+        expert_controller.read_expert_values(entry, api, ["ev"], None, lock)
+
+    let_it_finish.set()
+    worker.join(timeout=10)
+
+    # And free again once the work really ended.
+    expert_controller.read_expert_values(entry, api, ["ev"], None, lock)
+
+
+def test_a_write_publishes_every_value_it_sent():
+    """Whoever writes, and whatever it carried along.
+
+    The row update used to be an optional callback the CALLER passed in - so
+    the entity path published its main value and the holiday service, which
+    writes begin and end in one request, published nothing at all. And even
+    the entity path left the companion values behind, although they went out
+    on the wire just as much. Anything queued on the lock then read a row
+    that still said what it said before the write.
+
+    Owned by the write now: it is the only place that knows the whole
+    request, and it is the one holding the lock while the next writer waits.
+    """
+    api = _api_after_a_poll()
+    begin = Reading(value=1.0, parameter_id="U_Beginn", module_index=0, module_type=1)
+    end = Reading(value=2.0, parameter_id="U_Ende", module_index=0, module_type=1)
+    other_module = Reading(
+        value=3.0, parameter_id="U_Beginn", module_index=1, module_type=1
+    )
+    api.data = {
+        "1234": {
+            "Heat pump-U_Beginn": begin,
+            "Heat pump-U_Ende": end,
+            "Circuit-U_Beginn": other_module,
+        }
+    }
+    api._change_value = lambda *_args, **_kwargs: None
+
+    api.change_value("1234", "U_Beginn", 0, 1, 10.0, together_with={"U_Ende": 20.0})
+
+    assert (begin.value, end.value) == (10.0, 20.0), (
+        "the request carried both values but only published some of them"
+    )
+    assert other_module.value == 3.0, (
+        "a parameter of the same name in ANOTHER module was overwritten"
+    )
+
+
 def test_the_values_carried_along_see_the_write_that_held_the_lock():
     """Two holiday writes racing, driven by two real threads.
 
@@ -6955,16 +7056,9 @@ def test_the_values_carried_along_see_the_write_that_held_the_lock():
     api._change_value = portal_write
 
     def write_begin():
-        api.change_value(
-            "1234",
-            "HolidayBegin",
-            0,
-            1,
-            2.0,
-            # What the entity hands in - the row update belongs to the write,
-            # not to whatever runs after it returns.
-            record_written=lambda: setattr(row, "value", 2.0),
-        )
+        # Nothing handed in: publishing what the portal took belongs to the
+        # write itself, which is what makes it happen under the lock.
+        api.change_value("1234", "HolidayBegin", 0, 1, 2.0)
 
     def write_end():
         first_is_holding_the_lock.wait(timeout=5)

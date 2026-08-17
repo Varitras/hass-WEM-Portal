@@ -247,8 +247,8 @@
   {
     "label": "poll: a held lock must stop the read",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "            if lock is not None and not lock.acquire(blocking=False):",
-    "new": "            if False:",
+    "old": "    if lock is not None and not lock.acquire(blocking=False):",
+    "new": "    if False:",
     "tests": "holds_the_lock"
   },
   {
@@ -1255,9 +1255,9 @@
   {
     "label": "write-back: leaving the coordinator's copy stale must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if record_written is not None:\n                # Still under the lock, and only after the portal accepted:\n                # the next writer reads this row the moment it gets in.\n                record_written()",
+    "old": "            self._publish_accepted_values(\n                device_id,\n                module_index,\n                module_type,\n                {parameter_id: numeric_value, **(together_with or {})},\n            )",
     "new": "            pass",
-    "tests": "values_carried_along_see_the_write_that_held_the_lock"
+    "tests": "values_carried_along_see_the_write_that_held_the_lock or write_publishes_every_value_it_sent"
   },
   {
     "label": "write-back: recording a value the portal refused must be noticed",
@@ -3367,11 +3367,11 @@
     "tests": "programme_with_no_value_left_does_not_count_as_being_fed"
   },
   {
-    "label": "pair: the row recorded after the lock is released again",
-    "path": "custom_components/wemportal/entity.py",
-    "old": "                record_written=partial(self._record_written_value, value),",
-    "new": "",
-    "tests": "values_carried_along_see_the_write_that_held_the_lock or write_brings_the_coordinators_copy_up_to_date"
+    "label": "pair: only the value asked for, not what travelled with it",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                {parameter_id: numeric_value, **(together_with or {})},",
+    "new": "                {parameter_id: numeric_value},",
+    "tests": "write_publishes_every_value_it_sent"
   },
   {
     "label": "migration: the contested set built from the due slice again",
@@ -3428,5 +3428,19 @@
     "old": "            api_data[device_id].pop(key, None)",
     "new": "            pass",
     "tests": "scraper_arriving_later_takes_the_api_row_it_replaces"
+  },
+  {
+    "label": "pair: a write publishing over another module's parameter",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if (row.module_index, row.module_type) != (module_index, module_type):\n                continue\n            if row.parameter_id in written:",
+    "new": "            if row.parameter_id in written:",
+    "tests": "write_publishes_every_value_it_sent"
+  },
+  {
+    "label": "expert lock: released by the awaiter instead of the worker again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "    if lock is not None and not lock.acquire(blocking=False):",
+    "new": "    if False:",
+    "tests": "expert_lock_belongs_to_the_worker_not_to_its_awaiter"
   }
 ]

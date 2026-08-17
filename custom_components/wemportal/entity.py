@@ -185,32 +185,8 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
                 self._module_type,
                 value,
                 together_with=together_with,
-                # Handed in rather than called after this returns: the api
-                # runs it before it releases the lock, which is where a
-                # second write is already queued waiting to read this row.
-                record_written=partial(self._record_written_value, value),
             )
         )
-
-    def _record_written_value(self, value) -> None:
-        """Bring the coordinator's copy up to date with what was just written.
-
-        Each platform already updates its OWN displayed value after a write.
-        The coordinator's row keeps the value from the last poll, which is
-        minutes old, and something reads it in between: the date platform
-        sends the module's other dates along with a write and takes them from
-        here. Measured on a live installation - two writes four seconds
-        apart, and the second carried a begin date the first had already
-        replaced, asking the portal to undo it.
-
-        Only after the write returned. change_value raises when the portal
-        refuses, so a rejected value never lands here - recording it would
-        make the integration certain of something the heating system never
-        accepted.
-        """
-        row = self._coordinator_row()
-        if row is not None:
-            row.value = value
 
     def _forget_written_value(self) -> None:
         """Take back a value nobody could confirm was kept.

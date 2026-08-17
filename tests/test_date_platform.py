@@ -68,17 +68,25 @@ def test_a_numeric_string_is_still_accepted():
 # --- the entity, including the write that reaches the heating system ----
 
 
-def _accepting_write(*_args, record_written=None, **_kwargs):
-    """A portal that accepts, standing in for WemPortalApi.change_value.
+def _api_that_accepts(data):
+    """A REAL api with only the portal request stubbed out.
 
-    Including the callback, which is not a detail: the real one runs it under
-    the api lock once the portal accepted, and that is what brings the
-    coordinator row up to date. Dropped here, every write test below would
-    pass while the row kept its pre-write value - which is the exact defect
-    this argument exists to close.
+    Standing in for `change_value` itself would mean reproducing what it does
+    around the request - take the lock, read the companions, publish what the
+    portal accepted - and the write tests below are about exactly that. A
+    double that forgets the publishing half leaves every one of them passing
+    while the row keeps its pre-write value.
     """
-    if record_written is not None:
-        record_written()
+    from custom_components.wemportal.wemportalapi import WemPortalApi
+
+    api = WemPortalApi("user@example.org", "secret")
+    api.valid_login = True
+    api.data = data
+    api._change_value = lambda *_args, **_kwargs: None
+    api.device_types = {}
+    api.api_version = None
+    api.reread_device_values = lambda *_args, **_kwargs: None
+    return api
 
 
 class _Coordinator:
@@ -88,12 +96,7 @@ class _Coordinator:
         self.listeners = []
         # A portal that accepts a write and confirms whatever the row already
         # says it stored. Tests that care about either replace them.
-        self.api = types.SimpleNamespace(
-            device_types={},
-            api_version=None,
-            change_value=_accepting_write,
-            reread_device_values=lambda *_args, **_kwargs: None,
-        )
+        self.api = _api_that_accepts(data)
 
     def async_add_listener(self, update):
         """Real coordinators hand back a remover; nothing here updates."""

@@ -79,11 +79,24 @@ def poll_interval_minutes(entry) -> int:
         return DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
 
 
-def read_expert_values(entry, api, entityvalues: list, abort_check=None) -> dict:
+class ExpertBusy(Exception):
+    """Another expert operation of this account holds the portal session."""
+
+
+def read_expert_values(
+    entry, api, entityvalues: list, abort_check=None, lock=None
+) -> dict:
     """One shared portal session for every configured id.
 
     Runs in an executor thread - the expert client is blocking - and imports
     it there, which is what keeps curl_cffi off the setup path.
+
+    Takes and releases the account lock ITSELF rather than being called
+    with it held. Acquired on the event loop and released in the awaiting
+    coroutine's `finally`, a cancellation - a reload, an unload, a timeout -
+    freed the lock while this thread was still driving the portal, and the
+    next operation of the same account opened a second session beside it.
+    Owned here, the lock is held for exactly as long as the work is.
     """
     from .expert_options import expert_client_options
     from .expert_writer import WemPortalExpertClient
@@ -97,7 +110,13 @@ def read_expert_values(entry, api, entityvalues: list, abort_check=None) -> dict
         abort_check=abort_check,
         **expert_client_options(entry.options),
     )
-    return client.read_many(entityvalues)
+    if lock is not None and not lock.acquire(blocking=False):
+        raise ExpertBusy("another expert operation of this account is in progress")
+    try:
+        return client.read_many(entityvalues)
+    finally:
+        if lock is not None:
+            lock.release()
 
 
 class ExpertController:
@@ -290,13 +309,6 @@ class ExpertController:
             # survives the unload that drops runtime_data while this read is
             # still in flight.
             current_api = self._data.api
-            lock = self.lock
-            if lock is not None and not lock.acquire(blocking=False):
-                _LOGGER.debug(
-                    "Expert auto-poll: another expert operation in progress, "
-                    "skipping this cycle."
-                )
-                return
 
             try:
                 results = await self._hass.async_add_executor_job(
@@ -305,7 +317,15 @@ class ExpertController:
                     current_api,
                     entityvalues,
                     self._raise_if_stopped,
+                    self.lock,
                 )
+            except ExpertBusy as exc:
+                # The worker refused: another operation of this account is
+                # driving the portal. Skipping is what this cycle did before,
+                # the difference being who decides - the thread that will do
+                # the work, not the coroutine that may be cancelled first.
+                _LOGGER.debug("Expert auto-poll: %s, skipping this cycle.", exc)
+                return
             except ExpertOperationAborted as exc:
                 # Not a failure: the configuration this read belongs to is
                 # gone. Feeding it through the counters below would blame
@@ -324,9 +344,6 @@ class ExpertController:
                 _LOGGER.warning("Expert auto-poll read failed: %s", exc)
                 self._register_batch_failure()
                 return
-            finally:
-                if lock is not None:
-                    lock.release()
 
             self.apply_read(results)
         finally:

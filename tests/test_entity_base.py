@@ -574,24 +574,25 @@ def _writeable(cls, unloading=False, calls=None):
 
     entity = _entity(cls)
 
-    # Records keyword arguments too: the write goes through functools.partial
-    # now, because the date platform sends companion parameters by name.
-    def _change_value(*args, record_written=None, **kwargs):
-        """The api's side of the contract, both halves of it.
+    # A REAL api with only the portal call stubbed out, rather than a stand-in
+    # for change_value itself. What that method does around the request - take
+    # the lock, read the companions, publish what the portal accepted - is
+    # exactly what the tests below are about, and a double would have to
+    # reproduce all of it to stay honest. Records keyword arguments too: the
+    # write goes through functools.partial, because the date platform sends
+    # companion parameters by name.
+    from custom_components.wemportal.wemportalapi import WemPortalApi
 
-        Running `record_written` is not decoration: the real api runs it
-        under its lock after the portal accepted, and that is what brings the
-        coordinator row up to date. A double that swallows it leaves the row
-        untouched while every write test still passes.
-        """
-        # `record_written` stays out of the record: the tests reading this
-        # ask which parameter was addressed, and a bound method in the
-        # expected value would make each of them assert on a repr.
+    api = WemPortalApi("user@example.org", "secret")
+    api.valid_login = True
+    # The same dict object the entity reads through the coordinator, as in
+    # production: the coordinator's data IS the api's.
+    api.data = entity.coordinator.data
+
+    def _portal_write(*args, **kwargs):
         (calls if calls is not None else []).append((args, kwargs))
-        if record_written is not None:
-            record_written()
 
-    api = types.SimpleNamespace(change_value=_change_value)
+    api._change_value = _portal_write
     data = WemPortalData(api=api, coordinator=None)
     data.unloading = unloading
     entity._config_entry.runtime_data = data
