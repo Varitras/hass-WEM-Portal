@@ -322,10 +322,19 @@ async def test_the_unload_waits_for_a_store_write_already_on_the_disk(hass):
     order = []
     let_the_disk_answer = asyncio.Event()
 
+    # The REAL save path, with only the disk held up. Holding `_store_writes`
+    # here instead would be the test taking the lock the production code is
+    # supposed to take - it would pass with both `async with` blocks deleted.
+    async def slow_disk(_data):
+        await let_the_disk_answer.wait()
+
+    coordinator.api.modules = {"1234": {(0, 1): {"Name": "Heat pump"}}}
+    coordinator._saved_modules_snapshot = None
+    coordinator._modules_store.async_save = slow_disk
+
     async def write_in_flight():
-        async with coordinator._store_writes:
-            await let_the_disk_answer.wait()
-            order.append("save")
+        await coordinator._async_save_modules_cache()
+        order.append("save")
 
     async def unload():
         result = await hass.config_entries.async_unload(entry.entry_id)
@@ -2269,6 +2278,57 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
     return entry, scheduled, raised_issues
 
 
+# One reading per platform, in the shape the mapper produces for it. Enough
+# to be built into an entity and no more - what is under test is that each
+# platform picks its own up at all.
+A_READING_PER_PLATFORM = {
+    "sensor": {"value": 21.0, "unit": "°C"},
+    "number": {
+        "value": 21.0,
+        "min_value": 5.0,
+        "max_value": 30.0,
+        "step": 1,
+    },
+    "select": {"value": "Auto", "options": ["0"], "options_names": ["Auto"]},
+    "switch": {"value": 1.0},
+    "date": {"value": 1785715200.0},
+}
+
+
+@pytest.mark.parametrize("platform", sorted(A_READING_PER_PLATFORM))
+async def test_every_platform_builds_an_entity_for_a_late_reading(hass, platform):
+    """Driven through the real setup of every platform, not read off the AST.
+
+    The guard this replaces looked for a call to the shared helper somewhere
+    in each module - which the import line alone satisfied, and which says
+    nothing about the platform being the right one, the entity class being
+    the right one, or the call being reachable at all. Four ordinary
+    situations produce a reading only on a LATER cycle, and each of them ends
+    as coordinator data nobody renders if a platform gets this wrong.
+    """
+    from custom_components.wemportal.models import Reading
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    before = len(hass.states.async_entity_ids(platform))
+
+    coordinator.data["1234"]["Late-Parameter"] = Reading(
+        friendly_name="Late parameter",
+        parameter_id="Late",
+        platform=platform,
+        module_index=0,
+        module_type=1,
+        **A_READING_PER_PLATFORM[platform],
+    )
+    coordinator.async_update_listeners()
+    await hass.async_block_till_done()
+
+    assert len(hass.states.async_entity_ids(platform)) == before + 1, (
+        f"{platform} did not build an entity for a reading that arrived after "
+        "setup, so it stays invisible until someone reloads by hand"
+    )
+
+
 async def test_two_entries_of_one_account_share_the_expert_lock(hass):
     """One account is one Fachmann session, however many entries hold it.
 
@@ -2305,15 +2365,26 @@ async def test_an_entity_the_user_disabled_is_not_polled(hass, monkeypatch):
         entityvalues=[EV_A, EV_B],
     )
     controller = entry.runtime_data.expert
-    # Exactly what Home Assistant leaves behind for a disabled entity.
+    # Disabled the way a user does it, through the registry - not by poking
+    # the entity. Home Assistant clears `hass` only when ADDING is aborted, so
+    # a check for that saw a later disable as still live, and a test that sets
+    # it by hand would agree with the check instead of with Home Assistant.
+    from homeassistant.helpers import entity_registry
+
+    registry = entity_registry.async_get(hass)
     disabled = controller.entities[0]
-    disabled.hass = None
+    still_polled = controller.entities[1].entityvalue
+    registry.async_update_entity(
+        disabled.entity_id,
+        disabled_by=entity_registry.RegistryEntryDisabler.USER,
+    )
+    await hass.async_block_till_done()
     asked.clear()
 
     await scheduled[-1](None)
     await hass.async_block_till_done()
 
-    assert asked == [[controller.entities[1].entityvalue]], (
+    assert asked == [[still_polled]], (
         f"the disabled parameter was still requested: {asked}"
     )
     assert disabled.entityvalue not in controller.fail_counts, (

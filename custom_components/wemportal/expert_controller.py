@@ -192,27 +192,39 @@ class ExpertController:
 
     @property
     def live_entities(self) -> list:
-        """The entities Home Assistant actually added.
+        """The entities Home Assistant currently has added.
 
-        An entity the user disabled in the registry is still constructed and
-        still handed over here, but never gets a `hass` - so it publishes
-        nothing, while its id went on costing a login and a form read every
-        cycle, taking a place in the failure tally and raising repair issues
-        about a parameter nobody is looking at. Disabling it is how a user
-        says stop.
-
-        Asked wherever the poll counts something, because the two have to
-        agree: an id left out of the request but still walked afterwards
-        counts as "not in the results", which is the harshest verdict there
-        is - the one reserved for an id the portal never even accepted.
+        Every entry here got in through async_added_to_hass and leaves
+        through async_will_remove_from_hass, so this is the list Home
+        Assistant itself maintains rather than a guess about one. The
+        guess it replaces was `entity.hass is not None`, which is only
+        cleared when ADDING is aborted - an entity the user disables later
+        keeps its reference, so it went on being polled.
         """
-        return [entity for entity in self.entities if entity.hass is not None]
+        return list(self.entities)
 
-    def attach_entities(self, entities: list) -> None:
-        """Hand the expert entities over, and start if the timer is armed."""
-        self.entities = entities
+    def attach_entity(self, entity) -> None:
+        """One entity joins the poll, from async_added_to_hass."""
+        if entity not in self.entities:
+            self.entities.append(entity)
         if self._armed:
             self.start()
+
+    def detach_entity(self, entity) -> None:
+        """One entity leaves, and its bookkeeping goes with it.
+
+        The streak, the notification marker and the repair issue are
+        statements about a parameter somebody is watching. Left behind,
+        they outlive the entity and a re-enable starts from a count
+        nobody can see.
+        """
+        if entity in self.entities:
+            self.entities.remove(entity)
+        entityvalue = entity.entityvalue
+        self.fail_counts.pop(entityvalue, None)
+        if entityvalue in self.fail_notified:
+            self.fail_notified.discard(entityvalue)
+            self._clear_read_failure_issue(entityvalue)
 
     def start(self) -> None:
         """Begin the timer chain. Idempotent - one chain per entry."""

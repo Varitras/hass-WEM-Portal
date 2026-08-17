@@ -53,12 +53,19 @@ jobs:
           # runs against. Verified green on this pairing before the change.
           python-version: "3.14"
       # Home Assistant has to be importable for the checked modules' own
-      # imports; the test requirements bring a matching release. Mypy is
-      # pinned for the same reason Ruff is: an unpinned checker fails builds
-      # nobody changed.
+      # imports - and it has to be the SAME release the "current HA" test job
+      # runs, or this job vouches for a type surface nothing else touches.
+      # requirements_test.txt is unpinned, so it can resolve to a Home
+      # Assistant beta while the test job pins the last final one; both go
+      # through the same resolver now. Mypy is pinned for the reason Ruff is:
+      # an unpinned checker fails builds nobody changed.
+      - name: Resolve the plugin version to install
+        run: |
+          python .github/scripts/resolve_phcc.py latest-stable-ha \
+            | tee -a "$GITHUB_ENV"
       - name: Install dependencies
         run: |
-          pip install -r requirements_test.txt
+          pip install "$PHCC_SPEC" -r requirements_runtime.txt
           pip install "mypy==2.3.0"
       - name: Type check
         run: mypy

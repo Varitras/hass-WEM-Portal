@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An expert parameter whose entity you disable is dropped from the poll for
+  good, along with its failure count and any repair issue it raised.** The
+  previous fix only recognised an entity whose initial adding was aborted;
+  Home Assistant keeps the reference when you disable one later, so it went
+  on being read from the portal every cycle.
 - **A scrape that starts working later no longer leaves a second entity for
   the same reading behind.** In `both` mode before the first successful
   scrape, every cycle writes the API reading under its own key - and those

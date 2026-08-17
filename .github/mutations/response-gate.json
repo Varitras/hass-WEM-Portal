@@ -3389,9 +3389,9 @@
   },
   {
     "label": "expert poll: an entity the user disabled polled again",
-    "path": "custom_components/wemportal/expert_controller.py",
-    "old": "        return [entity for entity in self.entities if entity.hass is not None]",
-    "new": "        return list(self.entities)",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            self._config_entry.runtime_data.expert.detach_entity(self)\n            await super().async_will_remove_from_hass()",
+    "new": "            await super().async_will_remove_from_hass()",
     "tests": "entity_the_user_disabled_is_not_polled"
   },
   {
@@ -3442,5 +3442,26 @@
     "old": "    if lock is not None and not lock.acquire(blocking=False):",
     "new": "    if False:",
     "tests": "expert_lock_belongs_to_the_worker_not_to_its_awaiter"
+  },
+  {
+    "label": "storage: the save no longer holding the lock the unload waits on",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            async with self._store_writes:\n                await self._modules_store.async_save(serialized)",
+    "new": "            await self._modules_store.async_save(serialized)",
+    "tests": "unload_waits_for_a_store_write_already_on_the_disk"
+  },
+  {
+    "label": "ci: the type check falling back to the unpinned requirements",
+    "path": ".github/workflows/test.yaml",
+    "old": "          pip install \"$PHCC_SPEC\" -r requirements_runtime.txt\n          pip install \"mypy==2.3.0\"",
+    "new": "          pip install -r requirements_test.txt\n          pip install \"mypy==2.3.0\"",
+    "tests": "type_check_runs_the_same_home_assistant_as_the_current_job"
+  },
+  {
+    "label": "platforms: a platform that stops picking up later readings",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_add_the_ones_without_an_entity)\n    )",
+    "new": "    pass",
+    "tests": "every_platform_builds_an_entity_for_a_late_reading"
   }
 ]

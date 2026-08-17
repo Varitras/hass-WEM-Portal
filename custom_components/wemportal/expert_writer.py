@@ -2048,8 +2048,18 @@ try:
             self._removed = False
 
         async def async_added_to_hass(self):
-            """Restore what the last run knew about this parameter."""
+            """Restore what the last run knew, and join the poll.
+
+            Joining HERE rather than at platform setup is what makes the
+            user's decision stick. An entity disabled in the registry is
+            built and handed over like any other and simply never added,
+            so a list collected at setup went on asking the portal for its
+            id every cycle - a login and a form read against an account
+            the portal blocks after 10,000 requests - and could raise a
+            repair issue about a parameter nobody is looking at.
+            """
             await super().async_added_to_hass()
+            self._config_entry.runtime_data.expert.attach_entity(self)
             last = await self.async_get_last_number_data()
             if last is not None:
                 self._restore_from(last)
@@ -2241,6 +2251,12 @@ try:
             cannot abort the request anyway.
             """
             self._removed = True
+            # And leave the poll, with this id's bookkeeping. Disabling an
+            # entity in the registry lands here too, and it is a decision
+            # about the parameter: a failure streak and a repair issue left
+            # standing would outlive the thing they are about, and
+            # re-enabling would start from a count nobody can see.
+            self._config_entry.runtime_data.expert.detach_entity(self)
             await super().async_will_remove_from_hass()
 
         def _raise_if_removed(self) -> None:

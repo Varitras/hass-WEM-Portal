@@ -213,3 +213,32 @@ def test_the_minimum_job_actually_checks_the_version_it_installed():
     assert "check-declared-minimum: true" in workflow, (
         "no matrix entry opts into the check, so it never runs"
     )
+
+
+def test_the_type_check_runs_the_same_home_assistant_as_the_current_job():
+    """A checker that vouches for another release vouches for nothing.
+
+    requirements_test.txt is deliberately unpinned - a pin there once hid a
+    real incompatibility for months - so it resolves to whatever plugin
+    release is newest, including one that ships a Home Assistant BETA. The
+    test job goes through resolve_phcc.py to stay on the last final release,
+    and mypy installing from the requirements file instead put the two jobs
+    on different type surfaces without either of them saying so.
+    """
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    mypy_job = workflow[workflow.index("  mypy:") : workflow.index("  pytest:")]
+    # Lines that DO something, not lines that talk about it. The comment
+    # above the install step names the requirements file to explain why it is
+    # not used, and a plain substring search read that as the file being used
+    # - the same blindness as a guard satisfied by its own banner, arriving
+    # from the other side.
+    steps = [line for line in mypy_job.splitlines() if not line.strip().startswith("#")]
+
+    assert any("resolve_phcc.py latest-stable-ha" in line for line in steps), (
+        "the type check resolves its Home Assistant some other way than the "
+        "job whose type surface it is supposed to be checking"
+    )
+    assert not [line for line in steps if "requirements_test.txt" in line], (
+        "the unpinned requirements file is back, so this job can install a "
+        "Home Assistant beta the tests never run against"
+    )

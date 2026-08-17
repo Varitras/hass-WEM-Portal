@@ -47,11 +47,12 @@ async def async_setup_entry(
         expert_entities = create_expert_number_entities(config_entry)
         if expert_entities:
             _async_migrate_expert_unique_ids(hass, config_entry, expert_entities)
+            # Each entity joins the optional hourly auto-poll from its own
+            # async_added_to_hass, rather than being handed over as a list
+            # here: an entity the user disabled in the registry is built and
+            # passed along like every other one and then never added, so a
+            # list taken at this point had it polled anyway.
             async_add_entities(expert_entities)
-            # Expose them to the optional hourly auto-poll (set up in
-            # __init__), which reads all configured ids in one shared session
-            # and pushes the values back into these entities.
-            config_entry.runtime_data.expert.attach_entities(expert_entities)
 
     # AFTER the migration above: the migration renames a configured slot's
     # old raw-id registry entry onto its digest id, and running the cleanup
