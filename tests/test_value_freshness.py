@@ -324,6 +324,12 @@ def test_a_module_never_stamped_is_not_aged():
     assert api.data["1234"]["Circuit-Komfort"].value == 24.0
 
 
+# A week the device actually reported a programme for. The switching times
+# are what makes it one: a list of bare days renders to nothing, so it is not
+# evidence that anything is still feeding the row.
+A_FED_WEEK = [{"Day": 1, "CircuitTimes": [{"Start": 6, "End": 22, "Level": 1}]}]
+
+
 def _programme_row(api, circuit_times_day):
     api.data["1234"]["Circuit-Programme"] = Reading(
         parameter_id="Programme",
@@ -347,11 +353,46 @@ def test_an_empty_week_does_not_count_as_being_fed():
     """
     from custom_components.wemportal.utils import schedule_fetch_still_feeds
 
+    # With a value, so the empty week is the only thing that can decide it -
+    # without one the row fails the value check instead and this asserts
+    # nothing about the week at all.
     assert not schedule_fetch_still_feeds(
-        Reading(parameter_id="P", circuit_times_day=[])
+        Reading(parameter_id="P", value="MoDiMi", circuit_times_day=[])
     )
     assert schedule_fetch_still_feeds(
-        Reading(parameter_id="P", circuit_times_day=[{"Day": 1}])
+        Reading(parameter_id="P", value="MoDiMi", circuit_times_day=A_FED_WEEK)
+    )
+
+
+def test_a_week_with_no_switching_times_in_it_does_not_count_as_being_fed():
+    """A list of days is not a programme.
+
+    The exemption means "the schedule fetch is keeping this row current", and
+    what makes it current is the switching times. A week whose days carry
+    none renders to nothing - the reader drops every day it cannot build an
+    entry from - so the row shows the raw plan while the exemption keeps it
+    from ever ageing. Truthiness of the list said yes to exactly that, and
+    the tests asserting the exemption used that very shape.
+    """
+    from custom_components.wemportal.utils import schedule_fetch_still_feeds
+
+    assert not schedule_fetch_still_feeds(
+        Reading(parameter_id="P", value="MoDiMi", circuit_times_day=[{"Day": 1}])
+    )
+
+
+def test_a_programme_with_no_value_left_does_not_count_as_being_fed():
+    """The week is read THROUGH the value: the day names come out of it.
+
+    The device-level ageing has no schedule exemption and empties `value`,
+    and the schedule read deliberately does not put it back. What was left
+    was a row the reader cannot render - no labels, so no week - and an
+    exemption still insisting something feeds it.
+    """
+    from custom_components.wemportal.utils import schedule_fetch_still_feeds
+
+    assert not schedule_fetch_still_feeds(
+        Reading(parameter_id="P", value=None, circuit_times_day=A_FED_WEEK)
     )
 
 
@@ -360,13 +401,35 @@ def test_a_weekly_programme_the_schedule_fetch_still_feeds_survives_the_aging():
     staleness rule - the same split _clear_unanswered already makes. The
     detail it attached is the evidence that it is still delivering."""
     api = _two_module_api()
-    _programme_row(api, circuit_times_day=[{"Day": 1}])
+    _programme_row(api, circuit_times_day=A_FED_WEEK)
 
     api._fetch_parameter_values("1234")
 
     assert api.data["1234"]["Circuit-Komfort"].value is None
     assert api.data["1234"]["Circuit-Programme"].value == "MoDiMi", (
         "the programme was blanked although the schedule fetch owns it"
+    )
+
+
+def test_a_programme_of_a_module_the_portal_stopped_listing_ages_out():
+    """The exemption says "the schedule fetch is still feeding this row", and
+    that fetch walks the MODULE LIST.
+
+    A module the re-discovery drops is one it will never visit again, so
+    whatever week is attached to its programme is the last one there will
+    ever be - and being attached is exactly what the exemption reads as
+    proof it is still current. That is the same never-ending exemption the
+    empty-week case had, reached from the other side.
+    """
+    api = _two_module_api()
+    _programme_row(api, circuit_times_day=A_FED_WEEK)
+    # What a re-discovery that no longer finds this module leaves behind.
+    api.modules["1234"].pop(MODULE_B)
+
+    api._fetch_parameter_values("1234")
+
+    assert api.data["1234"]["Circuit-Programme"].value is None, (
+        "a programme of a module nothing fetches any more is still current"
     )
 
 
@@ -426,7 +489,7 @@ def _schedule_row_api():
             "Circuit-Programme": Reading(
                 parameter_id="Programme",
                 value='{"1": []}',
-                circuit_times_day=[{"Day": 1}],
+                circuit_times_day=A_FED_WEEK,
                 possible_values=[1, 2],
                 module_index=1,
                 module_type=1,
@@ -459,7 +522,7 @@ def test_a_successful_schedule_refresh_keeps_its_attributes():
     api._record_schedule_attempt("1234", module, "Programme", time.monotonic(), True)
 
     row = api.data["1234"]["Circuit-Programme"]
-    assert row.circuit_times_day == [{"Day": 1}]
+    assert row.circuit_times_day == A_FED_WEEK
     assert row.possible_values == [1, 2]
 
 

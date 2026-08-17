@@ -141,12 +141,34 @@ def schedule_fetch_still_feeds(row) -> bool:
     first repair reached only one of them: the other went on exempting a
     programme neither source fed, which kept a pre-outage plan on display
     without limit. See models.Reading.circuit_times_day.
+
+    Three things have to hold, and each of them was missing once. The row has
+    to BE one; the week has to carry switching times, because a list of bare
+    days renders to nothing and is therefore no evidence that anything is
+    feeding it; and the value has to still be there, because the day names
+    are read out of it - the device-level ageing empties it and the schedule
+    read deliberately does not put it back, which left a row nothing could
+    render and an exemption insisting otherwise.
     """
-    # Truthiness, not `is not None`: an empty list is what a portal answer
-    # with no week produces, and that is not being fed either. The schedule
-    # read now refuses such an answer outright, so this is the second lock on
-    # the same door - cheap, and the two failed independently before.
-    return isinstance(row, Reading) and bool(row.circuit_times_day)
+    return (
+        isinstance(row, Reading)
+        and row.value is not None
+        and week_carries_a_programme(row.circuit_times_day)
+    )
+
+
+def week_carries_a_programme(days) -> bool:
+    """Whether a week the device reported holds an actual programme.
+
+    Asked of the DATA, not of what the sensor makes of it: a day without
+    switching times contributes nothing to the rendered week, so a list of
+    those is an answer with no programme in it. Both the read that accepts
+    such an answer and the ageing that exempts the row have to agree on that,
+    and they only do if they ask the same question.
+    """
+    if not isinstance(days, list):
+        return False
+    return any(isinstance(day, dict) and day.get("CircuitTimes") for day in days)
 
 
 def portal_list(payload, key):

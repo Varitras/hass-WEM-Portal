@@ -68,6 +68,7 @@ from .utils import (
     portal_list,
     schedule_fetch_still_feeds,
     short_device_id,
+    week_carries_a_programme,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -548,7 +549,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             len(forgotten),
         )
 
-    def _rows_this_module_owns(self, device_rows, module_key):
+    def _rows_this_module_owns(self, device_rows, module_key, schedule_runs=True):
         """The rows a silent module may take down with it.
 
         Four things disqualify a row, and none of them is about the module
@@ -556,12 +557,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         it belongs to another module, the scrape is still feeding it, or it
         is a weekly programme the schedule fetch is still feeding.
 
-        That last one is a condition, not a category. The exemption rests on
-        the schedule fetch keeping the row current, and that fetch drops its
-        own detail the moment a due refresh fails - so a programme WITHOUT
-        detail is one nothing refreshes any more. Exempting it as well left
-        the plan from before an outage standing as the current one for as
-        long as the outage lasted, with no limit at all.
+        That last one is a condition, not a category, and it takes two
+        answers. The exemption rests on the schedule fetch keeping the row
+        current: that fetch drops its own detail the moment a due refresh
+        fails, so a programme without a usable week is one nothing refreshes
+        any more - and it walks the MODULE LIST, so a module the re-discovery
+        has dropped is one it will never visit again whatever is still
+        attached to the row (`schedule_runs`). Either way the plan from
+        before stood as the current one with no limit at all.
         """
         for row_name, row in device_rows.items():
             if not isinstance(row, Reading):
@@ -573,7 +576,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(
                 row.value
             )
-            if is_programme and schedule_fetch_still_feeds(row):
+            if is_programme and schedule_runs and schedule_fetch_still_feeds(row):
                 continue
             yield row_name, row
 
@@ -2738,7 +2741,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 continue
 
             forgotten = []
-            for row_name, row in self._rows_this_module_owns(device_rows, module_key):
+            for row_name, row in self._rows_this_module_owns(
+                device_rows,
+                module_key,
+                # Whether the schedule fetch can still reach this module at
+                # all: it walks the module list, and the stamps this loop
+                # runs over deliberately outlive it.
+                schedule_runs=module_key in (self.modules or {}).get(device_id, {}),
+            ):
                 if row.value is not None:
                     row.value = None
                     forgotten.append(row_name)
@@ -2838,10 +2848,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             if isinstance(schedule_resp, dict)
             else None
         )
-        if not isinstance(days, list) or not days:
+        # The same question the ageing exemption asks, which is the point of
+        # sharing it: a week of bare days renders to nothing, so storing it
+        # and stamping the read as successful bought an hour of throttle for
+        # an answer the sensor throws away - and then the exemption read that
+        # very list as proof something was still feeding the row.
+        if not week_carries_a_programme(days):
             _LOGGER.debug(
-                "Schedule %s: the portal answered without a week; treating it "
-                "as a failed read rather than an empty schedule.",
+                "Schedule %s: the portal answered without a usable week; "
+                "treating it as a failed read rather than an empty schedule.",
                 parameter_id,
             )
             return False

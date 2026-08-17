@@ -16,6 +16,12 @@ from custom_components.wemportal.const import WEB_LOGGED_IN_MARKER
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
 
+# A week the device really reported a programme for: the switching times
+# are what makes it one, and both the read and the ageing exemption ask
+# for them now.
+A_FED_WEEK = [{"Day": 1, "CircuitTimes": [{"Start": 6, "End": 22, "Level": 1}]}]
+
+
 class FakeResponse:
     def __init__(
         self,
@@ -6238,7 +6244,7 @@ def test_a_successful_schedule_keeps_the_full_interval():
     api, _calls = _circuit_times_api(
         [
             {"JobID": 7},
-            {"CircuitTimesDay": [{"Day": 1}], "PossibleValues": []},
+            {"CircuitTimesDay": A_FED_WEEK, "PossibleValues": []},
         ]
     )
 
@@ -6388,7 +6394,7 @@ def test_the_fetch_adds_to_the_programme_instead_of_replacing_it():
     hour until the next cycle put it back."""
     schedule = '{"MO-1":"00:00-24:00"}'
     api, _calls = _circuit_times_api(
-        [{"JobID": 7}, {"CircuitTimesDay": [{"day": "MO"}], "PossibleValues": ["H"]}],
+        [{"JobID": 7}, {"CircuitTimesDay": A_FED_WEEK, "PossibleValues": ["H"]}],
         data_type=2,
         value=schedule,
     )
@@ -6397,7 +6403,7 @@ def test_the_fetch_adds_to_the_programme_instead_of_replacing_it():
 
     row = api.data["1234"][SCHEDULE_ROW]
     assert row.value == schedule, "the programme was replaced by a placeholder"
-    assert row.circuit_times_day == [{"day": "MO"}]
+    assert row.circuit_times_day == A_FED_WEEK
     assert row.possible_values == ["H"]
 
 
@@ -6405,7 +6411,7 @@ def test_a_row_only_this_fetch_knows_about_still_gets_a_placeholder():
     """Where the value read never delivered the programme, this fetch is the
     only source there is - and a row needs some state to show."""
     api, _calls = _circuit_times_api(
-        [{"JobID": 7}, {"CircuitTimesDay": [{"Day": 1}], "PossibleValues": []}],
+        [{"JobID": 7}, {"CircuitTimesDay": A_FED_WEEK, "PossibleValues": []}],
     )
 
     api._fetch_circuit_times("1234")

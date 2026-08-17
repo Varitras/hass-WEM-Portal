@@ -8,6 +8,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A weekly programme is only exempt from ageing while something really
+  feeds it.** Three paths disagreed about what that means: any non-empty list
+  of days counted as a delivered week even though a day without switching
+  times renders to nothing; a programme whose value the device-level ageing
+  had emptied still counted, although the day names are read out of that
+  value; and a module the re-discovery dropped kept its exemption forever,
+  because the fetch that would clear it walks the module list. All three now
+  ask the same question, and the schedule read refuses an answer that does
+  not pass it.
 - **A setup that is cancelled is rolled back like one that fails.** Home
   Assistant cancels a setup task on shutdown and when setup takes too long,
   and a cancellation is not an `Exception` - so the rollback was skipped for

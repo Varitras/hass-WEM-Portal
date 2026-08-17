@@ -1834,10 +1834,10 @@
     "tests": "names_a_blocked_ip_as_one"
   },
   {
-    "label": "login: credentials sent to a page that could not be read",
+    "label": "login: an unreadable page escaping as a parser error",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            raise UnknownAuthError(\n                \"The WEM Portal login page could not be read; no credentials were sent.\"\n            ) from exc",
-    "new": "            page = html.fromstring(\"<html></html>\")",
+    "old": "        except ParserError as exc:",
+    "new": "        except ZeroDivisionError as exc:",
     "tests": "an_unreadable_login_page_costs_no_credentials"
   },
   {
@@ -1920,15 +1920,15 @@
   {
     "label": "schedule: any json object accepted as a delivered week",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if not isinstance(days, list) or not days:",
+    "old": "        if not week_carries_a_programme(days):",
     "new": "        if False:",
     "tests": "an_answer_without_a_week_is_not_a_delivered_schedule"
   },
   {
     "label": "schedule: an empty week reading as still being fed",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    return isinstance(row, Reading) and bool(row.circuit_times_day)",
-    "new": "    return isinstance(row, Reading) and row.circuit_times_day is not None",
+    "old": "        and week_carries_a_programme(row.circuit_times_day)",
+    "new": "        and row.circuit_times_day is not None",
     "tests": "an_empty_week_does_not_count_as_being_fed"
   },
   {
@@ -2592,7 +2592,7 @@
   {
     "label": "privacy: the full device id back in a message written to be shared",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    return f\"…{text[-2:]}\" if len(text) > 2 else text",
+    "old": "    return f\"\u2026{text[-2:]}\" if len(text) > 2 else text",
     "new": "    return text",
     "tests": "a_failed_cycle_says_why_it_failed"
   },
@@ -2802,14 +2802,14 @@
   {
     "label": "freshness: a programme exempted whether or not anything refreshes it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if is_programme and schedule_fetch_still_feeds(row):",
+    "old": "            if is_programme and schedule_runs and schedule_fetch_still_feeds(row):",
     "new": "            if is_programme:",
     "tests": "a_weekly_programme_nobody_refreshes_any_more_ages_with_its_module"
   },
   {
     "label": "freshness: the programme exemption dropped from the module aging",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(\n                row.value\n            )\n            if is_programme and schedule_fetch_still_feeds(row):\n                continue",
+    "old": "            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(\n                row.value\n            )\n            if is_programme and schedule_runs and schedule_fetch_still_feeds(row):\n                continue",
     "new": "            pass",
     "tests": "a_weekly_programme_the_schedule_fetch_still_feeds_survives_the_aging"
   },
@@ -3358,5 +3358,26 @@
     "old": "                translation_key=\"web_scrape_failing\",\n            )\n            return\n        async_delete_issue(self.hass, DOMAIN, issue_id)\n",
     "new": "                translation_key=\"web_scrape_failing\",\n            )\n            return\n        pass\n",
     "tests": "web_half_that_stopped_working_becomes_a_repair_issue"
+  },
+  {
+    "label": "freshness: a programme of a module nothing fetches any more",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                schedule_runs=module_key in (self.modules or {}).get(device_id, {}),",
+    "new": "                schedule_runs=True,",
+    "tests": "programme_of_a_module_the_portal_stopped_listing_ages_out"
+  },
+  {
+    "label": "schedule: a week of bare days accepted as a programme",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return any(isinstance(day, dict) and day.get(\"CircuitTimes\") for day in days)",
+    "new": "    return bool(days)",
+    "tests": "week_with_no_switching_times_in_it_does_not_count_as_being_fed"
+  },
+  {
+    "label": "schedule: a programme with no value left counted as fed",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        and row.value is not None\n",
+    "new": "",
+    "tests": "programme_with_no_value_left_does_not_count_as_being_fed"
   }
 ]

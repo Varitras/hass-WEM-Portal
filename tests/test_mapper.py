@@ -19,6 +19,12 @@ MODULE_KEY = (0, 1)
 SECOND_MODULE_KEY = (1, 1)
 
 
+# A week the device really reported a programme for: the switching times
+# are what makes it one, and both the read and the ageing exemption ask
+# for them now.
+A_FED_WEEK = [{"Day": 1, "CircuitTimes": [{"Start": 6, "End": 22, "Level": 1}]}]
+
+
 def _parameter(parameter_id, **overrides):
     parameter = {
         "ParameterID": parameter_id,
@@ -527,7 +533,7 @@ def test_a_programme_the_schedule_fetch_still_feeds_survives_a_missing_value():
     """Programmes are exempt from this ageing because the schedule fetch owns
     their staleness - and the detail it attached is the evidence that it is
     still delivering."""
-    data = _programme_left_out_of_the_answer(circuit_times_day=[{"Day": 1}])
+    data = _programme_left_out_of_the_answer(circuit_times_day=A_FED_WEEK)
 
     assert data["Heat pump-Programme"].value == "MoDiMi"
 
@@ -1047,7 +1053,7 @@ def test_a_heating_schedule_is_not_cleared_by_the_value_read():
             parameter_id="Heizprogramm1",
             unit=None,
             platform="sensor",
-            circuit_times_day=[{"day": "MO"}],
+            circuit_times_day=A_FED_WEEK,
         ),
     }
 
@@ -1056,7 +1062,7 @@ def test_a_heating_schedule_is_not_cleared_by_the_value_read():
     )
 
     assert data["Heat pump-Heizprogramm1"].value == "Active"
-    assert data["Heat pump-Heizprogramm1"].circuit_times_day == [{"day": "MO"}]
+    assert data["Heat pump-Heizprogramm1"].circuit_times_day == A_FED_WEEK
 
 
 def test_a_schedule_typed_as_a_switch_is_not_cleared_either():
@@ -1077,7 +1083,7 @@ def test_a_schedule_typed_as_a_switch_is_not_cleared_either():
             parameter_id="Heizprogramm1",
             unit=None,
             platform="sensor",
-            circuit_times_day=[{"day": "MO"}],
+            circuit_times_day=A_FED_WEEK,
         ),
     }
 

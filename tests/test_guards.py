@@ -258,6 +258,48 @@ def test_every_guard_is_described_in_the_readme():
     )
 
 
+def _github_anchor(heading: str) -> str:
+    """The fragment GitHub gives a heading.
+
+    Lowercase, punctuation dropped, spaces to hyphens - the subset that covers
+    every heading in these files. Written out rather than guessed at each use,
+    because the whole point of the check below is that the two spellings agree.
+    """
+    import re
+
+    slug = heading.strip().lower()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    return re.sub(r"\s+", "-", slug)
+
+
+def test_every_link_within_a_document_lands_somewhere():
+    """A link that does not resolve reads as documentation and is not.
+
+    The one that prompted this pointed at `#expert-parameters`, a section that
+    has never existed under that name - so the sentence about which 403 means
+    what sent the reader nowhere. Nothing about a markdown link says whether
+    it works, and the failure is invisible until someone clicks it.
+    """
+    import re
+
+    repo = TESTS.parent
+    broken = []
+    checked = 0
+    for document in (repo / "README.md", TESTS / "README.md"):
+        text = document.read_text(encoding="utf-8")
+        anchors = {
+            _github_anchor(heading)
+            for heading in re.findall(r"^#{1,6}\s+(.+)$", text, flags=re.MULTILINE)
+        }
+        for target in re.findall(r"\]\(#([^)]+)\)", text):
+            checked += 1
+            if target not in anchors:
+                broken.append(f"{document.name}#{target}")
+
+    assert checked, "no in-document links were found at all, so this proves nothing"
+    assert not broken, f"link(s) pointing at no heading: {broken}"
+
+
 # What CI runs, and the text that proves each one is INVOKED - one needle per
 # side, because the two files spell the same call differently: the workflow
 # runs `mypy`, check.sh runs `"$PYTHON" -m mypy`.
