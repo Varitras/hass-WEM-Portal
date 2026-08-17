@@ -671,6 +671,14 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
     caught] - which reads the same backwards, so reversing the order produced
     byte-identical output and the assertion could not see it. The forced order
     was real; there was simply nothing for it to reveal.
+
+    NOT in the mutation gate, and the reason is worth writing down. The
+    barrier controls when `run_tests` RETURNS, and `one()` does a little more
+    afterwards - so which future resolves first is still the scheduler's
+    call, and on a loaded machine the reversal this is built on stops being
+    reliable. A mutation that is caught most of the time is a flaky red
+    somewhere down the line, which is worse than an honest gap: what this
+    test holds is that each result stays attached to its own case.
     """
     monkeypatch.setattr(mutate, "REPO", tmp_path)
     monkeypatch.setattr(

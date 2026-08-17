@@ -104,10 +104,6 @@ class ExpertController:
     """The expert path of one config entry: lock, entities, timer, tally."""
 
     def __init__(self) -> None:
-        # Shared per-account lock. A poll, an entity write and the domain
-        # service all use the same portal session for this account, so they
-        # serialise against each other here.
-        self.lock: threading.Lock = threading.Lock()
         self.entities: list[Any] = []
         # Per-id consecutive misses. Only counted when a batch SUCCEEDED and
         # one id was missing from the answer - see apply_read.
@@ -154,6 +150,44 @@ class ExpertController:
         self._armed = True
         if self.entities:
             self.start()
+
+    @property
+    def lock(self) -> threading.Lock | None:
+        """The one expert lock of this ACCOUNT.
+
+        A poll, an entity write and the domain service all drive the same
+        Fachmann session, so they have to serialise - and this controller is
+        per ENTRY. A legacy duplicate entry of one account is still allowed
+        to load, and it built a second controller with a second lock, which
+        serialises nothing. It lives with the rest of the per-account memory
+        now (see models.AccountState).
+
+        None before `bind`, which is the same answer the callers already
+        handle: nothing to serialise against yet either.
+        """
+        from .models import account_state
+
+        if self._data is None:
+            return None
+        return account_state(self._data.api.username).expert_lock
+
+    @property
+    def live_entities(self) -> list:
+        """The entities Home Assistant actually added.
+
+        An entity the user disabled in the registry is still constructed and
+        still handed over here, but never gets a `hass` - so it publishes
+        nothing, while its id went on costing a login and a form read every
+        cycle, taking a place in the failure tally and raising repair issues
+        about a parameter nobody is looking at. Disabling it is how a user
+        says stop.
+
+        Asked wherever the poll counts something, because the two have to
+        agree: an id left out of the request but still walked afterwards
+        counts as "not in the results", which is the harshest verdict there
+        is - the one reserved for an id the portal never even accepted.
+        """
+        return [entity for entity in self.entities if entity.hass is not None]
 
     def attach_entities(self, entities: list) -> None:
         """Hand the expert entities over, and start if the timer is armed."""
@@ -237,7 +271,7 @@ class ExpertController:
     async def poll(self, _now=None) -> None:
         """One cycle: read every configured id in one session, apply, re-arm."""
         try:
-            entities = self.entities
+            entities = self.live_entities
             entityvalues = [entity.entityvalue for entity in entities]
             if not entityvalues:
                 return
@@ -336,7 +370,7 @@ class ExpertController:
             "rather than as the values they had then.",
             self._batch_failures,
         )
-        for entity in self.entities:
+        for entity in self.live_entities:
             entity.forget_value()
 
     def apply_read(self, results: dict) -> None:
@@ -383,7 +417,7 @@ class ExpertController:
                 len(failed),
             )
 
-        for entity in self.entities:
+        for entity in self.live_entities:
             entityvalue = entity.entityvalue
             state = results.get(entityvalue)
             unreadable_id = entityvalue not in results

@@ -183,6 +183,13 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # is not rewritten on every successful cycle (~288 writes a day at a
         # five-minute interval, for data that changes almost never).
         self._saved_modules_snapshot: dict | None = None
+        # Held for the duration of a store write, and taken by the unload
+        # before it lets go. The gate below decides whether a save may START;
+        # the write itself is asynchronous, so a removal or a reload landing
+        # after that decision would otherwise overtake it - re-creating a
+        # store that had just been deleted, or putting the old api's modules
+        # over what the reloaded entry already saved.
+        self._store_writes = asyncio.Lock()
 
     def _may_still_write_to_disk(self) -> bool:
         """Whether a cycle finishing now still owns its entry's stores.
@@ -215,6 +222,17 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             return data.coordinator is self and not data.unloading
         return self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS
 
+    async def async_wait_for_store_writes(self) -> None:
+        """Return once no store write of this coordinator is still in flight.
+
+        Called by the unload before it finishes. Everything AFTER it is
+        refused by the gate above, so this closes the one window left: a save
+        that had already passed the gate and was waiting on the disk while
+        the entry was being taken down.
+        """
+        async with self._store_writes:
+            return
+
     async def _async_save_scraper_device_id(self) -> None:
         """Persist the stable scraper device id once it has been decided.
 
@@ -230,7 +248,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         if not self._may_still_write_to_disk():
             return
         try:
-            await self._scraper_device_store.async_save(device_id)
+            async with self._store_writes:
+                await self._scraper_device_store.async_save(device_id)
             self._saved_scraper_device_id = device_id
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not persist WEM Portal scraper device id: %s", exc)
@@ -253,7 +272,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             serialized = serialize_modules(self.api.modules)
             if serialized == self._saved_modules_snapshot:
                 return
-            await self._modules_store.async_save(serialized)
+            async with self._store_writes:
+                await self._modules_store.async_save(serialized)
             self._saved_modules_snapshot = serialized
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not persist WEM Portal module cache: %s", exc)

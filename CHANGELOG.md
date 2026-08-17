@@ -8,6 +8,25 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Two date writes at once can no longer undo one another.** A date write
+  carries the module's other dates along unchanged, read from the stored
+  reading - and that reading was updated only after the api lock had been
+  released, so a second write queued behind the first read the value from
+  before it and sent it back. Setting holiday begin and end in quick
+  succession could leave the begin date as it was, with both calls reporting
+  success.
+- **A write that arrives right after a connection reset logs in again.** Polls
+  restore the session; a write went straight to the portal, so a service call
+  or an automation in that window failed until the next poll happened to run.
+- **An expert parameter whose entity you disabled is no longer polled.** It
+  published nothing but went on costing a login and a form read every cycle,
+  and could raise a repair issue about a parameter nobody is looking at.
+- **The expert lock is per account rather than per config entry**, so a legacy
+  duplicate entry of the same account can no longer drive a second portal
+  session in parallel with the first.
+- **A store write already in flight is finished before the entry comes down**,
+  so it can no longer land after a removal deleted those files or after a
+  reload wrote new ones.
 - **A weekly programme is only exempt from ageing while something really
   feeds it.** Three paths disagreed about what that means: any non-empty list
   of days counted as a delivered week even though a day without switching

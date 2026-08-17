@@ -10,6 +10,7 @@ Marked `e2e` because each test boots a full Home Assistant instance; the
 everyday run deselects them (see pytest.ini), CI runs them with `-m ""`.
 """
 
+import asyncio
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -303,6 +304,45 @@ async def test_a_poll_finishing_during_the_unload_does_not_write(hass, hass_stor
 
     assert modules_key not in hass_storage, (
         "a cycle finishing mid-teardown wrote a store the unload is taking down"
+    )
+
+
+async def test_the_unload_waits_for_a_store_write_already_on_the_disk(hass):
+    """The gate decides whether a save may START; the write is asynchronous.
+
+    A save that had already passed the gate was still going when the entry
+    came down - so it could finish after the removal deleted those stores, or
+    after a reload published new ones, and land on top of either. The gate
+    cannot see that one: by the time it was asked, the answer was still yes.
+    """
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    # Asserted as an ORDER rather than as "did it happen": the write finishes
+    # either way, and the question is whether the unload was still ahead of it.
+    order = []
+    let_the_disk_answer = asyncio.Event()
+
+    async def write_in_flight():
+        async with coordinator._store_writes:
+            await let_the_disk_answer.wait()
+            order.append("save")
+
+    async def unload():
+        result = await hass.config_entries.async_unload(entry.entry_id)
+        order.append("unload")
+        return result
+
+    writing = hass.async_create_task(write_in_flight())
+    await asyncio.sleep(0)
+    unloading = hass.async_create_task(unload())
+    await asyncio.sleep(0)
+    let_the_disk_answer.set()
+
+    assert await unloading
+    await writing
+    assert order == ["save", "unload"], (
+        "the unload finished while a store write was still on the disk, so "
+        "what follows it - a removal, or a reload - can be overtaken"
     )
 
 
@@ -2227,6 +2267,59 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
     entry.runtime_data.expert.fail_notified.clear()
     raised_issues.clear()
     return entry, scheduled, raised_issues
+
+
+async def test_two_entries_of_one_account_share_the_expert_lock(hass):
+    """One account is one Fachmann session, however many entries hold it.
+
+    A legacy duplicate entry of the same account is deliberately still
+    allowed to load - and it built a second controller with a lock of its
+    own, so an auto-poll on one entry and an entity write on the other could
+    drive the portal at the same time. That is the single thing this lock
+    exists to prevent.
+    """
+    first = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    second = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    assert first.data[CONF_USERNAME] == second.data[CONF_USERNAME]
+
+    assert first.runtime_data.expert.lock is second.runtime_data.expert.lock, (
+        "the two entries of one account each got a lock of their own, which "
+        "serialises nothing"
+    )
+
+
+async def test_an_entity_the_user_disabled_is_not_polled(hass, monkeypatch):
+    """Disabling the entity is how a user says stop, and it was not heard.
+
+    A registry-disabled entity is still constructed and still handed to the
+    controller; what it never gets is a `hass`, so it publishes nothing. The
+    poll went on asking the portal for its id every cycle - a login and a
+    form read against an account the portal blocks after 10,000 requests -
+    and could raise a repair issue about a parameter nobody is looking at.
+    """
+    asked = []
+    entry, scheduled, raised_issues = await _auto_poll_entry(
+        hass,
+        monkeypatch,
+        lambda ids: asked.append(list(ids)) or {},
+        entityvalues=[EV_A, EV_B],
+    )
+    controller = entry.runtime_data.expert
+    # Exactly what Home Assistant leaves behind for a disabled entity.
+    disabled = controller.entities[0]
+    disabled.hass = None
+    asked.clear()
+
+    await scheduled[-1](None)
+    await hass.async_block_till_done()
+
+    assert asked == [[controller.entities[1].entityvalue]], (
+        f"the disabled parameter was still requested: {asked}"
+    )
+    assert disabled.entityvalue not in controller.fail_counts, (
+        "an entity nobody can see was counted as a failing parameter"
+    )
+    assert raised_issues == []
 
 
 async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypatch):

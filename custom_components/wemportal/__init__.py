@@ -932,6 +932,12 @@ async def async_unload_entry(
     data = getattr(config_entry, "runtime_data", None)
     if data is not None:
         data.begin_unload()
+        # A save that had already passed its gate is on the disk right now.
+        # Waited out here rather than left running: what comes after this
+        # unload is either the removal that deletes those stores or the
+        # reload that writes new ones, and an in-flight write finishing later
+        # would land on top of both.
+        await data.coordinator.async_wait_for_store_writes()
     unload_ok = bool(
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )

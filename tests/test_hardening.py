@@ -3186,16 +3186,41 @@ def test_service_texts_exist_in_every_translation_file():
     as untranslated text in the UI, so check both - including the privacy
     warning on the entityvalue field, which must not get lost in
     translation."""
+    import pathlib
+
+    import yaml
+
+    # Read from services.yaml rather than listed here: naming one service
+    # meant the OTHER one could be dropped from both catalogues at once and
+    # the parity check between the two languages would still be green - two
+    # files agreeing that a service does not exist is agreement.
+    declared = yaml.safe_load(
+        (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "custom_components"
+            / "wemportal"
+            / "services.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    assert set(declared) >= {"set_expert_parameter", "set_holiday"}, (
+        "a service disappeared from services.yaml itself"
+    )
+
     for name in ("translations/en.json", "translations/de.json"):
         data = _catalogue(name)
-        service = data["services"]["set_expert_parameter"]
-        assert service["name"], name
-        assert service["description"], name
-        fields = service["fields"]
-        assert set(fields) == {"entityvalue", "value"}, name
-        for field in fields.values():
-            assert field["name"], name
-            assert field["description"], name
+        for service_name, declaration in declared.items():
+            service = data["services"][service_name]
+            assert service["name"], (name, service_name)
+            assert service["description"], (name, service_name)
+            fields = service["fields"]
+            assert set(fields) == set(declaration.get("fields") or {}), (
+                name,
+                service_name,
+            )
+            for field in fields.values():
+                assert field["name"], (name, service_name)
+                assert field["description"], (name, service_name)
+        fields = data["services"]["set_expert_parameter"]["fields"]
         # The entityvalue is installation-specific; the warning is part of
         # the contract with the user, not decoration.
         warning = fields["entityvalue"]["description"].lower()

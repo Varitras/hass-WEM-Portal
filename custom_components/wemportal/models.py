@@ -14,6 +14,7 @@ framework answers rather than one this integration tracks by hand.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -75,6 +76,13 @@ class AccountState:
     unreadable_values_reported: set[tuple[str, str]] = field(default_factory=set)
     maintenance_markers_reported: set[str] = field(default_factory=set)
     missing_job_ids_reported: set[str] = field(default_factory=set)
+    # Only one expert portal operation per ACCOUNT at a time - the poll, an
+    # entity write and the domain service all drive the same Fachmann
+    # session. It lived on the controller, which is per ENTRY, and a legacy
+    # duplicate entry of one account is still allowed to load: two entries
+    # meant two locks and therefore no serialisation at all, which is the one
+    # thing this lock exists for.
+    expert_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 # The ONE sanctioned module-level mutable in this package: the registry the

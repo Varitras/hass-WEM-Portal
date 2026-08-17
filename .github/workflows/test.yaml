@@ -46,7 +46,12 @@ jobs:
       - uses: "actions/checkout@v7"
       - uses: "actions/setup-python@v7"
         with:
-          python-version: "3.12"
+          # The same version the "current HA" test job runs on, and that is
+          # the point: the test requirements resolve to whatever Home
+          # Assistant release fits the interpreter, so checking types on an
+          # older one meant mypy vouching for a type surface nothing else
+          # runs against. Verified green on this pairing before the change.
+          python-version: "3.14"
       # Home Assistant has to be importable for the checked modules' own
       # imports; the test requirements bring a matching release. Mypy is
       # pinned for the same reason Ruff is: an unpinned checker fails builds
