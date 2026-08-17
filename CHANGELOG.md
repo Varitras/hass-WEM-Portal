@@ -8,6 +8,20 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A setup that is cancelled is rolled back like one that fails.** Home
+  Assistant cancels a setup task on shutdown and when setup takes too long,
+  and a cancellation is not an `Exception` - so the rollback was skipped for
+  the one ending that leaves the most behind: forwarded platforms, a
+  coordinator with its timer armed, and two open HTTP sessions.
+- **A poll finishing during an unload no longer writes to storage.** The gate
+  asked only whether the store still holds this coordinator, which it does for
+  the whole teardown - so a save could still start and land after the stores
+  had been deleted or a reload had published new ones.
+- **Unloading one of two entries of the same account keeps the shared
+  auth-failure streak.** The count belongs to the account, and a legacy
+  duplicate entry is still allowed to load; clearing it on unload took it out
+  from under the entry that stays, pushing the reauth dialog back out of
+  reach.
 - **One device can no longer adopt or delete another device's entity during
   the unique_id migration.** The old id formats name neither a device nor a
   parameter - a bare key, a friendly name - so two devices with a parameter of

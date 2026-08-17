@@ -280,6 +280,60 @@ async def test_a_poll_that_outlives_the_entry_does_not_rebuild_its_stores(
     )
 
 
+async def test_a_poll_finishing_during_the_unload_does_not_write(hass, hass_storage):
+    """The gate has to hold from the START of the teardown, not from its end.
+
+    The test above arrives after the removal has finished, which is the easy
+    half: by then runtime_data is gone. During the unload it is still there
+    and still holds this very coordinator, so the identity check alone said
+    yes - and the save it lets through is asynchronous, so it can land after
+    the stores have been deleted or after a reload has published new ones.
+    `unloading` is set at the very top of async_unload_entry for exactly this
+    window.
+    """
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    modules_key = f"{DOMAIN}_{entry.entry_id}_modules"
+    hass_storage.pop(modules_key, None)
+    coordinator.api.modules = {"1234": {(0, 1): {"Name": "Heat pump"}}}
+    # Exactly what async_unload_entry does before the platforms come down.
+    entry.runtime_data.begin_unload()
+
+    await coordinator._async_save_modules_cache()
+
+    assert modules_key not in hass_storage, (
+        "a cycle finishing mid-teardown wrote a store the unload is taking down"
+    )
+
+
+async def test_unloading_one_of_two_entries_keeps_the_shared_auth_streak(hass):
+    """The auth streak is the account's, and two entries can share an account.
+
+    A legacy duplicate entry of the same account is deliberately still allowed
+    to load. Unloading one of them cleared the streak the OTHER one is still
+    counting - and the removal logic that protects the rest of the account
+    state runs afterwards, so by the time it decides to keep it, the counter
+    is already zero. The next login page the portal hands out was then the
+    first in a row rather than the fourth, and the reauth dialog moved back
+    out of reach.
+    """
+    from custom_components.wemportal.models import account_state
+
+    kept = _entry(hass)
+    unloaded = await _setup(hass, _entry(hass))
+    assert kept.data[CONF_USERNAME] == unloaded.data[CONF_USERNAME], (
+        "the two entries have to be the same account for this to mean anything"
+    )
+    account_state(unloaded.data[CONF_USERNAME]).auth_failures = 2
+
+    assert await hass.config_entries.async_unload(unloaded.entry_id)
+    await hass.async_block_till_done()
+
+    assert account_state(kept.data[CONF_USERNAME]).auth_failures == 2, (
+        "unloading one entry cleared the streak the other one is counting"
+    )
+
+
 async def test_removing_the_entry_deletes_its_stores_and_account_memory(
     hass, hass_storage
 ):
@@ -3749,6 +3803,49 @@ async def test_a_setup_that_fails_after_forwarding_takes_the_platforms_back_down
 
     assert unloaded, "the platforms were left registered on a failed setup"
     assert set(unloaded[0]) == set(PLATFORMS)
+
+
+async def test_a_cancelled_setup_is_rolled_back_like_a_failed_one(hass, monkeypatch):
+    """A setup can end without an Exception, and that is not a rare corner.
+
+    Home Assistant cancels a setup task on shutdown and when the setup takes
+    too long, and asyncio.CancelledError is a BaseException - so `except
+    Exception` around the rollback is simply not entered. What the failure
+    path exists to take back is then left exactly where it was: the platforms
+    forwarded so far, the coordinator with its refresh timer armed, the store
+    with two open HTTP sessions. Injected at the same place as the test above,
+    which is the only window where the platforms are up and setup can still
+    end early.
+    """
+    import asyncio
+
+    from custom_components.wemportal.expert_controller import ExpertController
+
+    monkeypatch.setattr(
+        ExpertController,
+        "setup_auto_poll",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(asyncio.CancelledError()),
+    )
+
+    unloaded = []
+    original = hass.config_entries.async_unload_platforms
+
+    async def record(entry_arg, platforms):
+        unloaded.append(list(platforms))
+        return await original(entry_arg, platforms)
+
+    monkeypatch.setattr(hass.config_entries, "async_unload_platforms", record)
+
+    entry = _entry(hass, {CONF_EXPERT_WRITE: True})
+    # Not asserted as raising: Home Assistant handles the cancellation of a
+    # setup task itself, so what reaches this line says nothing about whether
+    # the rollback ran. What the entry is left holding does.
+    await hass.config_entries.async_setup(entry.entry_id)
+
+    assert unloaded, "a cancelled setup left its platforms registered"
+    assert not hasattr(entry, "runtime_data"), (
+        "a cancelled setup left its store published"
+    )
 
 
 async def test_one_bad_batch_is_not_blamed_on_every_configured_id(hass, monkeypatch):

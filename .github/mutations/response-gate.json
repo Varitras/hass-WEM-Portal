@@ -2865,9 +2865,30 @@
   {
     "label": "remove: a duplicate entry's removal taking the shared account memory",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "    if shared_with:\n        _LOGGER.debug(",
+    "old": "    if _another_entry_shares_this_account(hass, config_entry):\n        _LOGGER.debug(",
     "new": "    if False:\n        _LOGGER.debug(",
     "tests": "removing_one_of_two_entries_of_an_account_keeps_the_shared_state"
+  },
+  {
+    "label": "unload: clearing the account's auth streak for a duplicate entry",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    if not _another_entry_shares_this_account(hass, config_entry):\n        forget_auth_failures(config_entry)",
+    "new": "    forget_auth_failures(config_entry)",
+    "tests": "unloading_one_of_two_entries_keeps_the_shared_auth_streak"
+  },
+  {
+    "label": "storage: a save starting after the teardown began",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            return data.coordinator is self and not data.unloading",
+    "new": "            return data.coordinator is self",
+    "tests": "poll_finishing_during_the_unload_does_not_write"
+  },
+  {
+    "label": "setup: a cancelled setup skipping its rollback",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    except BaseException:\n        # BaseException for the same reason as the block above",
+    "new": "    except Exception:\n        # BaseException for the same reason as the block above",
+    "tests": "cancelled_setup_is_rolled_back_like_a_failed_one"
   },
   {
     "label": "remove: a never-loaded entry's issues must still be cleared",

@@ -490,10 +490,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
 
     try:
         await coordinator.async_config_entry_first_refresh()
-    except Exception:
+    except BaseException:
         # The api is not in hass.data yet, so async_unload_entry cannot close
         # it: a failed first refresh (portal down, 403, auth) would leak its
         # HTTP sessions, once more per setup retry.
+        #
+        # BaseException, not Exception: Home Assistant cancels a setup task on
+        # shutdown and when it takes too long, and CancelledError is not an
+        # Exception - so the one ending that leaves the most behind was the
+        # one this never ran for. Re-raised immediately, so a cancellation
+        # still cancels.
         await hass.async_add_executor_job(api.close_transport)
         raise
 
@@ -560,7 +566,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         if entry.options.get(CONF_EXPERT_WRITE, False):
             await _async_register_expert_service(hass)
             entry.runtime_data.expert.setup_auto_poll(hass, entry)
-    except Exception:
+    except BaseException:
+        # BaseException for the same reason as the block above: a setup task
+        # cancelled on shutdown or on the setup timeout ends without an
+        # Exception, and this is the half where everything that was already
+        # published stays behind. Re-raised at the end, so a cancellation
+        # still cancels.
+        #
         # Take the platforms back down FIRST, while runtime_data is still
         # readable - their entities were built from it, and unloading them is
         # the only thing that can raise here, so it must not be starved of
@@ -926,7 +938,13 @@ async def async_unload_entry(
             data.abort_unload()
         return False
 
-    forget_auth_failures(config_entry)
+    # Not unconditionally: the streak belongs to the ACCOUNT, and a legacy
+    # duplicate entry of the same one is still allowed to load. Clearing it
+    # here took the count out from under the entry that stays - and the
+    # removal logic that protects the rest of the account state runs later, so
+    # by the time it decides to keep it, it is already zero.
+    if not _another_entry_shares_this_account(hass, config_entry):
+        forget_auth_failures(config_entry)
     # An unloaded entry cannot re-check what its issues report, so they come
     # down with it; whatever still holds after a reload is re-raised within
     # a few cycles by the code that watches it.
@@ -984,6 +1002,22 @@ async def async_remove_entry(
     _forget_account_state_if_last_entry(hass, config_entry)
 
 
+def _another_entry_shares_this_account(hass: HomeAssistant, config_entry) -> bool:
+    """Whether a second entry of the same WEM account is configured.
+
+    Asked by both halves of the teardown, which is why it is a function: the
+    account state and the auth-failure streak live under the ACCOUNT, so
+    neither of them belongs to the entry that is going away when a legacy
+    duplicate of it is still there.
+    """
+    account = account_unique_id(config_entry.data.get(CONF_USERNAME))
+    return any(
+        other.entry_id != config_entry.entry_id
+        and account_unique_id(other.data.get(CONF_USERNAME)) == account
+        for other in hass.config_entries.async_entries(DOMAIN)
+    )
+
+
 def _forget_account_state_if_last_entry(hass: HomeAssistant, config_entry) -> None:
     """Drop the account memory only once no entry is left that shares it.
 
@@ -995,13 +1029,7 @@ def _forget_account_state_if_last_entry(hass: HomeAssistant, config_entry) -> No
     then polled as though the portal had never refused anything.
     """
     username = config_entry.data.get(CONF_USERNAME)
-    account = account_unique_id(username)
-    shared_with = any(
-        other.entry_id != config_entry.entry_id
-        and account_unique_id(other.data.get(CONF_USERNAME)) == account
-        for other in hass.config_entries.async_entries(DOMAIN)
-    )
-    if shared_with:
+    if _another_entry_shares_this_account(hass, config_entry):
         _LOGGER.debug(
             "Another entry still uses this account; keeping its remembered state."
         )

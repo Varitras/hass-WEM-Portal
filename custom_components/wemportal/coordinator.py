@@ -206,7 +206,13 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         """
         data = getattr(self.config_entry, "runtime_data", None)
         if data is not None:
-            return data.coordinator is self
+            # `unloading` beside the identity, because the store is still
+            # there and still holds THIS coordinator for the whole teardown -
+            # identity alone said yes for exactly the window the flag exists
+            # to mark, and the save it let through is asynchronous, so it can
+            # land after the stores are deleted or after a reload published
+            # new ones.
+            return data.coordinator is self and not data.unloading
         return self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS
 
     async def _async_save_scraper_device_id(self) -> None:
