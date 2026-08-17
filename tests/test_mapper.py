@@ -405,6 +405,42 @@ def test_both_mode_remembers_the_match_in_the_scraping_mapper():
     assert scraping_mapper[(ModuleRef(*MODULE_KEY), "Outside")] == ["heat_pump-outside"]
 
 
+def test_a_scraper_arriving_later_takes_the_api_row_it_replaces():
+    """The API can run alone for a while - `both` mode with the web half
+    failing, or simply a scrape that has not succeeded yet.
+
+    Every cycle in that state writes a row under the parameter's own key.
+    When the scrape finally works, the value belongs in the SCRAPED row - but
+    the old one was accepted as a merge target of its own, because the test
+    for "is this a scraped row" was the shape of the name and an API row
+    written under its own key has that same shape. So the reading went to
+    both, and entities are built from whatever rows exist: two entities for
+    one measurement.
+    """
+    api_only = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=12.5, unit="°C")),
+        mode="both",
+    )
+    assert "Heat pump-Outside" in api_only, "the api-only cycle wrote no row at all"
+
+    merged = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=13.5, unit="°C")),
+        mode="both",
+        existing={
+            **api_only,
+            **_scraped("heat_pump-outside", "Heat pump - Outside"),
+        },
+    )
+
+    assert merged["heat_pump-outside"].value == 13.5
+    assert "Heat pump-Outside" not in merged, (
+        "the row from before the scrape existed is still there, and the "
+        "reading is now published twice"
+    )
+
+
 def test_a_merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives():
     """The ageing pass looked under the API key, and the value is not there.
 

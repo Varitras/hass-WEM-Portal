@@ -392,6 +392,19 @@ def _scraped_entities_naming_the_same_thing(
     for scraped_data in api_data[device_id].values():
         if not isinstance(scraped_data, Reading):
             continue
+        if (
+            scraped_data.module_index is not None
+            or scraped_data.module_type is not None
+        ):
+            # An API row, not a scraped one - and telling them apart by name
+            # cannot work. The scraper knows nothing about the portal's module
+            # structure, so its readings carry no module at all, while every
+            # API row does. An API row written under its own key (mode `both`
+            # before the first successful scrape) has a hyphen in its
+            # parameter_id like a scraped one, so the test below accepted it
+            # as a merge target: the reading was then written to two rows,
+            # and the stale one went on looking like an entity of its own.
+            continue
         scraped_entity_id = scraped_data.parameter_id or ""
         try:
             scraped_part = scraped_entity_id.split("-")[1]
@@ -429,6 +442,13 @@ def _merge_into_scraped(
         # First one there keeps it; the other stays under its own key, which
         # is the cheaper mistake: an extra entity beats two circuits sharing
         # one reading.
+        #
+        # Belt and braces since the module test above: a merged row inherits
+        # the module of whoever claimed it, so the second circuit is already
+        # turned away there - measured. Kept because that is a consequence of
+        # how the merge writes rather than a rule anyone stated, and this
+        # line is the rule. It has no mutation of its own for the same
+        # reason: nothing can make it fail while the other one holds.
         claimed = {target for targets in scraping_mapper.values() for target in targets}
         matches = [
             match
@@ -441,6 +461,14 @@ def _merge_into_scraped(
         # value means there is nothing to merge into, and the entity is its
         # own target.
         scraping_mapper[cache_key] = matches or [key]
+        if key not in scraping_mapper[cache_key]:
+            # The api can run alone for a while - `both` mode before the first
+            # successful scrape - and every one of those cycles wrote a row
+            # under this key. From here on the value goes into the scraped row
+            # instead, and entities are built from whatever rows exist: left
+            # behind, this one stays as a second entity for the same reading,
+            # frozen at the last value the api put in it.
+            api_data[device_id].pop(key, None)
 
     for scraped_entity in scraping_mapper[cache_key]:
         previous = api_data[device_id].get(scraped_entity)

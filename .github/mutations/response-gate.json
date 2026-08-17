@@ -3059,13 +3059,6 @@
     "tests": "two_modules_sharing_a_parameter_id_keep_their_own_readings"
   },
   {
-    "label": "identity: a scraped row may be claimed by one module only",
-    "path": "custom_components/wemportal/mapper.py",
-    "old": "            if match not in claimed\n",
-    "new": "",
-    "tests": "only_one_module_may_claim_the_same_scraped_row"
-  },
-  {
     "label": "identity: the schedule throttle key must carry the module",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "    return (\n        device_id,\n        ModuleRef(module_index=module[\"Index\"], module_type=module[\"Type\"]),\n        parameter_id,\n    )",
@@ -3421,5 +3414,19 @@
     "old": "            merged_into = scraping_mapper.get((module_key, parameter_id)) or [name]\n            entry = device_data.get(merged_into[0])",
     "new": "            entry = device_data.get(name)",
     "tests": "merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives"
+  },
+  {
+    "label": "merge: an api row accepted as a scraped one again",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        if (\n            scraped_data.module_index is not None\n            or scraped_data.module_type is not None\n        ):",
+    "new": "        if False:",
+    "tests": "scraper_arriving_later_takes_the_api_row_it_replaces"
+  },
+  {
+    "label": "merge: the row from before the scrape left behind as a second entity",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            api_data[device_id].pop(key, None)",
+    "new": "            pass",
+    "tests": "scraper_arriving_later_takes_the_api_row_it_replaces"
   }
 ]

@@ -8,6 +8,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A scrape that starts working later no longer leaves a second entity for
+  the same reading behind.** In `both` mode before the first successful
+  scrape, every cycle writes the API reading under its own key - and those
+  rows were then accepted as merge targets themselves, because "is this a
+  scraped row" was decided from the shape of the name. The reading went to
+  both rows, so the same measurement appeared twice. Scraped rows carry no
+  module, which is what tells them apart.
 - **In `both` mode, a reading merged into a scraped row stops being shown as
   current when the portal leaves it out.** The ageing pass looked for the
   reading under the API parameter's own key - and a merged parameter has no
