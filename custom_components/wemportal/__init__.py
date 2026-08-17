@@ -344,13 +344,19 @@ async def migrate_unique_ids(
         # Migrate EVERY device, not just the first: with multiple devices the
         # others' old unique_ids (and their history) were previously left
         # behind.
+        everything = coordinator.data or {}
         due = {
             device_id: _take_the_readings_not_migrated_yet(device_id, rows, migrated)
-            for device_id, rows in (coordinator.data or {}).items()
+            for device_id, rows in everything.items()
         }
-        # Collected across all of them before any of them is touched, because
-        # what is claimed twice can only be seen from outside a single device.
-        contested = _ids_claimed_by_more_than_one_reading(config_entry, due)
+        # From EVERYTHING the coordinator holds, not from the slice that is
+        # due: the two do not have to become due in the same cycle. A device
+        # that sits unchanged while another is reclassified three cycles later
+        # is absent from `due`, so its claim on a shared old shape would be
+        # invisible - and the cleanup running for the other one would take its
+        # entity down with nothing left to warn it off. Migrating only what is
+        # due stays right; deciding what is contested from that slice is not.
+        contested = _ids_claimed_by_more_than_one_reading(config_entry, everything)
         for device_id, fresh in due.items():
             if not fresh:
                 continue

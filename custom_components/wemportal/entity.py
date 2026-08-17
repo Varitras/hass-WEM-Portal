@@ -185,9 +185,12 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
                 self._module_type,
                 value,
                 together_with=together_with,
+                # Handed in rather than called after this returns: the api
+                # runs it before it releases the lock, which is where a
+                # second write is already queued waiting to read this row.
+                record_written=partial(self._record_written_value, value),
             )
         )
-        self._record_written_value(value)
 
     def _record_written_value(self, value) -> None:
         """Bring the coordinator's copy up to date with what was just written.

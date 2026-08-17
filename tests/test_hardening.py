@@ -76,6 +76,20 @@ def _api(**kwargs):
     return WemPortalApi("user@example.org", "secret", **kwargs)
 
 
+def _api_after_a_poll(**kwargs):
+    """An api that has a session, which is what a write finds in production.
+
+    Writes reach the portal from an entity, and an entity exists because a
+    poll built it - so `valid_login` is set by the time anyone clicks. A
+    freshly constructed object is the state after a transport reset, and
+    change_value logs in again there rather than posting into nothing; a
+    write test starting from it would be testing that instead.
+    """
+    api = _api(**kwargs)
+    api.valid_login = True
+    return api
+
+
 def _run(method, *args, **kwargs):
     """Drive one coroutine to completion from a synchronous test.
 
@@ -2975,7 +2989,7 @@ def test_an_operation_outside_a_poll_is_not_deadlined():
     """Only fetch_data sets a deadline. An on-demand write has a user waiting
     on it and no coordinator timeout behind it, so it must run even when the
     last poll's budget would long since have expired."""
-    api = _api()
+    api = _api_after_a_poll()
     session = RecordingSession()
     api.session = session
 
@@ -4587,7 +4601,7 @@ class _BodyResponse(FakeResponse):
 def test_a_write_answered_with_a_page_is_not_a_completed_write():
     """Reported as success, this told the user their heating parameter had
     been changed when it had not."""
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: _BodyResponse(
         b"<html>Service unavailable</html>"
     )
@@ -4604,7 +4618,7 @@ def test_an_empty_write_response_is_no_longer_taken_for_success():
     successful write answers with a body carrying Status 0. An empty one is
     therefore not a confirmation of anything.
     """
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: _BodyResponse(b"")
 
     with pytest.raises(exceptions.ParameterChangeError):
@@ -5444,7 +5458,7 @@ def test_the_real_success_response_is_accepted():
     response carries Message: null. That rule would have failed every single
     legitimate write.
     """
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(REAL_WRITE_SUCCESS)
 
     api.change_value("1234", "P1", 0, 1, 21.0)
@@ -5467,7 +5481,7 @@ def test_anything_but_an_explicit_success_is_a_rejection(payload):
     heating parameter, and the entity shows the requested value until the
     next poll quietly replaces it.
     """
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(payload)
 
     with pytest.raises(exceptions.ParameterChangeError):
@@ -5477,7 +5491,7 @@ def test_anything_but_an_explicit_success_is_a_rejection(payload):
 def test_the_rejection_message_carries_the_portal_reason():
     """DetailMessages/Message is what the portal says went wrong - dropping
     it leaves the user with a bare number."""
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"Status": 3, "Message": "value out of range"}
     )
@@ -5498,7 +5512,7 @@ def test_a_rejected_write_puts_the_portal_answer_in_the_log(caplog):
     """
     import logging
 
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"Status": 3, "Message": "value out of range"}
     )
@@ -5522,7 +5536,7 @@ def test_a_successful_write_records_the_answer_at_debug(caplog):
     on, so a change to it has to be visible."""
     import logging
 
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(REAL_WRITE_SUCCESS)
 
     with caplog.at_level(logging.DEBUG):
@@ -6879,41 +6893,111 @@ def test_discovery_is_not_even_started_for_disabled_devices_alone():
     assert asked == []
 
 
-def test_the_values_carried_along_are_read_after_the_wait_for_the_lock():
-    """A holiday write carries the module's other dates unchanged - and the
-    snapshot of them was taken before the write queued.
+def test_the_values_carried_along_see_the_write_that_held_the_lock():
+    """Two holiday writes racing, driven by two real threads.
 
-    The entity reads them on the event loop; the write then waits for the
-    shared api lock in an executor thread. A write already in flight holds
-    that lock for as long as it takes the portal to answer, and finishes by
-    updating exactly the row this snapshot came from. Read before the wait,
-    the second request carries the value from before the first one - asking
-    the heating system to undo it. `_record_written_value` exists for this
-    race and cannot reach it: it updates the row after the snapshot was
-    already taken.
+    A date write carries the module's other dates unchanged, read from the
+    coordinator row - so the row has to be current by the time the next
+    writer reads it. Both halves of that are timing: the read happens once
+    this write owns the api lock, and the row is brought up to date after the
+    portal answered.
+
+    Written with a barrier and no stand-ins, because the version this
+    replaced arranged the update itself - it hung it off `_acquire_api_lock`,
+    which is a moment the production code never updates anything at. It
+    therefore passed while the row was in fact written after the lock was
+    RELEASED, which is exactly the gap that lets the second write send the
+    value from before the first one and undo it.
     """
-    api = _api()
-    module_dates = {"HolidayBegin": 1.0}
-    taking_the_lock = api._acquire_api_lock
+    import threading
 
-    def acquire(what):
-        taking_the_lock(what)
-        # The write that was already in flight finishes here.
-        module_dates["HolidayBegin"] = 2.0
+    api = _api_after_a_poll()
+    row = Reading(value=1.0, parameter_id="HolidayBegin", module_index=0, module_type=1)
+    api.data = {"1234": {"Heat pump-HolidayBegin": row}}
 
-    api._acquire_api_lock = acquire
+    first_is_holding_the_lock = threading.Event()
     carried = {}
-    api._change_value = lambda *_args, **kwargs: carried.update(
-        kwargs["together_with"] or {}
-    )
 
-    api.change_value(
-        "1234", "HolidayEnd", 0, 1, 5.0, together_with=lambda: dict(module_dates)
-    )
+    def portal_write(device_id, parameter_id, *_args, **kwargs):
+        if parameter_id == "HolidayBegin":
+            # Slow, like the real thing: this is the window the second write
+            # spends queued on the lock.
+            first_is_holding_the_lock.set()
+            time.sleep(0.05)
+        else:
+            carried.update(kwargs.get("together_with") or {})
+
+    api._change_value = portal_write
+
+    def write_begin():
+        api.change_value(
+            "1234",
+            "HolidayBegin",
+            0,
+            1,
+            2.0,
+            # What the entity hands in - the row update belongs to the write,
+            # not to whatever runs after it returns.
+            record_written=lambda: setattr(row, "value", 2.0),
+        )
+
+    def write_end():
+        first_is_holding_the_lock.wait(timeout=5)
+        api.change_value(
+            "1234",
+            "HolidayEnd",
+            0,
+            1,
+            5.0,
+            together_with=lambda: {"HolidayBegin": row.value},
+        )
+
+    threads = [threading.Thread(target=write_begin), threading.Thread(target=write_end)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
 
     assert carried == {"HolidayBegin": 2.0}, (
-        f"the request carried {carried}, the state from before it waited"
+        f"the second write carried {carried} - the value from before the "
+        "first one, which asks the heating system to undo it"
     )
+
+
+def test_a_write_after_a_transport_reset_logs_in_again():
+    """Polls restore the session; a write went straight to the wire.
+
+    Two failing cycles drop the HTTP sessions and clear `valid_login`, and
+    the next POLL puts both back through _ensure_api_session. A write does
+    not go through that - it takes the lock and calls the portal - so a
+    service call or an automation landing in that window met a `session` of
+    None and failed until a poll happened to run first. On the default
+    interval that is minutes of writes doing nothing.
+    """
+    api = _api()
+    api.session = None
+    api.valid_login = False
+    logins = []
+    api.api_login = lambda: (logins.append(True), setattr(api, "valid_login", True))
+    api._change_value = lambda *_args, **_kwargs: None
+
+    api.change_value("1234", "P1", 0, 1, 21.0)
+
+    assert logins, "the write went to the portal without a session to send it on"
+
+
+def test_a_write_with_a_live_session_does_not_log_in_again():
+    """The other half: a login per write would be one more request against an
+    account the portal blocks after 10,000 of them."""
+    api = _api()
+    api.valid_login = True
+    logins = []
+    api.api_login = lambda: logins.append(True)
+    api._change_value = lambda *_args, **_kwargs: None
+
+    api.change_value("1234", "P1", 0, 1, 21.0)
+
+    assert logins == [], "a write spent a login it did not need"
 
 
 def test_a_refused_discovery_stops_at_the_first_module():
@@ -7710,7 +7794,7 @@ def test_a_refused_write_says_what_the_portal_answered():
     rejected holiday date read precisely that, while "Status -1: Unbekannter
     Fehler" sat one exception deeper.
     """
-    api = _api()
+    api = _api_after_a_poll()
     api.session = object()
 
     def refuse(*_args, **_kwargs):
@@ -7752,7 +7836,7 @@ def test_companion_parameters_travel_in_the_same_request():
     module, so the pair fits in one request - which is what the app is
     assumed to send.
     """
-    api = _api()
+    api = _api_after_a_poll()
     sent = _write_recorder(api)
 
     api.change_value(
@@ -7780,7 +7864,7 @@ def test_the_parameter_being_changed_wins_over_a_companion():
     """The companions carry CURRENT values. One of them repeating the
     parameter under change would otherwise write the old value back over the
     new one, and the entity would show a day the portal never took."""
-    api = _api()
+    api = _api_after_a_poll()
     sent = _write_recorder(api)
 
     api.change_value(
@@ -7799,7 +7883,7 @@ def test_the_parameter_being_changed_wins_over_a_companion():
 def test_a_write_without_companions_is_unchanged():
     """Number, Select and Switch send nothing along, and their payload must
     look exactly as it did."""
-    api = _api()
+    api = _api_after_a_poll()
     sent = _write_recorder(api)
 
     api.change_value("1234", "P1", 0, 1, 21.0)

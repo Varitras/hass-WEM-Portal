@@ -109,9 +109,21 @@ def _entity_that_can_actually_write(cls, **overrides):
     entity._config_entry.runtime_data = types.SimpleNamespace(
         why_not_current=lambda _entry: None
     )
+
     # Bound before the executor runs, so it has to exist even in the case
     # where the write must never happen.
-    entity.coordinator.api.change_value = lambda *args, **kwargs: None
+    def _accept(*_args, record_written=None, **_kwargs):
+        """The api's side of the contract, including the part that matters.
+
+        `record_written` is run under the api lock after the portal accepted,
+        which is what keeps a queued second write from reading a stale row. A
+        stub that drops it would leave every test here passing while the row
+        is never updated at all.
+        """
+        if record_written is not None:
+            record_written()
+
+    entity.coordinator.api.change_value = _accept
     reached_the_portal = []
 
     async def _executor(call):
@@ -561,13 +573,25 @@ def _writeable(cls, unloading=False, calls=None):
     from custom_components.wemportal.models import WemPortalData
 
     entity = _entity(cls)
+
     # Records keyword arguments too: the write goes through functools.partial
     # now, because the date platform sends companion parameters by name.
-    api = types.SimpleNamespace(
-        change_value=lambda *args, **kwargs: (
-            calls if calls is not None else []
-        ).append((args, kwargs))
-    )
+    def _change_value(*args, record_written=None, **kwargs):
+        """The api's side of the contract, both halves of it.
+
+        Running `record_written` is not decoration: the real api runs it
+        under its lock after the portal accepted, and that is what brings the
+        coordinator row up to date. A double that swallows it leaves the row
+        untouched while every write test still passes.
+        """
+        # `record_written` stays out of the record: the tests reading this
+        # ask which parameter was addressed, and a bound method in the
+        # expected value would make each of them assert on a repr.
+        (calls if calls is not None else []).append((args, kwargs))
+        if record_written is not None:
+            record_written()
+
+    api = types.SimpleNamespace(change_value=_change_value)
     data = WemPortalData(api=api, coordinator=None)
     data.unloading = unloading
     entity._config_entry.runtime_data = data

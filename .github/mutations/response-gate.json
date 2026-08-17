@@ -1211,11 +1211,11 @@
     "tests": "the_other_date_of_the_module_travels_with_the_write"
   },
   {
-    "label": "pair: the carried values read before the wait for the lock again",
+    "label": "pair: the carried values read before the writer ahead recorded",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if callable(together_with):",
-    "new": "            if False:",
-    "tests": "the_values_carried_along_are_read_after_the_wait_for_the_lock"
+    "old": "            if callable(together_with):\n                together_with = together_with()",
+    "new": "            pass",
+    "tests": "values_carried_along_see_the_write_that_held_the_lock"
   },
   {
     "label": "pair: taking a companion from another module must be noticed",
@@ -1254,10 +1254,10 @@
   },
   {
     "label": "write-back: leaving the coordinator's copy stale must be noticed",
-    "path": "custom_components/wemportal/entity.py",
-    "old": "        self._record_written_value(value)",
-    "new": "        pass",
-    "tests": "a_write_brings_the_coordinators_copy_up_to_date or the_next_write_sees_what_the_last_one_wrote"
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if record_written is not None:\n                # Still under the lock, and only after the portal accepted:\n                # the next writer reads this row the moment it gets in.\n                record_written()",
+    "new": "            pass",
+    "tests": "values_carried_along_see_the_write_that_held_the_lock"
   },
   {
     "label": "write-back: recording a value the portal refused must be noticed",
@@ -3379,5 +3379,19 @@
     "old": "        and row.value is not None\n",
     "new": "",
     "tests": "programme_with_no_value_left_does_not_count_as_being_fed"
+  },
+  {
+    "label": "pair: the row recorded after the lock is released again",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "                record_written=partial(self._record_written_value, value),",
+    "new": "",
+    "tests": "values_carried_along_see_the_write_that_held_the_lock or write_brings_the_coordinators_copy_up_to_date"
+  },
+  {
+    "label": "migration: the contested set built from the due slice again",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        contested = _ids_claimed_by_more_than_one_reading(config_entry, everything)",
+    "new": "        contested = _ids_claimed_by_more_than_one_reading(config_entry, due)",
+    "tests": "device_that_changes_later_still_sees_the_other_ones_claim"
   }
 ]

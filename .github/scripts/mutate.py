@@ -378,6 +378,11 @@ def main() -> int:
     args = parser.parse_args()
 
     cases = json.loads(args.plan.read_text(encoding="utf-8"))
+    if not cases:
+        # "all 0 mutations caught" is the same green line as a real run, and
+        # a plan that lost its cases - a bad filter, a truncated file - would
+        # report the suite as fully guarded while proving nothing at all.
+        raise SystemExit(f"{args.plan} describes no mutations")
     survived = []
 
     locations = collect_test_locations()

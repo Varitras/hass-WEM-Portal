@@ -430,6 +430,43 @@ async def test_an_old_id_two_devices_both_answer_to_is_left_alone(monkeypatch):
     )
 
 
+async def test_a_device_that_changes_later_still_sees_the_other_ones_claim(monkeypatch):
+    """The two devices do not have to become due in the same cycle.
+
+    Only rows whose platform CHANGED are handed to the migration, and the
+    contested set was built from exactly those - so a device that sits
+    unchanged is invisible to it. When the other one is reclassified three
+    cycles later, its cleanup searches the shared old shapes with nothing
+    left to warn it off, and takes the quiet device's entity down.
+
+    Migrating only what is due stays right; deciding what is contested from
+    that same slice is what does not.
+    """
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry({("switch", "Pump"): "switch.the_contested_one"})
+    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    quiet = {"Pump": Reading(value=1.0, platform="switch")}
+    coordinator = FakeCoordinator(
+        data={"5678": quiet, DEVICE: {"Pump": Reading(value=1.0, platform="switch")}}
+    )
+
+    # First cycle: both are switches, both get handled, nothing is contested
+    # into existence yet.
+    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    registry.removed.clear()
+    registry.renamed.clear()
+
+    # Later: only DEVICE is reclassified. 5678 is unchanged, so it is not due.
+    coordinator.publish(
+        {"5678": quiet, DEVICE: {"Pump": Reading(value=1.0, platform="date")}}
+    )
+
+    assert registry.removed == [], (
+        f"a device that was not due lost its entity: {registry.removed}"
+    )
+
+
 async def test_an_old_id_only_one_device_answers_to_is_still_migrated(monkeypatch):
     """The control case: without it, refusing everything would pass the test
     above just as well."""

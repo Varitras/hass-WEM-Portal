@@ -56,13 +56,40 @@ def _platform_sources() -> dict:
     return sources
 
 
+def _calls_the_shared_helper(source: str) -> bool:
+    """Whether a module CALLS the helper, rather than merely naming it.
+
+    An import names it. Every platform imports it at the top, so a substring
+    scan was answered by that line alone: delete the actual call in
+    async_setup_entry and the guard stayed green while the platform stopped
+    producing entities altogether. Same blindness as a guard reading its own
+    banner, and the third one of that shape in this repository.
+    """
+    import ast
+
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == THE_SHARED_WAY
+        for node in ast.walk(ast.parse(source))
+    )
+
+
+def test_the_scan_is_not_satisfied_by_the_import_line():
+    """Proof that the check above can fail - a module that imports the helper
+    and never calls it is exactly the state it has to report."""
+    imports_only = f"from .entity import {THE_SHARED_WAY}\n\n\ndef setup():\n    pass\n"
+    assert not _calls_the_shared_helper(imports_only)
+    assert _calls_the_shared_helper(f"{THE_SHARED_WAY}(entry, add, 'switch', Cls)\n")
+
+
 def test_every_platform_adds_its_entities_as_they_appear():
     """A platform that builds its list once shows nothing for a reading that
     arrives later, and looks perfectly healthy while doing it."""
     missing = [
         name
         for name, source in _platform_sources().items()
-        if THE_SHARED_WAY not in source
+        if not _calls_the_shared_helper(source)
     ]
 
     assert not missing, (

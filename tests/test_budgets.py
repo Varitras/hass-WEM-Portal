@@ -45,7 +45,7 @@ LINE_BUDGETS = {
     # filter the web-scrape report now asks about. The direction is
     # unchanged: the weekly-programme path is the next thing that could
     # leave, the way statistics did.
-    "wemportalapi.py": 2942,
+    "wemportalapi.py": 2960,
     "expert_writer.py": 2431,
     "config_flow.py": 939,
     # The fourth, and new here: moving the expert client's import off the
@@ -55,7 +55,7 @@ LINE_BUDGETS = {
     # is how a budget stops meaning anything. __init__ carries the lifecycle,
     # the two domain services and the migrations; the services are what could
     # leave next.
-    "__init__.py": 1037,
+    "__init__.py": 1043,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to

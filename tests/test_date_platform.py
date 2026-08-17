@@ -68,6 +68,19 @@ def test_a_numeric_string_is_still_accepted():
 # --- the entity, including the write that reaches the heating system ----
 
 
+def _accepting_write(*_args, record_written=None, **_kwargs):
+    """A portal that accepts, standing in for WemPortalApi.change_value.
+
+    Including the callback, which is not a detail: the real one runs it under
+    the api lock once the portal accepted, and that is what brings the
+    coordinator row up to date. Dropped here, every write test below would
+    pass while the row kept its pre-write value - which is the exact defect
+    this argument exists to close.
+    """
+    if record_written is not None:
+        record_written()
+
+
 class _Coordinator:
     def __init__(self, data):
         self.data = data
@@ -78,7 +91,7 @@ class _Coordinator:
         self.api = types.SimpleNamespace(
             device_types={},
             api_version=None,
-            change_value=lambda *_args, **_kwargs: None,
+            change_value=_accepting_write,
             reread_device_values=lambda *_args, **_kwargs: None,
         )
 

@@ -558,6 +558,24 @@ def _plan_of(count, tmp_path):
     return path
 
 
+def test_a_plan_with_no_cases_in_it_is_an_error(tmp_path, monkeypatch):
+    """ "all 0 mutations caught" is the same green line as a real run.
+
+    A filter that matched nothing, a truncated file, a plan someone emptied
+    while extracting a subset - each of those reported the suite as fully
+    guarded on the strength of having checked nothing. The one shape of
+    failure this whole script exists to make impossible.
+    """
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    plan = _plan_of(0, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan)])
+
+    with pytest.raises(SystemExit) as excinfo:
+        mutate.main()
+
+    assert "no mutations" in str(excinfo.value)
+
+
 def test_one_job_runs_in_the_repository_itself(tmp_path, monkeypatch):
     """--jobs 1 is the fallback when a parallel run reports something odd, so
     it has to be the OLD behaviour exactly: no copy, no temp directory."""

@@ -1983,20 +1983,33 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         module_type,
         numeric_value,
         together_with=None,
+        record_written=None,
     ):
         """Change a value under the shared API lock, so a write can't
-        interleave with a poll cycle on the same session/state."""
+        interleave with a poll cycle on the same session/state.
+
+        Both callbacks are here rather than at the call site, and they are
+        two halves of one thing: the values to carry along come from the
+        module's other rows, so a write that is queued behind another one has
+        to READ them after the wait, and the write in front of it has to have
+        WRITTEN its own result before releasing the lock. Reading late was
+        not enough on its own - the row was still being updated by the caller
+        after this returned, so the queued write read the state from before
+        the first one and asked the heating system to undo it.
+        """
         self._acquire_api_lock("parameter write")
         try:
+            # A write does not go through _ensure_api_session, and after two
+            # failing cycles the transport has dropped its session and given
+            # up `valid_login`. A poll puts both back; a service call or an
+            # automation landing in that window went straight to the wire
+            # with nothing to send on. Under the lock, so it cannot race a
+            # poll doing the same thing.
+            if not self.valid_login:
+                self.api_login()
             if callable(together_with):
-                # Read here rather than by the caller, and that is the point:
-                # the values to carry along come from the module's other rows,
-                # and a write already in flight holds this lock while it
-                # changes one of them. Taken before the wait, this request
-                # would send the state from before that write - asking the
-                # heating system to undo it.
                 together_with = together_with()
-            return self._change_value(
+            result = self._change_value(
                 device_id,
                 parameter_id,
                 module_index,
@@ -2004,6 +2017,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 numeric_value,
                 together_with=together_with,
             )
+            if record_written is not None:
+                # Still under the lock, and only after the portal accepted:
+                # the next writer reads this row the moment it gets in.
+                record_written()
+            return result
         finally:
             self._api_lock.release()
 
