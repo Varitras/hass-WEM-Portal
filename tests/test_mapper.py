@@ -79,6 +79,7 @@ def _process(
     existing=None,
     scraping_mapper=None,
     scraper_device_id=DEVICE,
+    scrape_still_feeds=None,
 ):
     api_data = {DEVICE: dict(existing or {})}
     WemPortalDataMapper.process_api_values(
@@ -90,6 +91,7 @@ def _process(
         mode,
         api_data,
         scraper_device_id,
+        scrape_still_feeds,
     )
     return api_data[DEVICE]
 
@@ -472,6 +474,71 @@ def test_a_merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives():
 
     assert aged["heat_pump-outside"].value is None, (
         "a merged reading nothing refreshed is still shown as current"
+    )
+
+
+def test_a_scrape_fresh_merged_row_survives_an_api_omission():
+    """Both sources feed one row in `both` mode, on different schedules.
+
+    The API leaving a parameter out is evidence about the API only. Blanking a
+    row the scrape delivered THIS cycle throws away a value seconds old -
+    _forget_scraped_values ages it on the scrape's own terms instead. The
+    merge target is a scraped key, and whether the scrape still feeds it is a
+    question only the api instance can answer, so the caller injects it.
+    """
+    scraping_mapper = {}
+    merged = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=12.5, unit="°C")),
+        mode="both",
+        existing=_scraped("heat_pump-outside", "Heat pump - Outside"),
+        scraping_mapper=scraping_mapper,
+    )
+    assert merged["heat_pump-outside"].value == 12.5
+
+    aged = _process(
+        _modules(_parameter("Outside")),
+        _values(),
+        mode="both",
+        existing=merged,
+        scraping_mapper=scraping_mapper,
+        scrape_still_feeds=lambda key: key == "heat_pump-outside",
+    )
+
+    assert aged["heat_pump-outside"].value == 12.5, (
+        "a merged row the scrape delivered this cycle was blanked because the "
+        "API left its counterpart out"
+    )
+
+
+def test_a_merged_row_the_scrape_stopped_feeding_is_cleared_on_omission():
+    """The counter-test: the exemption is a condition, not a blanket.
+
+    Once the scrape has stopped delivering the row, the API leaving its
+    parameter out is the only evidence there is that the reading ended - and
+    exempting it then would leave a value neither source refreshes standing as
+    current, which is the very mistake the freshness rule exists against.
+    """
+    scraping_mapper = {}
+    merged = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=12.5, unit="°C")),
+        mode="both",
+        existing=_scraped("heat_pump-outside", "Heat pump - Outside"),
+        scraping_mapper=scraping_mapper,
+    )
+
+    aged = _process(
+        _modules(_parameter("Outside")),
+        _values(),
+        mode="both",
+        existing=merged,
+        scraping_mapper=scraping_mapper,
+        scrape_still_feeds=lambda key: False,
+    )
+
+    assert aged["heat_pump-outside"].value is None, (
+        "a merged row neither source refreshes is still shown as current"
     )
 
 

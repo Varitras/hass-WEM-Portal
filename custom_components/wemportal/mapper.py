@@ -3,6 +3,7 @@
 import logging
 
 import re
+from collections.abc import Callable
 from dataclasses import replace
 
 from .const import WemDataType
@@ -588,8 +589,72 @@ def forget_dropped_parameters(device_data, module, described) -> None:
     )
 
 
+def _clear_module_readings(
+    module_key,
+    device_module,
+    device_id,
+    parsed_sensors,
+    device_data,
+    scraping_mapper,
+    scrape_still_feeds,
+) -> list:
+    """Blank the readings of one answered module the portal left out this
+    cycle, each where it actually lives, and return the ids cleared for the
+    caller's one log line.
+
+    Split out of _clear_unanswered so the per-parameter decision is one thought
+    at one level of nesting rather than the innermost of two loops - the split
+    the module comment foresaw once the merge map carried a key of its own.
+    """
+    cleared = []
+    for parameter_id, parameter in device_module["parameters"].items():
+        name = f"{device_module['Name']}-{parameter_id}"
+        if name in parsed_sensors:
+            continue
+        # Where this parameter's reading actually LIVES, which is not
+        # necessarily under its own key: in `both` mode it is merged into the
+        # scraped row showing the same value, and that mapping is already kept
+        # - it just was not asked here. Looking under the api key alone found
+        # nothing for a merged parameter and moved on, leaving the row that
+        # does carry the reading with nothing to age it.
+        merged_into = scraping_mapper.get((device_id, module_key, parameter_id)) or [
+            name
+        ]
+        entry = device_data.get(merged_into[0])
+        if scrape_still_feeds is not None and scrape_still_feeds(merged_into[0]):
+            # In `both` mode the merge target is a scraped row, fed on its own
+            # schedule. The API leaving this parameter out is evidence about
+            # the API alone - blanking a row the scrape delivered this cycle
+            # throws away a value seconds old. _forget_scraped_values ages it
+            # on the scrape's own terms.
+            continue
+        # A weekly programme is exempt, and asking the DECLARED type alone got
+        # the wrong installations: a 3.1.3.0 portal types every programme as 2
+        # (an ordinary switch) with the schedule as JSON in the value, so the
+        # exemption applied to nobody who has one. Same mistake, same fix as
+        # the schedule fetch itself.
+        entry_value = entry.value if isinstance(entry, Reading) else None
+        # A condition, not a category - see schedule_fetch_still_feeds, which
+        # both ageing passes now ask so they cannot drift apart again.
+        is_programme = parameter.get(
+            "DataType"
+        ) == WemDataType.PROGRAM or looks_like_schedule(entry_value)
+        if is_programme and schedule_fetch_still_feeds(entry):
+            continue
+        if isinstance(entry, Reading) and entry.value is not None:
+            entry.value = None
+            cleared.append(parameter_id)
+    return cleared
+
+
 def _clear_unanswered(
-    device_id, values_json, modules_dict, parsed_sensors, api_data, scraping_mapper
+    device_id,
+    values_json,
+    modules_dict,
+    parsed_sensors,
+    api_data,
+    scraping_mapper,
+    scrape_still_feeds=None,
 ) -> None:
     """Stop presenting a reading the portal did not send this cycle.
 
@@ -636,40 +701,15 @@ def _clear_unanswered(
         if not device_module or not device_module.get("parameters"):
             continue
 
-        cleared = []
-        for parameter_id, parameter in device_module["parameters"].items():
-            name = f"{device_module['Name']}-{parameter_id}"
-            if name in parsed_sensors:
-                continue
-            # Where this parameter's reading actually LIVES, which is not
-            # necessarily under its own key: in `both` mode it is merged into
-            # the scraped row showing the same value, and that mapping is
-            # already kept - it just was not asked here. Looking under the
-            # api key alone found nothing for a merged parameter and moved
-            # on, leaving the row that does carry the reading with nothing to
-            # age it.
-            merged_into = scraping_mapper.get(
-                (device_id, module_key, parameter_id)
-            ) or [name]
-            entry = device_data.get(merged_into[0])
-            # A weekly programme is exempt, and asking the DECLARED type alone
-            # got the wrong installations: a 3.1.3.0 portal types every
-            # programme as 2 (an ordinary switch) with the schedule as JSON in
-            # the value, so the exemption applied to nobody who has one. Same
-            # mistake, same fix as the schedule fetch itself.
-            entry_value = entry.value if isinstance(entry, Reading) else None
-            # A condition, not a category - see schedule_fetch_still_feeds,
-            # which both ageing passes now ask so they cannot drift apart
-            # again.
-            is_programme = parameter.get(
-                "DataType"
-            ) == WemDataType.PROGRAM or looks_like_schedule(entry_value)
-            if is_programme and schedule_fetch_still_feeds(entry):
-                continue
-            if isinstance(entry, Reading) and entry.value is not None:
-                entry.value = None
-                cleared.append(parameter_id)
-
+        cleared = _clear_module_readings(
+            module_key,
+            device_module,
+            device_id,
+            parsed_sensors,
+            device_data,
+            scraping_mapper,
+            scrape_still_feeds,
+        )
         if cleared:
             _LOGGER.debug(
                 "Device %s module %s/%s: the portal sent no value for %s; "
@@ -694,6 +734,7 @@ class WemPortalDataMapper:
         mode: str,
         api_data: dict,
         scraper_device_id: str | None,
+        scrape_still_feeds: Callable[[str], bool] | None = None,
     ):
         """Processes the read values JSON and maps it to api_data."""
 
@@ -741,4 +782,5 @@ class WemPortalDataMapper:
             parsed_sensors,
             api_data,
             scraping_mapper,
+            scrape_still_feeds,
         )

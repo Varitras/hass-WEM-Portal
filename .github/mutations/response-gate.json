@@ -926,8 +926,8 @@
   {
     "label": "freshness: keeping a value the portal did not send must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                entry.value = None\n                cleared.append(parameter_id)",
-    "new": "                cleared.append(parameter_id)",
+    "old": "            entry.value = None\n            cleared.append(parameter_id)",
+    "new": "            cleared.append(parameter_id)",
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
   {
@@ -961,8 +961,8 @@
   {
     "label": "freshness: a missing programme exempted whether or not anything feeds it",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if is_programme and schedule_fetch_still_feeds(entry):",
-    "new": "            if is_programme:",
+    "old": "        if is_programme and schedule_fetch_still_feeds(entry):",
+    "new": "        if is_programme:",
     "tests": "a_programme_nobody_refreshes_any_more_ages_out_here_too"
   },
   {
@@ -1010,15 +1010,15 @@
   {
     "label": "freshness: clearing a heating schedule must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if is_programme and schedule_fetch_still_feeds(entry):\n                continue\n",
+    "old": "        if is_programme and schedule_fetch_still_feeds(entry):\n            continue\n",
     "new": "",
     "tests": "a_heating_schedule_is_not_cleared_by_the_value_read"
   },
   {
     "label": "freshness: throwing the unit away with the value must be noticed",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "                entry.value = None\n",
-    "new": "                entry.clear()\n",
+    "old": "            entry.value = None\n",
+    "new": "            entry.clear()\n",
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
   {
@@ -1031,9 +1031,23 @@
   {
     "label": "mapper: the merge lookup must be scoped to the device",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            merged_into = scraping_mapper.get(\n                (device_id, module_key, parameter_id)\n            ) or [name]",
-    "new": "            merged_into = scraping_mapper.get((module_key, parameter_id)) or [name]",
+    "old": "        merged_into = scraping_mapper.get((device_id, module_key, parameter_id)) or [\n            name\n        ]",
+    "new": "        merged_into = scraping_mapper.get((module_key, parameter_id)) or [name]",
     "tests": "a_merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives"
+  },
+  {
+    "label": "freshness: blanking a scrape-fresh merged row on an api omission must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        if scrape_still_feeds is not None and scrape_still_feeds(merged_into[0]):",
+    "new": "        if False:",
+    "tests": "a_scrape_fresh_merged_row_survives_an_api_omission"
+  },
+  {
+    "label": "freshness: exempting a merged row the scrape stopped feeding must be noticed",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        if scrape_still_feeds is not None and scrape_still_feeds(merged_into[0]):",
+    "new": "        if scrape_still_feeds is not None:",
+    "tests": "a_merged_row_the_scrape_stopped_feeding_is_cleared_on_omission"
   },
   {
     "label": "empty read: sending a read with no modules must be noticed",
@@ -3425,8 +3439,8 @@
   {
     "label": "freshness: a merged reading aged under a key it does not live at",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            merged_into = scraping_mapper.get(\n                (device_id, module_key, parameter_id)\n            ) or [name]\n            entry = device_data.get(merged_into[0])",
-    "new": "            entry = device_data.get(name)",
+    "old": "        merged_into = scraping_mapper.get((device_id, module_key, parameter_id)) or [\n            name\n        ]\n        entry = device_data.get(merged_into[0])",
+    "new": "        entry = device_data.get(name)",
     "tests": "merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives"
   },
   {

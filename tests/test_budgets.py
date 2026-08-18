@@ -41,11 +41,13 @@ LINE_LIMIT = 900
 # where the length is mostly literal field ids.
 LINE_BUDGETS = {
     # Raised for the AuthError shields the poll path needs in front of its
-    # catch-alls, the schedule read they were pulled out into, and the device
-    # filter the web-scrape report now asks about. The direction is
-    # unchanged: the weekly-programme path is the next thing that could
-    # leave, the way statistics did.
-    "wemportalapi.py": 2992,
+    # catch-alls, the schedule read they were pulled out into, the device
+    # filter the web-scrape report now asks about, and the scrape-freshness
+    # predicate the value read now hands the mapper so it does not blank a
+    # merged row the scrape just delivered. The direction is unchanged: the
+    # weekly-programme path is the next thing that could leave, the way
+    # statistics did.
+    "wemportalapi.py": 2996,
     "expert_writer.py": 2447,
     "config_flow.py": 939,
     # The fourth, and new here: moving the expert client's import off the
@@ -68,13 +70,13 @@ COMPLEXITY_LIMIT = 15
 # produced pass-through helpers rather than smaller thoughts.
 COMPLEXITY_BUDGETS = {
     "expert_writer.py::WemPortalExpertClient.parse_parameter_form": 29,
-    # 25 -> 26: the programme exemption became a condition here too, so the
-    # branch gained one `and`. Tried as a nested `if` first, which cost four
-    # instead of one - nesting is what this measure counts.
-    # 26 -> 27: the pass now asks WHERE a parameter's reading lives instead of
-    # assuming its own key, which is one `or` on the lookup. This function is
-    # the one to split when the merge map gets an owner of its own.
-    "mapper.py::_clear_unanswered": 27,
+    # The per-parameter ageing decision, split out of _clear_unanswered once
+    # the merge map carried a device-scoped key of its own - the split the old
+    # 27-budget comment foresaw. _clear_unanswered itself dropped to 9; this is
+    # the one thought that stayed dense: several reasons a reading may be kept
+    # or cleared, each its own guard, plus the scrape freshness the two sources
+    # in `both` mode need weighed together.
+    "mapper.py::_clear_module_readings": 16,
     "__init__.py::_async_register_expert_service": 22,
     "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,

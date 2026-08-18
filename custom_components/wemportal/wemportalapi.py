@@ -2672,6 +2672,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 scraper_device_id=(
                     self.resolve_scraper_device_id() if self.mode == "both" else None
                 ),
+                # So the ageing pass keeps a merged row the scrape delivered
+                # this cycle even when the API omits its counterpart - only the
+                # api instance knows which rows the scrape still feeds.
+                scrape_still_feeds=self._kept_fresh_by_the_scrape,
             )
             # Freshness lives on the MODULE, not only on the device: a
             # successful answer naming module A refreshes the device-level
