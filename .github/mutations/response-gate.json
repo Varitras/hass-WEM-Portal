@@ -665,6 +665,13 @@
     "tests": "successful_schedule_keeps_the_full_interval"
   },
   {
+    "label": "schedules: a merged programme's detail must follow the merge map",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        return merged[0] if merged else own_key",
+    "new": "        return own_key",
+    "tests": "merged_programme_lives or merged_3130"
+  },
+  {
     "label": "expert tally: blaming a failed batch on each id must be noticed",
     "path": "custom_components/wemportal/expert_controller.py",
     "old": "        whole_batch_failed = len(results) >= 2 and len(failed) == len(results)",

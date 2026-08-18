@@ -42,12 +42,13 @@ LINE_LIMIT = 900
 LINE_BUDGETS = {
     # Raised for the AuthError shields the poll path needs in front of its
     # catch-alls, the schedule read they were pulled out into, the device
-    # filter the web-scrape report now asks about, and the scrape-freshness
+    # filter the web-scrape report now asks about, the scrape-freshness
     # predicate the value read now hands the mapper so it does not blank a
-    # merged row the scrape just delivered. The direction is unchanged: the
-    # weekly-programme path is the next thing that could leave, the way
-    # statistics did.
-    "wemportalapi.py": 2996,
+    # merged row the scrape just delivered, and the shared _schedule_row_key
+    # the three schedule steps use to find a merged programme where it lives.
+    # The direction is unchanged: the weekly-programme path is the next thing
+    # that could leave, the way statistics did.
+    "wemportalapi.py": 3018,
     "expert_writer.py": 2447,
     "config_flow.py": 939,
     # The fourth, and new here: moving the expert client's import off the

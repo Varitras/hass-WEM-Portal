@@ -2700,6 +2700,24 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             _LOGGER.warning("Failed to fetch parameter data... %s", exc)
             return str(exc)
 
+    def _schedule_row_key(self, device_id, module, parameter_id) -> str:
+        """Where a programme's reading actually lives: the scraped row the
+        value read merged it into, if any, else its own key.
+
+        In `both` mode the value read may have merged this programme into a
+        scraped row, and all three schedule steps have to find it there:
+        recognising one reads its value, the detail fetch writes onto its row,
+        the failure drop clears that row's stale detail. Keyed on the
+        reconstructed own key, recognition missed a 3.1.3.0 programme's JSON
+        value so its fetch never ran, the read built a second detail-carrying
+        row under a key no entity is made from, and the drop cleared nothing.
+        Same device-scoped merge map _clear_unanswered follows.
+        """
+        own_key = f"{module['Name']}-{parameter_id}"
+        module_ref = ModuleRef(module_index=module["Index"], module_type=module["Type"])
+        merged = self.scraping_mapper.get((device_id, module_ref, parameter_id))
+        return merged[0] if merged else own_key
+
     def _is_schedule_parameter(
         self, device_id, module, parameter_id, parameter_data
     ) -> bool:
@@ -2713,7 +2731,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
         it was never entered, which is why nothing about it appeared in any
         log.
         """
-        row = self.data.get(device_id, {}).get(f"{module['Name']}-{parameter_id}")
+        row = self.data.get(device_id, {}).get(
+            self._schedule_row_key(device_id, module, parameter_id)
+        )
         row_value = row.value if isinstance(row, Reading) else None
         return parameter_data.get(
             "DataType"
@@ -2851,7 +2871,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
             - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
         )
-        row = self.data.get(device_id, {}).get(f"{module['Name']}-{parameter_id}")
+        row = self.data.get(device_id, {}).get(
+            self._schedule_row_key(device_id, module, parameter_id)
+        )
         if isinstance(row, Reading) and row.circuit_times_day is not None:
             row.circuit_times_day = None
             row.possible_values = None
@@ -2915,7 +2937,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             )
             return False
 
-        sensor_name = f"{module['Name']}-{parameter_id}"
+        sensor_name = self._schedule_row_key(device_id, module, parameter_id)
         row = self.data[device_id].get(sensor_name)
         if not isinstance(row, Reading):
             row = Reading(

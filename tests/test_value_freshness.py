@@ -16,6 +16,7 @@ from datetime import timedelta
 
 
 from custom_components.wemportal import wemportalapi
+from custom_components.wemportal.const import WemDataType
 from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.utils import serialize_modules
 from custom_components.wemportal.wemportalapi import WemPortalApi
@@ -524,6 +525,102 @@ def test_a_successful_schedule_refresh_keeps_its_attributes():
     row = api.data["1234"]["Circuit-Programme"]
     assert row.circuit_times_day == A_FED_WEEK
     assert row.possible_values == [1, 2]
+
+
+def _merged_schedule_row_api():
+    """A programme merged into a scraped row in `both` mode: its reading lives
+    under the SCRAPED key, and scraping_mapper records the move - exactly what
+    the value read leaves behind. The own key `Heat pump-Programme` has no row
+    of its own any more."""
+    api = WemPortalApi("user@example.org", "secret")
+    api.data = {
+        "1234": {
+            "heat_pump-programme": Reading(
+                parameter_id="heat_pump-programme",
+                value='{"1": []}',
+                circuit_times_day=A_FED_WEEK,
+                possible_values=[1, 2],
+                module_index=1,
+                module_type=1,
+            )
+        }
+    }
+    api.scraping_mapper = {
+        ("1234", ModuleRef(1, 1), "Programme"): ["heat_pump-programme"]
+    }
+    return api
+
+
+def test_a_failed_refresh_drops_the_detail_where_a_merged_programme_lives():
+    """The drop half of the schedule seam, in `both` mode.
+
+    A merged programme's detail lives under the scraped key, so looking under
+    the reconstructed own key found nothing and left last week's week
+    overruling the raw plan on the row that actually carries the entity.
+    """
+    api = _merged_schedule_row_api()
+    module = {"Index": 1, "Type": 1, "Name": "Heat pump"}
+
+    api._record_schedule_attempt("1234", module, "Programme", time.monotonic(), False)
+
+    row = api.data["1234"]["heat_pump-programme"]
+    assert row.circuit_times_day is None, (
+        "the stale detail on the merged row was never dropped - the fetch "
+        "looked under the own key the reading does not live at"
+    )
+    assert row.possible_values is None
+
+
+def test_a_schedule_read_writes_the_detail_where_a_merged_programme_lives():
+    """The read half of the same seam.
+
+    The detail belongs on the scraped row the programme was merged into, not
+    on a second row rebuilt from its own key that no entity is built from -
+    which left the visible entity showing only the raw plan.
+    """
+    api = _merged_schedule_row_api()
+    api.data["1234"]["heat_pump-programme"].circuit_times_day = None
+    api.data["1234"]["heat_pump-programme"].possible_values = None
+
+    calls = {"n": 0}
+
+    def make_api_call(url, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _Answer({"JobID": 7})
+        return _Answer({"CircuitTimesDay": A_FED_WEEK, "PossibleValues": [1, 2]})
+
+    api.make_api_call = make_api_call
+    module = {"Index": 1, "Type": 1, "Name": "Heat pump"}
+
+    fetched = api._read_one_schedule("1234", module, "Programme")
+
+    assert fetched is True
+    assert api.data["1234"]["heat_pump-programme"].circuit_times_day == A_FED_WEEK, (
+        "the week landed on a row rebuilt from the own key, not the merged one"
+    )
+    assert "Heat pump-Programme" not in api.data["1234"], (
+        "a second own-key row was created for a programme that already lives "
+        "under the scraped key"
+    )
+
+
+def test_a_merged_3130_programme_is_recognised_as_a_schedule():
+    """The classify half, and the case that hides completely.
+
+    A 3.1.3.0 portal types every programme as DataType 2 with the schedule as
+    JSON in the value, so recognising one means reading that value - and a
+    merged programme's value lives under the scraped key. Looking under the own
+    key found nothing, so the fetch was never even entered for it, silently.
+    """
+    api = _merged_schedule_row_api()
+    module = {"Index": 1, "Type": 1, "Name": "Heat pump"}
+    parameter_data = {"ParameterID": "Programme", "DataType": WemDataType.SWITCH}
+
+    assert api._is_schedule_parameter("1234", module, "Programme", parameter_data), (
+        "a merged 3.1.3.0 programme went unrecognised, so its schedule is "
+        "never fetched from the device"
+    )
 
 
 def test_a_long_poll_interval_gets_a_staleness_limit_it_can_reach():
