@@ -833,6 +833,27 @@
     "tests": "a_reading_that_appears_later_is_migrated_too"
   },
   {
+    "label": "merge orphan: the retired-key cleanup must be wired to the live merge map",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "                    api.scraping_mapper,",
+    "new": "                    {},",
+    "tests": "a_merge_orphaned_is_taken_down"
+  },
+  {
+    "label": "merge orphan: a key that still has a row must not be retired",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        if own_key in targets or own_key in device_data:",
+    "new": "        if own_key in targets:",
+    "tests": "a_key_that_still_has_a_row_is_not_an_orphan"
+  },
+  {
+    "label": "merge orphan: removing another account's entity must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            found = registry.async_get(entity_id)\n            if found is None or found.config_entry_id != config_entry.entry_id:\n                continue\n            _LOGGER.info(",
+    "new": "            _LOGGER.info(",
+    "tests": "removing_an_orphan_leaves_another_accounts_entity_alone"
+  },
+  {
     "label": "migration: a reclassification after setup must be noticed",
     "path": "custom_components/wemportal/__init__.py",
     "old": "        handled_as = migrated.get((device_id, key))\n        if handled_as == row.platform:",

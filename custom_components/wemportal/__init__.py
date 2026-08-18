@@ -288,6 +288,56 @@ def _remove_entities_from_a_previous_platform(
             registry.async_remove(stale)
 
 
+def _orphaned_by_a_merge(device_id, scraping_mapper, modules, device_data) -> list:
+    """The api keys a merge retired: an entity was built for one on an earlier
+    cycle and it renders nothing now.
+
+    In `both` mode _merge_into_scraped feeds an api reading into the scraped row
+    that shows the same value and drops the api row under its own key. The
+    add-only builder never takes the entity of that key down, so it shows
+    unknown for the life of the session. A merge whose target is some OTHER key,
+    whose own key is no longer in the data, is exactly one of these - and a key
+    that is merely absent for a cycle has no such entry, so it is left alone.
+    """
+    orphans = []
+    for (mapped_device, module_ref, parameter_id), targets in scraping_mapper.items():
+        if mapped_device != device_id:
+            continue
+        module = modules.get(device_id, {}).get(module_ref)
+        if not module:
+            continue
+        own_key = f"{module['Name']}-{parameter_id}"
+        if own_key in targets or own_key in device_data:
+            continue
+        orphans.append(own_key)
+    return orphans
+
+
+def _remove_orphaned_by_a_merge(registry, config_entry, device_id, orphan_keys) -> None:
+    """Drop the registry entries of api keys a merge retired.
+
+    Only this account's, only our own platforms, and only the current id shape,
+    which is the one this code built the entity under. The account check is the
+    same guard _remove_entities_from_a_previous_platform keeps: a removal is
+    destructive, and being sure of the owner is cheap.
+    """
+    for own_key in orphan_keys:
+        unique_id = get_wemportal_unique_id(config_entry.entry_id, device_id, own_key)
+        for platform in PLATFORMS:
+            entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
+            if entity_id is None:
+                continue
+            found = registry.async_get(entity_id)
+            if found is None or found.config_entry_id != config_entry.entry_id:
+                continue
+            _LOGGER.info(
+                "%s was merged into another row and left showing unknown - "
+                "removing the entity it left behind.",
+                entity_id,
+            )
+            registry.async_remove(entity_id)
+
+
 def _take_the_readings_not_migrated_yet(device_id, rows, migrated: dict) -> dict:
     """One device's readings whose platform has changed since last time,
     recorded as handled on the way out.
@@ -369,6 +419,24 @@ async def migrate_unique_ids(
             # would throw away the history it exists to preserve.
             _remove_entities_from_a_previous_platform(
                 registry, config_entry, device_id, fresh, contested
+            )
+        # Entities an in-session merge retired: the value read drops the api
+        # row under its own key, and the add-only builder never takes the
+        # entity it already made down, so it shows unknown for good. From
+        # EVERYTHING, not the due slice - a merge established cycles ago leaves
+        # an orphan that never becomes due again.
+        api = coordinator.api
+        for device_id in everything:
+            _remove_orphaned_by_a_merge(
+                registry,
+                config_entry,
+                device_id,
+                _orphaned_by_a_merge(
+                    device_id,
+                    api.scraping_mapper,
+                    api.modules,
+                    everything.get(device_id) or {},
+                ),
             )
         return change
 

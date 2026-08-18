@@ -28,7 +28,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wemportal import expert_writer
-from custom_components.wemportal.models import Reading
+from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
@@ -47,6 +47,7 @@ from custom_components.wemportal.exceptions import (
 from custom_components.wemportal.wemportalapi import WemPortalApi
 from custom_components.wemportal import (
     SERVICE_SET_EXPERT_PARAMETER,
+    get_wemportal_unique_id,
 )
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(120)]
@@ -2326,6 +2327,59 @@ async def test_every_platform_builds_an_entity_for_a_late_reading(hass, platform
     assert len(hass.states.async_entity_ids(platform)) == before + 1, (
         f"{platform} did not build an entity for a reading that arrived after "
         "setup, so it stays invisible until someone reloads by hand"
+    )
+
+
+async def test_an_entity_a_merge_orphaned_is_taken_down(hass):
+    """The wiring for the retired-api-key cleanup.
+
+    In `both` mode the value read merges an api reading into a scraped row and
+    drops the api row under its own key. The add-only builder never takes the
+    entity it already made down, so it shows unknown for good. The migration
+    listener removes it - driven by the merge record, not by the key being
+    absent, so a reading gone for one bad cycle keeps its entity.
+    """
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    from homeassistant.helpers import entity_registry
+
+    registry = entity_registry.async_get(hass)
+
+    coordinator.api.modules = {
+        "1234": {ModuleRef(0, 1): {"Name": "Heat pump", "Index": 0, "Type": 1}}
+    }
+    # An api reading arrives under its own key and gets an entity built for it.
+    coordinator.data["1234"]["Heat pump-Outside"] = Reading(
+        value=11.0,
+        platform="sensor",
+        friendly_name="Heat pump Outside",
+        parameter_id="Outside",
+        module_index=0,
+        module_type=1,
+    )
+    coordinator.async_update_listeners()
+    await hass.async_block_till_done()
+
+    unique_id = get_wemportal_unique_id(entry.entry_id, "1234", "Heat pump-Outside")
+    assert registry.async_get_entity_id("sensor", DOMAIN, unique_id) is not None, (
+        "precondition: no entity was built for the api key"
+    )
+
+    # The scrape arrives and the merge retires the api key: its value moves to
+    # the scraped row and its own row is dropped.
+    coordinator.api.scraping_mapper = {
+        ("1234", ModuleRef(0, 1), "Outside"): ["heat_pump-outside"]
+    }
+    del coordinator.data["1234"]["Heat pump-Outside"]
+    coordinator.data["1234"]["heat_pump-outside"] = Reading(
+        value=11.0, platform="sensor", parameter_id="heat_pump-outside"
+    )
+    coordinator.async_update_listeners()
+    await hass.async_block_till_done()
+
+    assert registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None, (
+        "the entity the merge retired is still registered, showing unknown "
+        "for the life of the installation"
     )
 
 

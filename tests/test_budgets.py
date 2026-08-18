@@ -57,8 +57,10 @@ LINE_BUDGETS = {
     # squeezed under 900 by shortening comments in this same session, which
     # is how a budget stops meaning anything. __init__ carries the lifecycle,
     # the two domain services and the migrations; the services are what could
-    # leave next.
-    "__init__.py": 1049,
+    # leave next. Raised again for the merge-orphan cleanup: the migration now
+    # also takes down the entity of an api key an in-session merge retired,
+    # which the add-only builder never removes on its own.
+    "__init__.py": 1117,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to

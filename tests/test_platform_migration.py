@@ -11,12 +11,16 @@ our own unique_ids, only our own platforms, and never the entity that is
 currently correct.
 """
 
+import types
+
 from custom_components.wemportal import (
+    _orphaned_by_a_merge,
     _remove_entities_from_a_previous_platform,
+    _remove_orphaned_by_a_merge,
     get_wemportal_unique_id,
 )
 from custom_components.wemportal.const import DOMAIN
-from custom_components.wemportal.models import Reading
+from custom_components.wemportal.models import ModuleRef, Reading
 
 ENTRY_ID = "entry-1"
 DEVICE = "1234"
@@ -126,6 +130,80 @@ def test_a_legacy_id_is_only_followed_into_this_account():
     )
 
 
+# --- an entity whose api key a merge retired ----------------------------
+#
+# In `both` mode the value read merges an api reading into a scraped row and
+# drops the api row under its own key. An entity built for that key on an
+# earlier cycle then has no reading any more and shows unknown for good - the
+# add-only builder never takes it down. This finds and removes exactly those,
+# and nothing that is merely absent for a cycle.
+
+MODULE = ModuleRef(module_index=0, module_type=1)
+OWN_KEY = "Heat pump-Outside"
+SCRAPED = "heat_pump-outside"
+MODULES = {DEVICE: {MODULE: {"Name": "Heat pump", "Index": 0, "Type": 1}}}
+
+
+def _merged(target):
+    return {(DEVICE, MODULE, "Outside"): [target]}
+
+
+def test_a_key_a_merge_retired_is_an_orphan():
+    """Merged into a different, scraped key and gone from the data: an entity
+    was built for it and now renders nothing."""
+    assert _orphaned_by_a_merge(DEVICE, _merged(SCRAPED), MODULES, {}) == [OWN_KEY]
+
+
+def test_a_key_merged_into_itself_is_not_an_orphan():
+    """No scraped row matched, so the fallback kept the api reading under its
+    own key - which still carries it."""
+    assert _orphaned_by_a_merge(DEVICE, _merged(OWN_KEY), MODULES, {}) == []
+
+
+def test_a_key_that_still_has_a_row_is_not_an_orphan():
+    """A merge target that is somehow still in the data is not retired - only a
+    key with no row left is."""
+    data = {OWN_KEY: Reading(platform="sensor")}
+    assert _orphaned_by_a_merge(DEVICE, _merged(SCRAPED), MODULES, data) == []
+
+
+def test_a_transiently_absent_key_is_not_an_orphan():
+    """The safety property. A reading absent for one cycle - a device
+    unreachable, a partial answer - has no merge entry naming it, so it is
+    never mistaken for one a merge retired. Removing it would take a live
+    entity's history for a single bad cycle, the mistake the add-only builder
+    exists to avoid."""
+    assert _orphaned_by_a_merge(DEVICE, {}, MODULES, {}) == []
+
+
+def test_another_devices_merge_is_not_this_devices_orphan():
+    """The cache is one dict across devices; a merge belongs to the device
+    that made it."""
+    other = {("9999", MODULE, "Outside"): [SCRAPED]}
+    assert _orphaned_by_a_merge(DEVICE, other, MODULES, {}) == []
+
+
+def test_the_entity_a_merge_orphaned_is_removed():
+    registry = FakeRegistry({("sensor", _uid(OWN_KEY)): "sensor.heat_pump_outside"})
+
+    _remove_orphaned_by_a_merge(registry, FakeConfigEntry(), DEVICE, [OWN_KEY])
+
+    assert registry.removed == ["sensor.heat_pump_outside"]
+
+
+def test_removing_an_orphan_leaves_another_accounts_entity_alone():
+    """The unique_id carries the entry id, but a removal this destructive
+    checks the owner anyway - the same guard the platform-change removal has."""
+    registry = FakeRegistry(
+        {("sensor", _uid(OWN_KEY)): "sensor.other_account"},
+        owners={"sensor.other_account": "entry-2"},
+    )
+
+    _remove_orphaned_by_a_merge(registry, FakeConfigEntry(), DEVICE, [OWN_KEY])
+
+    assert registry.removed == []
+
+
 def test_one_leftover_under_several_old_shapes_is_removed_once():
     """The shapes overlap - a parameter whose key IS its ParameterID answers
     the same entity twice. Home Assistant's registry raises on the second
@@ -232,6 +310,10 @@ class FakeCoordinator:
         self.data = data
         self.listeners: list = []
         self.refreshes = 0
+        # Production coordinators always hold the api, and the merge-orphan
+        # cleanup reads its scraping_mapper and modules. Empty here: these tests
+        # carry no merge, so no key is retired and no entity is taken down.
+        self.api = types.SimpleNamespace(scraping_mapper={}, modules={})
 
     def async_add_listener(self, update):
         self.listeners.append(update)
