@@ -402,7 +402,9 @@ def test_both_mode_remembers_the_match_in_the_scraping_mapper():
         scraping_mapper=scraping_mapper,
     )
 
-    assert scraping_mapper[(ModuleRef(*MODULE_KEY), "Outside")] == ["heat_pump-outside"]
+    assert scraping_mapper[(DEVICE, ModuleRef(*MODULE_KEY), "Outside")] == [
+        "heat_pump-outside"
+    ]
 
 
 def test_a_scraper_arriving_later_takes_the_api_row_it_replaces():
@@ -810,6 +812,77 @@ def test_a_device_the_scraper_does_not_write_into_keeps_its_own_key():
 
     assert data["Heat pump-Outside"].value == 12.5
     assert data["heat_pump-outside"].value == 11.0, "another device's row was rewritten"
+
+
+def test_two_devices_sharing_a_module_and_parameter_age_independently():
+    """The merge cache was keyed on (module, parameter) with no device.
+
+    Only the scraper device writes into the cache, but the ageing pass reads
+    it for EVERY device. A second device carrying the same module address and
+    parameter id as a scraper-device merge therefore looked up the scraper
+    device's scraped target, found it absent from its own dict, and left its
+    own stale reading standing - so a parameter that second device stopped
+    answering kept its last value for the rest of the session.
+    """
+    scraping_mapper = {}
+    other_device = "5678"
+    modules = {
+        DEVICE: {
+            MODULE_KEY: {
+                "Name": "Heat pump",
+                "parameters": {"Outside": _parameter("Outside")},
+            }
+        },
+        other_device: {
+            MODULE_KEY: {
+                "Name": "Circuit",
+                "parameters": {"Outside": _parameter("Outside")},
+            }
+        },
+    }
+    api_data = {
+        DEVICE: dict(_scraped("heat_pump-outside", "Heat pump - Outside")),
+        other_device: {
+            "Circuit-Outside": Reading(
+                value=45.0,
+                parameter_id="Outside",
+                unit="°C",
+                platform="sensor",
+                module_index=MODULE_KEY[0],
+                module_type=MODULE_KEY[1],
+            )
+        },
+    }
+
+    # The scraper device answers and merges Outside into its scraped row,
+    # filling the cache under (module, parameter).
+    WemPortalDataMapper.process_api_values(
+        DEVICE,
+        _values(_value("Outside", numeric=21.0, unit="°C")),
+        modules,
+        "en",
+        scraping_mapper,
+        "both",
+        api_data,
+        DEVICE,
+    )
+
+    # The other device answers for the module but leaves Outside out entirely.
+    WemPortalDataMapper.process_api_values(
+        other_device,
+        _values(),
+        modules,
+        "en",
+        scraping_mapper,
+        "both",
+        api_data,
+        DEVICE,
+    )
+
+    assert api_data[other_device]["Circuit-Outside"].value is None, (
+        "the second device's dropped parameter kept its value because the "
+        "merge cache the ageing pass consulted had no device in its key"
+    )
 
 
 def test_a_malformed_parameter_does_not_cost_the_others(caplog):

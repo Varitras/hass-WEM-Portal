@@ -1022,6 +1022,20 @@
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
   {
+    "label": "mapper: the merge cache must be scoped to the device",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    cache_key = (\n        device_id,\n        ModuleRef(module_index=sensor.module_index, module_type=sensor.module_type),\n        sensor.parameter_id,\n    )",
+    "new": "    cache_key = (\n        ModuleRef(module_index=sensor.module_index, module_type=sensor.module_type),\n        sensor.parameter_id,\n    )",
+    "tests": "a_merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives"
+  },
+  {
+    "label": "mapper: the merge lookup must be scoped to the device",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            merged_into = scraping_mapper.get(\n                (device_id, module_key, parameter_id)\n            ) or [name]",
+    "new": "            merged_into = scraping_mapper.get((module_key, parameter_id)) or [name]",
+    "tests": "a_merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives"
+  },
+  {
     "label": "empty read: sending a read with no modules must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        if not data[\"Modules\"]:",
@@ -3054,8 +3068,8 @@
   {
     "label": "identity: the merge cache key must carry the module",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "    cache_key = (\n        ModuleRef(module_index=sensor.module_index, module_type=sensor.module_type),\n        sensor.parameter_id,\n    )",
-    "new": "    cache_key = sensor.parameter_id",
+    "old": "    cache_key = (\n        device_id,\n        ModuleRef(module_index=sensor.module_index, module_type=sensor.module_type),\n        sensor.parameter_id,\n    )",
+    "new": "    cache_key = (device_id, sensor.parameter_id)",
     "tests": "two_modules_sharing_a_parameter_id_keep_their_own_readings"
   },
   {
@@ -3411,7 +3425,7 @@
   {
     "label": "freshness: a merged reading aged under a key it does not live at",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            merged_into = scraping_mapper.get((module_key, parameter_id)) or [name]\n            entry = device_data.get(merged_into[0])",
+    "old": "            merged_into = scraping_mapper.get(\n                (device_id, module_key, parameter_id)\n            ) or [name]\n            entry = device_data.get(merged_into[0])",
     "new": "            entry = device_data.get(name)",
     "tests": "merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives"
   },

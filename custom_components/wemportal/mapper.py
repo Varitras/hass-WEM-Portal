@@ -431,7 +431,14 @@ def _merge_into_scraped(
     # Keyed on the bare id, the second circuit found the first one's entry,
     # wrote its value into the first one's reading and never got a row of its
     # own, so it had no entity at all.
+    #
+    # And the device belongs in it too. Only the scraper device writes here,
+    # but _clear_unanswered reads it for EVERY device - so a second device
+    # with the same module address and parameter id looked up the scraper
+    # device's scraped target, found it absent from its own dict, and left its
+    # own dropped reading standing as current.
     cache_key = (
+        device_id,
         ModuleRef(module_index=sensor.module_index, module_type=sensor.module_type),
         sensor.parameter_id,
     )
@@ -641,7 +648,9 @@ def _clear_unanswered(
             # api key alone found nothing for a merged parameter and moved
             # on, leaving the row that does carry the reading with nothing to
             # age it.
-            merged_into = scraping_mapper.get((module_key, parameter_id)) or [name]
+            merged_into = scraping_mapper.get(
+                (device_id, module_key, parameter_id)
+            ) or [name]
             entry = device_data.get(merged_into[0])
             # A weekly programme is exempt, and asking the DECLARED type alone
             # got the wrong installations: a 3.1.3.0 portal types every
