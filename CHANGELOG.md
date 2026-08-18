@@ -6,7 +6,32 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.12.0b3] – 2026-08-19
+
 ### Fixed
+
+- **With more than one device, a reading the portal stops sending is aged on
+  the right one.** The map that links an API reading to the scraped row showing
+  the same value carried no device id, so a second device with a module and
+  parameter of the same address looked up the first device's row, found nothing
+  of its own, and kept its own dropped reading on display as current.
+- **In `both` mode, a value the web scrape delivered this cycle is no longer
+  blanked because the API left its counterpart out.** Both sources feed one row
+  on their own schedules, so the ageing pass now leaves a row the scrape is
+  still delivering to the scrape's own staleness handling instead of clearing a
+  reading that arrived seconds ago.
+- **A weekly programme that shares its row with the web scrape now shows its
+  switching times.** When the value read had merged a programme into a scraped
+  row, the schedule fetch still looked under the programme's own key: on a
+  3.1.3.0 portal it did not recognise the programme at all, so its schedule was
+  never fetched, and elsewhere it wrote the detail onto a second row no entity
+  is built from - leaving the visible one on the raw plan.
+- **An entity left showing `unknown` after its reading merged into another row
+  is removed.** In `both` mode the first API cycle can build an entity under a
+  key the web scrape then merges away; nothing took that entity down, so it sat
+  on the dashboard as unavailable for the life of the session. It is removed
+  once the merge retires its key - and only then, so a reading missing for a
+  single cycle keeps its entity.
 
 - **An expert parameter whose entity you disable is dropped from the poll for
   good, along with its failure count and any repair issue it raised.** The
