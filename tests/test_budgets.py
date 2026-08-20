@@ -40,15 +40,12 @@ LINE_LIMIT = 900
 # shrinking; expert_writer is a Telerik form protocol written out longhand,
 # where the length is mostly literal field ids.
 LINE_BUDGETS = {
-    # Raised for the AuthError shields the poll path needs in front of its
-    # catch-alls, the schedule read they were pulled out into, the device
-    # filter the web-scrape report now asks about, the scrape-freshness
-    # predicate the value read now hands the mapper so it does not blank a
-    # merged row the scrape just delivered, and the shared _schedule_row_key
-    # the three schedule steps use to find a merged programme where it lives.
-    # The direction is unchanged: the weekly-programme path is the next thing
-    # that could leave, the way statistics did.
-    "wemportalapi.py": 3018,
+    # Lowered from 3018: api_login and web_login moved to transport.py, where
+    # the session, the retry ladder and the 403 backoffs they lean on already
+    # live. The direction is unchanged - the weekly-programme (schedule) path
+    # is the next thing that could leave, the way transport, statistics and
+    # now login did.
+    "wemportalapi.py": 2748,
     "expert_writer.py": 2447,
     "config_flow.py": 939,
 }

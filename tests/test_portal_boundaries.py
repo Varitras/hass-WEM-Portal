@@ -205,9 +205,8 @@ def test_a_value_read_answered_with_null_fails_the_cycle_cleanly():
 # decide what shape the answer has and what a wrong shape means.
 JSON_ANSWER_BOUNDARIES = {
     "statistics.py": {"_fetch_device_statistics"},
-    "transport.py": {"get_response_details"},
+    "transport.py": {"api_login", "get_response_details"},
     "wemportalapi.py": {
-        "api_login",
         "get_devices",
         "_store_module_description",
         "_change_value",
@@ -232,8 +231,8 @@ HTML_PARSE_BOUNDARIES = {
         "_report_empty_page",
         "parse_expert_page",
     },
+    "transport.py": {"web_login"},
     "utils.py": {"maintenance_notice"},
-    "wemportalapi.py": {"web_login"},
 }
 
 

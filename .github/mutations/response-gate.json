@@ -365,7 +365,7 @@
   },
   {
     "label": "status: the login must use the same verdict as the write",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "            if not status_is_success(response_data.get(\"Status\")):",
     "new": "            if response_data.get(\"Status\") != 0:",
     "tests": "login_rejects_a_false_status"
@@ -554,7 +554,7 @@
   },
   {
     "label": "web login: posting credentials to a page with no form again",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        if not {\"__VIEWSTATE\", \"__EVENTVALIDATION\"} <= form_data.keys():",
     "new": "        if False:",
     "tests": "page_without_a_login_form_gets_no_credentials"
@@ -1709,35 +1709,35 @@
   },
   {
     "label": "login: the api login sends before asking the cooldown",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        self.check_cooldown()\n        # And the deadline, for the same reason",
     "new": "        # And the deadline, for the same reason",
     "tests": "a_login_is_not_attempted_during_a_cooldown"
   },
   {
     "label": "login: the web login sends before asking the cooldown",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        self.check_cooldown()\n        session = requests.Session()",
     "new": "        session = requests.Session()",
     "tests": "a_login_is_not_attempted_during_a_cooldown"
   },
   {
     "label": "login: a refused login PAGE reported as a network problem",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "            if initial_response is not None and initial_response.status_code == 403:\n                self._activate_cooldown()\n                raise ForbiddenError(\n                    \"Access forbidden while loading the login page.\"\n                ) from exc\n            raise UnknownAuthError",
     "new": "            raise UnknownAuthError",
     "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
   },
   {
     "label": "login: any answered page taken as a wrong password",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "            if WEB_LOGIN_FORM_MARKER in response.text:\n                raise AuthError",
     "new": "            if True:\n                raise AuthError",
     "tests": "a_page_that_is_neither_login_nor_session_is_not_a_wrong_password"
   },
   {
     "label": "login: maintenance checked only before the credentials go out",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "            notice = maintenance_notice(response.text)\n            if notice:\n                raise PortalMaintenanceError(notice)\n            if WEB_LOGIN_FORM_MARKER in response.text:",
     "new": "            if WEB_LOGIN_FORM_MARKER in response.text:",
     "tests": "maintenance_starting_between_the_two_requests_is_recognised"
@@ -1891,21 +1891,21 @@
   },
   {
     "label": "login: an unreadable page escaping as a parser error",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        except ParserError as exc:",
     "new": "        except ZeroDivisionError as exc:",
     "tests": "an_unreadable_login_page_costs_no_credentials"
   },
   {
     "label": "login: a hidden field with a blank name posted anyway",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "'//input[@type=\"hidden\"][string(@name)]'",
     "new": "'//input[@type=\"hidden\"][@name]'",
     "tests": "the_login_form_carries_exactly_the_hidden_fields"
   },
   {
     "label": "login: visible form fields read off the page too",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "'//input[@type=\"hidden\"][string(@name)]'",
     "new": "'//input[string(@name)]'",
     "tests": "the_login_form_carries_exactly_the_hidden_fields"
@@ -2416,7 +2416,7 @@
   },
   {
     "label": "deadline: a fresh login started with no budget left",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        self.check_deadline()\n        payload = {",
     "new": "        payload = {",
     "tests": "a_login_without_budget_left_sends_nothing"
@@ -3312,7 +3312,7 @@
   },
   {
     "label": "login: a rejected login must give up the session claim",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/transport.py",
     "old": "        # spent itself on 401s instead of raising an AuthError to count.\n        self.valid_login = False\n",
     "new": "        # spent itself on 401s instead of raising an AuthError to count.\n",
     "tests": "rejected_login_gives_up_the_session_it_had_already_replaced"

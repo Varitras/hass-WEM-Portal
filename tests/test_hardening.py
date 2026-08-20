@@ -119,12 +119,10 @@ def test_api_login_network_error_raises_clean_auth_error(monkeypatch):
 def test_api_login_post_has_timeout(monkeypatch):
     api = _api()
     session = RecordingSession()
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(transport.requests, "Session", lambda: session)
     api.api_login()
     assert api.valid_login is True
-    assert (
-        session.post_kwargs.get("timeout") == wemportalapi.API_REQUEST_TIMEOUT_SECONDS
-    )
+    assert session.post_kwargs.get("timeout") == transport.API_REQUEST_TIMEOUT_SECONDS
 
 
 def test_a_rejected_login_gives_up_the_session_it_had_already_replaced(monkeypatch):
