@@ -45,10 +45,8 @@ from custom_components.wemportal.exceptions import (
     ParameterWriteError,
 )
 from custom_components.wemportal.wemportalapi import WemPortalApi
-from custom_components.wemportal import (
-    SERVICE_SET_EXPERT_PARAMETER,
-    get_wemportal_unique_id,
-)
+from custom_components.wemportal import SERVICE_SET_EXPERT_PARAMETER
+from custom_components.wemportal.migration import get_wemportal_unique_id
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(120)]
 

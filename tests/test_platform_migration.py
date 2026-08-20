@@ -13,7 +13,7 @@ currently correct.
 
 import types
 
-from custom_components.wemportal import (
+from custom_components.wemportal.migration import (
     _orphaned_by_a_merge,
     _remove_entities_from_a_previous_platform,
     _remove_orphaned_by_a_merge,
@@ -344,7 +344,9 @@ async def test_a_reading_that_appears_later_is_migrated_too(monkeypatch):
     import custom_components.wemportal as wemportal
 
     registry = FakeRegistry({("sensor", "Outside"): "sensor.old_outside"})
-    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
     coordinator = FakeCoordinator(data={})
 
     await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
@@ -367,7 +369,9 @@ async def test_a_reading_already_migrated_is_not_walked_again(monkeypatch):
     import custom_components.wemportal as wemportal
 
     registry = FakeRegistry({("sensor", "Outside"): "sensor.old_outside"})
-    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
     rows = {
         DEVICE: {
             "Outside": Reading(value=1.0, platform="sensor", parameter_id="Outside")
@@ -398,7 +402,9 @@ async def test_a_reclassification_after_setup_takes_the_old_entity_down(monkeypa
     registry = FakeRegistry(
         {("switch", _uid("Heat pump-U_Beginn")): "switch.holiday_begin"}
     )
-    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
     coordinator = FakeCoordinator(
         data={DEVICE: {"Heat pump-U_Beginn": Reading(platform="switch")}}
     )
@@ -449,7 +455,9 @@ async def test_a_platform_that_flickers_gets_its_control_entity_back(monkeypatch
     registry = FakeRegistry(
         {("date", _uid("Heat pump-U_Beginn")): "date.holiday_begin"}
     )
-    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
 
     as_date = {DEVICE: {"Heat pump-U_Beginn": Reading(value=1.0, platform="date")}}
     as_sensor = {DEVICE: {"Heat pump-U_Beginn": Reading(value=1.0, platform="sensor")}}
@@ -492,7 +500,9 @@ async def test_an_old_id_two_devices_both_answer_to_is_left_alone(monkeypatch):
     import custom_components.wemportal as wemportal
 
     registry = FakeRegistry({("switch", "Pump"): "switch.the_contested_one"})
-    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
     coordinator = FakeCoordinator(
         data={
             # Walked first, and a date today - so its CLEANUP is what reaches
@@ -527,7 +537,9 @@ async def test_a_device_that_changes_later_still_sees_the_other_ones_claim(monke
     import custom_components.wemportal as wemportal
 
     registry = FakeRegistry({("switch", "Pump"): "switch.the_contested_one"})
-    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
     quiet = {"Pump": Reading(value=1.0, platform="switch")}
     coordinator = FakeCoordinator(
         data={"5678": quiet, DEVICE: {"Pump": Reading(value=1.0, platform="switch")}}
@@ -555,7 +567,9 @@ async def test_an_old_id_only_one_device_answers_to_is_still_migrated(monkeypatc
     import custom_components.wemportal as wemportal
 
     registry = FakeRegistry({("sensor", "Outside"): "sensor.old_outside"})
-    monkeypatch.setattr(wemportal.entity_registry, "async_get", lambda _hass: registry)
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
     coordinator = FakeCoordinator(
         data={
             DEVICE: {"Outside": Reading(value=1.0, platform="sensor")},
@@ -577,7 +591,7 @@ def test_the_migration_leaves_another_accounts_entity_alone():
     entity that was already correct. Two WEM accounts is unusual; losing the
     other one's entities is not something to find out about afterwards.
     """
-    from custom_components.wemportal import _migrate_device_unique_ids
+    from custom_components.wemportal.migration import _migrate_device_unique_ids
 
     other_account = "entry-2"
     registry = FakeRegistry(

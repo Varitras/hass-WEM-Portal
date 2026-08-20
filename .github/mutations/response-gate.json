@@ -526,21 +526,21 @@
   },
   {
     "label": "migration: deleting the entity that is currently correct must be noticed",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "        if platform == current:\n            continue",
     "new": "        if False:\n            continue",
     "tests": "entity_that_is_currently_correct or unchanged_platform_removes_nothing"
   },
   {
     "label": "migration: leaving the old platform's entity behind must be noticed",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "            registry.async_remove(stale)",
     "new": "            pass",
     "tests": "entity_left_behind_by_a_platform_change"
   },
   {
     "label": "migration: removing another account's entity must be noticed",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "            entry = registry.async_get(stale)\n            if entry is None or entry.config_entry_id != config_entry.entry_id:\n                continue",
     "new": "            pass",
     "tests": "legacy_id_is_only_followed_into_this_account"
@@ -561,28 +561,28 @@
   },
   {
     "label": "migration: adopting under an id two readings claim must be noticed",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "            if old_id not in contested",
     "new": "            if True",
     "tests": "old_id_two_devices_both_answer_to_is_left_alone"
   },
   {
     "label": "migration: deleting under an id two readings claim must be noticed",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "            if candidate not in contested",
     "new": "            if True",
     "tests": "old_id_two_devices_both_answer_to_is_left_alone"
   },
   {
     "label": "migration: not following the old id shapes here must be noticed",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "            for candidate in (\n                get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id),\n                *_possible_old_unique_ids(config_entry, device_id, unique_id, values),\n            )",
     "new": "            for candidate in (\n                get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id),\n            )",
     "tests": "legacy_id_on_a_platform_the_parameter_no_longer_is"
   },
   {
     "label": "migration: handing the same leftover out twice must be noticed",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "            if stale is None or stale in found:",
     "new": "            if stale is None:",
     "tests": "one_leftover_under_several_old_shapes"
@@ -827,35 +827,35 @@
   },
   {
     "label": "migration: a reading that arrives later must be migrated too",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )",
     "new": "    pass",
     "tests": "a_reading_that_appears_later_is_migrated_too"
   },
   {
     "label": "merge orphan: the retired-key cleanup must be wired to the live merge map",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "                    api.scraping_mapper,",
     "new": "                    {},",
     "tests": "a_merge_orphaned_is_taken_down"
   },
   {
     "label": "merge orphan: a key that still has a row must not be retired",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "        if own_key in targets or own_key in device_data:",
     "new": "        if own_key in targets:",
     "tests": "a_key_that_still_has_a_row_is_not_an_orphan"
   },
   {
     "label": "merge orphan: removing another account's entity must be noticed",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "            found = registry.async_get(entity_id)\n            if found is None or found.config_entry_id != config_entry.entry_id:\n                continue\n            _LOGGER.info(",
     "new": "            _LOGGER.info(",
     "tests": "removing_an_orphan_leaves_another_accounts_entity_alone"
   },
   {
     "label": "migration: a reclassification after setup must be noticed",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "        handled_as = migrated.get((device_id, key))\n        if handled_as == row.platform:",
     "new": "        handled_as = migrated.get((device_id, key))\n        if handled_as is not None:",
     "tests": "a_reclassification_after_setup_takes_the_old_entity_down or a_platform_that_flickers_gets_its_control_entity_back"
@@ -3221,7 +3221,7 @@
   },
   {
     "label": "migration: another account's entity must not be adopted",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "        if found is None or found.config_entry_id != config_entry.entry_id:\n            continue\n",
     "new": "",
     "tests": "migration_leaves_another_accounts_entity_alone"
@@ -3431,7 +3431,7 @@
   },
   {
     "label": "migration: the contested set built from the due slice again",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/migration.py",
     "old": "        contested = _ids_claimed_by_more_than_one_reading(config_entry, everything)",
     "new": "        contested = _ids_claimed_by_more_than_one_reading(config_entry, due)",
     "tests": "device_that_changes_later_still_sees_the_other_ones_claim"

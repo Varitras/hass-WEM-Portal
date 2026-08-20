@@ -9,8 +9,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import get_wemportal_unique_id
 from .coordinator import API_FAILURES_TOLERATED, WemPortalDataUpdateCoordinator
+from .migration import get_wemportal_unique_id
 from .models import Reading, raise_if_not_writable
 from .utils import build_device_info, device_is_reachable, device_model
 

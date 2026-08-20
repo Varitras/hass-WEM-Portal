@@ -28,6 +28,7 @@ NOT_TYPE_CHECKED_YET = {
     "expert_writer.py": "a Telerik form protocol written out longhand; mostly literal field ids",
     "config_flow.py": "voluptuous schemas type-check to Any, so strict mode says little here",
     "__init__.py": "the lifecycle, which is Home Assistant's own untyped surface",
+    "migration.py": "the unique_id migration lifted out of __init__; typed with the lifecycle it belongs to",
     "coordinator.py": "waiting for wemportalapi: it returns what the god module builds",
     "expert_controller.py": "waiting for expert_writer, whose entities it holds",
     "scraper.py": "lxml and curl_cffi are both untyped; the noise would drown the signal",
