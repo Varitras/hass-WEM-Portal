@@ -3462,7 +3462,7 @@
     "path": "custom_components/wemportal/__init__.py",
     "old": "        await data.coordinator.async_wait_for_store_writes()",
     "new": "        pass",
-    "tests": "unload_waits_for_a_store_write_already_on_the_disk"
+    "tests": "the_unload_awaits_the_store_write_gate"
   },
   {
     "label": "freshness: a merged reading aged under a key it does not live at",
@@ -3504,7 +3504,7 @@
     "path": "custom_components/wemportal/coordinator.py",
     "old": "            async with self._store_writes:\n                await self._modules_store.async_save(serialized)",
     "new": "            await self._modules_store.async_save(serialized)",
-    "tests": "unload_waits_for_a_store_write_already_on_the_disk"
+    "tests": "a_store_write_in_flight_blocks_the_unload_gate"
   },
   {
     "label": "ci: the type check falling back to the unpinned requirements",

@@ -308,24 +308,29 @@ async def test_a_poll_finishing_during_the_unload_does_not_write(hass, hass_stor
     )
 
 
-async def test_the_unload_waits_for_a_store_write_already_on_the_disk(hass):
-    """The gate decides whether a save may START; the write is asynchronous.
+async def test_a_store_write_in_flight_blocks_the_unload_gate(hass):
+    """The gate the unload awaits must not return while a save holds the lock.
 
-    A save that had already passed the gate was still going when the entry
-    came down - so it could finish after the removal deleted those stores, or
-    after a reload published new ones, and land on top of either. The gate
-    cannot see that one: by the time it was asked, the answer was still yes.
+    A save that had already passed the "may I start" gate is on the disk with
+    `_store_writes` held. async_wait_for_store_writes - what the unload awaits
+    before it tears the entry down - has to block there, or the write finishes
+    after the removal that deletes those stores, or the reload that replaced
+    them, and lands on top of either.
+
+    Asserted as the gate's OWN state, not as a race between two tasks: with a
+    free lock the gate returns within a single loop step (the acquire does not
+    yield), so a gate that is still pending after one step is one the lock held
+    back. The order-of-completion check this replaced could read the right
+    answer by chance when the unload happened to run long, which is how the
+    matching mutation survived a full run while passing in isolation.
     """
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
-    # Asserted as an ORDER rather than as "did it happen": the write finishes
-    # either way, and the question is whether the unload was still ahead of it.
-    order = []
     let_the_disk_answer = asyncio.Event()
 
     # The REAL save path, with only the disk held up. Holding `_store_writes`
     # here instead would be the test taking the lock the production code is
-    # supposed to take - it would pass with both `async with` blocks deleted.
+    # supposed to take - it would pass with the `async with` deleted.
     async def slow_disk(_data):
         await let_the_disk_answer.wait()
 
@@ -333,26 +338,46 @@ async def test_the_unload_waits_for_a_store_write_already_on_the_disk(hass):
     coordinator._saved_modules_snapshot = None
     coordinator._modules_store.async_save = slow_disk
 
-    async def write_in_flight():
-        await coordinator._async_save_modules_cache()
-        order.append("save")
+    writing = hass.async_create_task(coordinator._async_save_modules_cache())
+    await asyncio.sleep(0)  # the save takes the lock and blocks on the disk
 
-    async def unload():
-        result = await hass.config_entries.async_unload(entry.entry_id)
-        order.append("unload")
-        return result
+    waiting = hass.async_create_task(coordinator.async_wait_for_store_writes())
+    await asyncio.sleep(0)
+    assert not waiting.done(), (
+        "the store-write gate returned while a save still held the lock, so "
+        "the unload that awaits it can be overtaken by a removal or a reload"
+    )
 
-    writing = hass.async_create_task(write_in_flight())
-    await asyncio.sleep(0)
-    unloading = hass.async_create_task(unload())
-    await asyncio.sleep(0)
     let_the_disk_answer.set()
-
-    assert await unloading
+    await waiting  # the save released the lock, so the gate returns now
     await writing
-    assert order == ["save", "unload"], (
-        "the unload finished while a store write was still on the disk, so "
-        "what follows it - a removal, or a reload - can be overtaken"
+
+
+async def test_the_unload_awaits_the_store_write_gate(hass):
+    """async_unload_entry must go through async_wait_for_store_writes.
+
+    The gate decides whether a save may START; a save already past it runs on
+    asynchronously and is still on the disk. Skipping the wait lets the
+    teardown - and the removal or reload after it - overtake that write.
+
+    Proven by watching the call, not by a timing race: mutation or not, the
+    unload has to await the gate.
+    """
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+
+    gate_awaited = False
+    real_gate = coordinator.async_wait_for_store_writes
+
+    async def watched_gate():
+        nonlocal gate_awaited
+        gate_awaited = True
+        await real_gate()
+
+    coordinator.async_wait_for_store_writes = watched_gate
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert gate_awaited, (
+        "the unload tore the entry down without awaiting the store-write gate"
     )
 
 
