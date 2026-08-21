@@ -3124,8 +3124,8 @@
   {
     "label": "rescan: the request must reach the disk, not just the api object",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "            await get_modules_store(self.hass, self.config_entry.entry_id).async_save(\n                serialize_modules(modules)\n            )\n",
-    "new": "",
+    "old": "            await data.coordinator.async_persist_rescan()",
+    "new": "            pass",
     "tests": "a_requested_rescan_outlives_the_reload_the_dialog_triggers"
   },
   {

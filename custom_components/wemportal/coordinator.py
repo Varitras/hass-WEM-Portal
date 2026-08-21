@@ -290,6 +290,30 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not persist WEM Portal module cache: %s", exc)
 
+    async def async_persist_rescan(self) -> None:
+        """Write the module cache to disk after a rescan marked it due.
+
+        The options flow's rescan sets parameters_fetched_at back to 0 on the
+        api's modules; this persists that under the same store lock and unload
+        gate the cycle's own saves use, so the reload the flow schedules
+        rebuilds the cache WITH the marks. The flow opening the store itself
+        wrote outside that lock - a removal could re-create a store it had just
+        deleted, or a later cycle save could put the old timestamps back over
+        the marks. The gate is re-checked here, right before the commit.
+
+        Unlike the cycle's own cache save the failure is NOT swallowed - a lost
+        rescan is the request going missing, not a slower next start - so this
+        neither wraps the save nor skips it on an unchanged fingerprint. The
+        snapshot is still advanced, so the next cycle does not rewrite it.
+        """
+        if not self.api.modules:
+            return
+        if not self._may_still_write_to_disk():
+            return
+        serialized = serialize_modules(self.api.modules)
+        await self._save_under_store_lock(self._modules_store, serialized)
+        self._saved_modules_snapshot = serialized
+
     async def _async_update_data(self):
         """Fetch data from the wemportal api"""
         if self.num_failed > 2:

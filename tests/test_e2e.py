@@ -4353,6 +4353,57 @@ async def test_a_requested_rescan_outlives_the_reload_the_dialog_triggers(hass):
     )
 
 
+async def test_the_rescan_save_takes_the_coordinator_store_lock(hass):
+    """The rescan opened the module store itself, outside _store_writes - the
+    lock the unload awaits. A write there could re-create a store a removal had
+    just deleted, or an older cycle save could land on top of the marks.
+    Through the coordinator it takes the lock: held, it holds the rescan back,
+    and it is the coordinator's OWN store that gets written, not a fresh handle
+    that sidesteps the lock.
+    """
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.api.modules = {
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heat pump",
+                "parameters": {"P": {}},
+                "parameters_fetched_at": 9999.0,
+            }
+        }
+    }
+
+    saved = asyncio.Event()
+
+    async def record_save(_data):
+        saved.set()
+
+    coordinator._modules_store.async_save = record_save
+
+    await coordinator._store_writes.acquire()
+    try:
+        rescan = hass.async_create_task(_open_options(hass, entry, "rescan_parameters"))
+        # The rescan should reach the store lock and block there; give it time
+        # to, and to finish early if it wrongly sidesteps the lock.
+        for _ in range(50):
+            await asyncio.sleep(0.01)
+            if rescan.done() or saved.is_set():
+                break
+        assert not saved.is_set() and not rescan.done(), (
+            "the rescan wrote / finished while _store_writes was held, so it "
+            "does not go through the lock the unload waits on"
+        )
+    finally:
+        coordinator._store_writes.release()
+        await rescan
+    assert saved.is_set(), (
+        "the rescan never wrote the coordinator's own store - it opened a "
+        "fresh handle that sidesteps the store lock"
+    )
+
+
 async def test_the_rescan_option_makes_no_portal_requests(hass):
     """Doing the reads here would put a multi-second round trip inside a
     dialog and duplicate the rate limiting the normal path already has."""

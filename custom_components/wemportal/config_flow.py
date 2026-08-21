@@ -61,8 +61,7 @@ from .expert_options import (
     duplicate_entityvalues,
     expert_client_options,
 )
-from .coordinator import forget_auth_failures, get_modules_store
-from .utils import serialize_modules
+from .coordinator import forget_auth_failures
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -410,12 +409,13 @@ class WemportalOptionsFlow(OptionsFlow):
         if marked:
             # To disk as well, not only to the api object: saving the form
             # this step returns to schedules a reload, and a reload rebuilds
-            # that object from the persisted cache. A failure here is not a
-            # slower next start like the coordinator's own save - it is the
-            # request itself going missing, so it is not swallowed.
-            await get_modules_store(self.hass, self.config_entry.entry_id).async_save(
-                serialize_modules(modules)
-            )
+            # that object from the persisted cache. Written through the
+            # coordinator so it shares the store lock the unload waits on and
+            # the same gate - opening the store here wrote outside them, where
+            # a removal could re-create it or a stale cycle save overwrite it.
+            # A failure is not a slower next start like the cycle's own save -
+            # it is the request itself going missing, so it is not swallowed.
+            await data.coordinator.async_persist_rescan()
             _LOGGER.info(
                 "Options: marked the parameter list of %d module(s) for a "
                 "re-read on the next update.",
