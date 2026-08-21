@@ -571,13 +571,14 @@ class WemPortalTransport:
             # applies to every single call site that goes through here,
             # not just the one that originally triggered it.
             self.check_cooldown()
-            # Same idea, different budget: stop a poll cycle that is out of
-            # time before spending another request on it. Inside the attempt
-            # loop on purpose, so a retry cannot carry a cycle past the
-            # deadline the first attempt was still inside of.
-            self.check_deadline()
-
+            # Courtesy pause, then the deadline - in that order. A sub-second
+            # budget must not pass a check placed ahead of the one-second
+            # sleep, only for the sleep to carry the cycle past the deadline
+            # and fire the request anyway. Both stay inside the attempt loop,
+            # so a retry cannot carry a cycle past the deadline the first
+            # attempt was still inside of.
             time.sleep(1)  # Wait 1 sec between requests to be graceful to the API.
+            self.check_deadline()
             # Merge any call-specific headers on top of the default headers,
             # instead of replacing them outright. Previously, passing e.g.
             # headers={"X-Api-Version": "2.0.0.0"} (as get_statistics() does)

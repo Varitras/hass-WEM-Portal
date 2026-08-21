@@ -2114,6 +2114,13 @@
     "tests": "a_cycle_out_of_time_makes_no_further_request"
   },
   {
+    "label": "deadline: checked before the courtesy sleep spends the budget",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            time.sleep(1)  # Wait 1 sec between requests to be graceful to the API.\n            self.check_deadline()",
+    "new": "            self.check_deadline()\n            time.sleep(1)  # Wait 1 sec between requests to be graceful to the API.",
+    "tests": "a_sub_second_budget_is_rechecked_after_the_courtesy_sleep"
+  },
+  {
     "label": "deadline: starting a scrape with no budget left",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        # coordinator abandons it half-way.\n        self.check_deadline()",

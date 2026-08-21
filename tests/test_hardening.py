@@ -2284,6 +2284,40 @@ def test_a_cycle_out_of_time_makes_no_further_request(monkeypatch):
     assert session.post_kwargs is None, "a request was sent after the deadline"
 
 
+def test_a_sub_second_budget_is_rechecked_after_the_courtesy_sleep(monkeypatch):
+    """The deadline was checked BEFORE the one-second courtesy sleep. A budget
+    under a second passed the check, the sleep carried the cycle past the
+    deadline, and the request fired anyway - a portal request of up to
+    API_REQUEST_TIMEOUT_SECONDS on a cycle already out of time. The deadline
+    has to be re-read after the sleep, right before the send.
+
+    A hand-moved clock whose sleep advances it makes this deterministic; the
+    autouse no-op sleep would leave the budget untouched and prove nothing.
+    """
+    clock = _Clock(now=1000.0)
+
+    def advancing_sleep(seconds):
+        clock.now += seconds
+
+    monkeypatch.setattr(time, "monotonic", clock)
+    monkeypatch.setattr(time, "sleep", advancing_sleep)
+
+    api = _api()
+    session = RecordingSession()
+    api.session = session
+    api._deadline = clock.now + 0.5  # half a second of budget left
+
+    with pytest.raises(exceptions.PollDeadlineExceeded, match="budget"):
+        api.make_api_call(
+            url="https://example.invalid/data", data={"x": "1"}, do_retry=False
+        )
+
+    assert session.post_kwargs is None, (
+        "the one-second sleep spent a sub-second budget, then the request "
+        "was sent past the deadline"
+    )
+
+
 def test_a_login_without_budget_left_sends_nothing(monkeypatch):
     """The login is a request too, and the one most worth not sending late.
 
