@@ -201,6 +201,41 @@ class Reading:
         return {"value": self.value, **compact}
 
 
+def date_companions(
+    rows: dict[str, Any],
+    module_index: int | None,
+    module_type: int | None,
+    exclude_key: str,
+) -> dict[str, float]:
+    """The date parameters of one module in `rows`, at their current value,
+    excluding `exclude_key`.
+
+    These are the other dates a single-date write carries along: a holiday is a
+    range the portal will not take a half of (see WemPortalDate). `rows` is one
+    device's readings keyed by their data key - read by the caller from the
+    api's own rows under the api lock, not the coordinator's published snapshot,
+    which lags a rebind behind after a transport reset and would repeat a stale
+    value that undid a concurrent write.
+    """
+    companions: dict[str, float] = {}
+    for key, row in rows.items():
+        # Some rows are plain counters, not parameters - skip anything that is
+        # not one, and the row being written itself.
+        if not isinstance(row, Reading) or key == exclude_key:
+            continue
+        if row.platform != "date":
+            continue
+        if (row.module_index, row.module_type) != (module_index, module_type):
+            continue
+        try:
+            companions[row.parameter_id or key] = float(row.value)
+        except (TypeError, ValueError):
+            # No readable value to repeat; a guess would set a date nobody
+            # asked for.
+            continue
+    return companions
+
+
 @dataclass
 class WemPortalData:
     """Runtime state of one loaded config entry."""

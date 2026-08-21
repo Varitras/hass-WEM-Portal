@@ -1275,24 +1275,31 @@
   },
   {
     "label": "pair: taking a companion from another module must be noticed",
-    "path": "custom_components/wemportal/date.py",
-    "old": "            if (row.module_index, row.module_type) != (\n                self._module_index,\n                self._module_type,\n            ):\n                continue",
-    "new": "            if False:\n                continue",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        if (row.module_index, row.module_type) != (module_index, module_type):\n            continue",
+    "new": "        if False:\n            continue",
     "tests": "a_date_belonging_to_another_module_is_not_dragged_in"
   },
   {
     "label": "pair: taking a non-date along must be noticed",
-    "path": "custom_components/wemportal/date.py",
-    "old": "            if row.platform != \"date\":\n                continue",
-    "new": "            if False:\n                continue",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        if row.platform != \"date\":\n            continue",
+    "new": "        if False:\n            continue",
     "tests": "only_dates_are_taken_along"
   },
   {
     "label": "pair: inventing a value for an unreadable companion must be noticed",
-    "path": "custom_components/wemportal/date.py",
-    "old": "                companions[row.parameter_id or key] = float(row.value)\n            except (TypeError, ValueError):",
-    "new": "                companions[row.parameter_id or key] = float(row.value or 0)\n            except (TypeError, ValueError):",
+    "path": "custom_components/wemportal/models.py",
+    "old": "            companions[row.parameter_id or key] = float(row.value)\n        except (TypeError, ValueError):",
+    "new": "            companions[row.parameter_id or key] = float(row.value or 0)\n        except (TypeError, ValueError):",
     "tests": "a_companion_without_a_readable_value_is_left_out"
+  },
+  {
+    "label": "pair: a companion read from the lagging published snapshot",
+    "path": "custom_components/wemportal/date.py",
+    "old": "            self.coordinator.api.data.get(self._device_id, {}),",
+    "new": "            self.coordinator.data.get(self._device_id, {}),",
+    "tests": "companions_come_from_the_api_rows_not_the_lagging_snapshot"
   },
   {
     "label": "pair: writing the companion over the new value must be noticed",

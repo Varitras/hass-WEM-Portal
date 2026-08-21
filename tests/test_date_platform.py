@@ -392,6 +392,40 @@ async def test_only_dates_are_taken_along():
     assert seen["together_with"] == {}
 
 
+async def test_companions_come_from_the_api_rows_not_the_lagging_snapshot():
+    """The companions are read once the write holds the api lock, so they have
+    to come from the rows that lock protects - api.data - not the coordinator's
+    published snapshot. After a transport reset the poll rebinds api.data to a
+    fresh dict and the coordinator publishes it a step later; a companion read
+    from the lagging snapshot sent a stale value that undid a holiday date a
+    concurrent write had just stored.
+    """
+    entity, data = _entity()
+    _with_companion(data)  # api.data holds the current companion (END_EPOCH)
+    # The coordinator's published snapshot lags with an OLDER companion value.
+    entity.coordinator.data = {
+        "1234": {
+            "Heat pump-U_Beginn": data["1234"]["Heat pump-U_Beginn"],
+            "Heat pump-U_Ende": Reading(
+                friendly_name="Holiday end",
+                parameter_id="U_Ende",
+                value=END_EPOCH - 86400,
+                unit=None,
+                platform="date",
+                module_index=0,
+                module_type=1,
+            ),
+        }
+    }
+    seen = _recorder(entity)
+
+    await entity.async_set_value(date(2026, 8, 4))
+
+    assert seen["together_with"] == {"U_Ende": END_EPOCH}, (
+        f"the companion was read from the lagging snapshot: {seen['together_with']}"
+    )
+
+
 def _wired(entity):
     """Let the write reach the real write path rather than a recorder.
 

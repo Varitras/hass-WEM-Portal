@@ -23,7 +23,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .entity import async_add_readings_as_they_appear, WemPortalEntity
-from .models import Reading
+from .models import date_companions
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,32 +97,17 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         setpoint on the same account and the same endpoint is accepted. So the
         write carries the module's other dates along, unchanged.
 
-        Found through the coordinator rather than by naming the two parameters
-        literally: their ids are the portal's, and a rule that reads "the date
-        parameters of this module" does not have to be revisited when an
-        installation calls them something else.
+        Read from the api's own rows, under the api lock this write runs
+        beneath (see change_value): the coordinator's published snapshot lags a
+        rebind behind after a transport reset, and reading a companion off it
+        there sent a stale value that undid a concurrent write.
         """
-        companions = {}
-        device = self.coordinator.data.get(self._device_id, {})
-        for key, row in device.items():
-            # Some rows are plain counters, not parameters - skip anything
-            # that is not one, rather than assuming the shape.
-            if not isinstance(row, Reading) or key == self._data_key:
-                continue
-            if row.platform != "date":
-                continue
-            if (row.module_index, row.module_type) != (
-                self._module_index,
-                self._module_type,
-            ):
-                continue
-            try:
-                companions[row.parameter_id or key] = float(row.value)
-            except (TypeError, ValueError):
-                # No readable value to repeat. Sending a guess would set a
-                # date on the heating system that nobody asked for.
-                continue
-        return companions
+        return date_companions(
+            self.coordinator.api.data.get(self._device_id, {}),
+            self._module_index,
+            self._module_type,
+            self._data_key,
+        )
 
     async def async_set_value(self, value: date) -> None:
         """Write a new day to the portal, then ask what it kept.
