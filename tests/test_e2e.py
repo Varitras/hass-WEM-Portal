@@ -2655,6 +2655,61 @@ async def test_a_poll_skips_when_another_expert_operation_holds_the_lock(
     lock.release()
 
 
+async def test_a_cancelled_service_write_keeps_the_lock_until_the_worker_ends(
+    hass, monkeypatch
+):
+    """The service took the account lock on the event loop and released it in
+    the awaiting coroutine's finally. Cancel that await - a reload, an unload,
+    or shutdown cancelling the automation that called the action - and the
+    finally freed the lock while the executor thread was still driving the
+    portal, so the next expert operation could open a second session beside
+    it. The worker must own the lock, the way the entity write and the
+    auto-poll already do, so a cancellation cannot free it early.
+    """
+    entry = await _setup(hass, _entry(hass, _expert_options()))
+    lock = entry.runtime_data.expert.lock
+
+    in_write = threading.Event()
+    release = threading.Event()
+
+    def blocking_write(self, entityvalue, value, **_kwargs):
+        in_write.set()
+        release.wait(timeout=5)
+        return expert_writer.ExpertParameterState(value, [10.0, 20.0, 30.0], {})
+
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "write_parameter", blocking_write
+    )
+
+    task = asyncio.create_task(
+        hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A, "value": 30},
+            blocking=True,
+        )
+    )
+    # Let the worker reach the portal write, where it holds the lock.
+    for _ in range(500):
+        if in_write.is_set():
+            break
+        await asyncio.sleep(0.01)
+    assert in_write.is_set(), "the worker never reached the portal write"
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    try:
+        assert not lock.acquire(blocking=False), (
+            "the account lock was freed on cancellation while the worker "
+            "thread was still driving the portal"
+        )
+    finally:
+        release.set()  # let the worker finish and release the lock itself
+        await hass.async_block_till_done()
+
+
 async def _submit_options(hass, entry, changes, omit=()):
     """Submit the configure form with `changes` applied to what is stored.
 

@@ -458,31 +458,45 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
             if reason is not None:
                 raise ExpertOperationAborted(reason)
 
+        from .expert_controller import ExpertBusy
+
         def _do_write():
             # Own short-lived session per write; honors the shared 403
             # cooldown (check) and ENGAGES it on a 403 (activate).
             from .expert_options import expert_client_options
 
             _raise_if_unloaded()
-            client = expert_client(
-                target_entry.data.get(CONF_USERNAME),
-                target_entry.data.get(CONF_PASSWORD),
-                cooldown_check=target_api.check_expert_cooldown,
-                cooldown_activate=target_api.activate_expert_cooldown,
-                cookie_jar=target_api.expert_cookies,
-                abort_check=_raise_if_unloaded,
-                **expert_client_options(target_entry.options),
-            )
-            return client.write_parameter(entityvalue, value)
+            # Take AND release the shared per-account lock here, in the worker
+            # thread - not on the event loop around the await. Only one expert
+            # portal operation per account at a time (shared with the entity
+            # writes and the auto-poll), so concurrent calls don't collide on
+            # the same parameter or open parallel portal sessions. Held on the
+            # loop and released in the awaiting coroutine's finally, a
+            # cancellation - a reload, an unload, or shutdown cancelling the
+            # calling automation - freed it while this thread was still driving
+            # the portal, letting the next operation open a second session
+            # beside it. Owned here, it is held for exactly as long as the work
+            # is, the way the entity write and the auto-poll already own it.
+            if lock is not None and not lock.acquire(blocking=False):
+                raise ExpertBusy(
+                    "another expert operation is already in progress for this "
+                    "account; try again shortly."
+                )
+            try:
+                client = expert_client(
+                    target_entry.data.get(CONF_USERNAME),
+                    target_entry.data.get(CONF_PASSWORD),
+                    cooldown_check=target_api.check_expert_cooldown,
+                    cooldown_activate=target_api.activate_expert_cooldown,
+                    cookie_jar=target_api.expert_cookies,
+                    abort_check=_raise_if_unloaded,
+                    **expert_client_options(target_entry.options),
+                )
+                return client.write_parameter(entityvalue, value)
+            finally:
+                if lock is not None:
+                    lock.release()
 
-        # Only one expert portal operation per account at a time (shared with
-        # the entity writes and the auto-poll), so concurrent calls don't
-        # collide on the same parameter or open parallel portal sessions.
-        if lock is not None and not lock.acquire(blocking=False):
-            raise HomeAssistantError(
-                "WEM Portal expert write: another expert operation is already "
-                "in progress for this account; try again shortly."
-            )
         # Run synchronously and RAISE on failure so an automation calling this
         # action can tell whether the write actually succeeded (HA action-
         # exception guidance), instead of the old fire-and-forget that always
@@ -491,6 +505,11 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
         # action. Only a SHORTENED entityvalue appears in any user-facing text.
         try:
             state = await hass.async_add_executor_job(_do_write)
+        except ExpertBusy as exc:
+            # The worker refused because another expert operation holds the
+            # account lock. Surface the same user-facing error the event loop
+            # used to raise, not the generic "failed" of the catch-all below.
+            raise HomeAssistantError(f"WEM Portal expert write: {exc}") from exc
         except ExpertOperationAborted as exc:
             # The configuration went away mid-write. Nothing reached the
             # portal - and the caller is still waiting on this call, so it
@@ -507,9 +526,6 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
             raise HomeAssistantError(
                 f"WEM Portal expert write for {ev_short} to {value} failed: {exc}"
             ) from exc
-        finally:
-            if lock is not None:
-                lock.release()
         # The write verified itself against the portal; that answer is exactly
         # what the entity for this id should be showing.
         data.expert.apply_verified_write(entityvalue, state)

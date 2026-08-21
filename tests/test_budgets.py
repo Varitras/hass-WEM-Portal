@@ -67,7 +67,13 @@ COMPLEXITY_BUDGETS = {
     # or cleared, each its own guard, plus the scrape freshness the two sources
     # in `both` mode need weighed together.
     "mapper.py::_clear_module_readings": 16,
-    "__init__.py::_async_register_expert_service": 22,
+    # The service write took the account lock on the event loop and released it
+    # in the awaiting coroutine's finally; owning it in the worker thread - so a
+    # cancellation cannot free it while the thread still drives the portal, like
+    # the three sibling expert paths already do - added the acquire/release
+    # guard and a busy handler. Extracting it would be the pass-through helper
+    # this file's header warns against.
+    "__init__.py::_async_register_expert_service": 26,
     "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,
     # 19 before the AuthError shield in front of its catch-all, which is

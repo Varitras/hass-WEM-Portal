@@ -3514,6 +3514,13 @@
     "tests": "expert_lock_belongs_to_the_worker_not_to_its_awaiter"
   },
   {
+    "label": "expert service: lock released by the awaiter instead of the worker",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if lock is not None and not lock.acquire(blocking=False):",
+    "new": "            if False:",
+    "tests": "a_cancelled_service_write_keeps_the_lock_until_the_worker_ends"
+  },
+  {
     "label": "storage: the save no longer holding the lock the unload waits on",
     "path": "custom_components/wemportal/coordinator.py",
     "old": "        async with self._store_writes:\n            await store.async_save(data)",
