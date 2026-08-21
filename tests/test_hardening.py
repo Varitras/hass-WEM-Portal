@@ -7114,67 +7114,49 @@ def test_a_write_publishes_every_value_it_sent():
     )
 
 
-def test_the_values_carried_along_see_the_write_that_held_the_lock():
-    """Two holiday writes racing, driven by two real threads.
+def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
+    """A holiday write carries the module's other dates: resolved from a
+    callable and published into the rows, both UNDER the lock, so a writer
+    queued on it reads what this write set, not the values from before it.
 
-    A date write carries the module's other dates unchanged, read from the
-    coordinator row - so the row has to be current by the time the next
-    writer reads it. Both halves of that are timing: the read happens once
-    this write owns the api lock, and the row is brought up to date after the
-    portal answered.
-
-    Written with a barrier and no stand-ins, because the version this
-    replaced arranged the update itself - it hung it off `_acquire_api_lock`,
-    which is a moment the production code never updates anything at. It
-    therefore passed while the row was in fact written after the lock was
-    RELEASED, which is exactly the gap that lets the second write send the
-    value from before the first one and undo it.
+    Asserted on the lock's own state at the moment of publish, not on a race
+    between two threads: the version this replaced arranged that race with a
+    sleep the autouse fixture turns into a no-op, so it proved neither that the
+    second writer waited nor that the row was current when it read it. Held
+    when the publish runs, it is in the rows before the next writer gets in;
+    released first, that writer reads the pre-write row and undoes this one.
     """
-    import threading
-
     api = _api_after_a_poll()
-    row = Reading(value=1.0, parameter_id="HolidayBegin", module_index=0, module_type=1)
-    api.data = {"1234": {"Heat pump-HolidayBegin": row}}
+    api.data = {
+        "1234": {
+            "Heat pump-HolidayEnd": Reading(
+                value=1.0, parameter_id="HolidayEnd", module_index=0, module_type=1
+            )
+        }
+    }
+    seen = {}
+    api._change_value = lambda *_a, **kwargs: seen.__setitem__(
+        "sent", kwargs.get("together_with")
+    )
+    locked_at_publish = {}
+    real_publish = api._publish_accepted_values
 
-    first_is_holding_the_lock = threading.Event()
-    carried = {}
+    def traced_publish(*args, **kwargs):
+        locked_at_publish["held"] = api._api_lock.locked()
+        return real_publish(*args, **kwargs)
 
-    def portal_write(device_id, parameter_id, *_args, **kwargs):
-        if parameter_id == "HolidayBegin":
-            # Slow, like the real thing: this is the window the second write
-            # spends queued on the lock.
-            first_is_holding_the_lock.set()
-            time.sleep(0.05)
-        else:
-            carried.update(kwargs.get("together_with") or {})
+    api._publish_accepted_values = traced_publish
 
-    api._change_value = portal_write
+    api.change_value(
+        "1234", "HolidayBegin", 0, 1, 2.0, together_with=lambda: {"HolidayEnd": 3.0}
+    )
 
-    def write_begin():
-        # Nothing handed in: publishing what the portal took belongs to the
-        # write itself, which is what makes it happen under the lock.
-        api.change_value("1234", "HolidayBegin", 0, 1, 2.0)
-
-    def write_end():
-        first_is_holding_the_lock.wait(timeout=5)
-        api.change_value(
-            "1234",
-            "HolidayEnd",
-            0,
-            1,
-            5.0,
-            together_with=lambda: {"HolidayBegin": row.value},
-        )
-
-    threads = [threading.Thread(target=write_begin), threading.Thread(target=write_end)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=10)
-
-    assert carried == {"HolidayBegin": 2.0}, (
-        f"the second write carried {carried} - the value from before the "
-        "first one, which asks the heating system to undo it"
+    assert seen["sent"] == {"HolidayEnd": 3.0}, (
+        f"the callable companion set was not resolved before the write: {seen['sent']}"
+    )
+    assert locked_at_publish.get("held"), (
+        "the values were published after the lock was released, so a writer "
+        "queued on it reads the pre-write rows and undoes this one"
     )
 
 

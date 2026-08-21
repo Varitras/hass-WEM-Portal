@@ -1271,7 +1271,7 @@
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            if callable(together_with):\n                together_with = together_with()",
     "new": "            pass",
-    "tests": "values_carried_along_see_the_write_that_held_the_lock"
+    "tests": "a_write_resolves_and_publishes_its_companions_under_the_lock"
   },
   {
     "label": "pair: taking a companion from another module must be noticed",
@@ -1320,7 +1320,7 @@
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            self._publish_accepted_values(\n                device_id,\n                module_index,\n                module_type,\n                {parameter_id: numeric_value, **(together_with or {})},\n            )",
     "new": "            pass",
-    "tests": "values_carried_along_see_the_write_that_held_the_lock or write_publishes_every_value_it_sent"
+    "tests": "a_write_resolves_and_publishes_its_companions_under_the_lock or write_publishes_every_value_it_sent"
   },
   {
     "label": "write-back: recording a value the portal refused must be noticed",
