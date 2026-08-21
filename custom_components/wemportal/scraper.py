@@ -1,17 +1,16 @@
 """Web scraping scraper for WEM Portal using curl_cffi."""
 
+from typing import Final
 import logging
 import time
 
 from curl_cffi import requests
 from lxml import html
+from lxml.etree import LxmlError
 
 from .const import (
-    _LOGGER,
     GITHUB_PROJECT_URL,
-    PERCENTAGE_KEYWORDS,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
-    TEMPERATURE_KEYWORDS,
     WEB_LOGGED_IN_MARKER,
     WEB_LOGIN_FORM_MARKER,
     WEB_LOGIN_URL,
@@ -28,12 +27,24 @@ from .exceptions import (
     PortalMaintenanceError,
     ServerError,
 )
+from .models import Reading, account_state
 from .utils import (
-    maintenance_notice,
-    report_unexpected_maintenance_marker,
+    parse_portal_number,
     sanitize_value,
     unit_to_icon,
 )
+from .web_protocol import maintenance_notice, report_unexpected_maintenance_marker
+
+_LOGGER = logging.getLogger(__name__)
+
+PERCENTAGE_KEYWORDS: Final = [
+    "leistungsanforderung",
+    "drehzahl",
+    "power_requirement",
+    "speed",
+]
+
+TEMPERATURE_KEYWORDS: Final = ["temperatur", "temperature", "temp"]
 
 # Unit -> icon mapping for scraped sensors. Defined once at module level
 # instead of being re-created for every single table row during parsing
@@ -85,10 +96,10 @@ def _reading_and_unit(raw_value: str):
     """
     parts = raw_value.split(" ", 1)
     unit = parts[1] if len(parts) >= 2 else ""
-    try:
-        return float(".".join(parts[0].split(","))), unit
-    except ValueError:
+    number = parse_portal_number(parts[0])
+    if number is None:
         return raw_value, None
+    return number, unit
 
 
 def _unit_from_name(name: str) -> str:
@@ -101,14 +112,7 @@ def _unit_from_name(name: str) -> str:
     return ""
 
 
-# Keys already reported as colliding, so a portal that lists two identical
-# rows does not say so on every single cycle. Module level for the same
-# reason as utils._MARKER_REPORTED: the scraper object outlives a cycle but
-# not a reload, and this is about the page, not about one object's lifetime.
-_DUPLICATE_ROWS: set[str] = set()
-
-
-def _report_duplicate_row(key, panel, row_name) -> None:
+def _report_duplicate_row(key, panel, row_name, reported) -> None:
     """Say that one reading has just overwritten another.
 
     The parser assigns into the output by key, which overwrites without a
@@ -127,9 +131,9 @@ def _report_duplicate_row(key, panel, row_name) -> None:
     observed to have. A real log will say which of the two it is, and that is
     what a fix should be built on.
     """
-    if key in _DUPLICATE_ROWS:
+    if key in reported:
         return
-    _DUPLICATE_ROWS.add(key)
+    reported.add(key)
     _LOGGER.warning(
         "Two rows of the WEM Portal expert page produce the same sensor (%s): "
         "panel %r, row %r. The later one wins and the earlier reading is lost, "
@@ -149,6 +153,9 @@ class WemPortalScraper:
     def __init__(self, username, password, cookie=None, budget=None):
         self.username = username
         self.password = password
+        # Once-per-subject warning memory, surviving the reload that rebuilds
+        # this object. See models.AccountState.
+        self._account_state = account_state(username)
         self.cookie = cookie if cookie else {}
         self.session = requests.Session(impersonate="chrome110")
         # Optional callable returning the seconds left of the poll cycle this
@@ -248,7 +255,9 @@ class WemPortalScraper:
                 raise PortalMaintenanceError(notice)
             # Not acted on here - but worth knowing about, because it is the
             # open question that keeps the check from being universal.
-            report_unexpected_maintenance_marker(notice, what)
+            report_unexpected_maintenance_marker(
+                notice, what, self._account_state.maintenance_markers_reported
+            )
 
     def _load_expert_page(self):
         """GET the main portal page and POST to select the 'Expert' tab.
@@ -298,7 +307,7 @@ class WemPortalScraper:
             "__EVENTTARGET": "ctl00$SubMenuControl1$subMenu",
             "__EVENTARGUMENT": "3",
             "ctl00_rdMain_ClientState": '{"Top":0,"Left":0,"DockZoneID":"ctl00_RDZParent","Collapsed":false,"Pinned":false,"Resizable":false,"Closed":false,"Width":"99%","Height":null,"ExpandedHeight":0,"Index":0,"IsDragged":false}',
-            "ctl00_SubMenuControl1_subMenu_ClientState": '{"logEntries":[{"Type":3},{"Type":1,"Index":"0","Data":{"text":"Overview","value":"110"}},{"Type":1,"Index":"1","Data":{"text":"System:+dom","value":""}},{"Type":1,"Index":"2","Data":{"text":"User","value":"222"}},{"Type":1,"Index":"3","Data":{"text":"Expert","value":"223","selected":true}},{"Type":1,"Index":"4","Data":{"text":"Statistics","value":"225"}},{"Type":1,"Index":"5","Data":{"text":"Data+Loggers","value":"224"}}],"selectedItemIndex":"3"} ',
+            "ctl00_SubMenuControl1_subMenu_ClientState": '{"logEntries":[{"Type":3},{"Type":1,"Index":"0","Data":{"text":"Overview","value":"110"}},{"Type":1,"Index":"1","Data":{"text":"","value":""}},{"Type":1,"Index":"2","Data":{"text":"User","value":"222"}},{"Type":1,"Index":"3","Data":{"text":"Expert","value":"223","selected":true}},{"Type":1,"Index":"4","Data":{"text":"Statistics","value":"225"}},{"Type":1,"Index":"5","Data":{"text":"Data+Loggers","value":"224"}}],"selectedItemIndex":"3"} ',
         }
 
         # 4. POST to select 'Expert' tab
@@ -594,15 +603,14 @@ class WemPortalScraper:
         return (
             name,
             raw_name,
-            {
-                "value": value,
-                "name": name,
-                "icon": unit_to_icon(unit),
-                "unit": unit,
-                "platform": "sensor",
-                "friendlyName": f"{heading} - {raw_name.lstrip('- ')}",
-                "ParameterID": name,
-            },
+            Reading(
+                value=value,
+                icon=unit_to_icon(unit),
+                unit=unit,
+                platform="sensor",
+                friendly_name=f"{heading} - {raw_name.lstrip('- ')}",
+                parameter_id=name,
+            ),
         )
 
     def _panel_readings(self, heading, panel_key, rows) -> list:
@@ -634,9 +642,26 @@ class WemPortalScraper:
         """
         _LOGGER.debug("Parsing expert page HTML (%s)", source)
         output = {}
-        tree = html.fromstring(html_content)
+        try:
+            panels = html.fromstring(html_content).xpath(PANEL_XPATH)
+        except (LxmlError, ValueError):
+            # Inside the promise `required` makes, not above it: an answer
+            # that is not HTML at all raised straight out of here, past the
+            # reuse path's own handling one frame up - so the full login that
+            # exists for "this session did not get us there" never ran. A page
+            # that parses to nothing and one that does not parse mean the same
+            # thing to that caller, and the branch below already says what
+            # each of the two callers does about it.
+            #
+            # ValueError beside the lxml one, because the answers get here as
+            # TEXT: an empty body raises ParserError, but a body carrying an
+            # encoding declaration is refused as a plain ValueError - and
+            # since everything else parses somehow, those two ARE the case
+            # this exists for. Caught by the library's own name alone, it
+            # missed the answer that announces it is not a page.
+            panels = []
 
-        for div in tree.xpath(PANEL_XPATH):
+        for div in panels:
             panel = self._panel_rows(div)
             if panel is None:
                 continue
@@ -649,7 +674,12 @@ class WemPortalScraper:
                 heading, panel_key, rows
             ):
                 if name in output:
-                    _report_duplicate_row(name, heading, raw_name)
+                    _report_duplicate_row(
+                        name,
+                        heading,
+                        raw_name,
+                        self._account_state.duplicate_rows_reported,
+                    )
                 output[name] = sensor
 
         # A page that parsed to nothing is not a successful scrape. The XPaths

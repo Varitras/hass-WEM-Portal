@@ -168,7 +168,10 @@ every retry during it makes it last longer.
 
 The integration is built around that:
 
-- A `403` from the portal pauses **all** outbound requests for 15 minutes.
+- A `403` seen by the **normal polling** pauses all outbound requests for 15
+  minutes. One on an expert request pauses only that feature - it is not
+  proof of an IP-wide block (see
+  [Expert write access (web)](#expert-write-access-web)).
 - The setup and re-authentication dialogs refuse to send anything while that
   pause is active, and say so — deleting and re-adding the integration to "fix"
   a block is the one thing that reliably prolongs it.
@@ -181,7 +184,9 @@ poll with an error now and then and the next one succeeds; at a 30-minute
 interval, going unavailable for that would cost half an hour of every graph.
 The second consecutive failure does show as unavailable. A device that stops
 answering while others still respond is handled separately: its readings are
-shown as unknown after half an hour, so nothing old is presented as current.
+shown as unknown after half an hour, or after two API intervals if those are
+longer, so nothing old is presented as current and a single missed cycle is
+still survivable at any interval.
 
 **What this means for your settings:** the intervals below are floors, not
 recommendations. Halving an interval doubles the requests. If you run several
@@ -374,6 +379,14 @@ Two attributes come with each entity, both read from the same dialog:
 |---|---|
 | `portal_value` | The portal's own wording for the current selection |
 | `factory_default` | The value the parameter left the factory with |
+
+After a Home Assistant restart the entity restores its last **value**, but not
+its range: bounds and step return to the permissive placeholders — the field
+is a typing box again — until the parameter has been read or written once. A
+stored range can be stale (a heating parameter's limits may depend on other
+settings), and Home Assistant checks the published range before this
+integration is asked, so a stale range could block exactly the write that
+would fetch the current one.
 
 `factory_default` is useful for spotting settings that have been changed. Home
 Assistant cannot colour a number that differs from its default — a number

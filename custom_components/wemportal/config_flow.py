@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Final
 import logging
 import re
 
@@ -26,8 +27,8 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from .models import account_unique_id
 from .const import (
-    AVAILABLE_MODES,
     CONF_EXPERT_AUTO_POLL,
     CONF_EXPERT_ENABLE_MODULE_NAV,
     CONF_EXPERT_ENABLE_SECURITY_CODE,
@@ -42,6 +43,8 @@ from .const import (
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
     DEFAULT_CONF_LANGUAGE_VALUE,
+    DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
+    DEFAULT_CONF_SCAN_INTERVAL_VALUE,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     DEFAULT_MODE,
     DOMAIN,
@@ -54,13 +57,16 @@ from .const import (
 from .exceptions import AuthError, ExpertOperationAborted, ForbiddenError
 from .expert_options import (
     discovery_option_list,
+    canonical_entityvalue,
     duplicate_entityvalues,
     expert_client_options,
 )
-from .utils import close_api_sessions
+from .coordinator import forget_auth_failures
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
+
+AVAILABLE_MODES: Final = ["api", "web", "both"]
 
 # Password uses a proper password-type selector so the browser masks the
 # input (a plain `str` field renders as clear text - shoulder-surfing /
@@ -81,15 +87,8 @@ DATA_SCHEMA = vol.Schema(
 )
 
 
-def account_unique_id(username) -> str:
-    """Normalised account id used as the config entry's unique_id.
-
-    Portal usernames are email addresses, so casing and stray whitespace are
-    not meaningful - but a raw comparison treated "Max@example.org" and
-    "max@example.org" as two accounts, which meant two entries polling the
-    same installation twice.
-    """
-    return (username or "").strip().lower()
+# account_unique_id moved to models.py: it is account vocabulary, and the
+# per-account state registry keys on the same normalisation.
 
 
 async def validate_input(hass: HomeAssistant, data):
@@ -128,7 +127,7 @@ async def validate_input(hass: HomeAssistant, data):
     finally:
         # Close the throwaway validation session(s); config-flow validation
         # otherwise left an open connection behind on every setup attempt.
-        await hass.async_add_executor_job(close_api_sessions, api)
+        await hass.async_add_executor_job(api.close_transport)
 
     return data
 
@@ -196,8 +195,12 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     title=info[CONF_USERNAME],
                     data=user_input,
                     options={
-                        CONF_SCAN_INTERVAL: 1800,
-                        CONF_SCAN_INTERVAL_API: 300,
+                        # The constants, not the numbers: both are imported
+                        # in this file and used by the options flow below, so
+                        # a new entry and the form that edits it disagreed the
+                        # moment either default moved.
+                        CONF_SCAN_INTERVAL: DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+                        CONF_SCAN_INTERVAL_API: DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
                         CONF_LANGUAGE: user_input.get(
                             CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE
                         ),
@@ -299,6 +302,15 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 new_data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
                 failure = await self._credential_error(entry, new_data)
                 if failure is None:
+                    # The portal just accepted these credentials, so the
+                    # failures that led here are answered. Nothing else does
+                    # it: the count is dropped on unload, and an entry whose
+                    # setup failed - which is how most reauth prompts arise -
+                    # is not loaded, so its reload unloads nothing. Left
+                    # standing, the next login page the portal hands out was
+                    # the fourth in a row and asked for the same password
+                    # again.
+                    forget_auth_failures(entry)
                     # Reloads even when the entry is unchanged, which is the
                     # whole point here: someone re-entering the SAME password
                     # is telling us the portal rejected a login it should
@@ -395,6 +407,15 @@ class WemportalOptionsFlow(OptionsFlow):
                     marked += 1
 
         if marked:
+            # To disk as well, not only to the api object: saving the form
+            # this step returns to schedules a reload, and a reload rebuilds
+            # that object from the persisted cache. Written through the
+            # coordinator so it shares the store lock the unload waits on and
+            # the same gate - opening the store here wrote outside them, where
+            # a removal could re-create it or a stale cycle save overwrite it.
+            # A failure is not a slower next start like the cycle's own save -
+            # it is the request itself going missing, so it is not swallowed.
+            await data.coordinator.async_persist_rescan()
             _LOGGER.info(
                 "Options: marked the parameter list of %d module(s) for a "
                 "re-read on the next update.",
@@ -530,9 +551,11 @@ class WemportalOptionsFlow(OptionsFlow):
         duplicates = duplicate_entityvalues(slot_ids)
         if duplicates:
             for slot in range(1, EXPERT_SLOT_COUNT + 1):
-                if (
-                    user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot) or ""
-                ).strip() in duplicates:
+                # Canonical on BOTH sides: the set is built that way, so a raw
+                # comparison marked a slot only where the spellings happened to
+                # match, and two that both differ from it went through as new.
+                slot_id = user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)
+                if canonical_entityvalue(slot_id) in duplicates:
                     errors[CONF_EXPERT_SLOT_ID_TEMPLATE % slot] = (
                         "duplicate_entityvalue"
                     )
@@ -595,14 +618,18 @@ class WemportalOptionsFlow(OptionsFlow):
                 # and reliably trigger the IP-wide 403 rate limit.
                 vol.Optional(
                     CONF_SCAN_INTERVAL,
-                    default=prefill(CONF_SCAN_INTERVAL, 1800),
+                    default=prefill(
+                        CONF_SCAN_INTERVAL, DEFAULT_CONF_SCAN_INTERVAL_VALUE
+                    ),
                 ): vol.All(
                     cv.positive_int,
                     vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
                 ),
                 vol.Optional(
                     CONF_SCAN_INTERVAL_API,
-                    default=prefill(CONF_SCAN_INTERVAL_API, 300),
+                    default=prefill(
+                        CONF_SCAN_INTERVAL_API, DEFAULT_CONF_SCAN_INTERVAL_API_VALUE
+                    ),
                 ): vol.All(
                     cv.positive_int,
                     vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
@@ -612,7 +639,7 @@ class WemportalOptionsFlow(OptionsFlow):
                 # unsupported language code.
                 vol.Optional(
                     CONF_LANGUAGE,
-                    default=prefill(CONF_LANGUAGE, "en"),
+                    default=prefill(CONF_LANGUAGE, DEFAULT_CONF_LANGUAGE_VALUE),
                 ): vol.In(["en", "de"]),
                 vol.Optional(
                     CONF_MODE, default=prefill(CONF_MODE, DEFAULT_MODE)

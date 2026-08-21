@@ -23,6 +23,51 @@ from __future__ import annotations
 from typing import Any, NamedTuple
 
 
+def as_answer_dict(payload: Any) -> dict[str, Any] | None:
+    """The payload as the object every API answer is - or None.
+
+    `null`, a bare list and a bare string are all valid JSON bodies, and
+    every one of them used to travel until some `.get` or `[key]` died far
+    from the request that earned it. None hands the site one question to
+    answer instead: what does "the portal answered outside its contract"
+    mean here.
+    """
+    return payload if isinstance(payload, dict) else None
+
+
+def described_parameters(payload: Any) -> list[dict[str, Any]] | None:
+    """The parameter descriptions of a module answer, or None.
+
+    None means the answer carries no readable list at all - the caller books
+    WHY. Rows that are not objects or carry no ParameterID are dropped: one
+    malformed row must not cost the module, same philosophy as the mapper.
+    An empty list is returned as such - "this module has nothing" is an
+    answer, and the caller treats it differently from an unreadable one.
+    """
+    answer = as_answer_dict(payload)
+    if answer is None:
+        return None
+    parameters = answer.get("Parameters")
+    if not isinstance(parameters, list):
+        return None
+    return [parameter for parameter in parameters if _has_a_usable_id(parameter)]
+
+
+def _has_a_usable_id(parameter: Any) -> bool:
+    """Whether this row names a parameter the rest of the code can use.
+
+    The id becomes a DICT KEY one layer down, and that is what makes the
+    type part of the contract rather than a nicety: `null` caches an entry
+    nobody can ask for again, and a list or an object raises TypeError at
+    the moment of use - taking the remaining discovery of that module with
+    it. Checking only that the key is present let all three through.
+    """
+    if not isinstance(parameter, dict):
+        return False
+    parameter_id = parameter.get("ParameterID")
+    return isinstance(parameter_id, str) and bool(parameter_id.strip())
+
+
 def status_is_success(status: Any) -> bool:
     """Whether the portal's `Status` field means "this worked".
 

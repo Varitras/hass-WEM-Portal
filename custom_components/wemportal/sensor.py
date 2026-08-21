@@ -2,18 +2,23 @@
 Sensor platform for wemportal component
 """
 
+import logging
+
 import json
 import re
+from typing import Any
 
 from homeassistant.components.sensor import RestoreSensor
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import MAX_LENGTH_STATE_STATE, EntityCategory
+from homeassistant.const import CONF_USERNAME, MAX_LENGTH_STATE_STATE, EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import _LOGGER, GITHUB_PROJECT_URL
-from .entity import WemPortalEntity
+from .const import GITHUB_PROJECT_URL
+from .entity import async_add_readings_as_they_appear, WemPortalEntity
+from .models import Reading, account_state
+from .wemportalapi import DEVICE_STATUS_ROWS
 from .utils import (
     build_device_info,
     device_is_reachable,
@@ -23,6 +28,8 @@ from .utils import (
     unit_to_state_class,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -31,24 +38,9 @@ async def async_setup_entry(
 ) -> None:
     """Sensor entry setup."""
 
-    coordinator = config_entry.runtime_data.coordinator
-    entities: list[WemPortalSensor] = []
-    for device_id, entity_data in coordinator.data.items():
-        for unique_id, values in entity_data.items():
-            if isinstance(values, int):
-                continue
-            # Use .get() rather than values["platform"] here: if a single
-            # data point is ever missing this key (e.g. an unexpected API
-            # response shape), we want to skip just that one entry instead
-            # of raising a KeyError that would abort setup for every
-            # sensor on this device.
-            if values.get("platform") == "sensor":
-                entities.append(
-                    WemPortalSensor(
-                        coordinator, config_entry, device_id, unique_id, values
-                    )
-                )
-    async_add_entities(entities)
+    async_add_readings_as_they_appear(
+        config_entry, async_add_entities, "sensor", WemPortalSensor
+    )
 
 
 # One of these payloads carries THREE kinds of key, and only the first is a
@@ -76,14 +68,8 @@ _UNUSED_WINDOW = "00:00-00:00"
 # portal speaks.
 _DAY_ORDER = (1, 2, 3, 4, 5, 6, 0)
 
-# Readings already reported as unreadable, so the same word is not warned
-# about on every cycle. Module level for the same reason as
-# utils._MARKER_REPORTED: entities are rebuilt on a reload, the portal's
-# vocabulary is not.
-_UNREADABLE_REPORTED: set = set()
 
-
-def _report_unreadable_value(name, value) -> None:
+def _report_unreadable_value(name, value, reported) -> None:
     """Say once that a reading could not be made into a number.
 
     The portal sometimes sends a word this integration does not know - a pump
@@ -102,9 +88,9 @@ def _report_unreadable_value(name, value) -> None:
     portal sent and need not be hashable.
     """
     key = (name, repr(value))
-    if key in _UNREADABLE_REPORTED:
+    if key in reported:
         return
-    _UNREADABLE_REPORTED.add(key)
+    reported.add(key)
     _LOGGER.warning(
         'Cannot read %r as a number for "%s", so it shows as unknown. If the '
         "WEM Portal shows something meaningful there, please report that word "
@@ -133,8 +119,8 @@ def _parse_schedule(raw):
     if not isinstance(parsed, dict):
         return None
 
-    windows = {}
-    marks = {}
+    windows: dict[str, dict[int, str]] = {}
+    marks: dict[str, str] = {}
     for key, value in parsed.items():
         if not isinstance(key, str) or not isinstance(value, str):
             continue
@@ -194,7 +180,7 @@ def _day_labels(raw):
     return dict(zip(_DAY_ORDER, days, strict=True))
 
 
-def _level_names(possible_values) -> dict:
+def _level_names(possible_values) -> dict[Any, str]:
     """Level number -> the portal's own word for it.
 
     The portal ships this alongside the programme, which is what makes the
@@ -247,28 +233,28 @@ def _stretch_text(start, end, level, names) -> str:
     return span
 
 
-def _window_text(period, letter) -> str:
+def _window_text(period: str, letter) -> str:
     """One programmed window, with the letter the portal put on it."""
     if letter:
         return f"{period} ({letter})"
     return period
 
 
-def _schedule_from_circuit_times(row):
+def _schedule_from_circuit_times(row: Reading):
     """The whole week from what the DEVICE reported, or None.
 
     None whenever anything is missing or does not line up - the JSON view is
     a complete answer in its own right, so degrading to it costs detail and
     nothing else.
     """
-    days = row.get("CircuitTimesDay")
+    days = row.circuit_times_day
     if not isinstance(days, list) or not days:
         return None
-    labels = _day_labels(row.get("value"))
+    labels = _day_labels(row.value)
     if labels is None:
         return None
 
-    names = _level_names(row.get("PossibleValues"))
+    names = _level_names(row.possible_values)
     schedule = {}
     for day in days:
         if not isinstance(day, dict):
@@ -303,9 +289,11 @@ def _schedule_from_json(raw):
     }
 
 
-def _readable_schedule(row):
+def _readable_schedule(row: Reading | None):
     """Every day with its stretches, from the best source the row carries."""
-    return _schedule_from_circuit_times(row) or _schedule_from_json(row.get("value"))
+    if row is None:
+        return None
+    return _schedule_from_circuit_times(row) or _schedule_from_json(row.value)
 
 
 def _schedule_summary(row):
@@ -320,7 +308,9 @@ def _schedule_summary(row):
     if not schedule:
         return None
 
-    groups = []
+    # Lists, not tuples: a day that repeats the previous text extends the
+    # group in place.
+    groups: list[list[str]] = []
     for day, entries in schedule.items():
         text = ", ".join(entries)
         if groups and groups[-1][2] == text:
@@ -335,19 +325,6 @@ def _schedule_summary(row):
 
 class WemPortalSensor(WemPortalEntity, RestoreSensor):
     """Representation of a WEM Portal Sensor."""
-
-    def _current_row(self):
-        """The coordinator row behind this entity, or an empty one.
-
-        A weekly programme is read from more than its value - the schedule
-        fetch adds the device's own view of it to the same row - so the
-        value alone is no longer enough to build the state from.
-        """
-        try:
-            row = self.coordinator.data[self._device_id][self._data_key]
-        except (KeyError, TypeError):
-            return {}
-        return row if isinstance(row, dict) else {}
 
     def _validated_native_value(self, value, unit):
         """Return a Home Assistant-safe native value."""
@@ -396,7 +373,9 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 )
                 return None
             if value.startswith("{"):
-                summary = _schedule_summary(self._current_row())
+                # The whole row, not just this value: the schedule fetch adds
+                # the device's own view of the programme to the same row.
+                summary = _schedule_summary(self._coordinator_row())
                 # Home Assistant refuses a state longer than this, and a
                 # refused state is no reading at all. Seven days that differ
                 # from one another, three windows each, can get there. The
@@ -411,7 +390,13 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             try:
                 float(value)
             except (TypeError, ValueError):
-                _report_unreadable_value(self._attr_name, value)
+                _report_unreadable_value(
+                    self._attr_name,
+                    value,
+                    account_state(
+                        self._config_entry.data.get(CONF_USERNAME)
+                    ).unreadable_values_reported,
+                )
                 return None
 
         return value
@@ -422,19 +407,15 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
-        # .get() like the other platforms: one malformed data point must not
-        # abort setup for every sensor on this device with a KeyError.
-        value, unit = fix_value_and_unit(
-            entity_data.get("value"), entity_data.get("unit")
-        )
+        value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
 
         self._attr_native_unit_of_measurement = unit
         # Set device_class/state_class BEFORE validating the native value:
         # _validated_native_value() uses them (in addition to unit) to
         # decide whether a numeric value is required, so they must already
         # be in place the first time it runs, not just on later updates.
-        self._attr_device_class = entity_data.get("device_class")
-        self._attr_state_class = entity_data.get("state_class")
+        self._attr_device_class = entity_data.device_class
+        self._attr_state_class = entity_data.state_class
         self._attr_native_value = self._validated_native_value(value, unit)
 
         _LOGGER.debug(
@@ -478,12 +459,13 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             and self.coordinator.api.api_version
         ):
             sw_version = self.coordinator.api.api_version
-        return build_device_info(
+        info: DeviceInfo = build_device_info(
             self._config_entry.entry_id,
             self._device_id,
             sw_version=sw_version,
             model=device_model(self.coordinator.api, self._device_id),
         )
+        return info
 
     @property
     def available(self):
@@ -500,7 +482,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # device: they are what explains WHY everything else went away.
         # Matched on the parameter id rather than as a substring of the
         # unique_id, which also carries the entry id and the device id.
-        if self._parameter_id in ("ConnectionStatus", "HasErrors", "ErrorMessages"):
+        if self._parameter_id in DEVICE_STATUS_ROWS:
             return True
         return device_is_reachable(self.coordinator.data, self._device_id)
 
@@ -508,38 +490,39 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
 
-        try:
-            entity_data = self.coordinator.data[self._device_id][self._data_key]
-            value, unit = fix_value_and_unit(
-                entity_data.get("value"), entity_data.get("unit")
-            )
-            self._attr_native_value = self._validated_native_value(value, unit)
-
-            # set unit if it references a valid non-trivial unit of measurement
-            if unit not in (None, ""):
-                self._attr_native_unit_of_measurement = unit
-
-            _LOGGER.debug(
-                'Update sensor: %s: "%s" [%s]',
-                self._attr_name,
-                self._attr_native_value,
-                self._attr_native_unit_of_measurement,
-            )
-
-        except KeyError:
+        row = self._coordinator_row()
+        if row is None:
             self._attr_native_value = None
-            _LOGGER.warning("Can't find %s", self._attr_unique_id)
-            _LOGGER.debug("Sensor data %s", self.coordinator.data)
+            self._report_no_reading()
+            self.async_write_ha_state()
+            return
 
+        value, unit = fix_value_and_unit(row.value, row.unit)
+        self._attr_native_value = self._validated_native_value(value, unit)
+
+        # set unit if it references a valid non-trivial unit of measurement
+        if unit not in (None, ""):
+            self._attr_native_unit_of_measurement = unit
+
+        _LOGGER.debug(
+            'Update sensor: %s: "%s" [%s]',
+            self._attr_name,
+            self._attr_native_value,
+            self._attr_native_unit_of_measurement,
+        )
         self.async_write_ha_state()
 
     @property
     def entity_category(self):
-        """Return the entity category."""
-        if any(
-            diagnostic in self._attr_unique_id
-            for diagnostic in ["ConnectionStatus", "HasErrors", "ErrorMessages"]
-        ):
+        """Return the entity category.
+
+        Decided on the parameter id, like `available` above. The former
+        substring match on the unique_id also carried the entry id and the
+        device id, so any device whose portal name happened to contain one
+        of these words would have turned every one of its sensors into a
+        diagnostic entity.
+        """
+        if self._parameter_id in DEVICE_STATUS_ROWS:
             return EntityCategory.DIAGNOSTIC
         return None
 
@@ -560,29 +543,24 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attributes = {}
-        if self._last_updated is not None:
-            attributes["Last Updated"] = self._last_updated
+        attributes: dict[str, Any] = {}
 
-        try:
-            entity_data = self.coordinator.data[self._device_id][self._data_key]
-            if "CircuitTimesDay" in entity_data:
-                attributes["CircuitTimesDay"] = entity_data["CircuitTimesDay"]
-            if "PossibleValues" in entity_data:
-                attributes["PossibleValues"] = entity_data["PossibleValues"]
-            # Every active fault, whatever the state had room for. The state
-            # is capped by Home Assistant and says how many it dropped; this
-            # is where the dropped ones are.
-            if "Errors" in entity_data:
-                attributes["Errors"] = entity_data["Errors"]
-            if isinstance(entity_data.get("value"), str) and entity_data[
-                "value"
-            ].startswith("{"):
-                attributes["Raw_JSON"] = entity_data["value"]
-                schedule = _readable_schedule(entity_data)
-                if schedule:
-                    attributes["Schedule"] = schedule
-        except KeyError:
-            pass
+        entity_data = self._coordinator_row()
+        if entity_data is None:
+            return attributes
+        if entity_data.circuit_times_day is not None:
+            attributes["CircuitTimesDay"] = entity_data.circuit_times_day
+        if entity_data.possible_values is not None:
+            attributes["PossibleValues"] = entity_data.possible_values
+        # Every active fault, whatever the state had room for. The state
+        # is capped by Home Assistant and says how many it dropped; this
+        # is where the dropped ones are.
+        if entity_data.errors is not None:
+            attributes["Errors"] = entity_data.errors
+        if isinstance(entity_data.value, str) and entity_data.value.startswith("{"):
+            attributes["Raw_JSON"] = entity_data.value
+            schedule = _readable_schedule(entity_data)
+            if schedule:
+                attributes["Schedule"] = schedule
 
         return attributes

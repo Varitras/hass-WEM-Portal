@@ -5,13 +5,23 @@ Declares the Home Assistant custom-component test plugin (which provides the
 `time.sleep` mock so the integration's real server-load pacing sleeps never
 run in tests. Importing the modules here also makes collection fail loudly
 if the integration cannot be imported against the installed HA version.
+
+Also holds the runtime budget per test - see durations.py for the accident
+that one exists for.
 """
 
 import pytest
 
 from custom_components.wemportal import expert_writer, wemportalapi
 
+from .durations import SLOW_TEST_SECONDS, over_budget
+
 pytest_plugins = ("pytest_homeassistant_custom_component",)
+
+# Summed per test across setup, call and teardown, and read at the end of
+# the session. A dict at module level because that is what a pytest hook
+# has: the hooks are functions, not a fixture with somewhere to keep state.
+_durations: dict = {}
 
 
 def pytest_addoption(parser):
@@ -27,6 +37,45 @@ def pytest_addoption(parser):
         default=False,
         help="rewrite the recorded mapper snapshot instead of comparing to it",
     )
+    parser.addoption(
+        "--slow-test-seconds",
+        type=float,
+        default=SLOW_TEST_SECONDS,
+        help=(
+            "fail the session if a single test takes longer than this "
+            "(0 makes every test late, which is how the check is tested)"
+        ),
+    )
+
+
+def pytest_runtest_logreport(report):
+    """Add up what one test costs, fixtures included."""
+    _durations[report.nodeid] = _durations.get(report.nodeid, 0.0) + report.duration
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Turn a green run red when a test ran far longer than it should.
+
+    Only a green one: a failing suite has more urgent news, and a test that
+    is slow *because* it failed is not the subject here.
+    """
+    if exitstatus != pytest.ExitCode.OK:
+        return
+
+    late = over_budget(_durations, session.config.getoption("--slow-test-seconds"))
+    if not late:
+        return
+
+    listed = "\n  ".join(f"{seconds:7.2f}s {node_id}" for node_id, seconds in late)
+    print(
+        f"\nSLOWER THAN THE BUDGET ALLOWS:\n  {listed}\n\n"
+        "A test in the minutes is nearly always a wait that was meant to be "
+        "shortened and no longer is - check what the test patches against "
+        "where the production code now reads it. If the time is genuinely "
+        "warranted, raise SLOW_TEST_SECONDS in tests/durations.py and say "
+        "in the commit why."
+    )
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 @pytest.fixture(autouse=True)
@@ -76,11 +125,18 @@ def _no_real_portal(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _mock_sleep(monkeypatch):
-    """Neutralise real time.sleep() in the modules that pace server load.
+    """Neutralise real time.sleep() for the whole test process.
 
     The production code deliberately sleeps between portal requests; in tests
     those waits must be instant. Mocking centrally (not per test) keeps later
     tests that hit the same code paths fast too.
+
+    Reaching only these two modules is not on offer, and the wording that
+    suggested it cost a test: both attributes ARE the one `time` module, so
+    this replaces time.sleep everywhere, for every test of the run. A test that
+    needs one thing to happen after another therefore cannot get it from a
+    sleep - it has to wait for the thing itself (tests/test_mutation_harness.py
+    does, after its sleeps turned out to be returning instantly).
     """
     monkeypatch.setattr(wemportalapi.time, "sleep", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(expert_writer.time, "sleep", lambda *_args, **_kwargs: None)
@@ -88,13 +144,18 @@ def _mock_sleep(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _no_leftover_cooldown():
-    """Both 403 backoffs are module state, so they outlive the test that set
-    one. Production wants exactly that - a fresh api object must not forget a
-    rate limit. A test run must not inherit one: without this, the first test
-    to earn a 403 makes every later test's request raise ForbiddenError before
-    it is even sent, and the failures point everywhere except at the cause.
+def _no_leftover_account_memory():
+    """The IP backoff and the per-account state outlive the test that set
+    them. Production wants exactly that - a fresh api object must not forget
+    a rate limit, and a reload must not repeat every warning. A test run must
+    not inherit either: without this, the first test to earn a 403 makes
+    every later test's request raise ForbiddenError before it is even sent,
+    and the first warning swallows its siblings in every later test.
     """
-    wemportalapi.reset_cooldowns_for_tests()
+    from custom_components.wemportal import models, transport
+
+    transport.reset_cooldowns_for_tests()
+    models.reset_account_states_for_tests()
     yield
-    wemportalapi.reset_cooldowns_for_tests()
+    transport.reset_cooldowns_for_tests()
+    models.reset_account_states_for_tests()

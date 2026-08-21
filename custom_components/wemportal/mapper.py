@@ -1,25 +1,50 @@
 """Data mapper for mapping API values to Home Assistant platforms."""
 
-import re
+import logging
 
-from .const import _LOGGER, WemDataType
+import re
+from collections.abc import Callable
+from dataclasses import replace
+
+from .const import WemDataType
+from .models import ModuleRef, Reading
 from .translations import friendly_name_mapper, translate
-from .utils import looks_like_schedule, sanitize_value, unit_to_icon
+from .utils import (
+    looks_like_schedule,
+    portal_list,
+    sanitize_value,
+    schedule_fetch_still_feeds,
+    unit_to_icon,
+)
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def get_min_max(
-    parameter_id: str, data_type: int, min_value, max_value
+    parameter_id: str | None,
+    data_type: int | None,
+    min_value: object,
+    max_value: object,
 ) -> tuple[float, float]:
+    """Plausible bounds for a control the portal gave none for.
+
+    Both of the first two arrive from the portal's answer and both may be
+    absent - `Reading.parameter_id` is optional and the mapper hands exactly
+    that field in. Annotated as such rather than assumed: read as `str`, the
+    name-based guess below reached `.lower()` on None and took the whole
+    device's read down with it. Nothing to guess from is not an error, it is
+    what the widest default is for.
+    """
     try:
         if min_value is not None and max_value is not None:
-            return float(min_value), float(max_value)
+            return float(min_value), float(max_value)  # type: ignore[arg-type]
     except (ValueError, TypeError):
         pass
 
     if data_type == WemDataType.SWITCH:
         return 0.0, 1.0
 
-    parameter_lower = parameter_id.lower()
+    parameter_lower = (parameter_id or "").lower()
     if "ww" in parameter_lower or "warmwasser" in parameter_lower:
         return 30.0, 65.0
     if any(
@@ -55,8 +80,8 @@ def _friendly_name(language: str, parameter_id: str, module_name: str) -> str:
 
 def _describe_value(
     parameter_id, module, device_module, parameter, value, language
-) -> tuple[str, dict]:
-    """Flatten one portal value into the description the rest of the mapper
+) -> tuple[str, Reading]:
+    """Flatten one portal value into the reading the rest of the mapper
     works with. Raises on malformed portal data just like the inline code it
     replaces - the caller's guard turns that into a skipped value."""
     name = f"{device_module['Name']}-{parameter['ParameterID']}"
@@ -87,16 +112,15 @@ def _describe_value(
         if isinstance(final_value, str):
             final_value = sanitize_value(final_value)
 
-    return name, {
-        "friendlyName": _friendly_name(language, parameter_id, device_module["Name"]),
-        "ParameterID": parameter_id,
-        "unit": value.get("Unit"),
-        "value": final_value,
-        "IsWriteable": parameter.get("IsWriteable", False),
-        "DataType": data_type,
-        "ModuleIndex": module["ModuleIndex"],
-        "ModuleType": module["ModuleType"],
-    }
+    return name, Reading(
+        friendly_name=_friendly_name(language, parameter_id, device_module["Name"]),
+        parameter_id=parameter_id,
+        unit=value.get("Unit"),
+        value=final_value,
+        data_type=data_type,
+        module_index=module["ModuleIndex"],
+        module_type=module["ModuleType"],
+    )
 
 
 def _declares_bounds(parameter: dict) -> bool:
@@ -135,9 +159,7 @@ def _is_time_or_programme(parameter: dict) -> bool:
     return not _declares_bounds(parameter)
 
 
-def _time_or_programme_entity(
-    common_attributes: dict, sent_a_number: bool
-) -> dict | None:
+def _time_or_programme_entity(common: Reading, sent_a_number: bool) -> Reading | None:
     """The writeable platform for a time or programme parameter, if any.
 
     Two forms have been observed. A schedule comes as a JSON string and is
@@ -156,11 +178,11 @@ def _time_or_programme_entity(
     1970, to a heating system.
     """
     if sent_a_number:
-        return {**common_attributes, "platform": "date"}
+        return replace(common, platform="date")
     return None
 
 
-def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None:
+def _writeable_entity(sensor: Reading, parameter: dict, value: dict) -> Reading | None:
     """The platform entity this parameter becomes, or None for a plain sensor.
 
     Three ways to get None, and the caller does not have to tell them apart:
@@ -171,40 +193,35 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
 
     The IsWriteable test used to sit at the one call site, which split a
     single question across two places and put the whole thing one level
-    deeper for no gain.
+    deeper for no gain. Asked of the raw parameter now - the same place the
+    bounds come from - so the reading does not have to carry a field whose
+    only reader is this line.
     """
-    if not sensor["IsWriteable"]:
+    if not parameter.get("IsWriteable", False):
         return None
 
-    data_type = sensor["DataType"]
-    final_value = sensor["value"]
+    data_type = sensor.data_type
+    final_value = sensor.value
 
-    common_attributes = {
-        "friendlyName": sensor["friendlyName"],
-        "ParameterID": sensor["ParameterID"],
-        "unit": sensor["unit"],
-        "icon": unit_to_icon(sensor["unit"]),
-        "value": final_value,
-        "DataType": data_type,
-        "ModuleIndex": sensor["ModuleIndex"],
-        "ModuleType": sensor["ModuleType"],
-    }
+    # A copy on purpose: `sensor` goes on living as the plain-sensor record,
+    # and the control this returns is a second, separately aged row.
+    common = replace(sensor, icon=unit_to_icon(sensor.unit))
 
     min_value, max_value = get_min_max(
-        sensor["ParameterID"],
+        sensor.parameter_id,
         data_type,
         parameter.get("MinValue"),
         parameter.get("MaxValue"),
     )
 
     if data_type in (WemDataType.NUMBER_STEP_HALF, WemDataType.NUMBER_STEP_ONE):
-        return {
-            **common_attributes,
-            "platform": "number",
-            "min_value": min_value,
-            "max_value": max_value,
-            "step": 0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
-        }
+        return replace(
+            common,
+            platform="number",
+            min_value=min_value,
+            max_value=max_value,
+            step=0.5 if data_type == WemDataType.NUMBER_STEP_HALF else 1,
+        )
     if data_type == WemDataType.SELECT:
         # `or []`, not .get()'s default: the portal sends the key with an
         # explicit null rather than omitting it, so the default never applied
@@ -220,12 +237,12 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
         enum_values = parameter.get("EnumValues") or []
         if not enum_values:
             return None
-        return {
-            **common_attributes,
-            "platform": "select",
-            "options": [enum_value["Value"] for enum_value in enum_values],
-            "optionsNames": [enum_value["Name"] for enum_value in enum_values],
-        }
+        return replace(
+            common,
+            platform="select",
+            options=[enum_value["Value"] for enum_value in enum_values],
+            options_names=[enum_value["Name"] for enum_value in enum_values],
+        )
     if data_type == WemDataType.SWITCH:
         if isinstance(final_value, str) and final_value.startswith("{"):
             return None  # It's a JSON schedule, fallback to sensor
@@ -236,20 +253,17 @@ def _writeable_entity(sensor: dict, parameter: dict, value: dict) -> dict | None
         # passed it and became a switch.
         if _is_time_or_programme(parameter):
             return _time_or_programme_entity(
-                common_attributes, value.get("NumericValue") is not None
+                common, value.get("NumericValue") is not None
             )
         if int(min_value) == 0 and int(max_value) == 1:
-            return {
-                **common_attributes,
-                "platform": "switch",
-            }
-        return {
-            **common_attributes,
-            "platform": "number",
-            "min_value": min_value,
-            "max_value": max_value,
-            "step": 1,
-        }
+            return replace(common, platform="switch")
+        return replace(
+            common,
+            platform="number",
+            min_value=min_value,
+            max_value=max_value,
+            step=1,
+        )
     return None
 
 
@@ -259,25 +273,40 @@ def _described_module(device_id, module, modules_dict):
     Two ways to have nothing: the answer is not shaped like a module at all,
     or it is one this integration never discovered.
     """
+    # Outside the guard on purpose: a device this mapper was called for and
+    # does not know is a fault in this integration, not a portal answer, and
+    # swallowing it here would hide it.
+    device_modules = modules_dict[device_id]
     try:
-        module_tuple = (module["ModuleIndex"], module["ModuleType"])
+        module_key = ModuleRef(
+            module_index=module["ModuleIndex"], module_type=module["ModuleType"]
+        )
+        # The LOOKUP belongs in here too. An id the portal sent as a list or
+        # a dict builds a ModuleRef without complaint and only raises when
+        # something hashes it - so with the lookup one line below, the guard
+        # watched the harmless half and the throw took every later module of
+        # this device with it.
+        return device_modules.get(module_key)
     except (KeyError, TypeError) as exc:
         _LOGGER.warning("Skipping malformed module entry in API response: %s", exc)
         return None
-    return modules_dict[device_id].get(module_tuple)
 
 
 def _described_parameter(value, device_module):
     """The id and stored description of one answered value, or None to skip
     it. Same two ways to have nothing as above."""
+    described = device_module["parameters"]
     try:
         parameter_id = value["ParameterID"]
+        # Inside the guard for the same reason as one level up: `in` hashes
+        # the id, so a ParameterID the portal sent as a dict raised here and
+        # cost the rest of the module.
+        if parameter_id not in described:
+            return None
     except (KeyError, TypeError) as exc:
         _LOGGER.warning("Skipping malformed value entry in API response: %s", exc)
         return None
-    if parameter_id not in device_module["parameters"]:
-        return None
-    return parameter_id, device_module["parameters"][parameter_id]
+    return parameter_id, described[parameter_id]
 
 
 def _read_modules(device_id, values_json, modules_dict, language, api_data) -> tuple:
@@ -292,7 +321,7 @@ def _read_modules(device_id, values_json, modules_dict, language, api_data) -> t
     parsed_sensors = {}
     controls = set()
 
-    for module in values_json.get("Modules", []):
+    for module in portal_list(values_json, "Modules"):
         device_module = _described_module(device_id, module, modules_dict)
         if device_module is None:
             continue
@@ -315,7 +344,7 @@ def _read_module_values(device_id, module, device_module, language, api_data) ->
     parsed_sensors = {}
     controls = set()
 
-    for value in module.get("Values", []):
+    for value in portal_list(module, "Values"):
         described = _described_parameter(value, device_module)
         if described is None:
             continue
@@ -362,9 +391,22 @@ def _scraped_entities_naming_the_same_thing(
     """
     matches = []
     for scraped_data in api_data[device_id].values():
-        if not isinstance(scraped_data, dict):
+        if not isinstance(scraped_data, Reading):
             continue
-        scraped_entity_id = scraped_data.get("ParameterID", "")
+        if (
+            scraped_data.module_index is not None
+            or scraped_data.module_type is not None
+        ):
+            # An API row, not a scraped one - and telling them apart by name
+            # cannot work. The scraper knows nothing about the portal's module
+            # structure, so its readings carry no module at all, while every
+            # API row does. An API row written under its own key (mode `both`
+            # before the first successful scrape) has a hyphen in its
+            # parameter_id like a scraped one, so the test below accepted it
+            # as a merge target: the reading was then written to two rows,
+            # and the stale one went on looking like an entity of its own.
+            continue
+        scraped_entity_id = scraped_data.parameter_id or ""
         try:
             scraped_part = scraped_entity_id.split("-")[1]
         except IndexError:
@@ -372,7 +414,7 @@ def _scraped_entities_naming_the_same_thing(
             continue
         translated_scraped = translate(language, friendly_name_mapper(scraped_part))
 
-        sensor_words = _tokenize(sensor["friendlyName"])
+        sensor_words = _tokenize(sensor.friendly_name)
         scraped_words = _tokenize(translated_scraped)
         if scraped_words and scraped_words.issubset(sensor_words):
             matches.append(scraped_entity_id)
@@ -384,58 +426,235 @@ def _merge_into_scraped(
 ) -> None:
     """Feed an API reading into the scraped entity that shows the same value,
     so both sources keep one entity instead of two that drift apart."""
-    parameter_id = sensor["ParameterID"]
-    if parameter_id not in scraping_mapper:
-        matches = _scraped_entities_naming_the_same_thing(
-            device_id, sensor, language, api_data
-        )
+    # The module belongs in the key. A ParameterID identifies a parameter
+    # WITHIN its module, and two heating circuits are two modules of one type
+    # sharing one parameter catalogue - the ordinary case, not an exotic one.
+    # Keyed on the bare id, the second circuit found the first one's entry,
+    # wrote its value into the first one's reading and never got a row of its
+    # own, so it had no entity at all.
+    #
+    # And the device belongs in it too. Only the scraper device writes here,
+    # but _clear_unanswered reads it for EVERY device - so a second device
+    # with the same module address and parameter id looked up the scraper
+    # device's scraped target, found it absent from its own dict, and left its
+    # own dropped reading standing as current.
+    cache_key = (
+        device_id,
+        ModuleRef(module_index=sensor.module_index, module_type=sensor.module_type),
+        sensor.parameter_id,
+    )
+    if cache_key not in scraping_mapper:
+        # A scraped row shows ONE value, so at most one API reading can be
+        # it. Both circuits' names contain the row's words, so both would
+        # match - and the second would overwrite the first inside the row.
+        # First one there keeps it; the other stays under its own key, which
+        # is the cheaper mistake: an extra entity beats two circuits sharing
+        # one reading.
+        #
+        # Belt and braces since the module test above: a merged row inherits
+        # the module of whoever claimed it, so the second circuit is already
+        # turned away there - measured. Kept because that is a consequence of
+        # how the merge writes rather than a rule anyone stated, and this
+        # line is the rule. It has no mutation of its own for the same
+        # reason: nothing can make it fail while the other one holds.
+        claimed = {target for targets in scraping_mapper.values() for target in targets}
+        matches = [
+            match
+            for match in _scraped_entities_naming_the_same_thing(
+                device_id, sensor, language, api_data
+            )
+            if match not in claimed
+        ]
         # Falls back to the reading's own key: no scraped entity showing this
         # value means there is nothing to merge into, and the entity is its
         # own target.
-        scraping_mapper[parameter_id] = matches or [key]
+        scraping_mapper[cache_key] = matches or [key]
+        if key not in scraping_mapper[cache_key]:
+            # The api can run alone for a while - `both` mode before the first
+            # successful scrape - and every one of those cycles wrote a row
+            # under this key. From here on the value goes into the scraped row
+            # instead, and entities are built from whatever rows exist: left
+            # behind, this one stays as a second entity for the same reading,
+            # frozen at the last value the api put in it.
+            api_data[device_id].pop(key, None)
 
-    for scraped_entity in scraping_mapper[parameter_id]:
+    for scraped_entity in scraping_mapper[cache_key]:
+        previous = api_data[device_id].get(scraped_entity)
+        target = previous if isinstance(previous, Reading) else None
+
         # An API read that came back empty must not erase a
         # web value that was scraped successfully in the same
         # cycle. Both paths feed this one entity, and writing
         # None over a good reading turned a partial API
         # failure into an unknown sensor.
-        api_value = sensor.get("value")
-        previous = api_data[device_id].get(scraped_entity, {})
-        sensor_dict = {
-            "value": (previous.get("value") if api_value is None else api_value),
-            "name": previous.get("name"),
-            "unit": previous.get("unit", sensor.get("unit")),
-            "icon": previous.get("icon", unit_to_icon(sensor.get("unit"))),
-            "friendlyName": previous.get("friendlyName", sensor.get("friendlyName")),
-            "ParameterID": scraped_entity,
-            "platform": "sensor",
-        }
-        if scraped_entity in api_data[device_id]:
-            api_data[device_id][scraped_entity].update(sensor_dict)
+        api_value = sensor.value
+        if target is None:
+            target = Reading(parameter_id=scraped_entity)
+            api_data[device_id][scraped_entity] = target
+            target.value = api_value
+            target.unit = sensor.unit
+            target.icon = unit_to_icon(sensor.unit)
+            target.friendly_name = sensor.friendly_name
         else:
-            api_data[device_id][scraped_entity] = sensor_dict
+            # The scraped row keeps its own identity (unit, icon, name) -
+            # only the value flows in, and everything the row carries beyond
+            # these fields (a schedule detail, say) stays untouched, exactly
+            # as dict.update() on a fixed key set left it before.
+            if api_value is not None:
+                target.value = api_value
+            target.parameter_id = scraped_entity
+            target.platform = "sensor"
+        # The api reading's own module, on both paths. With no scraped row
+        # to merge into, the target IS this reading's own key - and without
+        # the address it would never age out. A row the scrape also feeds is
+        # protected from the module ageing pass while the scrape is working;
+        # see _forget_unanswered_module_values.
+        target.module_index = sensor.module_index
+        target.module_type = sensor.module_type
 
 
 def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
-    """Write the reading as a read-only sensor, keeping the unit it already
-    carried when this update brought none."""
-    new_unit = sensor.get("unit")
-    old_unit = api_data[device_id].get(key, {}).get("unit")
+    """Write the reading as a read-only sensor, keeping what this update did
+    not bring: the unit, and the schedule detail another path maintains."""
+    new_unit = sensor.unit
+    previous = api_data[device_id].get(key)
+    kept = previous if isinstance(previous, Reading) else None
+    old_unit = kept.unit if kept else None
     final_unit = new_unit if new_unit not in (None, "") else old_unit
 
-    api_data[device_id][key] = {
-        "value": sensor["value"],
-        "ParameterID": sensor["ParameterID"],
-        "unit": final_unit,
-        "icon": unit_to_icon(final_unit),
-        "friendlyName": sensor["friendlyName"],
-        "platform": "sensor",
-    }
+    api_data[device_id][key] = Reading(
+        value=sensor.value,
+        parameter_id=sensor.parameter_id,
+        unit=final_unit,
+        icon=unit_to_icon(final_unit),
+        friendly_name=sensor.friendly_name,
+        platform="sensor",
+        # What the portal declared this parameter to be. The sensor platform
+        # reads it to tell a weekly programme from an ordinary value.
+        data_type=sensor.data_type,
+        # The module this reading came from. Dropping it here left every
+        # ordinary sensor unreachable for the per-module ageing pass, which
+        # matches on exactly this pair - so a module could fall silent
+        # forever and its readings stayed on display as current.
+        module_index=sensor.module_index,
+        module_type=sensor.module_type,
+        # A weekly programme's detail comes from its own hourly fetch, not
+        # from the value read - so rebuilding the reading here threw it away
+        # on every ordinary cycle, eleven times out of twelve, and the sensor
+        # fell back to the raw JSON view in between. Emptying it is that
+        # fetch's own job: a failed refresh sets both to None.
+        circuit_times_day=kept.circuit_times_day if kept else None,
+        possible_values=kept.possible_values if kept else None,
+    )
+
+
+def forget_dropped_parameters(device_data, module, described) -> None:
+    """Take the readings of dropped parameters down with the description.
+
+    Sibling of `_clear_unanswered` below, and the case that one cannot see.
+    Both answer "this reading is no longer current", but from opposite
+    directions: that pass walks the parameters the portal still describes
+    and empties the ones it did not answer for. A parameter that vanishes
+    from the description leaves that set altogether, so nothing walks it
+    again and its last value stands as current for the rest of the session,
+    with nothing anywhere saying so.
+
+    Called from the discovery path, which is the only place a parameter can
+    disappear - the description is replaced wholesale on every re-read while
+    the readings live in a second dict that nothing prunes.
+
+    Removed rather than emptied, unlike over there: an unanswered parameter
+    still exists and keeps its unit and name, while this one is gone.
+
+    Only what was described and no longer is. A scraped row filed under the
+    same module was never in that list and is not this function's to delete.
+
+    Takes the module as it stands and the description that is about to
+    replace it, rather than the difference: working out what left is the
+    same thought as deleting it, and splitting the two across modules is how
+    one of them ends up not matching the other's key shape.
+    """
+    dropped = set(module.get("parameters") or ()) - set(described)
+    if not dropped or not device_data:
+        return
+
+    module_name = module.get("Name", "")
+    for parameter_id in dropped:
+        device_data.pop(f"{module_name}-{parameter_id}", None)
+    _LOGGER.info(
+        "Module %s stopped describing %s; dropping the last value instead "
+        "of publishing it on as current.",
+        module_name,
+        ", ".join(sorted(dropped)),
+    )
+
+
+def _clear_module_readings(
+    module_key,
+    device_module,
+    device_id,
+    parsed_sensors,
+    device_data,
+    scraping_mapper,
+    scrape_still_feeds,
+) -> list:
+    """Blank the readings of one answered module the portal left out this
+    cycle, each where it actually lives, and return the ids cleared for the
+    caller's one log line.
+
+    Split out of _clear_unanswered so the per-parameter decision is one thought
+    at one level of nesting rather than the innermost of two loops - the split
+    the module comment foresaw once the merge map carried a key of its own.
+    """
+    cleared = []
+    for parameter_id, parameter in device_module["parameters"].items():
+        name = f"{device_module['Name']}-{parameter_id}"
+        if name in parsed_sensors:
+            continue
+        # Where this parameter's reading actually LIVES, which is not
+        # necessarily under its own key: in `both` mode it is merged into the
+        # scraped row showing the same value, and that mapping is already kept
+        # - it just was not asked here. Looking under the api key alone found
+        # nothing for a merged parameter and moved on, leaving the row that
+        # does carry the reading with nothing to age it.
+        merged_into = scraping_mapper.get((device_id, module_key, parameter_id)) or [
+            name
+        ]
+        entry = device_data.get(merged_into[0])
+        if scrape_still_feeds is not None and scrape_still_feeds(merged_into[0]):
+            # In `both` mode the merge target is a scraped row, fed on its own
+            # schedule. The API leaving this parameter out is evidence about
+            # the API alone - blanking a row the scrape delivered this cycle
+            # throws away a value seconds old. _forget_scraped_values ages it
+            # on the scrape's own terms.
+            continue
+        # A weekly programme is exempt, and asking the DECLARED type alone got
+        # the wrong installations: a 3.1.3.0 portal types every programme as 2
+        # (an ordinary switch) with the schedule as JSON in the value, so the
+        # exemption applied to nobody who has one. Same mistake, same fix as
+        # the schedule fetch itself.
+        entry_value = entry.value if isinstance(entry, Reading) else None
+        # A condition, not a category - see schedule_fetch_still_feeds, which
+        # both ageing passes now ask so they cannot drift apart again.
+        is_programme = parameter.get(
+            "DataType"
+        ) == WemDataType.PROGRAM or looks_like_schedule(entry_value)
+        if is_programme and schedule_fetch_still_feeds(entry):
+            continue
+        if isinstance(entry, Reading) and entry.value is not None:
+            entry.value = None
+            cleared.append(parameter_id)
+    return cleared
 
 
 def _clear_unanswered(
-    device_id, values_json, modules_dict, parsed_sensors, api_data
+    device_id,
+    values_json,
+    modules_dict,
+    parsed_sensors,
+    api_data,
+    scraping_mapper,
+    scrape_still_feeds=None,
 ) -> None:
     """Stop presenting a reading the portal did not send this cycle.
 
@@ -466,41 +685,38 @@ def _clear_unanswered(
     if not device_data:
         return
 
-    for module in values_json.get("Modules", []):
+    for module in portal_list(values_json, "Modules"):
         try:
-            module_key = (module["ModuleIndex"], module["ModuleType"])
+            module_key = ModuleRef(
+                module_index=module["ModuleIndex"], module_type=module["ModuleType"]
+            )
+            # Inside the guard, like the two readers above: the id only has
+            # to be hashable when something looks it up, so a list or a dict
+            # arriving here raised past the `continue` that exists for it -
+            # and this pass runs LAST, so it took the ageing of every module
+            # of this device with it.
+            device_module = modules_dict.get(device_id, {}).get(module_key)
         except (KeyError, TypeError):
             continue
-        device_module = modules_dict.get(device_id, {}).get(module_key)
         if not device_module or not device_module.get("parameters"):
             continue
 
-        cleared = []
-        for parameter_id, parameter in device_module["parameters"].items():
-            name = f"{device_module['Name']}-{parameter_id}"
-            if name in parsed_sensors:
-                continue
-            entry = device_data.get(name)
-            # A weekly programme is exempt, and asking the DECLARED type alone
-            # got the wrong installations: a 3.1.3.0 portal types every
-            # programme as 2 (an ordinary switch) with the schedule as JSON in
-            # the value, so the exemption applied to nobody who has one. Same
-            # mistake, same fix as the schedule fetch itself.
-            if parameter.get("DataType") == WemDataType.PROGRAM or looks_like_schedule(
-                (entry or {}).get("value")
-            ):
-                continue
-            if isinstance(entry, dict) and entry.get("value") is not None:
-                entry["value"] = None
-                cleared.append(parameter_id)
-
+        cleared = _clear_module_readings(
+            module_key,
+            device_module,
+            device_id,
+            parsed_sensors,
+            device_data,
+            scraping_mapper,
+            scrape_still_feeds,
+        )
         if cleared:
             _LOGGER.debug(
                 "Device %s module %s/%s: the portal sent no value for %s; "
                 "their last reading is not current any more.",
                 device_id,
-                module_key[0],
-                module_key[1],
+                module_key.module_index,
+                module_key.module_type,
                 ", ".join(sorted(cleared)),
             )
 
@@ -518,6 +734,7 @@ class WemPortalDataMapper:
         mode: str,
         api_data: dict,
         scraper_device_id: str | None,
+        scrape_still_feeds: Callable[[str], bool] | None = None,
     ):
         """Processes the read values JSON and maps it to api_data."""
 
@@ -559,5 +776,11 @@ class WemPortalDataMapper:
 
         # Last, so it sees everything this cycle actually wrote.
         _clear_unanswered(
-            device_id, values_json, modules_dict, parsed_sensors, api_data
+            device_id,
+            values_json,
+            modules_dict,
+            parsed_sensors,
+            api_data,
+            scraping_mapper,
+            scrape_still_feeds,
         )

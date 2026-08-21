@@ -6,6 +6,9 @@ https://github.com/erikkastelec/hass-WEM-Portal
 
 """
 
+from typing import Final
+import logging
+
 from datetime import timedelta
 
 import homeassistant.helpers.config_validation as cv
@@ -13,13 +16,11 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry, entity_registry
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.helpers import device_registry, issue_registry
 from homeassistant.helpers.service import async_register_admin_service
-from homeassistant.helpers.typing import ConfigType
 
 from .const import (
-    _LOGGER,
     CONF_EXPERT_NOTIFY_ON_SUCCESS,
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_WRITE,
@@ -32,7 +33,6 @@ from .const import (
     MIN_SCAN_INTERVAL_API_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
     PLATFORMS,
-    SERVICE_SET_EXPERT_PARAMETER,
 )
 from .coordinator import (
     WemPortalDataUpdateCoordinator,
@@ -41,181 +41,33 @@ from .coordinator import (
     get_scraper_device_store,
 )
 from .exceptions import ExpertOperationAborted
-from .models import WemPortalConfigEntry, WemPortalData
-from .utils import clamped_scan_interval, close_api_sessions, deserialize_modules
+from .migration import migrate_unique_ids
+from .models import (
+    account_unique_id,
+    WemPortalConfigEntry,
+    WemPortalData,
+    forget_account_state,
+    is_still_serving,
+)
+from .utils import clamped_scan_interval, deserialize_modules
 from .wemportalapi import WemPortalApi
 
+_LOGGER = logging.getLogger(__name__)
 
-def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):
-    """Return unique ID for WEM Portal."""
-    return f"{config_entry_id}:{device_id}:{name}"
+SERVICE_SET_EXPERT_PARAMETER: Final = "set_expert_parameter"
 
 
-# This integration is configured exclusively through the UI; async_setup only
-# prepares hass.data. Declaring that explicitly is what hassfest asks for -
-# without it, every run warns that async_setup exists without a CONFIG_SCHEMA,
-# and a stray `wemportal:` block in configuration.yaml would be accepted
-# silently instead of being rejected with a clear message.
+# This integration is configured exclusively through the UI. Declaring that
+# explicitly is what rejects a stray `wemportal:` block in configuration.yaml
+# with a clear message instead of accepting it silently.
+#
+# It used to sit beside an async_setup whose whole body was
+# `hass.data.setdefault(DOMAIN, {})`, and the comment justified the schema
+# with that function's existence. Nothing has read hass.data since the
+# rebuild moved the entry state to runtime_data (see models.py), so the
+# function did nothing and the reason given for the schema was circular. The
+# schema stands on its own; the function is gone.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-
-
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the wemportal component."""
-    hass.data.setdefault(DOMAIN, {})
-    return True
-
-
-# Migrate values from previous versions
-def _migrate_device_unique_ids(registry, config_entry, device_id, data) -> bool:
-    """Migrate one device's entities from old unique_id formats to the current
-    one. Returns True if any entity was updated. Factored out so migration can
-    run for EVERY device, not just the first."""
-    change = False
-    for unique_id, values in data.items():
-        if isinstance(values, int):
-            continue
-
-        new_id = get_wemportal_unique_id(config_entry.entry_id, device_id, unique_id)
-        platform = values.get("platform", "sensor")
-        old_ids = _possible_old_unique_ids(config_entry, device_id, unique_id, values)
-        if _adopt_entity_under_its_old_id(registry, platform, old_ids, new_id):
-            change = True
-    return change
-
-
-def _possible_old_unique_ids(config_entry, device_id, unique_id, values) -> list:
-    """Every unique_id shape a past release may have registered this under.
-
-    Three sources - the key itself, the friendly name and the ParameterID -
-    each in up to three spellings. Assembling the list is a different job
-    from searching it, and inline it put the search two levels deep.
-    """
-    friendly_name = values.get("friendlyName", "")
-    parameter_id = values.get("ParameterID")
-
-    possible_old_ids = []
-    if unique_id != "ConnectionStatus":
-        possible_old_ids.append(unique_id)
-        possible_old_ids.append(f"{device_id}-{unique_id}")
-
-    if friendly_name:
-        possible_old_ids.append(friendly_name)
-        possible_old_ids.append(f"{device_id}-{friendly_name}")
-        possible_old_ids.append(
-            get_wemportal_unique_id(config_entry.entry_id, device_id, friendly_name)
-        )
-
-    if parameter_id:
-        possible_old_ids.append(parameter_id)
-        possible_old_ids.append(f"{device_id}-{parameter_id}")
-        possible_old_ids.append(
-            get_wemportal_unique_id(config_entry.entry_id, device_id, parameter_id)
-        )
-    return possible_old_ids
-
-
-def _adopt_entity_under_its_old_id(registry, platform, old_ids, new_id) -> bool:
-    """Give the first entity found under an old id the current one.
-
-    Stops at the first hit whether or not it changed anything: the entity has
-    been identified, and carrying on would match the same one again under
-    another of its old spellings.
-    """
-    for old_id in old_ids:
-        if not old_id:
-            continue
-        name_id = registry.async_get_entity_id(platform, DOMAIN, old_id)
-        if name_id is None:
-            continue
-
-        new_entity_id = registry.async_get_entity_id(platform, DOMAIN, new_id)
-        if new_entity_id is not None and new_entity_id != name_id:
-            _LOGGER.info(
-                "Found entity with old id and an entity with a new unique_id. Preserving old entity..."
-            )
-            registry.async_remove(new_entity_id)
-
-        if old_id == new_id:
-            return False
-        _LOGGER.info(
-            "Migrating entity %s from old id %s to new unique_id %s",
-            name_id,
-            old_id,
-            new_id,
-        )
-        registry.async_update_entity(name_id, new_unique_id=new_id)
-        return True
-    return False
-
-
-def _remove_entities_from_a_previous_platform(
-    registry, config_entry, device_id, data
-) -> None:
-    """Drop registry entries this integration no longer provides.
-
-    A parameter can change platform between releases when we learn what it
-    actually is. Holiday begin and end were switches until the portal's own
-    parameter list showed them to be dates - and because our unique_id does
-    not carry the platform, the old switch entry survives the change and sits
-    in the registry unavailable, next to the working date entity.
-
-    Only entries under OUR unique_id and OUR own platforms are touched, and
-    only the ones the current data says belong to a different platform now.
-    """
-    for unique_id, values in data.items():
-        if isinstance(values, int):
-            continue
-        current = values.get("platform", "sensor")
-        entity_unique_id = get_wemportal_unique_id(
-            config_entry.entry_id, device_id, unique_id
-        )
-        for platform in PLATFORMS:
-            if platform == current:
-                continue
-            stale = registry.async_get_entity_id(platform, DOMAIN, entity_unique_id)
-            if stale is None:
-                continue
-            _LOGGER.info(
-                "%s is a %s now, not a %s - removing the entity it left behind.",
-                stale,
-                current,
-                platform,
-            )
-            registry.async_remove(stale)
-
-
-async def migrate_unique_ids(
-    hass: HomeAssistant, config_entry: ConfigEntry, coordinator
-):
-    registry = entity_registry.async_get(hass)
-    # Nothing to migrate yet if the first refresh came back empty (e.g. no
-    # devices found, or every device failed this cycle) - guard against
-    # this instead of crashing with an IndexError on an empty keys() list,
-    # which would otherwise abort the entire integration setup.
-    if not coordinator.data:
-        _LOGGER.debug("Skipping unique_id migration: coordinator has no data yet.")
-        return
-    # Migrate EVERY device, not just the first: with multiple devices the
-    # others' old unique_ids (and their history) were previously left behind.
-    change = False
-    for device_id in coordinator.data:
-        if _migrate_device_unique_ids(
-            registry, config_entry, device_id, coordinator.data[device_id]
-        ):
-            change = True
-        # After the id migration, not before: that step may still move an old
-        # entry onto the current unique_id, and removing it first would throw
-        # away the history it exists to preserve.
-        _remove_entities_from_a_previous_platform(
-            registry, config_entry, device_id, coordinator.data[device_id]
-        )
-
-    if change:
-        # A debounced refresh is enough to update the migrated entities.
-        # async_config_entry_first_refresh() here ran a SECOND full portal
-        # cycle right after the initial one (and is meant for setup only) -
-        # needless extra requests against the portal's rate limit.
-        await coordinator.async_request_refresh()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) -> bool:
@@ -294,13 +146,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     # real API device id, else the placeholder) and the coordinator persists
     # it. Existing installs therefore lock in whatever id they already use,
     # so nobody loses history at upgrade.
-    scraper_device_id = None
     try:
         scraper_device_id = await get_scraper_device_store(
             hass, entry.entry_id
         ).async_load()
     except Exception as exc:  # noqa: BLE001
-        _LOGGER.debug("Could not load stored scraper device id: %s", exc)
+        # Not swallowed. Carrying on with None does not mean "no id yet" - it
+        # means the api decides one again, and where that decision lands
+        # somewhere else, every scraped sensor gets a new unique_id and its
+        # history is orphaned. Refusing to set up is recoverable and Home
+        # Assistant retries on its own; losing the history is not.
+        raise ConfigEntryNotReady(
+            "The stored scraper device id could not be read. Setting up "
+            "without it would re-decide the id and move every scraped "
+            f"sensor to a new one, so this account is not loaded: {exc}"
+        ) from exc
 
     # Creating API object
     api = WemPortalApi(
@@ -317,11 +177,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
 
     try:
         await coordinator.async_config_entry_first_refresh()
-    except Exception:
+    except BaseException:
         # The api is not in hass.data yet, so async_unload_entry cannot close
         # it: a failed first refresh (portal down, 403, auth) would leak its
         # HTTP sessions, once more per setup retry.
-        await hass.async_add_executor_job(close_api_sessions, api)
+        #
+        # BaseException, not Exception: Home Assistant cancels a setup task on
+        # shutdown and when it takes too long, and CancelledError is not an
+        # Exception - so the one ending that leaves the most behind was the
+        # one this never ran for. Re-raised immediately, so a cancellation
+        # still cancels.
+        await hass.async_add_executor_job(api.close_transport)
         raise
 
     # Is there an on_update function that we can add listener to?
@@ -385,9 +251,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         async_register_holiday_service(hass)
 
         if entry.options.get(CONF_EXPERT_WRITE, False):
-            _async_register_expert_service(hass)
+            await _async_register_expert_service(hass)
             entry.runtime_data.expert.setup_auto_poll(hass, entry)
-    except Exception:
+    except BaseException:
+        # BaseException for the same reason as the block above: a setup task
+        # cancelled on shutdown or on the setup timeout ends without an
+        # Exception, and this is the half where everything that was already
+        # published stays behind. Re-raised at the end, so a cancellation
+        # still cancels.
+        #
         # Take the platforms back down FIRST, while runtime_data is still
         # readable - their entities were built from it, and unloading them is
         # the only thing that can raise here, so it must not be starved of
@@ -410,7 +282,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # so a setup that fails after publishing it has to clear it itself.
         if hasattr(entry, "runtime_data"):
             del entry.runtime_data
-        await hass.async_add_executor_job(close_api_sessions, api)
+        await hass.async_add_executor_job(api.close_transport)
         # Home Assistant does not unload an entry whose setup failed, so
         # nothing else stops the coordinator - and by this point the
         # platforms have been forwarded, their entities have subscribed, and
@@ -445,7 +317,7 @@ def _async_release_expert_service(hass: HomeAssistant, config_entry) -> None:
     still_enabled = any(
         other.entry_id != config_entry.entry_id
         and other.options.get(CONF_EXPERT_WRITE, False)
-        and getattr(other, "runtime_data", None) is not None
+        and is_still_serving(other)
         for other in hass.config_entries.async_entries(DOMAIN)
     )
     if not still_enabled:
@@ -474,24 +346,48 @@ def _resolve_expert_entry(
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _async_register_expert_service(hass: HomeAssistant) -> None:
+def _configured_expert_ids(config_entry) -> dict:
+    """The ids the user put in slots, keyed by their canonical spelling.
+
+    Both halves of what the service needs: the keys answer "may this be
+    written at all", the values are the spelling to send - the one discovery
+    produced and the portal has therefore accepted.
+    """
+    from .expert_options import canonical_entityvalue
+
+    configured = {}
+    for slot in range(1, EXPERT_SLOT_COUNT + 1):
+        slot_id = config_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)
+        if canonical_entityvalue(slot_id):
+            configured[canonical_entityvalue(slot_id)] = slot_id
+    return configured
+
+
+def _load_expert_writer():
+    """Import the expert client module. Runs in an executor - see the caller."""
+    from . import expert_writer
+
+    return expert_writer
+
+
+async def _async_register_expert_service(hass: HomeAssistant) -> None:
     """Register wemportal.set_expert_parameter (idempotent).
 
     Takes no entry and no api on purpose: one global registration serves every
     configured account, so the handler resolves its target per call (see
     _resolve_expert_entry) and refuses when it cannot tell which is meant.
     """
-    # Function-local, like every other expert_writer import in this file:
-    # the module pulls curl_cffi and lxml (~140 ms, measured) and this
-    # file is imported whenever Home Assistant loads the integration.
-    from .expert_writer import (
-        WemPortalExpertClient,
-        entityvalue_digest,
-        short_entityvalue,
-    )
-
     if hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER):
         return
+
+    # Deferred because the module pulls curl_cffi and lxml (~140 ms,
+    # measured) - but deferring moved only WHEN, not onto which thread, so
+    # those 140 ms were spent on the event loop. Below the idempotence check
+    # as well, so a second account does not arrange for it again.
+    expert_writer = await hass.async_add_import_executor_job(_load_expert_writer)
+    expert_client = expert_writer.WemPortalExpertClient
+    entityvalue_digest = expert_writer.entityvalue_digest
+    short_entityvalue = expert_writer.short_entityvalue
 
     async def _handle_set_expert_parameter(call):
         # Strip once at the boundary: the validity check strips internally,
@@ -512,19 +408,26 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
         # Only ids the user configured in a slot may be written. Without this
         # the service is a generic write primitive for ANY parameter of the
         # installation, including ones never surfaced in Home Assistant.
-        allowed = {
-            (
-                target_entry.options.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot) or ""
-            ).strip()
-            for slot in range(1, EXPERT_SLOT_COUNT + 1)
-        }
-        allowed.discard("")
-        if entityvalue not in allowed:
+        # Compared in the canonical spelling: hex is case-insensitive, so a
+        # caller passing the id in the other case names the same parameter
+        # and was refused for a difference that means nothing.
+        from .expert_options import canonical_entityvalue
+
+        configured = _configured_expert_ids(target_entry)
+        if canonical_entityvalue(entityvalue) not in configured:
             raise HomeAssistantError(
                 f"WEM Portal expert write: {short_entityvalue(entityvalue)} is not one of "
                 "the parameters configured in this integration's options. Add it "
                 "to a slot first."
             )
+        # From here on the CONFIGURED spelling, not the one that was typed.
+        # The comparison above is case-insensitive because hex ids mean the
+        # same parameter either way - and passing the caller's spelling on
+        # from there sent the portal the one thing about this write nothing
+        # had checked. The configured id came out of discovery, so the portal
+        # has accepted it; that is what makes it the safe one to send under
+        # exactly the uncertainty canonical_entityvalue's own comment names.
+        entityvalue = configured[canonical_entityvalue(entityvalue)]
 
         data = getattr(target_entry, "runtime_data", None)
         if data is None:
@@ -547,12 +450,15 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
             still holds the old entry and api. Identity plus the unloading
             flag covers both: a different object means the configuration this
             write belongs to is gone, whatever its id says.
+
+            The reason and nothing more: asked before every request, the
+            confirming read included, it cannot say how far the write got.
             """
             reason = data.why_not_current(target_entry)
             if reason is not None:
-                raise ExpertOperationAborted(
-                    f"{reason} before the write reached the portal"
-                )
+                raise ExpertOperationAborted(reason)
+
+        from .expert_controller import ExpertBusy
 
         def _do_write():
             # Own short-lived session per write; honors the shared 403
@@ -560,25 +466,37 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
             from .expert_options import expert_client_options
 
             _raise_if_unloaded()
-            client = WemPortalExpertClient(
-                target_entry.data.get(CONF_USERNAME),
-                target_entry.data.get(CONF_PASSWORD),
-                cooldown_check=target_api.check_expert_cooldown,
-                cooldown_activate=target_api.activate_expert_cooldown,
-                cookie_jar=target_api.expert_cookies,
-                abort_check=_raise_if_unloaded,
-                **expert_client_options(target_entry.options),
-            )
-            return client.write_parameter(entityvalue, value)
+            # Take AND release the shared per-account lock here, in the worker
+            # thread - not on the event loop around the await. Only one expert
+            # portal operation per account at a time (shared with the entity
+            # writes and the auto-poll), so concurrent calls don't collide on
+            # the same parameter or open parallel portal sessions. Held on the
+            # loop and released in the awaiting coroutine's finally, a
+            # cancellation - a reload, an unload, or shutdown cancelling the
+            # calling automation - freed it while this thread was still driving
+            # the portal, letting the next operation open a second session
+            # beside it. Owned here, it is held for exactly as long as the work
+            # is, the way the entity write and the auto-poll already own it.
+            if lock is not None and not lock.acquire(blocking=False):
+                raise ExpertBusy(
+                    "another expert operation is already in progress for this "
+                    "account; try again shortly."
+                )
+            try:
+                client = expert_client(
+                    target_entry.data.get(CONF_USERNAME),
+                    target_entry.data.get(CONF_PASSWORD),
+                    cooldown_check=target_api.check_expert_cooldown,
+                    cooldown_activate=target_api.activate_expert_cooldown,
+                    cookie_jar=target_api.expert_cookies,
+                    abort_check=_raise_if_unloaded,
+                    **expert_client_options(target_entry.options),
+                )
+                return client.write_parameter(entityvalue, value)
+            finally:
+                if lock is not None:
+                    lock.release()
 
-        # Only one expert portal operation per account at a time (shared with
-        # the entity writes and the auto-poll), so concurrent calls don't
-        # collide on the same parameter or open parallel portal sessions.
-        if lock is not None and not lock.acquire(blocking=False):
-            raise HomeAssistantError(
-                "WEM Portal expert write: another expert operation is already "
-                "in progress for this account; try again shortly."
-            )
         # Run synchronously and RAISE on failure so an automation calling this
         # action can tell whether the write actually succeeded (HA action-
         # exception guidance), instead of the old fire-and-forget that always
@@ -587,6 +505,11 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
         # action. Only a SHORTENED entityvalue appears in any user-facing text.
         try:
             state = await hass.async_add_executor_job(_do_write)
+        except ExpertBusy as exc:
+            # The worker refused because another expert operation holds the
+            # account lock. Surface the same user-facing error the event loop
+            # used to raise, not the generic "failed" of the catch-all below.
+            raise HomeAssistantError(f"WEM Portal expert write: {exc}") from exc
         except ExpertOperationAborted as exc:
             # The configuration went away mid-write. Nothing reached the
             # portal - and the caller is still waiting on this call, so it
@@ -603,9 +526,6 @@ def _async_register_expert_service(hass: HomeAssistant) -> None:
             raise HomeAssistantError(
                 f"WEM Portal expert write for {ev_short} to {value} failed: {exc}"
             ) from exc
-        finally:
-            if lock is not None:
-                lock.release()
         # The write verified itself against the portal; that answer is exactly
         # what the entity for this id should be showing.
         data.expert.apply_verified_write(entityvalue, state)
@@ -675,10 +595,6 @@ def _backfill_account_unique_id(hass: HomeAssistant, entry: ConfigEntry) -> None
     """
     if entry.unique_id is not None:
         return
-    # Function-local: config_flow imports expert_writer at module level,
-    # so a top-level import here would pull curl_cffi into every setup.
-    from .config_flow import account_unique_id
-
     wanted = account_unique_id(entry.data.get(CONF_USERNAME))
     if not wanted:
         _LOGGER.debug(
@@ -713,6 +629,12 @@ async def async_unload_entry(
     data = getattr(config_entry, "runtime_data", None)
     if data is not None:
         data.begin_unload()
+        # A save that had already passed its gate is on the disk right now.
+        # Waited out here rather than left running: what comes after this
+        # unload is either the removal that deletes those stores or the
+        # reload that writes new ones, and an in-flight write finishing later
+        # would land on top of both.
+        await data.coordinator.async_wait_for_store_writes()
     unload_ok = bool(
         await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
     )
@@ -725,12 +647,22 @@ async def async_unload_entry(
             data.abort_unload()
         return False
 
-    forget_auth_failures(config_entry.entry_id)
+    # Not unconditionally: the streak belongs to the ACCOUNT, and a legacy
+    # duplicate entry of the same one is still allowed to load. Clearing it
+    # here took the count out from under the entry that stays - and the
+    # removal logic that protects the rest of the account state runs later, so
+    # by the time it decides to keep it, it is already zero.
+    if not _another_entry_shares_this_account(hass, config_entry):
+        forget_auth_failures(config_entry)
+    # An unloaded entry cannot re-check what its issues report, so they come
+    # down with it; whatever still holds after a reload is re-raised within
+    # a few cycles by the code that watches it.
+    _async_delete_entry_issues(hass, config_entry.entry_id)
     # runtime_data is still readable here - Home Assistant drops it only
     # after this returns True. Close the API + scraper HTTP sessions so
     # they don't linger open after the entry is unloaded/reloaded.
     if data is not None:
-        await hass.async_add_executor_job(close_api_sessions, data.api)
+        await hass.async_add_executor_job(data.api.close_transport)
     # The expert service is a single domain-wide registration shared by
     # all entries. Only remove it once NO remaining loaded entry still
     # has expert write enabled - previously unloading ANY entry removed
@@ -741,3 +673,74 @@ async def async_unload_entry(
     async_release_holiday_service(hass, config_entry)
 
     return True
+
+
+def _async_delete_entry_issues(hass: HomeAssistant, entry_id: str) -> None:
+    """Drop every repair issue raised under this entry.
+
+    Issue ids start with the entry id by contract (tests/test_repairs.py
+    pins that), which is what makes deleting them by prefix possible.
+    Called from unload AND removal: an entry whose setup failed never
+    reaches async_unload_entry, but its first refresh can already have
+    raised the rate-limit issue.
+    """
+    registry = issue_registry.async_get(hass)
+    stale = [
+        issue_id
+        for domain, issue_id in registry.issues
+        if domain == DOMAIN and issue_id.startswith(f"{entry_id}_")
+    ]
+    for issue_id in stale:
+        issue_registry.async_delete_issue(hass, DOMAIN, issue_id)
+
+
+async def async_remove_entry(
+    hass: HomeAssistant, config_entry: WemPortalConfigEntry
+) -> None:
+    """Delete what a removed entry would otherwise leave behind for good.
+
+    Home Assistant calls this only when the entry is removed, not on an
+    unload or reload. Neither store was ever deleted before, so a removed
+    entry left its module cache and scraper device id in .storage forever -
+    and the account state kept remembering an account that no longer exists
+    in this installation.
+    """
+    await get_modules_store(hass, config_entry.entry_id).async_remove()
+    await get_scraper_device_store(hass, config_entry.entry_id).async_remove()
+    _async_delete_entry_issues(hass, config_entry.entry_id)
+    _forget_account_state_if_last_entry(hass, config_entry)
+
+
+def _another_entry_shares_this_account(hass: HomeAssistant, config_entry) -> bool:
+    """Whether a second entry of the same WEM account is configured.
+
+    Asked by both halves of the teardown, which is why it is a function: the
+    account state and the auth-failure streak live under the ACCOUNT, so
+    neither of them belongs to the entry that is going away when a legacy
+    duplicate of it is still there.
+    """
+    account = account_unique_id(config_entry.data.get(CONF_USERNAME))
+    return any(
+        other.entry_id != config_entry.entry_id
+        and account_unique_id(other.data.get(CONF_USERNAME)) == account
+        for other in hass.config_entries.async_entries(DOMAIN)
+    )
+
+
+def _forget_account_state_if_last_entry(hass: HomeAssistant, config_entry) -> None:
+    """Drop the account memory only once no entry is left that shares it.
+
+    The two stores above belong to one entry and go with it. This one does
+    not: it is addressed by the normalised account, and a legacy duplicate
+    entry of the same account is still allowed to load. Removing one of those
+    used to take the 403 backoff, the auth-failure streak and the
+    once-per-account warning markers away from the entry that stays, which
+    then polled as though the portal had never refused anything.
+    """
+    username = config_entry.data.get(CONF_USERNAME)
+    if _another_entry_shares_this_account(hass, config_entry):
+        _LOGGER.debug(
+            "Another entry still uses this account; keeping its remembered state."
+        )
+        return
+    forget_account_state(username)

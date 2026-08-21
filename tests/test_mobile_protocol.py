@@ -10,10 +10,44 @@ what makes adding the shape that just broke cheap enough to actually do.
 import pytest
 
 from custom_components.wemportal.mobile_protocol import (
+    described_parameters,
     read_refresh_ticket,
     read_write_ack,
     status_is_success,
 )
+
+
+@pytest.mark.parametrize(
+    "unusable",
+    [
+        None,  # cached as a dict KEY of None, then read back by nobody
+        [],  # unhashable: TypeError the moment it is used as a key
+        {},  # same
+        123,  # not a key the portal ever asks for
+        "",  # a name nothing can be looked up under
+        "   ",
+    ],
+)
+def test_a_row_whose_parameter_id_is_not_a_name_is_dropped(unusable):
+    """Presence of the key was the whole check, so the VALUE could be
+    anything - and every one of these ends badly one layer down, where the
+    id becomes a dict key: None caches a parameter nobody can ask for, a
+    list or dict raises TypeError and takes the rest of the module's
+    discovery with it.
+    """
+    payload = {"Parameters": [{"ParameterID": unusable}, {"ParameterID": "P1"}]}
+
+    assert described_parameters(payload) == [{"ParameterID": "P1"}]
+
+
+def test_a_usable_parameter_id_is_kept_verbatim():
+    """The counter-test: whatever the portal calls a parameter is its name,
+    and this must not start trimming or rewriting it."""
+    payload = {"Parameters": [{"ParameterID": "Heizprogramm1", "DataType": 6}]}
+
+    assert described_parameters(payload) == [
+        {"ParameterID": "Heizprogramm1", "DataType": 6}
+    ]
 
 
 @pytest.mark.parametrize(

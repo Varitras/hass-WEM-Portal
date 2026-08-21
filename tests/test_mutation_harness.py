@@ -15,12 +15,17 @@ import importlib.util
 import json
 import re
 import tempfile
-import time
+import threading
 from pathlib import Path
 
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "mutate.py"
+
+# How long one worker waits for the case behind it before the run is declared
+# stuck rather than slow. Generous: it covers the pool starting three threads
+# and copying three trees, and a run that trips it is broken, not busy.
+WAIT_FOR_A_WORKER_SECONDS = 60
 
 
 def _load():
@@ -149,6 +154,40 @@ def test_a_passing_suite_counts_as_survived(monkeypatch):
     assert mutate.run_tests("something") is False
 
 
+def test_the_run_cannot_be_failed_by_the_duration_budget(monkeypatch):
+    """Exit code 1 is the whole evidence, so nothing else may produce it.
+
+    conftest turns an otherwise GREEN run red when a single test ran past
+    the duration budget - useful in the everyday suite, and here it is a
+    false "caught": the mutation is reported as noticed because a test was
+    slow, not because anything failed. The two signals share one exit code,
+    so they have to be kept apart at the call.
+
+    Asserted on the command line because that is where the separation lives
+    - the alternative would be a real slow run inside the suite.
+    """
+    seen = {}
+
+    def record(argv, **_kwargs):
+        seen["argv"] = argv
+        return _Result(0, "3 passed")
+
+    monkeypatch.setattr(mutate.subprocess, "run", record)
+
+    mutate.run_tests("something")
+
+    argv = seen["argv"]
+    assert "--slow-test-seconds" in argv, (
+        "a slow test would be reported as a caught mutation"
+    )
+    # The VALUE, not just the flag: `0` makes every test late, which would
+    # turn the budget from a false "caught" now and then into one for every
+    # single mutation - the same lie, at full volume.
+    assert argv[argv.index("--slow-test-seconds") + 1] == "inf", (
+        "the budget is still switched on for this run, just at a different threshold"
+    )
+
+
 def test_the_file_is_restored_even_when_the_run_explodes(tmp_path, monkeypatch):
     """A harness that leaves mutated source behind would poison every later
     run - and the next commit."""
@@ -226,6 +265,52 @@ def test_every_selector_clause_names_a_real_test():
             assert any(clause in name for name in names), (
                 f"{case['label']}: selector clause {clause!r} matches no test"
             )
+
+
+# How many tests one clause may select before it stops naming anything. A
+# clause is matched as a SUBSTRING, so an ordinary word picks up whatever
+# else happens to contain it: `word` selected 24 tests across four files,
+# and any one of them failing would have counted as this mutation being
+# noticed. Three leaves room for a deliberate family of names.
+CLAUSE_BREADTH_LIMIT = 3
+
+
+def test_no_selector_clause_is_a_word_that_means_anything():
+    """The fourth silent-pass route: a clause too wide to be evidence.
+
+    The two checks above ask whether a clause matches SOMETHING. This one
+    asks whether it matches something in particular - a mutation whose
+    selector drags in two dozen unrelated tests is reported as caught by
+    whichever of them happens to be red, and says nothing about the code it
+    broke.
+    """
+    plan = json.loads(
+        (SCRIPT.parent.parent / "mutations" / "response-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    names = set()
+    for module in (Path(__file__).parent).glob("test_*.py"):
+        names.update(
+            re.findall(
+                r"^\s*(?:async )?def (test_\w+)",
+                module.read_text(encoding="utf-8"),
+                re.MULTILINE,
+            )
+        )
+
+    too_wide = []
+    for case in plan:
+        for clause in re.split(r"\s+(?:or|and)\s+", case["tests"]):
+            clause = clause.strip()
+            selected = [name for name in names if clause in name]
+            if len(selected) > CLAUSE_BREADTH_LIMIT:
+                too_wide.append(f"{clause!r} selects {len(selected)}")
+
+    assert not too_wide, (
+        f"selector clause(s) too wide to be evidence: {too_wide}. Name the "
+        "test the mutation is actually about."
+    )
 
 
 def test_the_shipped_plan_still_matches_the_code():
@@ -473,6 +558,24 @@ def _plan_of(count, tmp_path):
     return path
 
 
+def test_a_plan_with_no_cases_in_it_is_an_error(tmp_path, monkeypatch):
+    """ "all 0 mutations caught" is the same green line as a real run.
+
+    A filter that matched nothing, a truncated file, a plan someone emptied
+    while extracting a subset - each of those reported the suite as fully
+    guarded on the strength of having checked nothing. The one shape of
+    failure this whole script exists to make impossible.
+    """
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    plan = _plan_of(0, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan)])
+
+    with pytest.raises(SystemExit) as excinfo:
+        mutate.main()
+
+    assert "no mutations" in str(excinfo.value)
+
+
 def test_one_job_runs_in_the_repository_itself(tmp_path, monkeypatch):
     """--jobs 1 is the fallback when a parallel run reports something odd, so
     it has to be the OLD behaviour exactly: no copy, no temp directory."""
@@ -555,29 +658,62 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
     Reporting in that order would make two runs of the same plan produce
     different output, which is a diff nobody can read - and the one case that
     SURVIVED would move around between runs.
+
+    The reverse finishing order is FORCED rather than timed. It used to be
+    staggered sleeps, which is two mistakes in one: a sleep only makes a given
+    order likely, and conftest's autouse fixture replaces time.sleep for the
+    whole process, so those sleeps returned instantly and no order was even
+    made likely. Each case now waits for the one after it, so plan order is
+    the one order that cannot come out by luck.
+
+    FOUR cases, and the one that survives is not in the middle. Three of them
+    with the survivor between two caught ones answers [caught, SURVIVED,
+    caught] - which reads the same backwards, so reversing the order produced
+    byte-identical output and the assertion could not see it. The forced order
+    was real; there was simply nothing for it to reveal.
+
+    NOT in the mutation gate, and the reason is worth writing down. The
+    barrier controls when `run_tests` RETURNS, and `one()` does a little more
+    afterwards - so which future resolves first is still the scheduler's
+    call, and on a loaded machine the reversal this is built on stops being
+    reliable. A mutation that is caught most of the time is a flaky red
+    somewhere down the line, which is worse than an honest gap: what this
+    test holds is that each result stays attached to its own case.
     """
     monkeypatch.setattr(mutate, "REPO", tmp_path)
     monkeypatch.setattr(
         mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
     )
 
+    cases = 4
+    survivor = 1
+    finished = [threading.Event() for _ in range(cases)]
+
     def slowest_first(selector, paths=None, root=None):
         # WHICH case this is comes from the mutated file in this worker's own
         # tree, not from the worker's number: the pool hands cases to whatever
         # worker is free, so the two are only incidentally the same.
         mutated = (root / "module.py").read_text(encoding="utf-8")
-        index = next(number for number in range(3) if f"value{number} = 2" in mutated)
-        # case0 takes longest, so finishing order is the reverse of plan order.
-        time.sleep(0.05 * (3 - index))
+        index = next(
+            number for number in range(cases) if f"value{number} = 2" in mutated
+        )
+        # All four run at once (--jobs below), so the last case is free to
+        # finish first and the first one finishes last.
+        if index < cases - 1:
+            assert finished[index + 1].wait(timeout=WAIT_FOR_A_WORKER_SECONDS), (
+                f"case{index + 1} never finished - all {cases} cases have to "
+                "run at once for this order to be reachable at all"
+            )
+        finished[index].set()
         # A DIFFERENT answer per case, which is the point. With every case
         # answering the same, a result attached to the wrong case produces
         # identical output and the assertion below cannot see it - the whole
-        # thing passed while proving only that three lines were printed.
-        return index != 1
+        # thing passed while proving only that some lines were printed.
+        return index != survivor
 
     monkeypatch.setattr(mutate, "run_tests", slowest_first)
-    plan = _plan_of(3, tmp_path)
-    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "3"])
+    plan = _plan_of(cases, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", str(cases)])
 
     assert mutate.main() == 1, "a surviving case must fail the run"
 
@@ -587,9 +723,8 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
         if line.startswith(("caught", "SURVIVED"))
     ]
     assert reported == [
-        ("caught", "case0"),
-        ("SURVIVED", "case1"),
-        ("caught", "case2"),
+        ("SURVIVED" if number == survivor else "caught", f"case{number}")
+        for number in range(cases)
     ], "results were reported in finishing order, or attached to the wrong case"
 
 

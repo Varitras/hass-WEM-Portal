@@ -60,13 +60,9 @@
     "data": {
       "1234": {
         "1234-Energy_1": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_1",
           "device_class": "energy",
-          "friendlyName": "Heating Ung Energy",
+          "friendly_name": "Heating Ung Energy",
+          "parameter_id": "Energy_1",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",
@@ -102,13 +98,9 @@
     "data": {
       "1234": {
         "1234-Energy_1": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_1",
           "device_class": "energy",
-          "friendlyName": "Heating Ung Energy",
+          "friendly_name": "Heating Ung Energy",
+          "parameter_id": "Energy_1",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",
@@ -172,13 +164,9 @@
     "data": {
       "1234": {
         "1234-Energy_1": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_1",
           "device_class": "energy",
-          "friendlyName": "Heating Energy",
+          "friendly_name": "Heating Energy",
+          "parameter_id": "Energy_1",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",
@@ -227,26 +215,18 @@
     "data": {
       "1234": {
         "1234-Energy_1": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_1",
           "device_class": "energy",
-          "friendlyName": "Heating Ung Energy",
+          "friendly_name": "Heating Ung Energy",
+          "parameter_id": "Energy_1",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",
           "value": 12.5
         },
         "1234-Energy_4": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_4",
           "device_class": "energy",
-          "friendlyName": "Total Energy Yield",
+          "friendly_name": "Total Energy Yield",
+          "parameter_id": "Energy_4",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",
@@ -295,13 +275,9 @@
     "data": {
       "1234": {
         "1234-Energy_2": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_2",
           "device_class": "energy",
-          "friendlyName": "Hot Water Energy",
+          "friendly_name": "Hot Water Energy",
+          "parameter_id": "Energy_2",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",
@@ -345,13 +321,9 @@
       "1234": {},
       "5678": {
         "5678-Energy_1": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_1",
           "device_class": "energy",
-          "friendlyName": "Heating Ung Energy",
+          "friendly_name": "Heating Ung Energy",
+          "parameter_id": "Energy_1",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",
@@ -374,7 +346,7 @@
     "data": {
       "1234": {}
     },
-    "retry_shortened": false
+    "retry_shortened": true
   },
   "routine_rejection_does_not_stop_the_rest": {
     "calls": [
@@ -415,13 +387,9 @@
     "data": {
       "1234": {
         "1234-Energy_2": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_2",
           "device_class": "energy",
-          "friendlyName": "Hot Water Energy",
+          "friendly_name": "Hot Water Energy",
+          "parameter_id": "Energy_2",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",
@@ -457,13 +425,9 @@
     "data": {
       "1234": {
         "1234-Energy_1": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_1",
           "device_class": "energy",
-          "friendlyName": "Heating Ung Energy",
+          "friendly_name": "Heating Ung Energy",
+          "parameter_id": "Energy_1",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",
@@ -506,13 +470,9 @@
     "data": {
       "1234": {
         "1234-Energy_42": {
-          "DataType": -1,
-          "IsWriteable": false,
-          "ModuleIndex": -1,
-          "ModuleType": -1,
-          "ParameterID": "Energy_42",
           "device_class": "energy",
-          "friendlyName": "Energy 42",
+          "friendly_name": "Energy 42",
+          "parameter_id": "Energy_42",
           "platform": "sensor",
           "state_class": "total_increasing",
           "unit": "kWh",

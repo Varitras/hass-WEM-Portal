@@ -1,6 +1,13 @@
 """Exceptions for the wemportal component."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from homeassistant.exceptions import HomeAssistantError
+
+if TYPE_CHECKING:
+    from .expert_writer import ExpertParameterState
 
 
 class WemPortalError(HomeAssistantError):
@@ -8,9 +15,43 @@ class WemPortalError(HomeAssistantError):
     Custom exception for WEM Portal errors
     """
 
+    # The portal's own status code, where the failure got far enough to
+    # carry one. The transport sets it so a caller can react to a specific
+    # code - statistics skips an invalid group by it - without parsing the
+    # message text. None whenever the request never reached the portal, and
+    # declared here rather than attached on the fly so both sides can be
+    # type-checked.
+    server_status: Any = None
+
 
 class AuthError(WemPortalError):
-    """Exception to indicate an authentication error."""
+    """The portal refused the credentials.
+
+    Shielded by name in front of every catch-all on the poll path, and the
+    reason is stated here rather than four times over there.
+
+    A session can expire mid-cycle: transport logs in again from inside
+    whatever request noticed the 401, so a rejected login surfaces in the
+    middle of a partial read rather than at the top of the cycle where the
+    login normally happens. That partial read is guarded by a handler whose
+    job is to keep the poll going - one device, one parameter, one programme
+    failing must not cost the rest - and every one of those is right on its
+    own terms. Kept there, the rejection costs twice:
+
+      * the coordinator counts CONSECUTIVE auth failures before it offers
+        the reauth dialog, and a cycle that ends any other way resets that
+        count instead of raising it, so the dialog stays out of reach;
+      * only `_ensure_api_session` looks at `valid_login`, once per cycle,
+        and it has already run - so every request after this one goes out on
+        the dead session, collects its own 401 and triggers another refused
+        login. One per device and path, against a portal that counts
+        requests per IP.
+
+    NOT a BaseException, unlike PollDeadlineExceeded, which solves the same
+    problem by being uncatchable: the `both` mode deliberately swallows the
+    web half's AuthError so a wrong web password cannot cost the api
+    readings. That one has to stay catchable.
+    """
 
 
 class UnknownAuthError(WemPortalError):
@@ -56,7 +97,7 @@ class ParameterWriteError(WemPortalError):
     the case this is for.
     """
 
-    def __init__(self, message, state=None):
+    def __init__(self, message: str, state: ExpertParameterState | None = None) -> None:
         super().__init__(message)
         self.state = state
 

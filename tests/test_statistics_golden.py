@@ -30,14 +30,15 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.wemportal.const import (
+from custom_components.wemportal.models import Reading
+from custom_components.wemportal.wemportalapi import WemPortalApi
+from custom_components.wemportal.statistics import (
     API_STATISTICS_READ_URL,
     API_STATISTICS_REFRESH_URL,
     STATISTICS_REFRESH_INTERVAL_SECONDS,
     STATISTICS_RETRY_INTERVAL_SECONDS,
     WEM_INVALID_PARAMETER_STATUS,
 )
-from custom_components.wemportal.wemportalapi import WemPortalApi
 
 GOLDEN = Path(__file__).parent / "fixtures" / "statistics_golden.json"
 
@@ -62,7 +63,11 @@ def _api(script, devices=(DEVICE,)):
     api = WemPortalApi("user@example.org", "secret")
     api.data = {device: {} for device in devices}
     api.modules = {device: {} for device in devices}
-    api.last_statistics_fetch = 0.0
+    # Not redundant: the hourly guard lives in the account state, which is
+    # keyed by account and outlives this object. build_snapshot() runs every
+    # case against the same account, so without this only the first one
+    # would reach the portal at all.
+    api.last_statistics_fetch = None
     calls = []
     counters = {}
 
@@ -106,13 +111,24 @@ def _run(script, devices=(DEVICE,), enabled=None, existing=None):
     if existing:
         for device, data in existing.items():
             api.data[device].update(data)
+    started = time.monotonic()
     api.get_statistics(enabled_devices=enabled)
     return {
-        "data": {d: api.data[d] for d in sorted(api.data)},
+        "data": {
+            device: {
+                key: row.as_dict() if isinstance(row, Reading) else row
+                for key, row in api.data[device].items()
+            }
+            for device in sorted(api.data)
+        },
         "calls": calls,
         # Whether the cycle asked to be retried early. Recorded as the
-        # decision, not the timestamp, so the case stays deterministic.
-        "retry_shortened": api.last_statistics_fetch < 0,
+        # decision, not the timestamp, so the case stays deterministic:
+        # a stamp of "just now" is never before the call started, and a
+        # back-dated one always is. Comparing against zero instead read
+        # false for every case there is - the guard reads a clock that
+        # never goes near it.
+        "retry_shortened": api.last_statistics_fetch < started,
     }
 
 
@@ -184,7 +200,7 @@ def build_snapshot():
             ],
             API_STATISTICS_READ_URL: [_read([_entry(None)])],
         },
-        existing={DEVICE: {f"{DEVICE}-Energy_1": {"value": 77.0}}},
+        existing={DEVICE: {f"{DEVICE}-Energy_1": Reading(value=77.0)}},
     )
     # And with no previous value it is skipped entirely rather than invented.
     snapshot["missing_value_without_history_is_skipped"] = _run(
@@ -335,8 +351,8 @@ def test_a_routine_rejection_still_counts_the_device_as_succeeded():
             ],
         }
     )
-    before = time.time()
-    api.last_statistics_fetch = 0.0
+    before = time.monotonic()
+    api.last_statistics_fetch = None
 
     api.get_statistics()
 

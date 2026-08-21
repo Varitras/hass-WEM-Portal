@@ -18,6 +18,7 @@ from custom_components.wemportal.date import (
     date_to_epoch,
     epoch_to_date,
 )
+from custom_components.wemportal.models import Reading
 
 # Measured on a live installation, not constructed: holiday begin and end came
 # back as these two values, exactly 86400 apart and both exactly on a midnight
@@ -67,18 +68,40 @@ def test_a_numeric_string_is_still_accepted():
 # --- the entity, including the write that reaches the heating system ----
 
 
+def _api_that_accepts(data):
+    """A REAL api with only the portal request stubbed out.
+
+    Standing in for `change_value` itself would mean reproducing what it does
+    around the request - take the lock, read the companions, publish what the
+    portal accepted - and the write tests below are about exactly that. A
+    double that forgets the publishing half leaves every one of them passing
+    while the row keeps its pre-write value.
+    """
+    from custom_components.wemportal.wemportalapi import WemPortalApi
+
+    api = WemPortalApi("user@example.org", "secret")
+    api.valid_login = True
+    api.data = data
+    api._change_value = lambda *_args, **_kwargs: None
+    api.device_types = {}
+    api.api_version = None
+    api.reread_device_values = lambda *_args, **_kwargs: None
+    return api
+
+
 class _Coordinator:
     def __init__(self, data):
         self.data = data
         self.last_update_success = True
+        self.listeners = []
         # A portal that accepts a write and confirms whatever the row already
         # says it stored. Tests that care about either replace them.
-        self.api = types.SimpleNamespace(
-            device_types={},
-            api_version=None,
-            change_value=lambda *_args, **_kwargs: None,
-            reread_device_values=lambda *_args, **_kwargs: None,
-        )
+        self.api = _api_that_accepts(data)
+
+    def async_add_listener(self, update):
+        """Real coordinators hand back a remover; nothing here updates."""
+        self.listeners.append(update)
+        return lambda: self.listeners.remove(update)
 
     def async_update_listeners(self):
         pass
@@ -87,19 +110,22 @@ class _Coordinator:
 class _Entry:
     entry_id = "entry-1"
 
+    def async_on_unload(self, remove) -> None:
+        """Home Assistant keeps these to call on unload; nothing here unloads."""
+
 
 def _entity(value=BEGIN_EPOCH):
     data = {
         "1234": {
-            "Heat pump-U_Beginn": {
-                "friendlyName": "Holiday begin",
-                "ParameterID": "U_Beginn",
-                "value": value,
-                "unit": None,
-                "platform": "date",
-                "ModuleIndex": 0,
-                "ModuleType": 1,
-            }
+            "Heat pump-U_Beginn": Reading(
+                friendly_name="Holiday begin",
+                parameter_id="U_Beginn",
+                value=value,
+                unit=None,
+                platform="date",
+                module_index=0,
+                module_type=1,
+            )
         }
     }
     entity = WemPortalDate(
@@ -122,25 +148,33 @@ async def _run_now(function, *args):
 
 def _with_companion(data, value=END_EPOCH, module=(0, 1), platform="date"):
     """A second parameter on the device, next to the one under test."""
-    data["1234"]["Heat pump-U_Ende"] = {
-        "friendlyName": "Holiday end",
-        "ParameterID": "U_Ende",
-        "value": value,
-        "unit": None,
-        "platform": platform,
-        "ModuleIndex": module[0],
-        "ModuleType": module[1],
-    }
+    data["1234"]["Heat pump-U_Ende"] = Reading(
+        friendly_name="Holiday end",
+        parameter_id="U_Ende",
+        value=value,
+        unit=None,
+        platform=platform,
+        module_index=module[0],
+        module_type=module[1],
+    )
     return data
 
 
 def _recorder(entity):
-    """Capture what the entity hands to the write path."""
+    """Capture what the entity hands to the write path.
+
+    The companions arrive as a callable and are read once the write holds the
+    shared api lock - see WemPortalApi.change_value. Resolved here the same
+    way, so these tests keep asking what travels with the write rather than
+    how it is passed.
+    """
     seen = {}
 
     async def record(value, together_with=None):
         seen["value"] = value
-        seen["together_with"] = together_with
+        seen["together_with"] = (
+            together_with() if callable(together_with) else together_with
+        )
 
     entity.async_write_parameter = record
     return seen
@@ -196,7 +230,7 @@ async def test_a_day_the_portal_did_not_keep_is_not_displayed():
     _wired(entity)
 
     def portal_kept_the_old_value(_device_id):
-        data["1234"]["Heat pump-U_Beginn"]["value"] = BEGIN_EPOCH
+        data["1234"]["Heat pump-U_Beginn"].value = BEGIN_EPOCH
 
     entity.coordinator.api.reread_device_values = portal_kept_the_old_value
 
@@ -246,7 +280,7 @@ async def test_a_day_that_could_not_be_read_back_is_not_shown_as_set():
     assert entity.native_value is None, (
         "a day nobody could confirm was displayed as if it had been set"
     )
-    assert data["1234"]["Heat pump-U_Beginn"]["value"] is None, (
+    assert data["1234"]["Heat pump-U_Beginn"].value is None, (
         "the unconfirmed day stayed in the coordinator row, so the next "
         "update puts it back on display"
     )
@@ -258,7 +292,7 @@ async def test_a_day_that_was_read_back_is_still_shown():
     _wired(entity)
 
     def portal_kept_it(_device_id):
-        data["1234"]["Heat pump-U_Beginn"]["value"] = date_to_epoch(date(2026, 12, 24))
+        data["1234"]["Heat pump-U_Beginn"].value = date_to_epoch(date(2026, 12, 24))
 
     entity.coordinator.api.reread_device_values = portal_kept_it
 
@@ -287,7 +321,7 @@ async def test_a_write_is_not_reported_before_the_portal_took_it():
 
 def test_a_later_cycle_updates_the_day():
     entity, data = _entity()
-    data["1234"]["Heat pump-U_Beginn"]["value"] = END_EPOCH
+    data["1234"]["Heat pump-U_Beginn"].value = END_EPOCH
 
     entity._handle_coordinator_update()
 
@@ -358,6 +392,40 @@ async def test_only_dates_are_taken_along():
     assert seen["together_with"] == {}
 
 
+async def test_companions_come_from_the_api_rows_not_the_lagging_snapshot():
+    """The companions are read once the write holds the api lock, so they have
+    to come from the rows that lock protects - api.data - not the coordinator's
+    published snapshot. After a transport reset the poll rebinds api.data to a
+    fresh dict and the coordinator publishes it a step later; a companion read
+    from the lagging snapshot sent a stale value that undid a holiday date a
+    concurrent write had just stored.
+    """
+    entity, data = _entity()
+    _with_companion(data)  # api.data holds the current companion (END_EPOCH)
+    # The coordinator's published snapshot lags with an OLDER companion value.
+    entity.coordinator.data = {
+        "1234": {
+            "Heat pump-U_Beginn": data["1234"]["Heat pump-U_Beginn"],
+            "Heat pump-U_Ende": Reading(
+                friendly_name="Holiday end",
+                parameter_id="U_Ende",
+                value=END_EPOCH - 86400,
+                unit=None,
+                platform="date",
+                module_index=0,
+                module_type=1,
+            ),
+        }
+    }
+    seen = _recorder(entity)
+
+    await entity.async_set_value(date(2026, 8, 4))
+
+    assert seen["together_with"] == {"U_Ende": END_EPOCH}, (
+        f"the companion was read from the lagging snapshot: {seen['together_with']}"
+    )
+
+
 def _wired(entity):
     """Let the write reach the real write path rather than a recorder.
 
@@ -400,18 +468,15 @@ def test_only_date_rows_become_date_entities():
     added = []
     data = {
         "1234": {
-            "Heat pump-U_Beginn": {
-                "platform": "date",
-                "value": BEGIN_EPOCH,
-                "friendlyName": "Holiday begin",
-                "ParameterID": "U_Beginn",
-            },
-            "Heat pump-Pump": {
-                "platform": "switch",
-                "value": 1.0,
-                "friendlyName": "Pump",
-                "ParameterID": "Pump",
-            },
+            "Heat pump-U_Beginn": Reading(
+                platform="date",
+                value=BEGIN_EPOCH,
+                friendly_name="Holiday begin",
+                parameter_id="U_Beginn",
+            ),
+            "Heat pump-Pump": Reading(
+                platform="switch", value=1.0, friendly_name="Pump", parameter_id="Pump"
+            ),
             "ConnectionStatus": 0,
         }
     }

@@ -3,15 +3,24 @@ survival on a failed device refresh, and str-normalisation of device ids.
 """
 
 import asyncio
+import contextlib
 import json
 import time
+import types
 
 import pytest
 import requests as real_requests
 
-from custom_components.wemportal import exceptions, wemportalapi
+from custom_components.wemportal import exceptions, statistics, transport, wemportalapi
+from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.const import WEB_LOGGED_IN_MARKER
 from custom_components.wemportal.wemportalapi import WemPortalApi
+
+
+# A week the device really reported a programme for: the switching times
+# are what makes it one, and both the read and the ageing exemption ask
+# for them now.
+A_FED_WEEK = [{"Day": 1, "CircuitTimes": [{"Start": 6, "End": 22, "Level": 1}]}]
 
 
 class FakeResponse:
@@ -68,6 +77,20 @@ def _api(**kwargs):
     return WemPortalApi("user@example.org", "secret", **kwargs)
 
 
+def _api_after_a_poll(**kwargs):
+    """An api that has a session, which is what a write finds in production.
+
+    Writes reach the portal from an entity, and an entity exists because a
+    poll built it - so `valid_login` is set by the time anyone clicks. A
+    freshly constructed object is the state after a transport reset, and
+    change_value logs in again there rather than posting into nothing; a
+    write test starting from it would be testing that instead.
+    """
+    api = _api(**kwargs)
+    api.valid_login = True
+    return api
+
+
 def _run(method, *args, **kwargs):
     """Drive one coroutine to completion from a synchronous test.
 
@@ -96,11 +119,45 @@ def test_api_login_network_error_raises_clean_auth_error(monkeypatch):
 def test_api_login_post_has_timeout(monkeypatch):
     api = _api()
     session = RecordingSession()
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(transport.requests, "Session", lambda: session)
     api.api_login()
     assert api.valid_login is True
-    assert (
-        session.post_kwargs.get("timeout") == wemportalapi.API_REQUEST_TIMEOUT_SECONDS
+    assert session.post_kwargs.get("timeout") == transport.API_REQUEST_TIMEOUT_SECONDS
+
+
+def test_a_rejected_login_gives_up_the_session_it_had_already_replaced(monkeypatch):
+    """A login the portal turns down must not leave a claim to be signed in.
+
+    api_login closes the old session and builds a new one BEFORE it sends,
+    so from that point a leftover `valid_login` describes something that no
+    longer exists. The rejection path - HTTP 200 with a status the portal
+    refuses - raised without clearing it, and only the two network branches
+    below did.
+
+    What that cost: a password changed while Home Assistant runs is not
+    noticed until the session expires. The 401 then triggers a re-login
+    from inside a partial read, that re-login is rejected, and its
+    AuthError is swallowed by the broad handler around that partial read.
+    With `valid_login` still true the next cycle skips the login entirely
+    and spends itself on 401s - so the coordinator never sees an AuthError,
+    never counts one, and never offers the reauth dialog. The integration
+    stays quietly dead until someone reloads it by hand.
+
+    Cleared here, the next cycle logs in through _ensure_api_session, whose
+    AuthError reaches the coordinator unchanged (see the WemPortalError
+    re-raise in _fetch_data).
+    """
+    api = _api()
+    # The state the re-login path is actually in: a session that WAS good.
+    api.valid_login = True
+    session = RecordingSession(post_json={"Status": 1})
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+
+    with pytest.raises(exceptions.AuthError):
+        api.api_login()
+
+    assert api.valid_login is False, (
+        "a rejected login left the api claiming a session it had replaced"
     )
 
 
@@ -128,6 +185,66 @@ def test_get_devices_failure_keeps_cache():
         api.get_devices()
     assert api.modules == CACHED_MODULES
     assert api.data == {"1234": {"k": "v"}}
+
+
+def test_a_device_list_refresh_keeps_the_readings_of_a_device_it_still_names():
+    """get_devices refreshes the device and module LIST - it is not a reason
+    to throw the readings away.
+
+    It runs once per session, and a transport recovery starts a new one. The
+    api half is written again in the same cycle, so nobody noticed - but a
+    web-only row has no api half. Where the scrape is not due yet or is in
+    its backoff, those values were simply gone, for as long as that lasts.
+    """
+    api = _api(cached_modules=CACHED_MODULES)
+    api.data = {
+        "1234": {
+            "ConnectionStatus": 0,
+            "heat_pump-outside": Reading(value=11.5, parameter_id="heat_pump-outside"),
+        }
+    }
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {
+            "Devices": [
+                {
+                    "ID": 1234,
+                    "ConnectionStatus": 0,
+                    "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}],
+                }
+            ]
+        }
+    )
+
+    api.get_devices()
+
+    scraped = api.data["1234"].get("heat_pump-outside")
+    assert scraped is not None and scraped.value == 11.5, (
+        "a web-only reading was dropped by a refresh of the device list"
+    )
+    assert api.data["1234"]["ConnectionStatus"] == 0
+
+
+def test_a_device_list_where_no_row_is_usable_is_reported_not_adopted():
+    """Skipping a bad row is right; skipping every row and calling it an
+    empty account is not.
+
+    The rows are skipped one by one with a warning, and then data and modules
+    are replaced regardless - so an answer this integration could not read
+    became a successful poll of an account with nothing in it. On the usual
+    one-device installation that is everything gone, no setup error, and no
+    way back until a reload: get_devices runs once per session.
+    """
+    api = _api(cached_modules=CACHED_MODULES, existing_data={"1234": {"k": "v"}})
+    # Shaped like the contract at the top level, unreadable in every row.
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {"Devices": [{"no": "id"}, {"also": "no id"}]}
+    )
+
+    with pytest.raises(exceptions.ServerError):
+        api.get_devices()
+
+    assert api.data == {"1234": {"k": "v"}}, "the readings were replaced by nothing"
+    assert api.modules == CACHED_MODULES, "the discovery cache went with them"
 
 
 def test_get_devices_success_carries_cached_parameters():
@@ -158,7 +275,6 @@ def test_get_statistics_accepts_int_device_ids():
     api.make_api_call = lambda url, **_kwargs: (
         calls.append(url) or FakeResponse({"GroupTypeDescriptions": []})
     )
-    api.last_statistics_fetch = 0.0
     api.get_statistics(enabled_devices=[1234])
     assert calls, "statistics refresh was skipped for an int device id"
 
@@ -235,7 +351,6 @@ def _statistics_api(call_recorder, fail=False):
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
-    api.last_statistics_fetch = 0.0
 
     def make_api_call(url, **_kwargs):
         call_recorder.append(url)
@@ -269,10 +384,10 @@ def test_failed_statistics_cycle_retries_after_the_short_interval():
     api.get_statistics(enabled_devices=["1234"])
     assert len(calls) == 1
 
-    waited = time.time() - api.last_statistics_fetch
-    remaining = wemportalapi.STATISTICS_REFRESH_INTERVAL_SECONDS - waited
+    waited = time.monotonic() - api.last_statistics_fetch
+    remaining = statistics.STATISTICS_REFRESH_INTERVAL_SECONDS - waited
 
-    assert remaining <= wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert remaining <= statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
     assert remaining > 0, "the rate limit must not be dropped entirely"
 
 
@@ -287,16 +402,119 @@ def test_failed_statistics_cycle_is_still_rate_limited():
     assert len(calls) == 1, "a failing portal was retried immediately"
 
 
+def test_the_statistics_guard_reads_the_clock_it_stamped():
+    """A wall clock is corrected - by NTP shortly after a boot, most
+    reliably - and a correction forward makes the hourly stamp look old
+    enough to fetch again. Weishaupt counts requests per IP, so a guard
+    that drops open is exactly the traffic it exists to prevent.
+
+    Asserted from the other side, which needs no clock to jump: a stamp
+    left on the monotonic clock, read as wall-clock time, lands decades in
+    the past and opens the guard immediately.
+    """
+    calls = []
+    api = _statistics_api(calls)
+    api.last_statistics_fetch = time.monotonic()
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert calls == [], "the hourly statistics guard was read on another clock"
+
+
+def test_statistics_are_fetched_on_the_first_cycle_after_a_reboot(monkeypatch):
+    """ "Never fetched" is not "fetched at zero".
+
+    Zero on a monotonic clock is the moment the machine booted, so a zero
+    default would hold the guard shut until the box had been up for a full
+    interval - no statistics at all for the first hour after every
+    restart, and nothing in the log to say why. Pinning the interval above
+    the current uptime is what makes that deterministic here instead of
+    depending on how long the test machine happens to have been running.
+    """
+    monkeypatch.setattr(
+        statistics,
+        "STATISTICS_REFRESH_INTERVAL_SECONDS",
+        time.monotonic() + 3600,
+    )
+    calls = []
+    api = _statistics_api(calls)
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert calls, "a freshly started account was treated as already fetched"
+
+
+def test_a_refused_network_leaves_the_statistics_loop(caplog):
+    """The inner handler lets a 403 out "because the coordinator has a
+    handler for exactly this" - and the device loop in the same file caught
+    it again with its catch-all, one frame further up.
+
+    So the refusal was logged as one device's statistics problem and every
+    remaining device was walked into the same wall, while the coordinator
+    never learned that this network is blocked. The AuthError beside it is
+    re-raised there for exactly this reason; the refusal was not.
+    """
+    api = _api()
+    api.data = {"1234": {}, "5678": {}}
+    api.modules = {"1234": {}, "5678": {}}
+    asked = []
+
+    def refusing_portal(device_id):
+        asked.append(device_id)
+        raise exceptions.ForbiddenError("WemPortal forbidden error")
+
+    api._fetch_device_statistics = refusing_portal
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api.get_statistics(enabled_devices=["1234", "5678"])
+
+    assert len(asked) == 1, (
+        f"{len(asked)} devices were asked after the portal refused this network"
+    )
+
+
+def test_a_statistics_refresh_that_lists_no_groups_as_null_is_not_an_error(caplog):
+    """The same null the value read already learned to expect.
+
+    A device with no statistics comes back as `GroupTypeDescriptions: null`,
+    and a default for a missing key does not cover a key that is present and
+    null - so the loop over it raised a TypeError.
+
+    Asserted on the LOG, not on the readings: the device loop's catch-all
+    swallows that TypeError, so the data looks the same either way and a
+    test reading it passes without the fix. What the failure costs is a
+    warning about a device that had nothing to report, and a statistics
+    fetch back-dated for a retry that has nothing to retry.
+    """
+    import logging
+
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {"GroupTypeDescriptions": None}
+    )
+
+    with caplog.at_level(logging.WARNING):
+        api.get_statistics(enabled_devices=["1234"])
+
+    complaints = [
+        record.getMessage()
+        for record in caplog.records
+        if "Error processing Statistics" in record.getMessage()
+    ]
+    assert not complaints, f"a device with nothing to report was an error: {complaints}"
+
+
 def _statistics_api_with_groups(groups, read_answer):
     """An api whose refresh lists `groups` and whose group reads go through
     `read_answer(group_id)` - returning a payload or raising."""
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
-    api.last_statistics_fetch = 0.0
 
     def make_api_call(url, **kwargs):
-        if url == wemportalapi.API_STATISTICS_REFRESH_URL:
+        if url == statistics.API_STATISTICS_REFRESH_URL:
             return FakeResponse(
                 {"GroupTypeDescriptions": [{"GroupType": g} for g in groups]}
             )
@@ -308,15 +526,15 @@ def _statistics_api_with_groups(groups, read_answer):
 
 def _remaining_wait(api):
     """How long until statistics would be fetched again."""
-    return wemportalapi.STATISTICS_REFRESH_INTERVAL_SECONDS - (
-        time.time() - api.last_statistics_fetch
+    return statistics.STATISTICS_REFRESH_INTERVAL_SECONDS - (
+        time.monotonic() - api.last_statistics_fetch
     )
 
 
 def _invalid_group_error():
     """The portal's own "this group does not apply here" rejection."""
     error = exceptions.WemPortalError("not valid for this module")
-    error.server_status = wemportalapi.WEM_INVALID_PARAMETER_STATUS
+    error.server_status = statistics.WEM_INVALID_PARAMETER_STATUS
     return error
 
 
@@ -333,7 +551,7 @@ def test_a_device_whose_every_group_failed_is_not_counted_as_a_success():
     api.get_statistics(enabled_devices=["1234"])
 
     remaining = _remaining_wait(api)
-    assert remaining <= wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert remaining <= statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
     assert remaining > 0, "the rate limit must not be dropped entirely"
 
 
@@ -382,7 +600,7 @@ def test_one_group_that_worked_keeps_the_device_a_success():
 
     api.get_statistics(enabled_devices=["1234"])
 
-    assert _remaining_wait(api) > wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert _remaining_wait(api) > statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
 
 
 def test_groups_that_do_not_apply_are_not_failures():
@@ -397,7 +615,45 @@ def test_groups_that_do_not_apply_are_not_failures():
 
     api.get_statistics(enabled_devices=["1234"])
 
-    assert _remaining_wait(api) > wemportalapi.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+    assert _remaining_wait(api) > statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        exceptions.AuthError("login refused"),
+        exceptions.ForbiddenError("rate limited"),
+        exceptions.PollDeadlineExceeded("cycle out of time"),
+    ],
+    ids=["auth", "forbidden", "poll-deadline"],
+)
+def test_a_propagated_statistics_failure_still_shortens_the_retry(error):
+    """The short-retry back-dating sat AFTER the device loop, so a failure
+    that left the method first skipped it and kept the full-interval stamp.
+
+    A 403 both arms a 15-minute cooldown and raises ForbiddenError, so the
+    statistics stayed locked ~45 minutes past the cooldown's end;
+    PollDeadlineExceeded is a BaseException and slips the catch-all the same
+    way. The stamp must be shortened on the way out - and the exception must
+    still propagate.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+
+    def failing_portal(_device_id):
+        raise error
+
+    api._fetch_device_statistics = failing_portal
+
+    with pytest.raises(type(error)):
+        api.get_statistics(enabled_devices=["1234"])
+
+    remaining = _remaining_wait(api)
+    assert remaining <= statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5, (
+        "a propagated failure left the full-interval stamp"
+    )
+    assert remaining > 0, "the rate limit must not be dropped entirely"
 
 
 def test_statistics_timestamp_is_kept_when_nothing_was_attempted():
@@ -410,7 +666,7 @@ def test_statistics_timestamp_is_kept_when_nothing_was_attempted():
     api.get_statistics(enabled_devices=["1234"])
 
     assert calls == []
-    waited = time.time() - api.last_statistics_fetch
+    waited = time.monotonic() - api.last_statistics_fetch
     assert waited < 5, "timestamp should record this attempt as 'just now'"
 
 
@@ -422,7 +678,7 @@ def test_get_data_accepts_int_device_ids():
         {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
     )
     api.get_data(enabled_devices=[1234])
-    assert api.data["1234"]["1234-ConnectionStatus"]["value"] == "offline"
+    assert api.data["1234"]["1234-ConnectionStatus"].value == "offline"
 
 
 def test_empty_enabled_devices_polls_nothing():
@@ -441,7 +697,6 @@ def test_empty_enabled_devices_polls_nothing():
             {"ConnectionStatus": 50, "Errors": [], "GroupTypeDescriptions": []}
         )
     )
-    api.last_statistics_fetch = 0.0
 
     api.get_data(enabled_devices=[])
     api.get_statistics(enabled_devices=[])
@@ -474,7 +729,7 @@ def test_none_enabled_devices_still_polls_everything():
     assert calls, "an unfiltered poll must still happen"
 
 
-def _expert_entity(api, entry_id="e1"):
+def _expert_entity(api, entry_id="e1", entityvalue="A" * 36):
     """An expert number entity wired to `api` through its entry's runtime data."""
     import types
 
@@ -483,9 +738,435 @@ def _expert_entity(api, entry_id="e1"):
 
     entry = types.SimpleNamespace(entry_id=entry_id, data={}, options={})
     entry.runtime_data = WemPortalData(api=api, coordinator=None)
-    entity = expert_writer.WemPortalExpertNumber(entry, "expert_parameter_3", "A" * 36)
+    entity = expert_writer.WemPortalExpertNumber(
+        entry, "expert_parameter_3", entityvalue
+    )
     entity.hass = types.SimpleNamespace(data={})
     return entity
+
+
+def _showing_expert_entity(controller, entityvalue="A" * 36, value=21.0):
+    """One configured expert entity of `controller`, already showing a value.
+
+    The repair report is stubbed out rather than satisfied: it needs a real
+    hass and an entry, and what these tests ask about is the value on the
+    dashboard, not the issue beside it.
+    """
+    entity = _expert_entity(_api(), entityvalue=entityvalue)
+    entity.async_write_ha_state = lambda: None
+    entity.apply_read_state(_read_state(value, [20.0, value, 22.0]))
+    controller.entities = list(controller.entities) + [entity]
+    controller._report_read_failure = lambda *_args: None
+    assert entity.native_value == value, "the control case never read anything"
+    return entity
+
+
+def test_the_auto_poll_does_not_publish_state_for_an_entity_ha_never_added():
+    """A registry-disabled expert entity is built like any other and handed
+    to the controller - Home Assistant then does not add it.
+
+    It therefore has no `hass`, and publishing state for it raises. The poll
+    applies its result to every configured entity, so that happened once per
+    cycle, forever, for a parameter the user had deliberately disabled.
+    """
+    entity = _expert_entity(_api())
+    # What Home Assistant leaves behind for an entity it never took.
+    entity.hass = None
+    state = _read_state(21.0, [10.0, 21.0, 35.0])
+
+    entity.apply_read_state(state)
+
+    assert entity.native_value is None, (
+        "a value was published for an entity Home Assistant does not know"
+    )
+
+
+def test_a_run_of_failed_batches_stops_showing_the_expert_value():
+    """The expert number restores its last value and keeps it while reads fail.
+
+    An expert entity is a RestoreNumber of its own - it is not a coordinator
+    row, so none of the ageing passes reach it. When the whole read produces
+    nothing (a web login that fails, a session that broke) the per-id tally
+    is deliberately left alone, because one outage is not evidence about any
+    single id. That left nothing at all happening: the dashboard kept showing
+    a plausible number with nothing behind it, and the auto-poll only tries
+    again an hour later.
+
+    Two, not three: at an hourly poll three would be three hours of a value
+    nobody confirmed. One is still normal and must change nothing.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+    entity.apply_read_state(_read_state(21.0, [20.0, 21.0, 22.0]))
+    controller.entities = [entity]
+    assert entity.native_value == 21.0, "the control case never read anything"
+
+    # Two ids so the batch rule applies at all - with one configured
+    # parameter "all of them failed" is true every time it fails.
+    dead_batch = {entity.entityvalue: None, "b" * 36: None}
+
+    controller.apply_read(dead_batch)
+    assert entity.native_value == 21.0, "a single failed batch is not an outage"
+
+    controller.apply_read(dead_batch)
+
+    assert entity.native_value is None, (
+        "the entity still shows a value no read has confirmed"
+    )
+
+
+def test_the_only_configured_expert_slot_stops_showing_a_value_it_cannot_read():
+    """The batch rule needs two ids to mean anything - and the ageing rule
+    was bolted onto it.
+
+    With one configured parameter "all of them failed" is true every time it
+    fails, so the batch rule deliberately does not apply. The per-id tally
+    does apply and raises a repair after three misses, but nothing ever
+    emptied the value: a single-slot installation kept its restored number on
+    the dashboard for as long as the portal refused to read it, which is
+    exactly the installation with the least other information about it.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _showing_expert_entity(controller)
+
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+
+    assert entity.native_value is None, (
+        "the only configured parameter kept a value no read has confirmed"
+    )
+
+
+def test_a_reading_sibling_does_not_keep_a_dead_slot_showing_its_value():
+    """Freshness was decided by the batch counter, and any answer at all
+    cleared it.
+
+    Two configured parameters where one answers every cycle and the other
+    never does is not an outage - it is one broken id, which the per-id tally
+    reports. But the value only ever went away through the batch counter, and
+    the working sibling reset that on every cycle, so the broken one showed
+    its last number indefinitely with a repair issue open beside it.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    answering = _showing_expert_entity(controller, entityvalue="A" * 36, value=21.0)
+    silent = _showing_expert_entity(controller, entityvalue="B" * 36, value=55.0)
+
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read(
+            {
+                answering.entityvalue: _read_state(21.0, [20.0, 21.0, 22.0]),
+                silent.entityvalue: None,
+            }
+        )
+
+    assert silent.native_value is None, (
+        "a slot that never reads kept its value because a sibling did"
+    )
+    assert answering.native_value == 21.0, (
+        "the working parameter lost its value along with the broken one"
+    )
+
+
+def test_a_verified_write_ends_the_failure_streak_it_disproves():
+    """A write the portal confirmed is the strongest possible read.
+
+    The poll's own recovery path clears the tally and takes the repair issue
+    down; the write route never touched it, so the report stayed up for a
+    parameter that had just demonstrably worked. Since the value is now
+    emptied from the per-id branch as well, the leftover streak has a second
+    effect: `fail_notified` still holds the id, so the NEXT run of failures
+    finds it already reported and never empties the freshly confirmed value.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _showing_expert_entity(controller)
+    cleared = []
+    controller._clear_read_failure_issue = cleared.append
+
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+    assert entity.native_value is None, "the control case never built a streak"
+
+    controller.apply_verified_write(entity.entityvalue, _read_state(30.0, [30.0]))
+
+    assert cleared == [entity.entityvalue], "the repair issue was left standing"
+    assert controller.fail_counts.get(entity.entityvalue, 0) == 0
+    assert entity.entityvalue not in controller.fail_notified
+    assert entity.native_value == 30.0
+
+    # And the streak can build again, which is what the cleared bookkeeping
+    # is for: the confirmed value must not become permanent.
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+
+    assert entity.native_value is None, (
+        "a value confirmed once was never emptied again, because the old "
+        "streak still counted as reported"
+    )
+
+
+def test_disabling_an_entity_clears_its_failure_bookkeeping():
+    """detach_entity takes the streak, the notification marker AND the repair
+    issue down with the entity - left behind, they outlive it and a re-enable
+    starts from a count nobody can see. All three branches only run when there
+    IS a failure to clear, which the disabled-not-polled test never builds, so
+    dropping the tally or the issue cleanup would go unnoticed there.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _showing_expert_entity(controller)
+    cleared = []
+    controller._clear_read_failure_issue = cleared.append
+
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+    assert entity.entityvalue in controller.fail_counts, "no streak was built"
+    assert entity.entityvalue in controller.fail_notified, "the streak never notified"
+
+    controller.detach_entity(entity)
+
+    assert entity.entityvalue not in controller.fail_counts, (
+        "the failure streak of a disabled entity was left behind"
+    )
+    assert entity.entityvalue not in controller.fail_notified, (
+        "the notification marker of a disabled entity was left behind"
+    )
+    assert cleared == [entity.entityvalue], (
+        f"detach_entity did not clear the repair issue: {cleared}"
+    )
+
+
+def test_a_dead_batch_is_announced_once_rather_than_every_hour(caplog):
+    """Past the threshold the count keeps rising, and the condition stays
+    true.
+
+    Announcing again each cycle repeats a warning about a state the user has
+    already been told about and rewrites the state of every configured
+    entity for a value that is already gone - the same shape as the unknown
+    sensor value that used to be logged on every single cycle.
+    """
+    import logging
+
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _showing_expert_entity(controller)
+    dead_batch = {entity.entityvalue: None, "C" * 36: None}
+
+    def _announcements():
+        return [
+            record for record in caplog.records if "no longer current" in record.message
+        ]
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(expert_controller.BATCH_FAILURES_BEFORE_VALUES_ARE_STALE):
+            controller.apply_read(dead_batch)
+        # The control case. Without it a rule that never announces at all
+        # would satisfy the assertion below - and caplog collects from the
+        # start of the test, so the clearing has to happen here rather than
+        # be assumed.
+        assert len(_announcements()) == 1, "the values were never announced as stale"
+        caplog.clear()
+
+        controller.apply_read(dead_batch)
+        controller.apply_read(dead_batch)
+
+    assert _announcements() == [], (
+        f"the values were announced as stale again {len(_announcements())} "
+        "more times after the user had been told"
+    )
+
+
+def test_a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise():
+    """The shield is right for the poll and wrong for this one caller.
+
+    `reread_device_values` is not a poll: it runs AFTER a write the portal has
+    already accepted, and its two callers - the date entity and the holiday
+    service - decide what to publish from its RETURN VALUE. Letting the
+    AuthError fly past them means the service call is reported as failed
+    although the value reached the heating system, and - worse - the
+    `_forget_written_value()` in their failure branch never runs, so the value
+    recorded before the read-back stands as verified. That is the one claim
+    the read-back exists to prevent.
+
+    The next poll still counts the failure: api_login clears `valid_login`
+    before it raises, so the cycle after this one logs in and reaches the
+    coordinator with it.
+    """
+    import types
+
+    api = _api()
+    # The lock is not what is under test, and releasing one this test never
+    # took raises on its own.
+    api._acquire_api_lock = lambda _what: None
+    api._api_lock = types.SimpleNamespace(release=lambda: None)
+    api._fetch_parameter_values = _refused_relogin
+
+    failure = api.reread_device_values("1234")
+
+    assert isinstance(failure, str) and failure, (
+        "the read-back raised instead of reporting, so the caller's failure "
+        "branch never ran"
+    )
+
+
+def _two_entries_being_unloaded(both_unloading=True, expert=True):
+    """Two loaded accounts, both in the middle of their teardown.
+
+    `runtime_data` is still readable at that point - Home Assistant only
+    drops it after async_unload_entry RETURNS - which is the whole reason
+    this case exists.
+    """
+    import types
+
+    from custom_components.wemportal.const import CONF_EXPERT_WRITE
+    from custom_components.wemportal.models import WemPortalData
+
+    entries = []
+    for entry_id in ("e1", "e2"):
+        entry = types.SimpleNamespace(
+            entry_id=entry_id, options={CONF_EXPERT_WRITE: expert}
+        )
+        entry.runtime_data = WemPortalData(api=None, coordinator=None)
+        if both_unloading or entry_id == "e1":
+            entry.runtime_data.begin_unload()
+        entries.append(entry)
+
+    removed = []
+    hass = types.SimpleNamespace(
+        services=types.SimpleNamespace(
+            has_service=lambda _domain, _service: True,
+            async_remove=lambda domain, service: removed.append(service),
+        ),
+        config_entries=types.SimpleNamespace(async_entries=lambda _domain: entries),
+    )
+    return hass, entries, removed
+
+
+def test_two_entries_unloading_at_once_still_release_the_shared_services():
+    """Each one saw the other's runtime_data and concluded somebody was still
+    there, so neither took the domain service down.
+
+    Left registered with nothing loaded behind it, the service resolves no
+    target and every call fails - and `unloading` is set at the very top of
+    the teardown precisely so this window can be seen.
+    """
+    import custom_components.wemportal as integration
+    from custom_components.wemportal import holiday
+
+    hass, entries, removed = _two_entries_being_unloaded()
+
+    integration._async_release_expert_service(hass, entries[0])
+    holiday.async_release_holiday_service(hass, entries[0])
+
+    assert len(removed) == 2, (
+        f"a shared service was left registered with nothing to serve it: {removed}"
+    )
+
+
+def test_an_entry_that_stays_loaded_keeps_the_shared_services():
+    """The control case: releasing on the first unload would take the service
+    away from an account that is still running."""
+    import custom_components.wemportal as integration
+    from custom_components.wemportal import holiday
+
+    hass, entries, removed = _two_entries_being_unloaded(both_unloading=False)
+
+    integration._async_release_expert_service(hass, entries[0])
+    holiday.async_release_holiday_service(hass, entries[0])
+
+    assert removed == [], "the loaded account lost the services it still needs"
+
+
+def test_removing_one_of_two_entries_of_an_account_keeps_the_shared_state():
+    """The state is addressed by the ACCOUNT, and two entries can share one.
+
+    Legacy installations with a duplicate entry of the same account are
+    deliberately still allowed to load - so removing one of them dropped the
+    403 backoff, the auth-failure streak and the once-per-account warning
+    markers out from under the entry that stays. The next reload then starts
+    polling as though the portal had never refused anything.
+    """
+    import types
+
+    from custom_components.wemportal import models
+
+    models.reset_account_states_for_tests()
+    same_account = "Max@example.org"
+    kept = types.SimpleNamespace(entry_id="e2", data={"username": same_account.lower()})
+    models.account_state(same_account).auth_failures = 2
+
+    hass = types.SimpleNamespace(
+        config_entries=types.SimpleNamespace(async_entries=lambda _domain: [kept])
+    )
+    integration_forget_if_last(
+        hass, types.SimpleNamespace(entry_id="e1", data={"username": same_account})
+    )
+
+    assert models.account_state(same_account).auth_failures == 2, (
+        "the remaining entry lost the account memory the removed one shared"
+    )
+
+
+def test_removing_the_last_entry_of_an_account_does_drop_its_state():
+    """The other half - without it, never forgetting would pass just as well
+    and the state would outlive the account for the life of the process."""
+    import types
+
+    from custom_components.wemportal import models
+
+    models.reset_account_states_for_tests()
+    models.account_state("solo@example.org").auth_failures = 2
+    hass = types.SimpleNamespace(
+        config_entries=types.SimpleNamespace(async_entries=lambda _domain: [])
+    )
+
+    integration_forget_if_last(
+        hass,
+        types.SimpleNamespace(entry_id="e1", data={"username": "solo@example.org"}),
+    )
+
+    assert models.account_state("solo@example.org").auth_failures == 0
+
+
+def integration_forget_if_last(hass, config_entry):
+    """The production call under test, by its real name."""
+    import custom_components.wemportal as integration
+
+    integration._forget_account_state_if_last_entry(hass, config_entry)
+
+
+def test_a_disabled_scraper_device_does_not_keep_the_web_report_standing():
+    """The report says the web half has stopped delivering. A device the user
+    switched off is not delivering either, and that is not a fault.
+
+    The poll already honours the filter and skips the scrape entirely - so
+    the failure count that raised the report can never come down again,
+    because only a scrape that WORKS resets it. The repair stood for as long
+    as the device stayed off, with no action available that would clear it.
+    """
+    api = _api(config={"mode": "both"}, scraper_device_id="1234")
+    api.spider_retry_count = wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
+
+    assert api.web_scrape_is_failing(None) is True, (
+        "the control case never reported a failing scrape at all"
+    )
+    assert api.web_scrape_is_failing(["1234"]) is True, (
+        "an enabled scraper device stopped reporting its own failure"
+    )
+    assert api.web_scrape_is_failing([]) is False
+    assert api.web_scrape_is_failing(["9999"]) is False, (
+        "the report stood for a device that is not being polled"
+    )
 
 
 def _read_state(current, options):
@@ -839,6 +1520,83 @@ def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
     assert sent["ctl00$DialogContent$ddlNewValue"] == "15"
 
 
+def test_an_abort_during_the_verify_does_not_deny_a_write_that_happened(monkeypatch):
+    """The gates are asked before every request, the verify's read included.
+
+    A teardown landing in that window - between the postback the heating
+    system has already taken and the read that confirms it - raised the same
+    abort as one raised before the write, wording and all: "stopped before
+    the write reached the portal". That denies a change that is in the device,
+    and tells whoever asked for it to do it again.
+    """
+    client, sent = _recording_write_client(
+        monkeypatch, [[("10", "1.0", True), ("15", "1.5", False)]]
+    )
+    reading_the_form = client._fetch_form
+    reads = []
+
+    def fetch_form(*args, **kwargs):
+        reads.append(1)
+        if len(reads) == 1:
+            return reading_the_form(*args, **kwargs)
+        raise exceptions.ExpertOperationAborted("The configuration was removed")
+
+    monkeypatch.setattr(client, "_fetch_form", fetch_form)
+
+    with pytest.raises(exceptions.ExpertOperationAborted) as aborted:
+        client.write_parameter("A" * 36, 1.5)
+
+    assert sent["ctl00$DialogContent$ddlNewValue"] == "15", (
+        "the write never went out, so this test proves nothing about what "
+        "happens after it"
+    )
+    assert "posted and the portal accepted" in str(aborted.value), (
+        f"a write the portal took was reported as if it had not gone out: "
+        f"{aborted.value}"
+    )
+
+
+def test_a_word_write_not_taken_by_the_portal_is_reported_as_refused(monkeypatch):
+    """The verify step must compare the WORD the dialog shows.
+
+    On a special write the numeric side is None on BOTH ends - `current` is
+    empty by design, and there is no expected number - so a comparison that
+    falls back to numbers confirms anything: None == None. The only real
+    evidence is the wording, and a dialog still showing the other word means
+    the portal did not take the write.
+    """
+    still_on_ein = [
+        ("-32768", "Aus", False),
+        ("-1", "Ein", True),
+        ("200", "20.0", False),
+    ]
+    client, _sent = _recording_write_client(monkeypatch, [still_on_ein, still_on_ein])
+
+    with pytest.raises(exceptions.ParameterWriteError, match="not confirmed"):
+        client.write_parameter("A" * 36, "Aus")
+
+
+def test_a_german_decimal_reaches_the_write_as_the_number_it_means(monkeypatch):
+    """The dialog itself accepts "1,5"; the service refused the same spelling.
+
+    A value typed into the service field arrives as text when it does not
+    parse as a float - which "0,55" does not, while the German UI everywhere
+    else writes exactly that. It then failed the option check although 0.55
+    is on the list. Both spellings go through the one shared parser now.
+    """
+    client, sent = _recording_write_client(
+        monkeypatch,
+        [
+            [("55", "0.55", False), ("75", "0.75", True)],
+            [("55", "0.55", True), ("75", "0.75", False)],
+        ],
+    )
+
+    client.write_parameter("A" * 36, "0,55")
+
+    assert sent["ctl00$DialogContent$ddlNewValue"] == "55"
+
+
 def test_a_special_value_can_be_written_by_the_word_the_portal_shows(monkeypatch):
     """ "Aus" is a real setting that no route could reach.
 
@@ -1002,6 +1760,41 @@ def test_a_login_that_succeeded_does_not_navigate_on_after_a_teardown(monkeypatc
         client._full_login()
 
     assert gets == [True], "the navigation went on after the entry had gone away"
+
+
+def test_an_expert_login_page_without_its_form_is_not_blamed_on_the_password(
+    monkeypatch,
+):
+    """The third half of a repair that was documented as having two.
+
+    The scraper raises ServerError where the login page comes back without
+    the fields the password would be sent WITH, and its comment says why:
+    nothing about the credentials has been established at that point, and
+    calling it an auth failure feeds a counter that ends in a reauth prompt.
+    That comment closes with "this was the half of it that got left behind"
+    - meaning the transport one. There were three: the expert client still
+    called it AuthError. Found by comparing the two clients' shapes, not by
+    reading either of them.
+    """
+    from custom_components.wemportal import expert_writer
+
+    class _Response:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Login.aspx"
+        text = "<html><body>the portal served something else</body></html>"
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            return _Response()
+
+        def post(self, *_args, **_kwargs):
+            raise AssertionError("the password went to a page with no form")
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_k: _Session())
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+
+    with pytest.raises(exceptions.ServerError):
+        client._full_login()
 
 
 def test_a_portal_error_page_on_the_expert_login_url_is_not_a_wrong_password(
@@ -1233,6 +2026,68 @@ def test_an_unevenly_spaced_option_list_takes_its_smallest_gap():
     assert entity.native_step == 0.25
 
 
+def _heating_curve_options():
+    """A heating curve as the portal offers it: 0 to 2, 0.05 apart."""
+    return [round(index * 0.05, 10) for index in range(41)]
+
+
+def test_a_fractional_step_is_the_gap_and_not_the_float_noise_of_it():
+    """The step is a SUBTRACTION of two parsed labels, so it carries the
+    noise of both: 0.05 came out as 0.04999999999999982.
+
+    That number is what the entity publishes and what a UI then builds its
+    grid from, so the grid it produces cannot land on the option list it was
+    derived from - see the test below for what that costs.
+    """
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+
+    entity.apply_read_state(_read_state(1.0, _heating_curve_options()))
+
+    assert entity.native_step == 0.05, (
+        f"the published step is {entity.native_step!r}, which no value on the "
+        "portal's own list is a multiple of"
+    )
+
+
+def test_every_value_the_grid_produces_is_one_the_write_path_takes():
+    """The two halves have to agree, and they did not.
+
+    A number entity's value comes off a grid of min + n * step, and the write
+    path matched it against the option list with `in` - an exact float
+    comparison. 40 of the 41 values a 0.05-step curve can be set to were
+    refused as "not allowed", naming a range that contains them.
+    """
+    from custom_components.wemportal.expert_writer import WemPortalExpertClient
+
+    options = _heating_curve_options()
+    state = _read_state(1.0, options)
+    refused = []
+    for index in range(len(options)):
+        from_the_grid = min(options) + index * 0.05
+        try:
+            WemPortalExpertClient._requested_option(state, from_the_grid)
+        except Exception:  # noqa: BLE001 - any refusal is the failure here
+            refused.append(from_the_grid)
+
+    assert not refused, (
+        f"{len(refused)} of {len(options)} settable values were refused, "
+        f"starting at {refused[:3]}"
+    )
+
+
+def test_a_value_between_two_options_is_still_refused():
+    """The counter-test: the tolerance is for float noise, not for values the
+    device does not offer. Snapping 0.07 to 0.05 would write something other
+    than what was asked for - on a heating system."""
+    from custom_components.wemportal.expert_writer import WemPortalExpertClient
+
+    state = _read_state(1.0, _heating_curve_options())
+
+    with pytest.raises(exceptions.ParameterWriteError):
+        WemPortalExpertClient._requested_option(state, 0.07)
+
+
 def test_a_single_option_leaves_the_step_alone():
     """One option gives nothing to measure a step from. Guessing from a list
     of one would be the same mistake in a new place."""
@@ -1245,21 +2100,54 @@ def test_a_single_option_leaves_the_step_alone():
     assert entity.native_step == before
 
 
-def test_a_restore_from_before_the_fix_does_not_bring_the_lock_back():
-    """The upgrade path the wide placeholders would otherwise miss.
+def test_restore_brings_back_the_value_and_never_the_bounds():
+    """A stored range is a copy of a reading that no longer exists.
 
-    RestoreNumber persists min, max and step whether or not there is a value,
-    so a slot that existed before this was fixed has 0/100/1 in storage even
-    though it was never read. Taking that back on the first start after the
-    upgrade would overwrite the placeholders and lock the parameter out
-    again - for exactly the installations the fix is for.
-
-    Recognised by what it is: bounds that ARE the old made-up ones, on an
-    entity that has no value to go with them. A real range that happens to be
-    0 to 100 comes with a value, because it can only have been learnt by
-    reading or writing one.
+    Home Assistant validates a write against the PUBLISHED bounds before
+    this integration is asked, and a heating parameter's limits can depend
+    on other settings - so a range restored from last month can exclude
+    exactly the value whose write would have fetched the current one. The
+    in-session refusal correction cannot reach that case: it needs the
+    write to arrive, and where old and new range do not overlap, it never
+    does. The placeholders exclude nothing; the price is a typing box
+    instead of a slider until the portal has answered once, and the price
+    is documented.
     """
     import types
+
+    from homeassistant.components.number import NumberMode
+
+    from custom_components.wemportal import expert_writer
+
+    entity = _expert_entity(_api())
+
+    entity._restore_from(
+        types.SimpleNamespace(
+            native_value=350.0,
+            native_min_value=200.0,
+            native_max_value=800.0,
+            native_step=10.0,
+        )
+    )
+
+    assert entity.native_value == 350.0, "the stored value is the one thing to keep"
+    assert entity.native_min_value == -expert_writer.EXPERT_UNKNOWN_BOUND, (
+        "a stored range came back and can lock out the correcting write"
+    )
+    assert entity.native_max_value == expert_writer.EXPERT_UNKNOWN_BOUND
+    assert entity.native_step == expert_writer.EXPERT_UNKNOWN_STEP
+    assert entity.mode == NumberMode.BOX, (
+        "a slider over placeholder bounds spans 200000 - it must be a box"
+    )
+
+
+def test_a_slot_with_no_stored_value_stays_on_the_placeholders():
+    """RestoreNumber persists bounds with or without a value, so a slot that
+    was never read still has the pre-placeholder 0/100/1 on disk. Nothing of
+    that may come back - there is no reading it could belong to."""
+    import types
+
+    from custom_components.wemportal import expert_writer
 
     entity = _expert_entity(_api())
 
@@ -1272,53 +2160,9 @@ def test_a_restore_from_before_the_fix_does_not_bring_the_lock_back():
         )
     )
 
-    assert entity.native_min_value <= 350 <= entity.native_max_value, (
-        "the pre-fix bounds came back and locked the parameter out again"
-    )
-    assert entity.native_step <= 0.5
-
-
-def test_a_restored_range_that_was_really_read_is_kept():
-    """The counter-test. 0 to 100 IS a plausible range - a percentage - and
-    a stored one that came with a value was learnt from the portal."""
-    import types
-
-    entity = _expert_entity(_api())
-
-    entity._restore_from(
-        types.SimpleNamespace(
-            native_value=42.0,
-            native_min_value=0,
-            native_max_value=100,
-            native_step=1,
-        )
-    )
-
-    assert entity.native_min_value == 0
-    assert entity.native_max_value == 100
-    assert entity.native_step == 1
-
-
-def test_the_restored_range_comes_back_with_the_value():
-    """Restore took the value and left the range behind, so after a restart a
-    parameter whose real range is 200-800 sat at its stored value inside the
-    assumed 0-100 - unsettable until the next successful read."""
-    import types
-
-    entity = _expert_entity(_api())
-    entity._restore_from(
-        types.SimpleNamespace(
-            native_value=350.0,
-            native_min_value=200.0,
-            native_max_value=800.0,
-            native_step=10.0,
-        )
-    )
-
-    assert entity.native_value == 350.0
-    assert entity.native_min_value == 200.0, "the restored range was dropped"
-    assert entity.native_max_value == 800.0
-    assert entity.native_step == 10.0
+    assert entity.native_value is None
+    assert entity.native_min_value == -expert_writer.EXPERT_UNKNOWN_BOUND
+    assert entity.native_max_value == expert_writer.EXPERT_UNKNOWN_BOUND
 
 
 def test_entity_write_uses_the_expert_gate_not_the_global_one():
@@ -1470,6 +2314,40 @@ def test_a_cycle_out_of_time_makes_no_further_request(monkeypatch):
         api.make_api_call(url="https://example.invalid/data", do_retry=False)
 
     assert session.post_kwargs is None, "a request was sent after the deadline"
+
+
+def test_a_sub_second_budget_is_rechecked_after_the_courtesy_sleep(monkeypatch):
+    """The deadline was checked BEFORE the one-second courtesy sleep. A budget
+    under a second passed the check, the sleep carried the cycle past the
+    deadline, and the request fired anyway - a portal request of up to
+    API_REQUEST_TIMEOUT_SECONDS on a cycle already out of time. The deadline
+    has to be re-read after the sleep, right before the send.
+
+    A hand-moved clock whose sleep advances it makes this deterministic; the
+    autouse no-op sleep would leave the budget untouched and prove nothing.
+    """
+    clock = _Clock(now=1000.0)
+
+    def advancing_sleep(seconds):
+        clock.now += seconds
+
+    monkeypatch.setattr(time, "monotonic", clock)
+    monkeypatch.setattr(time, "sleep", advancing_sleep)
+
+    api = _api()
+    session = RecordingSession()
+    api.session = session
+    api._deadline = clock.now + 0.5  # half a second of budget left
+
+    with pytest.raises(exceptions.PollDeadlineExceeded, match="budget"):
+        api.make_api_call(
+            url="https://example.invalid/data", data={"x": "1"}, do_retry=False
+        )
+
+    assert session.post_kwargs is None, (
+        "the one-second sleep spent a sub-second budget, then the request "
+        "was sent past the deadline"
+    )
 
 
 def test_a_login_without_budget_left_sends_nothing(monkeypatch):
@@ -1671,6 +2549,104 @@ def test_the_deadline_is_not_swallowed_by_the_statistics_fetch(monkeypatch):
         api._fetch_device_statistics("1234")
 
     assert len(calls) == 2, "the group read was never reached, so no handler was"
+
+
+def _refused_relogin(*_args, **_kwargs):
+    """Stand-in for make_api_call when the 401 re-login is refused.
+
+    Where this comes from in practice: the session expires, transport logs in
+    again from inside whatever request noticed, and the portal rejects it -
+    a password changed while Home Assistant was running. The AuthError
+    therefore surfaces in the middle of a partial read, not at the top of the
+    cycle where the login normally happens.
+    """
+    raise exceptions.AuthError("Login failed: Invalid username or password.")
+
+
+def test_a_refused_relogin_is_not_reported_as_one_device_failing():
+    """The AuthError has to reach the coordinator, and these handlers are
+    what stands between.
+
+    Two things go wrong when one of them keeps it. The coordinator counts
+    consecutive auth failures before it offers the reauth dialog, and a cycle
+    that swallowed the error resets that count instead of raising it. Worse,
+    only `_ensure_api_session` looks at `valid_login`, and it has already run
+    for this cycle: every further request goes out on the dead session,
+    collects its own 401, and triggers another refused login. One per device
+    and path, against a portal that counts requests per IP.
+
+    Four handlers rather than one because they are four copies of the same
+    shape - the same reason the deadline needed four tests above.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"p1": {}}}}}
+    api.make_api_call = _refused_relogin
+
+    with pytest.raises(exceptions.AuthError):
+        api._fetch_parameter_values("1234")
+
+
+def test_a_refused_relogin_is_not_reported_as_an_unreadable_status():
+    api = _offline_api(0)
+    api.make_api_call = _refused_relogin
+
+    with pytest.raises(exceptions.AuthError):
+        api._fetch_device_status("1234")
+
+
+def test_a_refused_relogin_is_not_swallowed_by_the_schedule_fetch():
+    """Stubbed past the recognition and throttle steps for the same reason as
+    the deadline test above: what is under test is the handler around the
+    read."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"p1": {}}}}}
+    api._is_schedule_parameter = lambda *_args: True
+    api._schedule_is_due = lambda *_args: True
+    api._record_schedule_attempt = lambda *_args: None
+    api._read_one_schedule = _refused_relogin
+
+    with pytest.raises(exceptions.AuthError):
+        api._fetch_circuit_times("1234")
+
+
+def test_a_refused_relogin_is_not_swallowed_by_the_statistics_fetch(monkeypatch):
+    """The refresh call has to succeed first, or nothing reaches a handler -
+    the trap the deadline version of this test fell into."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _seconds: None)
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    calls = []
+
+    def refresh_then_refuse(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            return FakeResponse({"GroupTypeDescriptions": [{"GroupType": 1}]})
+        raise exceptions.AuthError("Login failed: Invalid username or password.")
+
+    api.make_api_call = refresh_then_refuse
+
+    with pytest.raises(exceptions.AuthError):
+        api._fetch_device_statistics("1234")
+
+    assert len(calls) == 2, "the group read was never reached, so no handler was"
+
+
+def test_a_refused_relogin_survives_the_statistics_device_loop(monkeypatch):
+    """The outer handler of the same path, which exists so one device's
+    statistics failing does not stop the others. An account is one login, so
+    a refused one is not that device's problem - and every device after it
+    would spend another login attempt finding that out."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _seconds: None)
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+    api._fetch_device_statistics = _refused_relogin
+
+    with pytest.raises(exceptions.AuthError):
+        api.get_statistics(None)
 
 
 class _BudgetedPage:
@@ -2116,7 +3092,7 @@ def test_an_operation_outside_a_poll_is_not_deadlined():
     """Only fetch_data sets a deadline. An on-demand write has a user waiting
     on it and no coordinator timeout behind it, so it must run even when the
     last poll's budget would long since have expired."""
-    api = _api()
+    api = _api_after_a_poll()
     session = RecordingSession()
     api.session = session
 
@@ -2149,17 +3125,14 @@ def _web_api(mode, scraped=None):
 
 
 def test_the_scrape_timestamp_carries_its_timezone():
-    """The scrape interval is a difference between two of these timestamps.
+    """The stored stamp stays aware and local, for the "no longer current"
+    warning that prints it in Home Assistant's timezone.
 
-    Naive local times are subtracted as if the clock never moved, so a
-    daylight-saving change lands squarely in that difference: in spring it
-    reads an hour too LONG and the next scrape fires at once, in autumn an
-    hour too SHORT and a whole hour of cycles is skipped. An aware timestamp
-    carries its offset, so Python normalises both sides to UTC first.
-
-    Asserted on the stored value rather than by simulating a DST change: the
-    offset is the property that makes the arithmetic right, and a test that
-    moved the clock would only be testing Python's own subtraction.
+    It is NOT what makes the scrape interval right: two aware stamps with the
+    same tzinfo object still subtract as naive wall-clock times, so the gate
+    measures elapsed time from POSIX timestamps instead - see
+    test_the_scrape_gate_measures_real_time_across_a_dst_change. This only
+    guards that the stored value keeps its offset for display.
     """
     api = _web_api("both")
     api.spider_wait_interval = 0
@@ -2168,7 +3141,35 @@ def test_the_scrape_timestamp_carries_its_timezone():
     api._scrape_and_merge()
 
     assert api.last_scraping_update.tzinfo is not None, (
-        "a naive timestamp puts the DST jump straight into the scrape interval"
+        "a naive stamp would print the wrong offset in the not-current warning"
+    )
+
+
+def test_the_scrape_gate_measures_real_time_across_a_dst_change(monkeypatch):
+    """Two aware stamps with the SAME tzinfo object are subtracted as naive
+    wall-clock times, so a DST change lands in the difference. Across the
+    spring-forward gap 45 real minutes read as 1h45 of wall clock, firing a
+    one-hour scrape interval at once - an extra portal login the rate limit
+    counts, for a value that is not due. The gate has to measure real elapsed
+    time, whatever the wall clock did.
+    """
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    berlin = ZoneInfo("Europe/Berlin")
+    # 2025-03-30: 02:00 CET -> 03:00 CEST. 45 real minutes span the gap.
+    before = datetime(2025, 3, 30, 1, 30, tzinfo=berlin)  # 00:30 UTC
+    after = datetime(2025, 3, 30, 3, 15, tzinfo=berlin)  # 01:15 UTC
+
+    api = _api()
+    api.last_scraping_update = before
+    api.scan_interval = timedelta(hours=1)
+    api.spider_wait_interval = 0
+    monkeypatch.setattr(wemportalapi.dt_util, "now", lambda: after)
+
+    assert not api._scrape_is_due(None), (
+        "the scrape fired 45 real minutes into a one-hour interval, counting "
+        "the spring-forward hour as elapsed time"
     )
 
 
@@ -2219,6 +3220,27 @@ def test_lock_timeout_is_not_treated_as_a_corrupted_session():
     assert issubclass(exceptions.ApiBusyError, exceptions.WemPortalError)
     # ...but it is a distinct type the coordinator can single out first.
     assert exceptions.ApiBusyError is not exceptions.WemPortalError
+
+
+def test_the_wait_for_the_lock_never_outlasts_the_budget_it_spends():
+    """A cycle handed the lock must still have time left to use it.
+
+    fetch_data measures its budget from BEFORE it queues, so whatever it
+    spends waiting is gone from what it has to spend at the portal. Were
+    the wait the longer of the two, a cycle could be handed the lock with
+    nothing left and stop at its first check - after holding an executor
+    thread for minutes, and reporting a portal too slow for one cycle when
+    the real cause was the cycle in front of it.
+
+    Equal is the sharpest setting that still holds: a waiter that runs the
+    full time is given an ApiBusyError rather than the lock, so anyone who
+    does get it waited strictly less. Each constant is documented against
+    DEFAULT_TIMEOUT and neither against the other, which is why this is
+    written down here rather than left to hold by coincidence.
+    """
+    assert (
+        wemportalapi.API_LOCK_TIMEOUT_SECONDS <= wemportalapi.POLL_DEADLINE_SECONDS
+    ), "a poll could queue longer than the budget it is queueing to spend"
 
 
 def test_disabled_installation_is_honoured_even_before_the_id_is_known():
@@ -2292,16 +3314,41 @@ def test_service_texts_exist_in_every_translation_file():
     as untranslated text in the UI, so check both - including the privacy
     warning on the entityvalue field, which must not get lost in
     translation."""
+    import pathlib
+
+    import yaml
+
+    # Read from services.yaml rather than listed here: naming one service
+    # meant the OTHER one could be dropped from both catalogues at once and
+    # the parity check between the two languages would still be green - two
+    # files agreeing that a service does not exist is agreement.
+    declared = yaml.safe_load(
+        (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "custom_components"
+            / "wemportal"
+            / "services.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    assert set(declared) >= {"set_expert_parameter", "set_holiday"}, (
+        "a service disappeared from services.yaml itself"
+    )
+
     for name in ("translations/en.json", "translations/de.json"):
         data = _catalogue(name)
-        service = data["services"]["set_expert_parameter"]
-        assert service["name"], name
-        assert service["description"], name
-        fields = service["fields"]
-        assert set(fields) == {"entityvalue", "value"}, name
-        for field in fields.values():
-            assert field["name"], name
-            assert field["description"], name
+        for service_name, declaration in declared.items():
+            service = data["services"][service_name]
+            assert service["name"], (name, service_name)
+            assert service["description"], (name, service_name)
+            fields = service["fields"]
+            assert set(fields) == set(declaration.get("fields") or {}), (
+                name,
+                service_name,
+            )
+            for field in fields.values():
+                assert field["name"], (name, service_name)
+                assert field["description"], (name, service_name)
+        fields = data["services"]["set_expert_parameter"]["fields"]
         # The entityvalue is installation-specific; the warning is part of
         # the contract with the user, not decoration.
         warning = fields["entityvalue"]["description"].lower()
@@ -2321,6 +3368,81 @@ def test_portal_units_are_normalised_to_home_assistant_spelling():
 
     assert (value, unit) == (2.5, "bar")
     assert unit_to_device_class(unit) == "pressure"
+
+
+def test_the_portals_spelling_of_a_flow_rate_carries_its_device_class():
+    """The unit lookup matches case-insensitively, which covers "BAR" for
+    "bar" - but not "m3/h" for "m³/h", a different character.
+
+    Every other unit the portal writes is recognised in its raw spelling, so
+    this one fell through alone: no device class, and unit_to_icon therefore
+    pinned its "mdi:flash" default on it - an explicit icon, which always
+    beats the one Home Assistant derives from the device class the sensor
+    ends up with. The same unit as the decimal-comma crash above, for the
+    same underlying reason: it is the one unit read out of the VALUE.
+    """
+    from custom_components.wemportal.utils import (
+        unit_to_device_class,
+        unit_to_icon,
+    )
+
+    assert unit_to_device_class("m3/h") == unit_to_device_class("m³/h")
+    assert unit_to_icon("m3/h") is None, (
+        "a flow-rate sensor was given an icon that overrides its device class"
+    )
+
+
+def test_a_flow_rate_the_portal_spells_with_a_comma_is_still_a_number():
+    """The one unit read out of the VALUE rather than the unit field, and the
+    only one parsed with a bare float(): a scraped cell spells its decimals
+    with a comma, so "0,55m3/h" raised where every other reading in the
+    package goes through the shared parser. The raise leaves the platform
+    mid-update, so it costs more than the one reading.
+    """
+    from custom_components.wemportal.utils import fix_value_and_unit
+
+    assert fix_value_and_unit("0,55m3/h", "m3/h") == (0.55, "m³/h")
+
+
+def test_a_flow_rate_without_a_number_in_it_is_not_a_crash():
+    """The portal writes a placeholder where a sensor has nothing to say.
+
+    It comes back as the text it is, and whether a sensor may show that is
+    decided one layer up - `_validated_native_value` already refuses a
+    non-numeric state for a numeric sensor. What must not happen here is the
+    raise that took the whole platform update with it.
+    """
+    from custom_components.wemportal.utils import fix_value_and_unit
+
+    value, _unit = fix_value_and_unit("---m3/h", "m3/h")
+
+    assert value == "---m3/h", "a placeholder must survive as what it is"
+
+
+def test_a_unit_the_portal_spells_its_own_way_gets_both_halves():
+    """A device class without a state class is a sensor Home Assistant shows
+    and the Energy Dashboard refuses.
+
+    The device-class lookup was taught to match case-insensitively after the
+    "BAR" incident; the state-class lookup sitting three functions below it
+    was not, and the test written for that incident asked about one half
+    only. So a portal spelling an energy unit its own way produced
+    device_class=ENERGY with state_class=None - accepted everywhere, usable
+    for nothing, and silent.
+    """
+    from custom_components.wemportal.utils import (
+        unit_to_device_class,
+        unit_to_state_class,
+    )
+
+    assert unit_to_device_class("KWH") == "energy"
+    assert unit_to_state_class("KWH") == "total_increasing", (
+        "the energy sensor has no state class, so long-term statistics and "
+        "the Energy Dashboard will not take it"
+    )
+    # A reading with no unit at all keeps answering the way it did: None is
+    # not the same question as an empty unit, which is a real measurement.
+    assert unit_to_state_class(None) is None
 
 
 # Trimmed from a real maintenance page. The login form stays fully present
@@ -2347,7 +3469,7 @@ NORMAL_LOGIN_PAGE = MAINTENANCE_PAGE.replace("offlinecontent", "someothercontent
 
 
 def test_maintenance_notice_is_detected_and_quoted():
-    from custom_components.wemportal.utils import maintenance_notice
+    from custom_components.wemportal.web_protocol import maintenance_notice
 
     notice = maintenance_notice(MAINTENANCE_PAGE)
 
@@ -2361,7 +3483,7 @@ def test_a_normal_login_page_is_not_mistaken_for_maintenance():
     """The dangerous direction: wrong credentials must still reach the reauth
     flow. Matching loosely (e.g. on the word "Wartungsarbeiten" anywhere)
     would risk swallowing a genuine credential failure forever."""
-    from custom_components.wemportal.utils import maintenance_notice
+    from custom_components.wemportal.web_protocol import maintenance_notice
 
     assert maintenance_notice(NORMAL_LOGIN_PAGE) is None
     assert maintenance_notice("") is None
@@ -2476,6 +3598,35 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
 
     with pytest.raises(exceptions.ForbiddenError):
         api.check_cooldown()
+
+
+def test_a_page_without_a_login_form_gets_no_credentials(monkeypatch):
+    """The third copy of the same rule, and the one that was still missing.
+
+    A page that parses but carries no hidden fields has no `__VIEWSTATE` and
+    no `__EVENTVALIDATION` - the ASP.NET state a login is posted WITH. Sent
+    anyway, the credentials go to a page that cannot process them and can
+    only refuse, which then reads as a wrong password. The scraper and the
+    expert client both check this before posting; this one built its form out
+    of whatever it found and appended the username and password to it.
+    """
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_args, **_kwargs):
+            # Parses fine. Has no form.
+            return FakeResponse_html(
+                "<html><body><p>Nothing to log in with</p></body></html>"
+            )
+
+        def post(self, *_args, **_kwargs):
+            raise AssertionError("credentials were sent to a page with no login form")
+
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+
+    with pytest.raises(exceptions.UnknownAuthError):
+        _api().web_login()
 
 
 def test_a_page_that_is_neither_login_nor_session_is_not_a_wrong_password(monkeypatch):
@@ -2669,6 +3820,39 @@ def test_statistics_entry_is_chosen_by_date_not_position():
     assert latest_statistics_entry(out_of_order)["Value"] == 8.0
 
 
+def test_todays_empty_entry_does_not_hide_yesterdays_reading():
+    """The portal ships the current day with no value until it has one.
+
+    Picked by date alone, that empty entry won - and the caller then reached
+    PAST this whole answer for its own last stored value, which is older
+    than the number sitting right here. The newest entry that carries a
+    reading is the one that answers the question.
+    """
+    from custom_components.wemportal.utils import latest_statistics_entry
+
+    today_is_still_empty = [
+        {"Date": "2026-04-26T00:00:00", "Value": 90.0},
+        {"Date": "2026-04-27T00:00:00", "Value": 100.0},
+        {"Date": "2026-04-28T00:00:00", "Value": None},
+    ]
+
+    assert latest_statistics_entry(today_is_still_empty)["Value"] == 100.0
+
+
+def test_an_answer_without_any_reading_still_reports_the_gap():
+    """The counter-case: with no value anywhere the caller has to see the
+    empty entry, because keeping its own last one is then correct - and
+    inventing a zero would read as a meter reset."""
+    from custom_components.wemportal.utils import latest_statistics_entry
+
+    nothing_yet = [
+        {"Date": "2026-04-27T00:00:00", "Value": None},
+        {"Date": "2026-04-28T00:00:00", "Value": None},
+    ]
+
+    assert latest_statistics_entry(nothing_yet)["Value"] is None
+
+
 def test_statistics_falls_back_to_the_last_entry_without_dates():
     """No Date means no better information - keep the previous behaviour
     rather than guessing."""
@@ -2829,6 +4013,17 @@ def test_both_flows_have_a_message_for_a_blocked_ip():
         assert _catalogue(name)["config"]["error"].get("rate_limited"), name
 
 
+def test_the_service_translations_explain_word_values():
+    """services.yaml is not what the dialog shows - HA renders the
+    translations. The word-value feature lived only in the YAML text, so the
+    UI still said "one of the options" and nobody could know "Aus" works."""
+    for name in ("translations/en.json", "translations/de.json"):
+        description = _catalogue(name)["services"]["set_expert_parameter"]["fields"][
+            "value"
+        ]["description"]
+        assert "Aus" in description, f"{name} does not mention word values"
+
+
 def _offline_api(status):
     """An api whose single device reports `status` on every call."""
     api = _api()
@@ -2915,21 +4110,21 @@ def test_the_full_fault_list_reaches_the_attribute():
     api._fetch_device_status("1234")
 
     row = api.data["1234"]["1234-ErrorMessages"]
-    assert row["value"] == "E12 one, E13 two"
-    assert row["Errors"] == ["E12 one", "E13 two"]
+    assert row.value == "E12 one, E13 two"
+    assert row.errors == ["E12 one", "E13 two"]
 
 
 def test_the_error_attribute_reaches_the_entity():
     """The full list is only worth carrying if it gets past the row."""
     entity = _sensor_from_row(
         "1234-ErrorMessages",
-        {
-            "value": "E12 one (+3 more)",
-            "unit": None,
-            "friendlyName": "Error Messages",
-            "ParameterID": "ErrorMessages",
-            "Errors": ["E12 one", "E13 two", "E14 three", "E15 four"],
-        },
+        Reading(
+            value="E12 one (+3 more)",
+            unit=None,
+            friendly_name="Error Messages",
+            parameter_id="ErrorMessages",
+            errors=["E12 one", "E13 two", "E14 three", "E15 four"],
+        ),
     )
 
     assert entity.extra_state_attributes["Errors"] == [
@@ -2949,7 +4144,7 @@ def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
     fault sees the quiet and concludes there is none.
     """
     api = _api_with_a_read_status()
-    assert api.data["1234"]["1234-HasErrors"]["value"] == "No"
+    assert api.data["1234"]["1234-HasErrors"].value == "No"
 
     def refuse(*_args, **_kwargs):
         raise exceptions.WemPortalError("portal unavailable")
@@ -2957,9 +4152,9 @@ def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
     api.make_api_call = refuse
     api._fetch_device_status("1234")
 
-    assert api.data["1234"]["1234-HasErrors"]["value"] is None
-    assert api.data["1234"]["1234-ErrorMessages"]["value"] is None
-    assert api.data["1234"]["1234-ConnectionStatus"]["value"] is None
+    assert api.data["1234"]["1234-HasErrors"].value is None
+    assert api.data["1234"]["1234-ErrorMessages"].value is None
+    assert api.data["1234"]["1234-ConnectionStatus"].value is None
 
 
 def test_a_status_nobody_could_read_leaves_the_entities_available():
@@ -3013,7 +4208,7 @@ def test_a_device_that_is_not_online_does_not_fail_the_whole_cycle(status, expec
     api.get_data(enabled_devices=["1234"])
 
     # Recorded, because that is what the entities read to go unavailable.
-    assert api.data["1234"]["1234-ConnectionStatus"]["value"] == expected
+    assert api.data["1234"]["1234-ConnectionStatus"].value == expected
 
 
 def test_the_offline_warning_is_logged_once_per_change(caplog):
@@ -3171,14 +4366,14 @@ def _switch(value):
         entry,
         "1234",
         "Pump",
-        {
-            "value": value,
-            "unit": None,
-            "friendlyName": "Pump",
-            "ParameterID": "P1",
-            "ModuleIndex": 0,
-            "ModuleType": 1,
-        },
+        Reading(
+            value=value,
+            unit=None,
+            friendly_name="Pump",
+            parameter_id="P1",
+            module_index=0,
+            module_type=1,
+        ),
     )
 
 
@@ -3208,7 +4403,7 @@ def test_a_missing_reading_is_unknown_on_update_too(value, expected, monkeypatch
     monkeypatch.setattr(
         type(switch), "async_write_ha_state", lambda self: None, raising=False
     )
-    switch.coordinator.data = {"1234": {"Pump": {"value": value}}}
+    switch.coordinator.data = {"1234": {"Pump": Reading(value=value)}}
 
     switch._handle_coordinator_update()
 
@@ -3216,7 +4411,7 @@ def test_a_missing_reading_is_unknown_on_update_too(value, expected, monkeypatch
 
 
 def _status(value):
-    return {"1234": {"1234-ConnectionStatus": {"value": value}}}
+    return {"1234": {"1234-ConnectionStatus": Reading(value=value)}}
 
 
 @pytest.mark.parametrize("state", ["offline", "wrong_secret"])
@@ -3245,13 +4440,15 @@ def test_a_device_without_a_status_stays_reachable():
     out `web` mode entirely."""
     from custom_components.wemportal.utils import device_is_reachable
 
-    assert device_is_reachable({"0000": {"some-sensor": {"value": 1}}}, "0000") is True
+    assert (
+        device_is_reachable({"0000": {"some-sensor": Reading(value=1)}}, "0000") is True
+    )
     assert device_is_reachable({}, "0000") is True
     assert device_is_reachable(None, "0000") is True
 
 
 def _scraped(*keys):
-    return {key: {"value": 1, "unit": "°C", "platform": "sensor"} for key in keys}
+    return {key: Reading(value=1, unit="°C", platform="sensor") for key in keys}
 
 
 def test_a_relabelled_scraper_row_is_reported(caplog):
@@ -3466,6 +4663,53 @@ def test_a_returning_device_becomes_eligible_for_parameter_discovery():
     assert api.data["1234"]["ConnectionStatus"] == 0, "the discovery gate stayed stale"
 
 
+def test_a_status_answer_without_a_status_is_a_failed_read(caplog):
+    """An answer that does not say is not an answer that says "unknown".
+
+    `.get("ConnectionStatus", -1)` turned a payload with the field missing
+    into the "unknown" state - which this method reports as a SUCCESSFUL read
+    of a device that is not online, so it returned False and the parameter
+    read never ran. The error sensors went out at the same time saying there
+    are no errors, on evidence nobody had.
+
+    The path for an unreadable status is right there and does the opposite:
+    it clears what it cannot vouch for and returns True, so the parameters
+    still get their chance. This just has to reach it.
+    """
+    import logging
+
+    from custom_components.wemportal.wemportalapi import DEVICE_STATUS_ROWS
+
+    api = _api()
+    # Filled from an earlier, successful read, so the assertion below is
+    # about this answer clearing them rather than about them never existing.
+    api.data = {
+        "1234": {
+            "ConnectionStatus": 0,
+            **{f"1234-{name}": Reading(value="No") for name in DEVICE_STATUS_ROWS},
+        }
+    }
+    api.modules = {"1234": {}}
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse({})
+
+    with caplog.at_level(logging.WARNING):
+        assert api._fetch_device_status("1234") is True, (
+            "a payload with no status ended the device's cycle, so the "
+            "parameters were never read"
+        )
+
+    still_claimed = {
+        name
+        for name in DEVICE_STATUS_ROWS
+        if api.data["1234"][f"1234-{name}"].value is not None
+    }
+    assert not still_claimed, (
+        f"{sorted(still_claimed)} were published from an answer that carried "
+        "no status at all"
+    )
+    assert "Failed to fetch Device Status" in caplog.text
+
+
 # --- what counts as a successful API answer ---------------------------
 
 
@@ -3510,7 +4754,7 @@ class _BodyResponse(FakeResponse):
 def test_a_write_answered_with_a_page_is_not_a_completed_write():
     """Reported as success, this told the user their heating parameter had
     been changed when it had not."""
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: _BodyResponse(
         b"<html>Service unavailable</html>"
     )
@@ -3527,7 +4771,7 @@ def test_an_empty_write_response_is_no_longer_taken_for_success():
     successful write answers with a body carrying Status 0. An empty one is
     therefore not a confirmation of anything.
     """
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: _BodyResponse(b"")
 
     with pytest.raises(exceptions.ParameterChangeError):
@@ -4001,6 +5245,13 @@ def test_an_unreadable_refresh_answer_does_not_serve_the_previous_job():
     [
         exceptions.PortalMaintenanceError("down until 18:00"),
         exceptions.AuthError("wrong password"),
+        # The 403 was the one exit left out, and it is the worst one to
+        # leave out: the count is also what makes the scraped readings age
+        # (three failures) AND what exempts them from the api-side ageing
+        # while the scrape is believed to be working. Not counting it meant
+        # a rate-limited scrape delivered nothing while its last values were
+        # protected from every ageing pass there is.
+        exceptions.ForbiddenError("rate limited"),
     ],
 )
 def test_every_failed_scrape_earns_a_backoff(error, monkeypatch):
@@ -4038,7 +5289,7 @@ def _scraped_api(*keys):
     api.scraper_device_id = "0000"
     api._merge_webscraping_data(
         "0000",
-        {key: {"value": 1.0, "unit": "°C", "platform": "sensor"} for key in keys},
+        {key: Reading(value=1.0, unit="°C", platform="sensor") for key in keys},
     )
     return api
 
@@ -4053,19 +5304,19 @@ def test_readings_from_a_scrape_that_stopped_working_stop_being_current():
     for _ in range(wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE):
         api._register_scrape_failure()
 
-    assert api.data["0000"]["pump-flow"]["value"] is None
-    assert api.data["0000"]["pump-return"]["value"] is None
+    assert api.data["0000"]["pump-flow"].value is None
+    assert api.data["0000"]["pump-return"].value is None
     # Identity survives: a dropped unit would tell Home Assistant the sensor
     # changed kind.
-    assert api.data["0000"]["pump-flow"]["unit"] == "°C"
+    assert api.data["0000"]["pump-flow"].unit == "°C"
 
 
 def _two_device_api(failing_device):
     """Two devices; `failing_device` never answers, None means both do."""
     api = _api()
     api.data = {
-        "1234": {"flow": {"value": 21.0, "unit": "°C"}},
-        "5678": {"flow": {"value": 42.0, "unit": "°C"}},
+        "1234": {"flow": Reading(value=21.0, unit="°C")},
+        "5678": {"flow": Reading(value=42.0, unit="°C")},
     }
     api.modules = {"1234": {}, "5678": {}}
     api._fetch_device_status = lambda device_id: True
@@ -4095,14 +5346,14 @@ def test_a_device_that_stops_answering_stops_showing_its_last_values():
 
     api.get_data(enabled_devices=["1234", "5678"])
 
-    assert api.data["5678"]["flow"]["value"] is None, (
+    assert api.data["5678"]["flow"].value is None, (
         "a device that has not answered for half an hour still showed its old "
         "reading as current"
     )
-    assert api.data["5678"]["flow"]["unit"] == "°C", (
+    assert api.data["5678"]["flow"].unit == "°C", (
         "dropping the unit tells Home Assistant the sensor changed kind"
     )
-    assert api.data["1234"]["flow"]["value"] == 21.0, (
+    assert api.data["1234"]["flow"].value == 21.0, (
         "the working device lost its readings too"
     )
 
@@ -4119,7 +5370,7 @@ def test_a_brief_gap_does_not_throw_a_device_away():
     """
     api = _two_device_api(None)
     api.get_data(enabled_devices=["1234", "5678"])
-    assert api.data["5678"]["flow"]["value"] == 42.0, "the setup did not read"
+    assert api.data["5678"]["flow"].value == 42.0, "the setup did not read"
 
     # Now it goes quiet - but only just.
     api._fetch_parameter_values = lambda device_id: (
@@ -4127,19 +5378,19 @@ def test_a_brief_gap_does_not_throw_a_device_away():
     )
     api.get_data(enabled_devices=["1234", "5678"])
 
-    assert api.data["5678"]["flow"]["value"] == 42.0
+    assert api.data["5678"]["flow"].value == 42.0
 
 
 def _two_device_api_with_status(failing_device):
     """As above, plus the three diagnostic rows a status read writes."""
     api = _two_device_api(failing_device)
     for device_id in ("1234", "5678"):
-        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_CONNECTION}"] = {
-            "value": "online"
-        }
-        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_HAS_ERRORS}"] = {
-            "value": "No"
-        }
+        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_CONNECTION}"] = (
+            Reading(value="online")
+        )
+        api.data[device_id][f"{device_id}-{wemportalapi.DEVICE_STATUS_HAS_ERRORS}"] = (
+            Reading(value="No")
+        )
     return api
 
 
@@ -4161,8 +5412,8 @@ def test_the_rows_that_explain_the_silence_are_not_blanked_with_it():
     api.get_data(enabled_devices=["1234", "5678"])
 
     connection = f"5678-{wemportalapi.DEVICE_STATUS_CONNECTION}"
-    assert api.data["5678"]["flow"]["value"] is None, "the stale reading was kept"
-    assert api.data["5678"][connection]["value"] == "online", (
+    assert api.data["5678"]["flow"].value is None, "the stale reading was kept"
+    assert api.data["5678"][connection].value == "online", (
         "the status read this cycle was thrown away with the stale readings"
     )
 
@@ -4186,8 +5437,8 @@ def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
     api = _api()
     api.data = {
         "1234": {
-            "Heat pump-T1": {"value": 21.0, "unit": "°C"},
-            "heating_circuit_flow": {"value": 42.0, "unit": "°C"},
+            "Heat pump-T1": Reading(value=21.0, unit="°C"),
+            "heating_circuit_flow": Reading(value=42.0, unit="°C"),
         }
     }
     api._previous_scraper_keys = {"heating_circuit_flow"}
@@ -4197,10 +5448,10 @@ def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
 
     api._forget_stale_device_values("1234")
 
-    assert api.data["1234"]["Heat pump-T1"]["value"] is None, (
+    assert api.data["1234"]["Heat pump-T1"].value is None, (
         "the API reading that really was stale was kept"
     )
-    assert api.data["1234"]["heating_circuit_flow"]["value"] == 42.0, (
+    assert api.data["1234"]["heating_circuit_flow"].value == 42.0, (
         "a scrape from minutes ago was cleared because the API half of the "
         "same device had gone quiet"
     )
@@ -4216,7 +5467,7 @@ def test_the_third_scrape_failure_before_any_success_is_survivable():
     the device into self.data so the early return does not fire.
     """
     api = _api()
-    api.data = {"1234": {"flow": {"value": 21.0, "unit": "°C"}}}
+    api.data = {"1234": {"flow": Reading(value=21.0, unit="°C")}}
     api.scraper_device_id = "1234"
     assert api._previous_scraper_keys is None, "the setup does not reproduce it"
 
@@ -4244,7 +5495,7 @@ def test_a_shared_row_ages_once_the_scrape_has_given_up_too():
     good one wrote. spider_retry_count is what knows.
     """
     api = _api()
-    api.data = {"1234": {"shared_reading": {"value": 21.0, "unit": "°C"}}}
+    api.data = {"1234": {"shared_reading": Reading(value=21.0, unit="°C")}}
     api._previous_scraper_keys = {"shared_reading"}
     # Past the point where _forget_scraped_values stopped acting: it fires on
     # the third failure only, so from the fourth on nobody ages this row.
@@ -4255,7 +5506,7 @@ def test_a_shared_row_ages_once_the_scrape_has_given_up_too():
 
     api._forget_stale_device_values("1234")
 
-    assert api.data["1234"]["shared_reading"]["value"] is None, (
+    assert api.data["1234"]["shared_reading"].value is None, (
         "both sources had stopped answering and the reading was still shown as current"
     )
 
@@ -4271,7 +5522,7 @@ def test_a_device_that_is_busy_forever_still_stops_showing_old_values():
     """
     api = _two_device_api_with_status(None)
     api.get_data(enabled_devices=["1234", "5678"])
-    assert api.data["5678"]["flow"]["value"] == 42.0, "the setup did not read"
+    assert api.data["5678"]["flow"].value == 42.0, "the setup did not read"
 
     api._fetch_device_status = lambda device_id: device_id != "5678"
     api._last_device_read["5678"] = (
@@ -4280,7 +5531,7 @@ def test_a_device_that_is_busy_forever_still_stops_showing_old_values():
 
     api.get_data(enabled_devices=["1234", "5678"])
 
-    assert api.data["5678"]["flow"]["value"] is None, (
+    assert api.data["5678"]["flow"].value is None, (
         "a device that has been busy for half an hour still showed its old "
         "readings as current"
     )
@@ -4300,7 +5551,7 @@ def test_a_device_that_answers_again_starts_its_clock_over():
     api._fetch_parameter_values = lambda device_id: None
     api.get_data(enabled_devices=["1234", "5678"])
 
-    assert api.data["5678"]["flow"]["value"] == 42.0, "a working device was cleared"
+    assert api.data["5678"]["flow"].value == 42.0, "a working device was cleared"
     assert (
         time.monotonic() - api._last_device_read["5678"]
         < wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS
@@ -4315,7 +5566,7 @@ def test_one_failed_scrape_does_not_throw_the_readings_away():
 
     api._register_scrape_failure()
 
-    assert api.data["0000"]["pump-flow"]["value"] == 1.0
+    assert api.data["0000"]["pump-flow"].value == 1.0
 
 
 def test_a_successful_scrape_clears_the_backoff():
@@ -4329,7 +5580,7 @@ def test_a_successful_scrape_clears_the_backoff():
         cookie = {}
 
         def scrape(self):
-            return [{"cookie": {}, "Heating-Outside": {"value": 11.0}}]
+            return [{"cookie": {}, "Heating-Outside": Reading(value=11.0)}]
 
         def close(self):
             pass
@@ -4360,7 +5611,7 @@ def test_the_real_success_response_is_accepted():
     response carries Message: null. That rule would have failed every single
     legitimate write.
     """
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(REAL_WRITE_SUCCESS)
 
     api.change_value("1234", "P1", 0, 1, 21.0)
@@ -4383,7 +5634,7 @@ def test_anything_but_an_explicit_success_is_a_rejection(payload):
     heating parameter, and the entity shows the requested value until the
     next poll quietly replaces it.
     """
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(payload)
 
     with pytest.raises(exceptions.ParameterChangeError):
@@ -4393,7 +5644,7 @@ def test_anything_but_an_explicit_success_is_a_rejection(payload):
 def test_the_rejection_message_carries_the_portal_reason():
     """DetailMessages/Message is what the portal says went wrong - dropping
     it leaves the user with a bare number."""
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"Status": 3, "Message": "value out of range"}
     )
@@ -4414,7 +5665,7 @@ def test_a_rejected_write_puts_the_portal_answer_in_the_log(caplog):
     """
     import logging
 
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"Status": 3, "Message": "value out of range"}
     )
@@ -4438,7 +5689,7 @@ def test_a_successful_write_records_the_answer_at_debug(caplog):
     on, so a change to it has to be visible."""
     import logging
 
-    api = _api()
+    api = _api_after_a_poll()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(REAL_WRITE_SUCCESS)
 
     with caplog.at_level(logging.DEBUG):
@@ -4462,10 +5713,8 @@ MAINTENANCE_HTML = (
 
 def _gate_probe():
     """A scraper whose gate is driven directly, with a clean report set."""
-    from custom_components.wemportal import utils
     from custom_components.wemportal.scraper import WemPortalScraper
 
-    utils._MARKER_REPORTED.clear()
     return WemPortalScraper("user@example.org", "secret")
 
 
@@ -4572,9 +5821,11 @@ TRANSPORT_FIELDS = frozenset(
 # they are actively dangerous to reset, and both were reset in practice
 # before reset_transport replaced the object rebuild:
 #
-#   * last_statistics_fetch and _last_circuit_times_fetch are portal RATE
-#     LIMITS (an hour each). Resetting them lets the next cycle refetch
-#     immediately - on a portal that was just failing.
+#   * the two hourly portal RATE LIMITS used to live here as fields. They
+#     are gone from this list because they are gone from the object: a
+#     recovery kept them, but a RELOAD replaced the whole api and reset them
+#     anyway, and every options save is a reload. They are properties onto
+#     the account state now, which is the thing built to outlive both.
 #   * _api_lock serialises a poll against a write. A fresh lock is an
 #     unheld lock, so a write could interleave with the poll it exists to
 #     serialise against.
@@ -4610,11 +5861,26 @@ TRANSPORT_FIELDS = frozenset(
 # fresher, and dropping it would restart the staleness clock on every
 # recovery - so a device that never answers again would keep publishing its
 # last values for another full window after each reset.
+# _module_answered_at is the same clock one level down, per module, and
+# follows it for the same reason. Dropping it would be worse here than at the
+# device level: an unstamped module is exempt from ageing altogether ("no
+# evidence"), so a reset would not restart the clock but switch it off.
+# The two hourly gates follow `data`, by the one rule that decides where they
+# live: a gate is worth keeping exactly as long as the readings it guards are.
+# A recovery keeps the readings, so it keeps the gates. A reload keeps
+# neither, which is why they sit on the api object rather than on the account
+# state - see models.AccountState.
 PRESERVED_FIELDS = frozenset(
     {
+        # The account's reload-surviving memory. A transport recovery must
+        # not touch it - forgetting the 403 backoff on the very
+        # reinstantiation the 403 caused is the old wound the state exists
+        # to close.
+        "_account_state",
         "_first_cycle_done",
         "_deadline",
         "_last_device_read",
+        "_module_answered_at",
         "data",
         "username",
         "password",
@@ -4637,6 +5903,10 @@ PRESERVED_FIELDS = frozenset(
         "spider_wait_interval",
         "spider_retry_count",
         "last_scraping_update",
+        # Same rule as the scrape backoff above: a recovery runs after the
+        # failures that caused it, and dropping the API interval there would
+        # spend requests fastest at the portal that is already refusing them.
+        "_last_api_read",
     }
 )
 
@@ -4690,6 +5960,12 @@ def test_a_recovery_touches_exactly_the_transport_fields():
     for field in vars(api):
         setattr(api, field, _Marker(field))
     before = dict(vars(api))
+    # Two of the portal's own limits moved off this object and into the
+    # account's memory, so "did the recovery touch them" is no longer a
+    # question about a field. Snapshotted as VALUES: this one is not
+    # replaced wholesale, it is written into.
+    account_state = api._account_state
+    account_memory_before = dict(vars(account_state))
 
     api.reset_transport()
 
@@ -4699,6 +5975,11 @@ def test_a_recovery_touches_exactly_the_transport_fields():
         f"not reset: {sorted(TRANSPORT_FIELDS - changed)}"
     )
     assert set(vars(api)) == set(before), "a recovery added or removed a field"
+    assert vars(account_state) == account_memory_before, (
+        "a recovery reached into the account's memory - the one thing built "
+        "to outlive it. The hourly portal limits live there now, and reopening "
+        "one lets the next cycle ask a portal that was just failing."
+    )
 
 
 def test_a_recovery_leaves_the_transport_in_the_state_the_next_cycle_expects():
@@ -4755,9 +6036,6 @@ def test_a_missing_job_id_is_reported_once_per_device(caplog):
     """
     import logging
 
-    from custom_components.wemportal import wemportalapi as api_module
-
-    api_module._MISSING_JOB_ID_REPORTED.clear()
     api = _api()
     api.modules = {"1234": {(1, 2): {"Index": 1, "Type": 2, "parameters": {"P1": {}}}}}
     api.make_api_call = lambda url, **_kwargs: FakeResponse(
@@ -4802,7 +6080,11 @@ def test_a_recovery_leaves_a_busy_connection_alone(monkeypatch, caplog):
     """
     import logging
 
-    monkeypatch.setattr(wemportalapi, "API_LOCK_TIMEOUT_SECONDS", 0.05)
+    # transport, not wemportalapi: reset_transport reads the constant from
+    # its own module namespace since the rebuild split the two. Patching the
+    # other one hits a name nothing reads, and the test then waits out the
+    # real 330 seconds - still passing, at 80% of the suite's runtime.
+    monkeypatch.setattr(transport, "API_LOCK_TIMEOUT_SECONDS", 0.05)
     closed = []
     api = _api()
     api.session = _ClosingSession(closed)
@@ -4966,27 +6248,6 @@ def test_the_sessions_are_closed_even_if_the_lock_never_comes_free():
     assert closed == [True], "a session was left open because the lock was busy"
 
 
-def test_close_api_sessions_calls_the_api_rather_than_reaching_inside():
-    """The old version read `session` and `_reset_scraper` off the object with
-    getattr defaults, so renaming or moving either turned it into a silent
-    no-op that closed nothing and failed no test."""
-    from custom_components.wemportal import utils
-
-    calls = []
-
-    class Api:
-        def close_transport(self):
-            calls.append(True)
-
-    utils.close_api_sessions(Api())
-    assert calls == [True]
-
-    nothing_like_an_api = object()
-
-    with pytest.raises(AttributeError):
-        utils.close_api_sessions(nothing_like_an_api)
-
-
 # --- a heating schedule that fails must not be re-fetched every cycle ---
 
 
@@ -5003,13 +6264,13 @@ def _circuit_times_api(responses, data_type=6, value=None):
     api = _api()
     rows = {}
     if value is not None:
-        rows[SCHEDULE_ROW] = {
-            "value": value,
-            "unit": None,
-            "friendlyName": "Heating programme",
-            "ParameterID": "Heizprogramm1",
-            "platform": "sensor",
-        }
+        rows[SCHEDULE_ROW] = Reading(
+            value=value,
+            unit=None,
+            friendly_name="Heating programme",
+            parameter_id="Heizprogramm1",
+            platform="sensor",
+        )
     api.data = {"1234": rows}
     api.modules = {
         "1234": {
@@ -5061,6 +6322,31 @@ def test_a_failing_schedule_is_not_refetched_on_every_cycle():
     )
 
 
+def test_an_answer_without_a_week_is_not_a_delivered_schedule():
+    """Any JSON object counted as a schedule, `{}` included.
+
+    Three things went wrong at once for an answer with no week in it: the
+    hour of throttle was spent on it, the sensor threw the empty list away
+    and fell back to the raw plan - and, since the ageing pass exempts a
+    programme "while the fetch still feeds it", an empty list read as being
+    fed, so the row could not age out either.
+    """
+    api, _calls = _circuit_times_api([{"JobID": 7}, {}] * 5, value="MoDiMi")
+
+    api._fetch_circuit_times("1234")
+
+    assert not api.data["1234"][SCHEDULE_ROW].circuit_times_day, (
+        "an empty answer was stored as the week, which reads as still being fed"
+    )
+    # A success stamps the attempt at NOW and buys a full hour; a failure is
+    # back-dated to the shorter retry. So the distance from now is what says
+    # which of the two this counted as.
+    stamped = next(iter(api._last_circuit_times_fetch.values()))
+    assert time.monotonic() - stamped > 60, (
+        "an answer with no week was stamped as a delivered schedule"
+    )
+
+
 def test_a_refresh_without_a_job_id_also_counts_as_an_attempt():
     """The early `continue` costs a request just like a raised error does."""
     api, calls = _circuit_times_api([{"NoJobID": True}] * 10)
@@ -5078,9 +6364,9 @@ def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
     api, _calls = _circuit_times_api([exceptions.WemPortalError("nope")] * 10)
 
     api._fetch_circuit_times("1234")
-    stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
+    stamp = api._last_circuit_times_fetch[("1234", ModuleRef(0, 1), "Heizprogramm1")]
 
-    waited = time.time() - stamp
+    waited = time.monotonic() - stamp
     assert waited >= wemportalapi.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS - (
         wemportalapi.CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS + 5
     ), "the retry was pushed out further than the retry interval"
@@ -5089,18 +6375,146 @@ def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
     )
 
 
+def test_two_circuits_with_the_same_programme_id_are_both_fetched():
+    """The throttle keyed on (device, parameter id) and left the module out.
+
+    Two heating circuits are two modules of one type sharing one parameter
+    catalogue, so both programmes carry the same id. The first one fetched
+    stamped the key, and the second was "not due" on that cycle - and on
+    every cycle after it. Its schedule was never read at all, and the only
+    trace was a programme sensor that stayed on its JSON fallback forever.
+    """
+    api, calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}] * 2
+    )
+    api.modules["1234"][(1, 1)] = {
+        "Index": 1,
+        "Type": 1,
+        "Name": "Heating circuit 2",
+        "parameters": {
+            "Heizprogramm1": {"ParameterID": "Heizprogramm1", "DataType": 6}
+        },
+    }
+
+    api._fetch_circuit_times("1234")
+
+    assert len(calls) == 4, (
+        f"the second circuit's programme was never fetched - the throttle "
+        f"cannot tell the two modules apart: {calls}"
+    )
+
+
 def test_a_successful_schedule_keeps_the_full_interval():
+    # A real week, not `CircuitTimesDay: []` as this used to send: an answer
+    # with no week in it is a failed read now, so an empty list here would be
+    # testing the throttle against the wrong outcome.
     api, _calls = _circuit_times_api(
         [
             {"JobID": 7},
-            {"CircuitTimesDay": [], "PossibleValues": []},
+            {"CircuitTimesDay": A_FED_WEEK, "PossibleValues": []},
         ]
     )
 
     api._fetch_circuit_times("1234")
-    stamp = api._last_circuit_times_fetch[("1234", "Heizprogramm1")]
+    stamp = api._last_circuit_times_fetch[("1234", ModuleRef(0, 1), "Heizprogramm1")]
 
-    assert time.time() - stamp < 5, "a successful fetch was back-dated like a failure"
+    assert time.monotonic() - stamp < 5, (
+        "a successful fetch was back-dated like a failure"
+    )
+
+
+def test_a_scrape_that_arrives_late_invalidates_the_merge_cache():
+    """The fallback was decided when there was nothing to merge into.
+
+    In `both` mode the first cycle often has no scrape yet - it is not due,
+    or it failed. The merge then finds no scraped row naming the same thing
+    and caches the api reading's own key as the target. That answer is
+    correct for that moment and never revisited: the guard is "is this key
+    cached", so a scrape arriving later leaves the reading pointing at
+    itself, and the same value ends up on two entities that refresh on
+    different schedules - exactly what the merge exists to prevent.
+
+    The second half matters as much: an unchanged inventory must NOT clear
+    the cache, or every cycle would redo the name matching for nothing.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    scraped = {"heat_pump-outside": Reading(value=1.0, platform="sensor")}
+
+    api.scraping_mapper[(ModuleRef(0, 1), "Outside")] = ["Heat pump-Outside"]
+    api._merge_webscraping_data("1234", scraped)
+
+    assert api.scraping_mapper == {}, (
+        "the first scrape of the session left the fallback mapping in place"
+    )
+
+    api.scraping_mapper[(ModuleRef(0, 1), "Outside")] = ["heat_pump-outside"]
+    api._merge_webscraping_data("1234", scraped)
+
+    assert api.scraping_mapper, "an unchanged scrape inventory dropped the cache"
+
+
+def test_a_module_id_sent_as_a_list_does_not_cost_the_devices_read():
+    """The same portal answer the mapper already guards against, two lines on.
+
+    mapper._described_module wraps BOTH the build and the lookup, because
+    `ModuleIndex: []` builds a ModuleRef without complaint and only raises
+    when something hashes it. The freshness stamp built one the same way and
+    looked it up unguarded - inside _fetch_parameter_values' try, so the
+    readings that had just been mapped correctly were reported back as a
+    failed read. The device then counted as failed for that cycle and its
+    values started ageing towards unknown.
+
+    Asserts the good module too: skipping the whole loop would pass a test
+    that only checks for the absence of a crash.
+    """
+    api = _api()
+    answered = ModuleRef(module_index=0, module_type=1)
+    api.modules = {"1234": {answered: {"Index": 0, "Type": 1, "Name": "Circuit"}}}
+    values = {
+        "Modules": [
+            {"ModuleIndex": [], "ModuleType": 1},
+            {"ModuleIndex": 0, "ModuleType": 1},
+        ]
+    }
+
+    api._stamp_answered_modules("1234", values)
+
+    assert answered in api._module_answered_at["1234"], (
+        "the unusable entry took the module that answered beside it"
+    )
+
+
+def test_the_schedule_guard_reads_the_clock_it_stamped():
+    """The per-programme half of the clock rule the statistics guard has:
+    a stamp left on the monotonic clock must not read as decades old.
+    """
+    api, calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}]
+    )
+    key = ("1234", ModuleRef(0, 1), "Heizprogramm1")
+    api._last_circuit_times_fetch[key] = time.monotonic()
+
+    api._fetch_circuit_times("1234")
+
+    assert calls == [], "the schedule guard was read on another clock"
+
+
+def test_a_schedule_is_fetched_on_the_first_cycle_after_a_reboot(monkeypatch):
+    """The per-programme half of the zero-is-not-never rule: a missing key
+    means never fetched, not "fetched when the machine booted"."""
+    monkeypatch.setattr(
+        wemportalapi,
+        "CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS",
+        time.monotonic() + 3600,
+    )
+    api, calls = _circuit_times_api(
+        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}]
+    )
+
+    api._fetch_circuit_times("1234")
+
+    assert calls, "a programme never fetched was treated as just fetched"
 
 
 # --- the fetch has to recognise a programme the portal types as a switch
@@ -5147,7 +6561,7 @@ def test_the_fetch_adds_to_the_programme_instead_of_replacing_it():
     hour until the next cycle put it back."""
     schedule = '{"MO-1":"00:00-24:00"}'
     api, _calls = _circuit_times_api(
-        [{"JobID": 7}, {"CircuitTimesDay": [{"day": "MO"}], "PossibleValues": ["H"]}],
+        [{"JobID": 7}, {"CircuitTimesDay": A_FED_WEEK, "PossibleValues": ["H"]}],
         data_type=2,
         value=schedule,
     )
@@ -5155,21 +6569,21 @@ def test_the_fetch_adds_to_the_programme_instead_of_replacing_it():
     api._fetch_circuit_times("1234")
 
     row = api.data["1234"][SCHEDULE_ROW]
-    assert row["value"] == schedule, "the programme was replaced by a placeholder"
-    assert row["CircuitTimesDay"] == [{"day": "MO"}]
-    assert row["PossibleValues"] == ["H"]
+    assert row.value == schedule, "the programme was replaced by a placeholder"
+    assert row.circuit_times_day == A_FED_WEEK
+    assert row.possible_values == ["H"]
 
 
 def test_a_row_only_this_fetch_knows_about_still_gets_a_placeholder():
     """Where the value read never delivered the programme, this fetch is the
     only source there is - and a row needs some state to show."""
     api, _calls = _circuit_times_api(
-        [{"JobID": 7}, {"CircuitTimesDay": [], "PossibleValues": []}],
+        [{"JobID": 7}, {"CircuitTimesDay": A_FED_WEEK, "PossibleValues": []}],
     )
 
     api._fetch_circuit_times("1234")
 
-    assert api.data["1234"][SCHEDULE_ROW]["value"] == "Active"
+    assert api.data["1234"][SCHEDULE_ROW].value == "Active"
 
 
 # --- a scraped reading that is gone must not be shown as current -------
@@ -5179,15 +6593,14 @@ def _scraped_row(value, unit="°C"):
     """One row as the scraper hands it over. Named apart from _scraped_row()
     above, which builds a whole scrape from key names - defining a second
     `_scraped` silently rebound the first for every test in this file."""
-    return {
-        "value": value,
-        "unit": unit,
-        "friendlyName": "Setpoint",
-        "name": "wp-solltemperatur",
-        "icon": None,
-        "ParameterID": "wp-solltemperatur",
-        "platform": "sensor",
-    }
+    return Reading(
+        value=value,
+        unit=unit,
+        friendly_name="Setpoint",
+        icon=None,
+        parameter_id="wp-solltemperatur",
+        platform="sensor",
+    )
 
 
 def test_a_scraped_row_without_a_value_clears_the_sensor():
@@ -5197,13 +6610,13 @@ def test_a_scraped_row_without_a_value_clears_the_sensor():
     portal and the heat pump both showed nothing."""
     api = _api()
     api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(50.5)})
-    assert api.data["0000"]["wp-solltemperatur"]["value"] == 50.5
+    assert api.data["0000"]["wp-solltemperatur"].value == 50.5
 
     api._merge_webscraping_data(
         "0000", {"wp-solltemperatur": _scraped_row(None, unit="")}
     )
 
-    assert api.data["0000"]["wp-solltemperatur"]["value"] is None, (
+    assert api.data["0000"]["wp-solltemperatur"].value is None, (
         "a reading the portal no longer has was reported as current"
     )
 
@@ -5218,7 +6631,7 @@ def test_the_unit_is_still_carried_over():
         "0000", {"wp-solltemperatur": _scraped_row(None, unit="")}
     )
 
-    assert api.data["0000"]["wp-solltemperatur"]["unit"] == "°C"
+    assert api.data["0000"]["wp-solltemperatur"].unit == "°C"
 
 
 def test_a_row_that_stops_being_scraped_stops_showing_its_last_value():
@@ -5233,8 +6646,8 @@ def test_a_row_that_stops_being_scraped_stops_showing_its_last_value():
 
     api._merge_webscraping_data("0000", {"wp-vorlauf": _scraped_row(32.0)})
 
-    assert api.data["0000"]["wp-solltemperatur"]["value"] is None
-    assert api.data["0000"]["wp-vorlauf"]["value"] == 32.0
+    assert api.data["0000"]["wp-solltemperatur"].value is None
+    assert api.data["0000"]["wp-vorlauf"].value == 32.0
 
 
 def test_the_entity_of_a_vanished_row_is_kept():
@@ -5261,10 +6674,10 @@ def test_the_first_cycle_clears_nothing():
 
     api._merge_webscraping_data("0000", {"wp-vorlauf": _scraped_row(31.0)})
 
-    assert api.data["0000"]["wp-vorlauf"]["value"] == 31.0, (
+    assert api.data["0000"]["wp-vorlauf"].value == 31.0, (
         "the first cycle cleared the values it had just read"
     )
-    assert api.data["0000"]["left-over"]["value"] == 12.0
+    assert api.data["0000"]["left-over"].value == 12.0
 
 
 # --- a device with nothing discovered must not be asked for values ------
@@ -5441,6 +6854,62 @@ def test_a_description_that_arrives_clears_the_refusal():
     assert "description_refused" not in module
 
 
+def test_a_parameter_the_portal_stopped_describing_stops_being_published():
+    """The parameter list is replaced on every re-read; the readings are a
+    second dict that nothing pruned.
+
+    So a parameter the portal stops describing keeps its last value, and the
+    entity goes on publishing it as current for the rest of the session with
+    nothing in the log. `_clear_unanswered` cannot reach it either - that
+    pass only walks the parameters the portal still describes, which is
+    exactly the set this one just left.
+
+    Only the disappeared parameter may go. A row the web scraper maintains
+    was never in the description, so deleting it here would throw away a
+    value this path knows nothing about.
+    """
+    api = _api()
+    api.modules = {
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heizkreis",
+                "parameters": {
+                    "P1": {"ParameterID": "P1"},
+                    "P2": {"ParameterID": "P2"},
+                },
+            }
+        }
+    }
+    api.data = {
+        "1234": {
+            "ConnectionStatus": 0,
+            "Heizkreis-P1": Reading(value=21.0, parameter_id="P1"),
+            "Heizkreis-P2": Reading(value=50.5, parameter_id="P2"),
+            "Heizkreis-Vorlauftemperatur": Reading(value=42.0),
+        }
+    }
+
+    api._store_module_description(
+        "1234",
+        (0, 1),
+        api.modules["1234"][(0, 1)],
+        FakeResponse({"Parameters": [{"ParameterID": "P1"}]}),
+    )
+
+    device_data = api.data["1234"]
+    assert "Heizkreis-P2" not in device_data, (
+        "the reading of a parameter the portal no longer describes stayed "
+        "behind, and every cycle republishes its last value as current"
+    )
+    assert device_data["Heizkreis-P1"].value == 21.0
+    assert device_data["Heizkreis-Vorlauftemperatur"].value == 42.0, (
+        "a scraped row the description never contained was taken with it"
+    )
+    assert device_data["ConnectionStatus"] == 0
+
+
 def test_a_device_with_parameters_is_still_read():
     """The guard must not swallow the ordinary case."""
     api = _api()
@@ -5512,6 +6981,331 @@ def _discovery_api(answers, fetched_at=None):
 
     api.make_api_call = make_api_call
     return api, calls
+
+
+def _two_device_discovery_api():
+    """Two devices, neither with parameter definitions - so discovery is due
+    for both and the filter is the only thing that can tell them apart."""
+    api = _api()
+    api.data = {
+        "1234": {"ConnectionStatus": 0},
+        "9999": {"ConnectionStatus": 0},
+    }
+    api.modules = {
+        device_id: {(0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump"}}
+        for device_id in ("1234", "9999")
+    }
+    asked = []
+    api._discover_device_parameters = asked.append
+    return api, asked
+
+
+def test_a_disabled_device_is_not_asked_for_its_parameter_definitions():
+    """The filter reached the readings and stopped there.
+
+    The coordinator works out which devices the user has switched off and
+    hands the list to fetch_data, which passes it to the value reads - but
+    the discovery in between was called without it. Discovery is the most
+    expensive thing this integration does: five seconds of sleep and at least
+    one request PER MODULE, and the portal counts requests per IP. A disabled
+    device paid all of it, once a day and on every install whose cache is
+    incomplete.
+    """
+    api, asked = _two_device_discovery_api()
+
+    api.get_parameters(["1234"])
+
+    assert asked == ["1234"], f"a disabled device was asked anyway: {asked}"
+
+
+def test_no_filter_still_means_every_device():
+    """`None` is "no filter" and an empty list is "every device is off" - the
+    two must not collapse into each other here either."""
+    api, asked = _two_device_discovery_api()
+    api.get_parameters(None)
+    assert sorted(asked) == ["1234", "9999"]
+
+    api, asked = _two_device_discovery_api()
+    api.get_parameters([])
+    assert asked == []
+
+
+def test_discovery_is_not_even_started_for_disabled_devices_alone():
+    """The step before: if the only device with definitions missing is one
+    the user switched off, nothing is due at all.
+
+    Without this the cycle announces "Reading parameter definitions from the
+    portal" and then reads none - which reads like a portal problem in the
+    log rather than a filter doing its job.
+    """
+    api, asked = _two_device_discovery_api()
+    api._first_cycle_done = True
+
+    api._discover_parameters_if_due([])
+
+    assert asked == []
+
+
+def test_the_expert_lock_belongs_to_the_worker_not_to_its_awaiter(monkeypatch):
+    """A cancelled await must not hand the portal to the next operation.
+
+    The lock used to be taken on the event loop and released in the awaiting
+    coroutine's `finally`. A cancellation - a reload, an unload, a timeout -
+    runs that `finally` while the executor thread is still driving the
+    Fachmann session, so the next operation of the same account opened a
+    second session beside it. Held by the thread that does the work, the
+    only thing that can release it is that work finishing.
+
+    Driven with two real threads: the second call has to be refused for as
+    long as the first is inside the portal, and to succeed once it is out.
+    """
+    import threading
+
+    from custom_components.wemportal import expert_controller
+
+    entry = types.SimpleNamespace(data={}, options={})
+    api = types.SimpleNamespace(
+        check_expert_cooldown=lambda: None,
+        activate_expert_cooldown=lambda: None,
+        expert_cookies={},
+    )
+    inside_the_portal = threading.Event()
+    let_it_finish = threading.Event()
+    lock = threading.Lock()
+
+    class _Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def read_many(self, _ids):
+            inside_the_portal.set()
+            let_it_finish.wait(timeout=10)
+            return {}
+
+    monkeypatch.setattr(
+        expert_controller, "read_expert_values", expert_controller.read_expert_values
+    )
+    monkeypatch.setattr(
+        "custom_components.wemportal.expert_writer.WemPortalExpertClient", _Client
+    )
+
+    def first():
+        expert_controller.read_expert_values(entry, api, ["ev"], None, lock)
+
+    worker = threading.Thread(target=first)
+    worker.start()
+    assert inside_the_portal.wait(timeout=10), "the first read never got going"
+
+    # The awaiter of the first read is gone by now - cancelled, unloaded,
+    # timed out. The work is not.
+    with pytest.raises(expert_controller.ExpertBusy):
+        expert_controller.read_expert_values(entry, api, ["ev"], None, lock)
+
+    let_it_finish.set()
+    worker.join(timeout=10)
+
+    # And free again once the work really ended.
+    expert_controller.read_expert_values(entry, api, ["ev"], None, lock)
+
+
+def test_a_write_publishes_every_value_it_sent():
+    """Whoever writes, and whatever it carried along.
+
+    The row update used to be an optional callback the CALLER passed in - so
+    the entity path published its main value and the holiday service, which
+    writes begin and end in one request, published nothing at all. And even
+    the entity path left the companion values behind, although they went out
+    on the wire just as much. Anything queued on the lock then read a row
+    that still said what it said before the write.
+
+    Owned by the write now: it is the only place that knows the whole
+    request, and it is the one holding the lock while the next writer waits.
+    """
+    api = _api_after_a_poll()
+    begin = Reading(value=1.0, parameter_id="U_Beginn", module_index=0, module_type=1)
+    end = Reading(value=2.0, parameter_id="U_Ende", module_index=0, module_type=1)
+    other_module = Reading(
+        value=3.0, parameter_id="U_Beginn", module_index=1, module_type=1
+    )
+    api.data = {
+        "1234": {
+            "Heat pump-U_Beginn": begin,
+            "Heat pump-U_Ende": end,
+            "Circuit-U_Beginn": other_module,
+        }
+    }
+    api._change_value = lambda *_args, **_kwargs: None
+
+    api.change_value("1234", "U_Beginn", 0, 1, 10.0, together_with={"U_Ende": 20.0})
+
+    assert (begin.value, end.value) == (10.0, 20.0), (
+        "the request carried both values but only published some of them"
+    )
+    assert other_module.value == 3.0, (
+        "a parameter of the same name in ANOTHER module was overwritten"
+    )
+
+
+def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
+    """A holiday write carries the module's other dates: resolved from a
+    callable and published into the rows, both UNDER the lock, so a writer
+    queued on it reads what this write set, not the values from before it.
+
+    Asserted on the lock's own state at the moment of publish, not on a race
+    between two threads: the version this replaced arranged that race with a
+    sleep the autouse fixture turns into a no-op, so it proved neither that the
+    second writer waited nor that the row was current when it read it. Held
+    when the publish runs, it is in the rows before the next writer gets in;
+    released first, that writer reads the pre-write row and undoes this one.
+    """
+    api = _api_after_a_poll()
+    api.data = {
+        "1234": {
+            "Heat pump-HolidayEnd": Reading(
+                value=1.0, parameter_id="HolidayEnd", module_index=0, module_type=1
+            )
+        }
+    }
+    seen = {}
+    api._change_value = lambda *_a, **kwargs: seen.__setitem__(
+        "sent", kwargs.get("together_with")
+    )
+    locked_at_publish = {}
+    real_publish = api._publish_accepted_values
+
+    def traced_publish(*args, **kwargs):
+        locked_at_publish["held"] = api._api_lock.locked()
+        return real_publish(*args, **kwargs)
+
+    api._publish_accepted_values = traced_publish
+
+    api.change_value(
+        "1234", "HolidayBegin", 0, 1, 2.0, together_with=lambda: {"HolidayEnd": 3.0}
+    )
+
+    assert seen["sent"] == {"HolidayEnd": 3.0}, (
+        f"the callable companion set was not resolved before the write: {seen['sent']}"
+    )
+    assert locked_at_publish.get("held"), (
+        "the values were published after the lock was released, so a writer "
+        "queued on it reads the pre-write rows and undoes this one"
+    )
+
+
+def test_a_write_after_a_transport_reset_logs_in_again():
+    """Polls restore the session; a write went straight to the wire.
+
+    Two failing cycles drop the HTTP sessions and clear `valid_login`, and
+    the next POLL puts both back through _ensure_api_session. A write does
+    not go through that - it takes the lock and calls the portal - so a
+    service call or an automation landing in that window met a `session` of
+    None and failed until a poll happened to run first. On the default
+    interval that is minutes of writes doing nothing.
+    """
+    api = _api()
+    api.session = None
+    api.valid_login = False
+    logins = []
+    api.api_login = lambda: (logins.append(True), setattr(api, "valid_login", True))
+    api._change_value = lambda *_args, **_kwargs: None
+
+    api.change_value("1234", "P1", 0, 1, 21.0)
+
+    assert logins, "the write went to the portal without a session to send it on"
+
+
+def test_a_write_with_a_live_session_does_not_log_in_again():
+    """The other half: a login per write would be one more request against an
+    account the portal blocks after 10,000 of them."""
+    api = _api()
+    api.valid_login = True
+    logins = []
+    api.api_login = lambda: logins.append(True)
+    api._change_value = lambda *_args, **_kwargs: None
+
+    api.change_value("1234", "P1", 0, 1, 21.0)
+
+    assert logins == [], "a write spent a login it did not need"
+
+
+def test_a_refused_discovery_stops_at_the_first_module():
+    """The three-strike budget it promised could never be spent.
+
+    make_api_call activates the shared cooldown the moment the portal answers
+    403, so the NEXT module's request is refused before it is sent - by a
+    ForbiddenError carrying no HTTP status, which misses the 403 branch
+    entirely and re-raises. The counter never reached two, while the log said
+    "strike 1 of 3" and the docstring described a budget.
+
+    What must hold is the behaviour, not the counter: one refusal ends
+    discovery rather than walking the remaining modules into the same wall.
+    """
+    api = _api()
+    api.modules = {
+        "1234": {
+            (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump"},
+            (1, 1): {"Index": 1, "Type": 1, "Name": "Circuit"},
+        }
+    }
+    api._module_description_is_due = lambda *_args: True
+    asked = []
+
+    def make_api_call(url, **_kwargs):
+        asked.append(url)
+        refusal = real_requests.exceptions.HTTPError(
+            response=FakeResponse(status_code=403)
+        )
+        raise exceptions.ForbiddenError("WemPortal forbidden error") from refusal
+
+    api.make_api_call = make_api_call
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api._discover_device_parameters("1234")
+
+    assert len(asked) == 1, (
+        f"the portal was asked {len(asked)} times after refusing this network"
+    )
+
+
+def test_the_filter_reaches_the_discovery_from_the_cycle_that_starts_it():
+    """The leg before the one below, and it was untested for the same reason.
+
+    The test underneath enters at _ensure_api_session, so dropping the
+    argument where _fetch_data hands it over stayed green - the covered part
+    starts one call too late. Driven from fetch_data, which is what the
+    coordinator calls.
+    """
+    api, asked = _two_device_discovery_api()
+    api.valid_login = True
+    api._devices_fetched_this_session = True
+    api._first_cycle_done = True
+    api.get_data = lambda *_args, **_kwargs: None
+    api.get_statistics = lambda *_args, **_kwargs: None
+
+    api.fetch_data(["1234"])
+
+    assert asked == ["1234"], f"a disabled device was asked anyway: {asked}"
+
+
+def test_the_filter_survives_the_handover_to_the_session_setup():
+    """The leg between the two tests above, and the one nothing watched.
+
+    The filter travels fetch_data -> _ensure_api_session -> discovery. Both
+    ends were covered and the handover was not: dropping the argument here
+    left every test green while a device the user switched off was asked for
+    its definitions again. Found by an audit of THIS repair, not of the code
+    it repaired - the test sat one step behind the line that can regress.
+    """
+    api, asked = _two_device_discovery_api()
+    # Past the parts _ensure_api_session does before the discovery, so the
+    # handover is what this exercises and not the login.
+    api.valid_login = True
+    api._devices_fetched_this_session = True
+    api._first_cycle_done = True
+
+    api._ensure_api_session(["1234"])
+
+    assert asked == ["1234"], f"a disabled device was asked anyway: {asked}"
 
 
 def test_a_fresh_parameter_list_is_not_re_read():
@@ -5759,7 +7553,9 @@ def _cycle_api(fetched_at):
     api._devices_fetched_this_session = True
     api.valid_login = True
     read = []
-    api.get_parameters = lambda: read.append("read")
+    # Takes the device filter like the real one: what is under test here is
+    # WHETHER the discovery runs, not which devices it covers.
+    api.get_parameters = lambda *_args: read.append("read")
     api.get_data = lambda *_args, **_kwargs: None
     return api, read
 
@@ -5814,14 +7610,14 @@ def _row(raw, **extra):
     view of the same programme arrives beside it, and it is the better of the
     two sources.
     """
-    return {
-        "value": raw,
-        "unit": None,
-        "friendlyName": "Programme",
-        "ParameterID": "Programm",
-        "platform": "sensor",
+    return Reading(
+        value=raw,
+        unit=None,
+        friendly_name="Programme",
+        parameter_id="Programm",
+        platform="sensor",
         **extra,
-    }
+    )
 
 
 def _week_payload():
@@ -5866,7 +7662,11 @@ def _sensor_from_row(key, row):
         async_add_listener=lambda *_args, **_kwargs: None,
     )
     return WemPortalSensor(
-        coordinator, types.SimpleNamespace(entry_id="e1"), "1234", key, row
+        coordinator,
+        types.SimpleNamespace(entry_id="e1", data={"username": "user@example.org"}),
+        "1234",
+        key,
+        row,
     )
 
 
@@ -5874,53 +7674,42 @@ def _schedule_sensor(raw):
     """A sensor built from one programme reading."""
     return _sensor_from_row(
         "Programm",
-        {
-            "value": raw,
-            "unit": None,
-            "friendlyName": "Heating programme",
-            "ParameterID": "Programm",
-            "ModuleIndex": 0,
-            "ModuleType": 1,
-        },
+        Reading(
+            value=raw,
+            unit=None,
+            friendly_name="Heating programme",
+            parameter_id="Programm",
+            module_index=0,
+            module_type=1,
+        ),
     )
 
 
 # --- a word the portal knows and this integration does not --------------
 
 
-@pytest.fixture
-def _forget_unreadable_reports():
-    from custom_components.wemportal import sensor as sensor_module
-
-    sensor_module._UNREADABLE_REPORTED.clear()
-    yield
-    sensor_module._UNREADABLE_REPORTED.clear()
-
-
 def _numeric_sensor(value):
     """A sensor that must hold a number - it carries a unit."""
     return _sensor_from_row(
         "Pump",
-        {
-            "value": value,
-            "unit": "%",
-            "friendlyName": "Pump speed",
-            "ParameterID": "Drehzahl",
-            "ModuleIndex": 0,
-            "ModuleType": 1,
-        },
+        Reading(
+            value=value,
+            unit="%",
+            friendly_name="Pump speed",
+            parameter_id="Drehzahl",
+            module_index=0,
+            module_type=1,
+        ),
     )
 
 
-def test_a_word_that_is_not_a_number_shows_as_unknown(_forget_unreadable_reports):
+def test_a_word_that_is_not_a_number_shows_as_unknown():
     """Upstream #146: a pump speed reading "Stop" on a portal that writes
     "Aus" everywhere else. Not a fault - a state we do not know."""
     assert _numeric_sensor("Stop").native_value is None
 
 
-def test_an_unreadable_word_is_reported_once_not_every_cycle(
-    _forget_unreadable_reports, caplog
-):
+def test_an_unreadable_word_is_reported_once_not_every_cycle(caplog):
     """It arrives on every cycle for as long as the condition lasts, and a
     warning each time buries everything else in the log."""
     import logging
@@ -5934,9 +7723,7 @@ def test_an_unreadable_word_is_reported_once_not_every_cycle(
     assert "Stop" in hits[0].getMessage(), "the unknown word was not named"
 
 
-def test_a_different_unreadable_word_is_reported_on_its_own(
-    _forget_unreadable_reports, caplog
-):
+def test_a_different_unreadable_word_is_reported_on_its_own(caplog):
     """Silencing the sensor rather than the word would hide the second state
     this installation turns out to have."""
     import logging
@@ -5949,9 +7736,7 @@ def test_a_different_unreadable_word_is_reported_on_its_own(
     assert len(hits) == 2
 
 
-def test_a_word_this_integration_does_know_is_not_reported(
-    _forget_unreadable_reports, caplog
-):
+def test_a_word_this_integration_does_know_is_not_reported(caplog):
     import logging
 
     with caplog.at_level(logging.WARNING):
@@ -6088,8 +7873,8 @@ def _measured_monday():
         )
     return _row(
         json.dumps(payload),
-        CircuitTimesDay=circuit_times,
-        PossibleValues=HEATING_LEVELS,
+        circuit_times_day=circuit_times,
+        possible_values=HEATING_LEVELS,
     )
 
 
@@ -6113,7 +7898,7 @@ def test_the_levels_are_named_in_the_portals_own_words():
     from custom_components.wemportal.sensor import _readable_schedule
 
     row = _measured_monday()
-    row["PossibleValues"] = [{"Value": 3, "Text": "Fest"}]
+    row.possible_values = [{"Value": 3, "Text": "Fest"}]
 
     assert _readable_schedule(row)["DI"] == ["00:00-24:00 Fest"]
 
@@ -6123,7 +7908,7 @@ def test_a_level_the_portal_did_not_name_keeps_its_times():
     from custom_components.wemportal.sensor import _readable_schedule
 
     row = _measured_monday()
-    row["PossibleValues"] = []
+    row.possible_values = []
 
     assert _readable_schedule(row)["DI"] == ["00:00-24:00"]
 
@@ -6153,7 +7938,7 @@ def test_without_the_device_view_the_json_still_answers():
     from custom_components.wemportal.sensor import _readable_schedule
 
     row = _measured_monday()
-    del row["CircuitTimesDay"]
+    row.circuit_times_day = None
 
     assert _readable_schedule(row)["MO"] == [
         "00:00-06:00 (H)",
@@ -6173,7 +7958,7 @@ def test_the_readable_week_needs_the_value_to_name_its_days():
     where that is done.
     """
     row = _measured_monday()
-    row["value"] = None
+    row.value = None
 
     assert _sensor_from_row("Programm", row).native_value is None
 
@@ -6184,7 +7969,7 @@ def test_a_week_that_does_not_line_up_falls_back_instead_of_mislabelling():
     from custom_components.wemportal.sensor import _readable_schedule
 
     row = _measured_monday()
-    row["value"] = '{"MO-1":"00:00-24:00","MO":"H"}'
+    row.value = '{"MO-1":"00:00-24:00","MO":"H"}'
 
     assert _readable_schedule(row) == {"MO": ["00:00-24:00 (H)"]}
 
@@ -6237,7 +8022,7 @@ def test_a_refused_write_says_what_the_portal_answered():
     rejected holiday date read precisely that, while "Status -1: Unbekannter
     Fehler" sat one exception deeper.
     """
-    api = _api()
+    api = _api_after_a_poll()
     api.session = object()
 
     def refuse(*_args, **_kwargs):
@@ -6279,7 +8064,7 @@ def test_companion_parameters_travel_in_the_same_request():
     module, so the pair fits in one request - which is what the app is
     assumed to send.
     """
-    api = _api()
+    api = _api_after_a_poll()
     sent = _write_recorder(api)
 
     api.change_value(
@@ -6307,7 +8092,7 @@ def test_the_parameter_being_changed_wins_over_a_companion():
     """The companions carry CURRENT values. One of them repeating the
     parameter under change would otherwise write the old value back over the
     new one, and the entity would show a day the portal never took."""
-    api = _api()
+    api = _api_after_a_poll()
     sent = _write_recorder(api)
 
     api.change_value(
@@ -6326,7 +8111,7 @@ def test_the_parameter_being_changed_wins_over_a_companion():
 def test_a_write_without_companions_is_unchanged():
     """Number, Select and Switch send nothing along, and their payload must
     look exactly as it did."""
-    api = _api()
+    api = _api_after_a_poll()
     sent = _write_recorder(api)
 
     api.change_value("1234", "P1", 0, 1, 21.0)
@@ -6341,3 +8126,139 @@ def test_a_write_without_companions_is_unchanged():
             }
         ],
     }
+
+
+def test_a_reload_fetches_statistics_again_because_the_data_did_not_survive():
+    """A gate is only worth keeping while the data it guards is still there.
+
+    Every options save is a reload, and a reload builds a new api with no
+    readings at all: async_setup_entry passes the module cache and the
+    scraper id, never `existing_data`. A gate that outlived that reload
+    therefore held back the one fetch that could have refilled the
+    statistics sensors - they sat on unknown for up to an hour, with
+    nothing in the log to say why.
+
+    What the gate saves is roughly eleven requests per options save
+    against a limit of ten thousand per twelve hours. That is not worth
+    an hour of missing readings, so the gate is deliberately forgotten
+    with the data it belongs to.
+    """
+    calls = []
+    first = _statistics_api(calls)
+    first.get_statistics(enabled_devices=["1234"])
+    assert len(calls) == 1, "the first cycle did not fetch at all"
+
+    # The reload: same account, new api object, no data carried over.
+    after_the_reload = _statistics_api(calls)
+    after_the_reload.get_statistics(enabled_devices=["1234"])
+
+    assert len(calls) == 2, (
+        "the rebuilt api kept the gate but not the readings it guards"
+    )
+
+
+# --- `both` mode spent the API budget at the WEB interval ---------------
+#
+# The coordinator ticks at min(web, api), so whichever of the two is shorter
+# is served on time. The scrape half has a gate for that; the API half had
+# none, so it rode along on every tick. With web=5min and api=30min that is
+# 864 instead of 144 API cycles per device and day - against a portal that
+# counts 10,000 requests per 12 hours per IP, and after the user explicitly
+# asked for the longer interval in the options.
+
+
+def _api_in_both_mode(web_seconds, api_seconds, clock):
+    """An api in `both` mode with the scrape half taken out of the picture."""
+    from homeassistant.const import CONF_SCAN_INTERVAL
+
+    from custom_components.wemportal.const import CONF_MODE, CONF_SCAN_INTERVAL_API
+
+    api = _api(
+        config={
+            CONF_MODE: "both",
+            CONF_SCAN_INTERVAL: web_seconds,
+            CONF_SCAN_INTERVAL_API: api_seconds,
+        }
+    )
+    api._scrape_is_due = lambda _enabled_devices: False
+    reads = []
+    api.get_data = lambda _enabled_devices=None: reads.append(clock.now)
+    return api, reads
+
+
+def _tick(api, clock, times, spacing):
+    """Drive `times` coordinator cycles on a fixed `spacing` grid."""
+    for _ in range(times):
+        api._collect_both(None)
+        clock.now += spacing
+
+
+def test_both_mode_does_not_read_the_api_on_every_web_cycle(monkeypatch):
+    """Seven ticks of the five-minute web interval, one half-hour API
+    interval: the API is read at the start and again half an hour later, not
+    seven times."""
+    clock = _Clock()
+    monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
+    api, reads = _api_in_both_mode(300, 1800, clock)
+    start = clock.now
+
+    _tick(api, clock, times=7, spacing=300)
+
+    assert reads == [start, start + 1800], (
+        f"the API was read on {len(reads)} of 7 web cycles; the user asked "
+        "for one read per half hour"
+    )
+
+
+def test_both_mode_reads_the_api_on_every_cycle_when_that_is_the_shorter_one(
+    monkeypatch,
+):
+    """The control case, and what decides how the gate compares: on the
+    default settings (web 30min, API 5min) the coordinator ticks at exactly
+    the API interval, so a `>` would find each tick a hair too early and
+    halve the polling the user configured.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
+    api, reads = _api_in_both_mode(1800, 300, clock)
+
+    _tick(api, clock, times=7, spacing=300)
+
+    assert len(reads) == 7, (
+        f"only {len(reads)} of 7 API cycles ran; the gate is measuring "
+        "against a grid that drifts by each cycle's own runtime"
+    )
+
+
+def test_a_failed_api_read_still_counts_against_the_interval(monkeypatch):
+    """A cycle that tried and failed spent the requests either way.
+
+    The stamp used to be skipped on failure and the coordinator's own backoff
+    named as what paces the retry - but that backoff needs THREE failures in a
+    row and any success in between sets it back to zero. A portal answering
+    every other cycle with an error therefore left the gate open on every one
+    of them, and the api half went back to being read at the WEB interval,
+    which is the traffic this gate exists to stop. Same rule the schedule
+    fetch and the statistics stamp already follow: the attempt is what costs.
+    """
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    clock = _Clock()
+    monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
+    api, attempts = _api_in_both_mode(300, 1800, clock)
+    start = clock.now
+
+    def _fail(_enabled_devices=None):
+        attempts.append(clock.now)
+        raise WemPortalError("the portal answered with nothing usable")
+
+    api.get_data = _fail
+    for _ in range(7):
+        with contextlib.suppress(WemPortalError):
+            api._collect_both(None)
+        clock.now += 300
+
+    assert attempts == [start, start + 1800], (
+        f"the api was tried on {len(attempts)} of 7 web cycles; a failed "
+        "read reopened the gate the user's interval had closed"
+    )

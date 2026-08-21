@@ -2,6 +2,9 @@
 Weishaupt webscraping and API library
 """
 
+from typing import Any, Final
+import logging
+
 import copy
 import threading
 import time
@@ -10,27 +13,9 @@ from datetime import timedelta
 import requests
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.util import dt as dt_util
-from lxml import html
-from lxml.etree import ParserError
 
 from .const import (
-    _LOGGER,
-    API_CIRCUIT_TIMES_READ_URL,
-    API_CIRCUIT_TIMES_REFRESH_URL,
-    API_DATA_ACCESS_READ_URL,
-    API_DATA_ACCESS_WRITE_URL,
-    API_DEVICE_READ_URL,
-    API_DEVICE_STATUS_READ_URL,
-    API_EVENT_TYPE_READ_URL,
     API_LOCK_TIMEOUT_SECONDS,
-    API_LOGIN_URL,
-    API_REFRESH_URL,
-    API_REQUEST_TIMEOUT_SECONDS,
-    API_STATISTICS_READ_URL,
-    API_STATISTICS_REFRESH_URL,
-    API_TRANSPORT_RETRY_DELAY_SECONDS,
-    CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS,
-    CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
     CONF_LANGUAGE,
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
@@ -40,53 +25,170 @@ from .const import (
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
     DEFAULT_MODE,
     DEFAULT_TIMEOUT,
-    DEVICE_VALUES_STALE_AFTER_SECONDS,
-    EXPERT_FORBIDDEN_COOLDOWN_SECONDS,
-    FORBIDDEN_COOLDOWN_SECONDS,
     GITHUB_PROJECT_URL,
     MIN_SCAN_INTERVAL_API_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
-    PARAMETER_REDISCOVERY_INTERVAL_SECONDS,
-    PARAMETER_REDISCOVERY_RETRY_SECONDS,
-    POLL_DEADLINE_SECONDS,
-    SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE,
-    SCRAPER_FALLBACK_DEVICE_ID,
-    SCRAPER_REQUEST_TIMEOUT_SECONDS,
-    STATISTICS_REFRESH_INTERVAL_SECONDS,
-    STATISTICS_RETRY_INTERVAL_SECONDS,
-    WEB_LOGGED_IN_MARKER,
-    WEB_LOGIN_FORM_MARKER,
-    WEB_LOGIN_URL,
-    WEM_INVALID_PARAMETER_STATUS,
     WemDataType,
 )
+from .models import ModuleRef, Reading, account_state
+from .statistics import WemPortalStatistics
+from .transport import WemPortalTransport
 from .exceptions import (
     ApiBusyError,
     AuthError,
-    ExpiredSessionError,
     ForbiddenError,
     ParameterChangeError,
     PollDeadlineExceeded,
     PortalMaintenanceError,
     ServerError,
-    UnknownAuthError,
     WemPortalError,
 )
-from .mapper import WemPortalDataMapper
+from .mapper import WemPortalDataMapper, forget_dropped_parameters
 from .mobile_protocol import (
+    as_answer_dict,
+    described_parameters,
     read_refresh_ticket,
     read_write_ack,
-    status_is_success,
 )
 from .translations import friendly_name_mapper, translate
 from .utils import (
     clamped_scan_interval,
     error_state_and_detail,
-    latest_statistics_entry,
     looks_like_schedule,
-    maintenance_notice,
+    portal_list,
+    schedule_fetch_still_feeds,
     short_device_id,
+    week_carries_a_programme,
 )
+
+_LOGGER = logging.getLogger(__name__)
+
+API_CIRCUIT_TIMES_READ_URL: Final = "https://www.wemportal.com/app/CircuitTimes/Read"
+
+API_CIRCUIT_TIMES_REFRESH_URL: Final = (
+    "https://www.wemportal.com/app/CircuitTimes/Refresh"
+)
+
+API_DATA_ACCESS_READ_URL: Final = "https://www.wemportal.com/app/DataAccess/Read"
+
+API_DATA_ACCESS_WRITE_URL: Final = "https://www.wemportal.com/app/DataAccess/Write"
+
+API_DEVICE_READ_URL: Final = "https://www.wemportal.com/app/Device/Read"
+
+API_DEVICE_STATUS_READ_URL: Final = "https://www.wemportal.com/app/DeviceStatus/Read"
+
+API_EVENT_TYPE_READ_URL: Final = "https://www.wemportal.com/app/EventType/Read"
+
+API_REFRESH_URL: Final = "https://www.wemportal.com/app/DataAccess/Refresh"
+
+
+CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS: Final = 3600  # 1 hour
+
+# How soon a schedule that FAILED to load is tried again. Shorter than the
+# refresh interval, so a transient failure does not cost a full hour, but
+# still an interval: the timestamp records the attempt rather than the
+# success, otherwise a schedule that keeps failing is re-fetched on every
+# coordinator cycle - two requests each time, at the portal that is already
+# failing. Same reasoning and same value as the statistics retry.
+CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
+
+# How long one device's readings may stay on display without a successful
+# read of its own.
+#
+# A cycle where one device fails and another succeeds is reported as a
+# SUCCESS, and rightly so: failing it would take every other device's
+# entities down with it. But that also means the failing device keeps
+# publishing whatever it last returned, with nothing saying otherwise -
+# mapper._clear_unanswered only runs when the portal ANSWERED and left a
+# parameter out, which is not this case.
+#
+# A duration rather than a count of failed cycles, unlike the scrape: there
+# the backoff stretches the gap between attempts, so counting attempts was
+# the only honest measure. Here the cycle counts as successful, so the
+# interval stays whatever the user configured - and a limit in minutes then
+# means the same thing whether that is 5 minutes or 30.
+DEVICE_VALUES_STALE_AFTER_SECONDS: Final = 30 * 60
+
+# ...but never shorter than this many polls. The limit above is a
+# duration on purpose, and nothing caps the API interval from above -
+# the options only enforce a floor. An installation polling every 45
+# minutes was therefore past a fixed half hour before its next attempt
+# even ran, so the first miss emptied everything: the opposite of the
+# one-failed-cycle tolerance this exists for. Two, so exactly one
+# missed cycle is survivable and the second is not.
+DEVICE_VALUES_STALE_AFTER_POLLS: Final = 2
+
+# Heating schedules (CircuitTimes) rarely change - only when a user edits
+# them directly in the WEM Portal app (this integration only ever shows
+# them as read-only sensors). Refetching them every single coordinator
+# cycle is unnecessary load; this caps how often they're refreshed.
+# How long a module's discovered parameter list is trusted before the portal
+# is asked again.
+#
+# The list used to be cached forever: activating an input or output on a
+# module the integration already knew produced a parameter it would never
+# discover, with no error and no way to force a re-scan short of removing and
+# re-adding the integration. A NEW module was found (it has no cached
+# parameters), a new parameter on an existing one was not.
+#
+# One JSON request per module makes this cheap enough to do on a timer -
+# unlike the Fachmann discovery, which is a full web navigation and stays
+# on-demand only. Four modules once a day is 0.04% of the portal's 10,000
+# requests per 12 hours.
+#
+# Wall clock, not monotonic: the timestamp is persisted with the module cache
+# and has to survive a restart, which monotonic does not.
+PARAMETER_REDISCOVERY_INTERVAL_SECONDS: Final = 24 * 3600  # 1 day
+
+# How soon a FAILED re-scan is attempted again. Shorter than the interval
+# above, but not immediate: a portal that just refused must not be asked once
+# per cycle. Same shape as the statistics and schedule retries.
+PARAMETER_REDISCOVERY_RETRY_SECONDS: Final = 3600  # 1 hour
+
+# How long one poll cycle may spend before it stops itself.
+#
+# The same reasoning as the lock timeout above, one step further along.
+# asyncio.timeout cancels the coordinator's AWAIT; it cannot cancel the
+# executor thread behind it. A cycle that overran therefore ran on to
+# completion - holding the shared lock, still spending requests at a portal
+# that counts them per IP - while Home Assistant had already recorded the
+# failure and moved on. Nobody was waiting for that work any more.
+#
+# Below DEFAULT_TIMEOUT so the worker is gone BEFORE the coordinator gives
+# up rather than after: the next cycle then finds a free lock instead of
+# queueing behind an abandoned one. Never below API_LOCK_TIMEOUT_SECONDS.
+POLL_DEADLINE_SECONDS: Final = DEFAULT_TIMEOUT - 30
+
+# Placeholder device id the web scraper falls back to when no real
+# API-discovered device is known (a pure-web install that never ran the
+# mobile API). The scraper itself has no device concept - it reads a web
+# page - but entity unique_ids are "<entry>:<device_id>:<name>", so scraped
+# sensors need a STABLE device id or their history breaks on mode switches.
+# See WemPortalApi.resolve_scraper_device_id() for how this is locked in
+# once and then persisted.
+SCRAPER_FALLBACK_DEVICE_ID: Final = "0000"
+
+# How many scrapes in a row may fail before the values they produced stop
+# being presented as current.
+#
+# Counted in failures rather than measured as an age, because the two are not
+# proportional: each failure adds a growing pause of its own, so with a
+# five-minute interval the third failure lands about six intervals after the
+# last success, and with a thirty-minute one about three. A multiple of the
+# interval would therefore mean a different thing on every installation, while
+# a count means the same everywhere - and still clears sooner where the
+# interval is shorter, which is the right way round.
+#
+# Three rather than one: a single failed scrape is ordinary, and the second is
+# where the cached session is discarded and a full login retried. Only the
+# third says the portal is not delivering. The counter resets on any
+# successful scrape.
+#
+# Note this counts ATTEMPTS THAT FAILED, not "we have not looked". A scrape
+# that is never run - because its device is disabled - leaves the values
+# alone; nothing was asked, so nothing was refused.
+SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE: Final = 3
+
 
 # The three rows a device status read owns. Named once because they are
 # written in one place and forgotten in another when the read fails: a
@@ -103,57 +205,17 @@ DEVICE_STATUS_ROWS = (
 )
 
 
-# Devices whose refresh answered without a JobID, so the warning below is
-# raised once per device instead of on every cycle.
-_MISSING_JOB_ID_REPORTED: set[str] = set()
-
-
-# The 403 backoffs live here rather than on the instance, and that placement
-# is the fix for a defect, not a style choice.
-#
-# They used to be instance state carried forward by whoever built the next
-# WemPortalApi. That works only where there IS a previous instance to copy
-# from. There isn't, in the case that matters most: when the first refresh
-# fails, Home Assistant discards everything and calls async_setup_entry again,
-# so the retry built a fresh object with the backoff reset to zero - and the
-# most likely reason for that first refresh to fail is the very 403 that set
-# it. The same hole let a config-flow validation walk straight into an active
-# cooldown, because that path has no previous instance either.
-#
-# Nothing can forget to pass on what it never has to pass on.
-#
-# The global one is global because the limit is: the portal counts requests
-# per IP, so a 403 earned by one account is a statement about every account
-# behind the same address. The expert one is per account on purpose - a 403
-# there is frequently one rejected request rather than an IP-wide limit (see
-# activate_expert_cooldown), so it must not spread.
-_BLOCKED_UNTIL = 0.0
-_EXPERT_BLOCKED_UNTIL: dict[str, float] = {}
-
-
-def _extend_cooldown(current: float, until: float) -> float:
-    """Only ever later, never sooner - the rule both backoffs already had."""
-    return max(current, until)
-
-
-def reset_cooldowns_for_tests() -> None:
-    """Drop both backoffs. Only the test suite has any business calling this;
-    production has no situation in which forgetting a 403 is correct."""
-    global _BLOCKED_UNTIL
-    _BLOCKED_UNTIL = 0.0
-    _EXPERT_BLOCKED_UNTIL.clear()
-
-
-def _report_missing_job_id(device_id):
+def _report_missing_job_id(device_id, reported):
     """Say once that a device started no identifiable measurement job.
 
     A read without a JobID is answered from the most recent job, which may be
     the PREVIOUS measurement served as current. Whether a healthy portal ever
     answers this way is not established - this is what would establish it.
+    `reported` is the account's own once-per-device memory.
     """
-    if device_id in _MISSING_JOB_ID_REPORTED:
+    if device_id in reported:
         return
-    _MISSING_JOB_ID_REPORTED.add(device_id)
+    reported.add(device_id)
     _LOGGER.warning(
         "Device %s answered the measurement refresh without a JobID. The "
         "read then returns whichever job the portal considers newest, which "
@@ -164,7 +226,24 @@ def _report_missing_job_id(device_id):
     )
 
 
-class WemPortalApi:
+def _schedule_throttle_key(device_id, module, parameter_id) -> tuple:
+    """What identifies one programme for the hourly refresh throttle.
+
+    The module is part of it. Two heating circuits are two modules of one
+    type sharing one parameter catalogue, so the same programme id appears
+    twice on a device - and keyed without the module, the first circuit
+    fetched stamped the key and the second was never due again, on any cycle.
+    Built here rather than at the two call sites: a key spelled out in two
+    places is one that eventually disagrees with itself.
+    """
+    return (
+        device_id,
+        ModuleRef(module_index=module["Index"], module_type=module["Type"]),
+        parameter_id,
+    )
+
+
+class WemPortalApi(WemPortalTransport, WemPortalStatistics):
     """Wrapper class for Weishaupt WEM Portal"""
 
     def __init__(
@@ -187,6 +266,9 @@ class WemPortalApi:
         """
         self.username = username
         self.password = password
+        # The account's reload-surviving memory: expert backoff, auth streak,
+        # once-per-subject warnings. See models.AccountState.
+        self._account_state = account_state(username)
         self._init_from_config(config)
         self._init_from_storage(
             existing_data,
@@ -197,40 +279,6 @@ class WemPortalApi:
             scraper_backoff,
         )
         self._init_runtime_state()
-
-    @property
-    def _blocked_until(self) -> float:
-        """Monotonic time until which ALL outbound requests are paused.
-
-        Set after a 403 anywhere in a cycle - a strictly additive safety
-        measure: it only ever makes the integration quieter after the server
-        has already signalled distress. Backed by module state, so it survives
-        every way this object gets rebuilt. See _BLOCKED_UNTIL.
-        """
-        return _BLOCKED_UNTIL
-
-    @_blocked_until.setter
-    def _blocked_until(self, value: float) -> None:
-        global _BLOCKED_UNTIL
-        _BLOCKED_UNTIL = _extend_cooldown(_BLOCKED_UNTIL, value or 0.0)
-
-    @property
-    def _expert_blocked_until(self) -> float:
-        """The EXPERT-ONLY backoff, per account.
-
-        A 403 on the Fachmann path pauses that path alone (see
-        EXPERT_FORBIDDEN_COOLDOWN_SECONDS for why); the polling paths keep
-        running. The reverse still holds: a genuine rate limit seen by the
-        API or scraper pauses the expert path too, because
-        check_expert_cooldown() consults check_cooldown() first.
-        """
-        return _EXPERT_BLOCKED_UNTIL.get(self.username, 0.0)
-
-    @_expert_blocked_until.setter
-    def _expert_blocked_until(self, value: float) -> None:
-        _EXPERT_BLOCKED_UNTIL[self.username] = _extend_cooldown(
-            _EXPERT_BLOCKED_UNTIL.get(self.username, 0.0), value or 0.0
-        )
 
     def _init_from_config(self, config):
         """Everything the user chose in the options flow."""
@@ -289,6 +337,12 @@ class WemPortalApi:
         # straight to normal polling. `None` means "no cache available" and
         # preserves the original behavior of doing a full discovery.
         self.modules = copy.deepcopy(cached_modules) if cached_modules else None
+        # When each module was last named in a values answer, per device.
+        # Deliberately NOT inside self.modules: the list is replaced wholesale
+        # on every re-discovery, and a module that drops out of it is exactly
+        # the one whose readings then have nothing left to refresh OR age
+        # them. See _stamp_answered_modules.
+        self._module_answered_at: dict[str, dict[ModuleRef, float]] = {}
         # Monotonic timestamp until which ALL outbound requests are
         # paused, activated after receiving a 403 (rate limit/forbidden)
         # from the server anywhere in a cycle. This is a strictly
@@ -332,6 +386,10 @@ class WemPortalApi:
         # module) turns every restart with an expired cache into a slow
         # startup.
         self._first_cycle_done = False
+        # When the mobile API was last read, for the `both`-mode gate. None
+        # rather than 0.0: zero on the monotonic clock is the moment the
+        # machine booted, which would read as "long overdue" only by luck.
+        self._last_api_read = None
         # Tracks whether get_devices() has already run once during the
         # lifetime of this WemPortalApi instance (i.e. once per Home
         # Assistant session/restart), so it isn't repeated on every single
@@ -381,13 +439,14 @@ class WemPortalApi:
         # edge-triggered rather than repeated every cycle.
         self._last_connection_status = {}
         self.scraping_mapper = {}
-        self.last_statistics_fetch = 0.0
-        # Timestamp (per device+parameter) of the last time a heating
-        # schedule (CircuitTimes) was actually fetched, so it can be
-        # refreshed at most every CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
-        # instead of on every single coordinator cycle - these rarely
-        # change and this integration doesn't allow editing them anyway.
-        self._last_circuit_times_fetch = {}
+        # The two hourly gates. Here rather than on the account state, so
+        # they are forgotten by the same reload that forgets the readings
+        # they guard - see the note in models.AccountState for why keeping
+        # them was worse. "Never fetched" is None and a missing key, never
+        # zero: on the monotonic clock these are read on, zero is the moment
+        # the machine booted.
+        self.last_statistics_fetch: float | None = None
+        self._last_circuit_times_fetch: dict[tuple[Any, ...], float] = {}
         # In-memory cookie cache shared by the short-lived expert clients,
         # so they can continue an existing web session instead of logging in
         # for every single operation (see expert_writer._try_cached_session).
@@ -433,7 +492,7 @@ class WemPortalApi:
             # display that this could be about.
             return
         stale_for = time.monotonic() - last_read
-        if stale_for < DEVICE_VALUES_STALE_AFTER_SECONDS:
+        if stale_for < self._values_stale_after_seconds():
             return
 
         # Only the rows this device's API half actually owns.
@@ -454,27 +513,14 @@ class WemPortalApi:
         # quiet for hours. They are not left unwatched: _forget_scraped_values
         # ages them on the scrape's own terms, after three failures in a row.
         status_rows = {f"{device_id}-{row_name}" for row_name in DEVICE_STATUS_ROWS}
-        # Only while the scrape is actually keeping them fresh.
-        # _previous_scraper_keys cannot answer that on its own: it is
-        # refreshed by a SUCCESSFUL scrape, so after a failure it still names
-        # every key the last good one wrote. And _forget_scraped_values fires
-        # on exactly the third failure, not from then on - so a shared row is
-        # cleared once, refilled by the merge from the API side, and then
-        # aged by nobody: not by the scrape, which has stopped acting, and
-        # not here, because the exemption still covered it. An old reading
-        # sat there as current with both sources dead behind it.
-        scrape_is_keeping_up = (
-            self.spider_retry_count < SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
-        )
-        scraped_rows = self._previous_scraper_keys or set()
         forgotten = []
         for key, row in (self.data.get(device_id) or {}).items():
             if key in status_rows:
                 continue
-            if scrape_is_keeping_up and key in scraped_rows:
+            if self._kept_fresh_by_the_scrape(key):
                 continue
-            if isinstance(row, dict) and row.get("value") is not None:
-                row["value"] = None
+            if isinstance(row, Reading) and row.value is not None:
+                row.value = None
                 forgotten.append(key)
         if not forgotten:
             return
@@ -490,6 +536,87 @@ class WemPortalApi:
             int(stale_for // 60),
             len(forgotten),
         )
+
+    def _rows_this_module_owns(self, device_rows, module_key, schedule_runs=True):
+        """The rows a silent module may take down with it.
+
+        Four things disqualify a row, and none of them is about the module
+        having gone quiet: it is not a reading at all (the raw status gate),
+        it belongs to another module, the scrape is still feeding it, or it
+        is a weekly programme the schedule fetch is still feeding.
+
+        That last one is a condition, not a category, and it takes two
+        answers. The exemption rests on the schedule fetch keeping the row
+        current: that fetch drops its own detail the moment a due refresh
+        fails, so a programme without a usable week is one nothing refreshes
+        any more - and it walks the MODULE LIST, so a module the re-discovery
+        has dropped is one it will never visit again whatever is still
+        attached to the row (`schedule_runs`). Either way the plan from
+        before stood as the current one with no limit at all.
+        """
+        for row_name, row in device_rows.items():
+            if not isinstance(row, Reading):
+                continue
+            if (row.module_index, row.module_type) != module_key:
+                continue
+            if self._kept_fresh_by_the_scrape(row_name):
+                continue
+            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(
+                row.value
+            )
+            if is_programme and schedule_runs and schedule_fetch_still_feeds(row):
+                continue
+            yield row_name, row
+
+    def _kept_fresh_by_the_scrape(self, row_name) -> bool:
+        """Whether the scrape is still delivering this row.
+
+        Both ageing passes ask this - the device-level one and the
+        per-module one - because in `both` mode one row can carry an api
+        reading AND a scraped one. "The api has not answered" is a statement
+        about the api only: the scrape runs on its own schedule and can be
+        minutes old while the api side has been quiet for hours. Ageing such
+        a row would blank a value that arrived seconds ago.
+
+        The retry count is what makes this honest. `_previous_scraper_keys`
+        cannot answer it alone: it is refreshed by a SUCCESSFUL scrape, so
+        after a failure it still names every key the last good one wrote.
+        And _forget_scraped_values fires on exactly the third failure, not
+        from then on - so without the count a shared row would be cleared
+        once, refilled by the merge from the api side, and then aged by
+        nobody: not by the scrape, which has stopped acting, and not here,
+        because the exemption still covered it. An old reading sat there as
+        current with both sources dead behind it.
+        """
+        if self.spider_retry_count >= SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE:
+            return False
+        return row_name in (self._previous_scraper_keys or ())
+
+    def web_scrape_is_failing(self, enabled_devices=None) -> bool:
+        """Whether the web half has stopped delivering, as a question about
+        STATE - the same shape as is_rate_limited, and for the same reason.
+
+        In `both` mode a failing scrape is swallowed so it cannot cost the
+        api readings. Nothing therefore propagates, each successful api
+        cycle clears the coordinator's counters, and on a fresh setup there
+        are no scraped entities whose absence could be noticed.
+
+        The threshold is the one that stops presenting the scraped values as
+        current, so the report appears exactly when they cease to be
+        trustworthy - and only where a scrape was expected at all.
+
+        "Expected at all" includes the device filter, and that one is not
+        symmetrical: the poll skips a disabled scraper device, so nothing is
+        attempted - and the count that raised the report can never come down
+        either, because only a scrape that WORKS resets it. Asked without the
+        filter, the report stood for as long as the user left the device off,
+        with no action available that would clear it.
+        """
+        if self.mode == "api":
+            return False
+        if not self._scraper_enabled(enabled_devices):
+            return False
+        return self.spider_retry_count >= SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
 
     def _forget_scraped_values(self):
         """Stop presenting readings from a scrape that stopped working.
@@ -521,8 +648,8 @@ class WemPortalApi:
         # so the early return above does not fire.
         for key in self._previous_scraper_keys or ():
             row = device.get(key)
-            if isinstance(row, dict) and row.get("value") is not None:
-                row["value"] = None
+            if isinstance(row, Reading) and row.value is not None:
+                row.value = None
                 forgotten.append(key)
         if forgotten:
             _LOGGER.warning(
@@ -546,83 +673,6 @@ class WemPortalApi:
             self.spider_retry_count,
             self.last_scraping_update,
         )
-
-    def _activate_cooldown(self, seconds=FORBIDDEN_COOLDOWN_SECONDS):
-        """Pause ALL further outbound requests for a while after being
-        rate-limited (HTTP 403) by the WEM Portal server.
-
-        This intentionally affects every subsequent make_api_call(), not
-        just the one that got the 403 - continuing to hit *other*
-        endpoints (statistics, circuit times, ...) right after the server
-        already signaled it's unhappy would defeat the purpose. Never
-        shortens an existing cooldown, only extends it.
-        """
-        new_blocked_until = time.monotonic() + seconds
-        if new_blocked_until > self._blocked_until:
-            self._blocked_until = new_blocked_until
-            _LOGGER.warning(
-                "WEM Portal returned a rate-limit/forbidden (403) response. "
-                "Pausing ALL requests for %s minutes to avoid making it worse.",
-                seconds // 60,
-            )
-
-    def activate_expert_cooldown(self, seconds=EXPERT_FORBIDDEN_COOLDOWN_SECONDS):
-        """Back off the EXPERT (Fachmann) path only, after a 403 there.
-
-        Deliberately does NOT touch the global cooldown: an expert 403 is
-        frequently a rejected individual request rather than an IP-wide rate
-        limit, and pausing sensor polling because of it costs the user their
-        readings for no reason. Never shortens an existing backoff.
-        """
-        new_blocked_until = time.monotonic() + seconds
-        if new_blocked_until > self._expert_blocked_until:
-            self._expert_blocked_until = new_blocked_until
-            _LOGGER.warning(
-                "Expert (Fachmann) path returned 403. Pausing EXPERT requests "
-                "for %s minutes; sensor polling is unaffected.",
-                seconds // 60,
-            )
-
-    def check_expert_cooldown(self):
-        """Gate for the expert path: raise if either backoff is active.
-
-        Checks the global cooldown first - a genuine rate limit seen by the
-        API/scraper must still stop expert requests - then the expert-only one.
-        """
-        self.check_cooldown()
-        if self._expert_blocked_until and time.monotonic() < self._expert_blocked_until:
-            remaining = int(self._expert_blocked_until - time.monotonic())
-            if remaining >= 60:
-                remaining_str = f"~{(remaining + 59) // 60} min"
-            else:
-                remaining_str = f"{remaining}s"
-            raise ForbiddenError(
-                f"Expert path is backing off after a previous 403 "
-                f"({remaining_str} remaining). Sensor polling is unaffected."
-            )
-
-    def check_cooldown(self):
-        """Raise ForbiddenError immediately, without making any request,
-        if we're still within a cooldown period from a previous 403.
-
-        Public on purpose: besides the internal API/scraping paths, the
-        standalone expert writer holds a reference to this method as its
-        shared cooldown gate, so a 403 seen anywhere pauses the expert
-        path too. Renamed from the former underscore-prefixed name to stop
-        advertising a private-only intent it never actually had.
-        """
-        if self._blocked_until and time.monotonic() < self._blocked_until:
-            remaining = int(self._blocked_until - time.monotonic())
-            # Human-readable: minutes for anything over a minute, so the
-            # message surfaced in the frontend is immediately meaningful.
-            if remaining >= 60:
-                remaining_str = f"~{(remaining + 59) // 60} min"
-            else:
-                remaining_str = f"{remaining}s"
-            raise ForbiddenError(
-                f"Still cooling down after a previous rate-limit response "
-                f"({remaining_str} remaining). Skipping requests until then."
-            )
 
     def resolve_scraper_device_id(self):
         """Return the stable device id to store scraped sensors under.
@@ -672,6 +722,21 @@ class WemPortalApi:
         else:
             self.scraper_device_id = SCRAPER_FALLBACK_DEVICE_ID
         return self.scraper_device_id
+
+    @staticmethod
+    def _device_is_enabled(device_id, enabled_devices) -> bool:
+        """Whether the caller's filter admits this device.
+
+        The two meanings the coordinator builds, spelled out once: `None` is
+        "no filter, poll everything" - a fresh install before any device is
+        known - and an explicit empty list is "every known device is
+        disabled". Compared as strings because the portal's ids arrive as
+        both, and the filter is built from the keys of a different dict than
+        the one being walked here.
+        """
+        if enabled_devices is None:
+            return True
+        return str(device_id) in {str(enabled) for enabled in enabled_devices}
 
     def _scraper_enabled(self, enabled_devices) -> bool:
         """Whether the web scraper's pseudo-device is in the caller's filter.
@@ -769,7 +834,7 @@ class WemPortalApi:
                 f"connection for the next one instead of holding it."
             )
 
-    def _discover_parameters_if_due(self):
+    def _discover_parameters_if_due(self, enabled_devices=None):
         """Read the per-module parameter definitions, if any are due.
 
         Two different reasons to run it, with different urgency.
@@ -784,25 +849,23 @@ class WemPortalApi:
         Home Assistant then complains about. Nothing is lost by waiting one
         interval for something that is a day old already.
         """
-        missing = any(
-            "parameters" not in module
-            for modules in self.modules.values()
+        due = [
+            module
+            for device_id, modules in self.modules.items()
+            if self._device_is_enabled(device_id, enabled_devices)
             for module in modules.values()
-        )
-        stale = any(
-            self._parameters_are_stale(module)
-            for modules in self.modules.values()
-            for module in modules.values()
-        )
+        ]
+        missing = any("parameters" not in module for module in due)
+        stale = any(self._parameters_are_stale(module) for module in due)
         if not (missing or (stale and self._first_cycle_done)):
             return
         _LOGGER.info(
             "Reading parameter definitions from the portal (%s).",
             "some are missing" if missing else "the cached ones are due",
         )
-        self.get_parameters()
+        self.get_parameters(enabled_devices)
 
-    def _ensure_api_session(self):
+    def _ensure_api_session(self, enabled_devices=None):
         """Everything the API paths need before they can read anything."""
         if not self.valid_login:
             self.api_login()
@@ -817,7 +880,7 @@ class WemPortalApi:
         # Only run the slow, rate-limited per-module discovery if something
         # actually needs it. With a valid persisted cache this is skipped
         # entirely after a restart, which is what makes startup fast again.
-        self._discover_parameters_if_due()
+        self._discover_parameters_if_due(enabled_devices)
 
     def _scrape_is_due(self, enabled_devices) -> bool:
         """Whether `both` mode should scrape this cycle.
@@ -838,14 +901,38 @@ class WemPortalApi:
             return False
         if self.last_scraping_update is None:
             return True
-        # Timezone-aware on both sides, and that is the point rather than a
-        # formality. Two NAIVE local timestamps are subtracted as if the clock
-        # never moved, so a DST change lands in this difference: in spring it
-        # reads an hour too long and scrapes at once, in autumn an hour too
-        # short and skips a whole hour's worth of cycles. Aware values carry
-        # their offset, so Python normalises both to UTC before subtracting.
-        waited = dt_util.now() - self.last_scraping_update + timedelta(seconds=10)
-        return waited > self.scan_interval
+        # POSIX timestamps, not a datetime subtraction: two aware stamps with
+        # the SAME tzinfo object subtract as naive wall-clock times, so a DST
+        # change lands in the difference - spring scrapes an hour early, autumn
+        # skips an hour of cycles. Epoch seconds are absolute. The stamp stays
+        # local aware for the "no longer current" warning that prints it (see
+        # _scrape_and_merge).
+        elapsed = dt_util.now().timestamp() - self.last_scraping_update.timestamp()
+        return elapsed + 10 > self.scan_interval.total_seconds()
+
+    def _api_read_is_due(self) -> bool:
+        """Whether `both` mode should read the mobile API this cycle.
+
+        The coordinator ticks at min(web, api) so that whichever interval is
+        shorter is served on time. Without this gate the LONGER one was
+        served just as often: a web=5min/api=30min installation spent six
+        times the API budget it had been configured for, against a portal
+        that counts 10,000 requests per 12 hours per IP.
+
+        Monotonic rather than the wall clock the scrape gate uses: nothing
+        persists this stamp, so it has no restart to survive, and a clock
+        change must not hand out a free read (or withhold one for hours).
+
+        `>=` and no jitter tolerance, unlike the scrape gate: the stamp is
+        taken inside the cycle, and Home Assistant plans the next tick from
+        when that cycle ENDED - so the grid drifts along with the stamp
+        rather than away from it. Measured with `>`, an installation whose
+        API interval IS the tick would lose every second reading.
+        """
+        if self._last_api_read is None:
+            return True
+        waited = time.monotonic() - self._last_api_read
+        return waited >= self.scan_interval_api.total_seconds()
 
     def _count_down_scrape_backoff(self):
         """One cycle closer to the next scrape attempt."""
@@ -886,8 +973,25 @@ class WemPortalApi:
         else:
             self._count_down_scrape_backoff()
 
-        # Always run as a resilient fallback.
-        self.get_data(enabled_devices)
+        if not self._api_read_is_due():
+            return
+        try:
+            self.get_data(enabled_devices)
+        finally:
+            # Whether it worked or not: what the interval bounds is requests,
+            # and a cycle that failed spent them. Skipping the stamp on
+            # failure and leaving the pacing to the coordinator's backoff read
+            # well and did not hold - that backoff wants three failures in a
+            # row and any success in between clears it, so a portal answering
+            # every other cycle with an error put the api half back on the WEB
+            # interval. Same rule as the schedule fetch and the statistics
+            # stamp, both of which book the attempt.
+            #
+            # After the read rather than before it, which is what the `>=` in
+            # _api_read_is_due is measured against: Home Assistant plans the
+            # next tick from when the cycle ENDED, so the stamp and the grid
+            # drift together instead of apart.
+            self._last_api_read = time.monotonic()
 
     def _fetch_data(self, enabled_devices=None):
         # Fail fast, without any network activity at all, if we're still
@@ -899,7 +1003,7 @@ class WemPortalApi:
         self.check_cooldown()
         try:
             if self.mode != "web":
-                self._ensure_api_session()
+                self._ensure_api_session(enabled_devices)
 
             if self.mode == "web":
                 self._collect_web(enabled_devices)
@@ -960,6 +1064,13 @@ class WemPortalApi:
         """
         previous = self._previous_scraper_keys
         self._previous_scraper_keys = set(scraped_keys)
+        # The merge cache answers "which scraped row shows this api reading",
+        # falling back to the reading's own key when there is none. Both
+        # answers describe THIS scrape's rows, so a changed inventory - the
+        # first successful scrape included - makes them answers from before.
+        # Rebuilding is a pass over the rows, not a request.
+        if previous != set(scraped_keys):
+            self.scraping_mapper.clear()
         if not previous:
             # First cycle of this session: nothing to compare against.
             return set()
@@ -1005,27 +1116,27 @@ class WemPortalApi:
         without a value is the portal saying it has none, not evidence that
         the read went wrong.
         """
-        if "friendlyName" in row:
-            row["friendlyName"] = translate(self.language, row["friendlyName"])
+        if row.friendly_name is not None:
+            row.friendly_name = translate(self.language, row.friendly_name)
 
         # Preserve the old unit if the current scrape is missing it (e.g. value
         # is "--"). This prevents Home Assistant from complaining about unit
         # changes.
-        if row.get("unit") not in (None, ""):
+        if row.unit not in (None, ""):
             return
-        if isinstance(previous, dict) and previous.get("unit") not in (None, ""):
-            row["unit"] = previous.get("unit")
+        if isinstance(previous, Reading) and previous.unit not in (None, ""):
+            row.unit = previous.unit
 
     def _merge_webscraping_data(self, device_id, webscraping_data):
         if str(device_id) not in self.data:
             self.data[str(device_id)] = {}
 
         vanished = self._warn_about_renamed_scraper_keys(
-            [key for key, row in webscraping_data.items() if isinstance(row, dict)]
+            [key for key, row in webscraping_data.items() if isinstance(row, Reading)]
         )
 
         for key, new_val in webscraping_data.items():
-            if isinstance(new_val, dict):
+            if isinstance(new_val, Reading):
                 self._prepare_scraped_row(new_val, self.data[str(device_id)].get(key))
             self.data[str(device_id)][key] = new_val
 
@@ -1035,125 +1146,13 @@ class WemPortalApi:
         # would otherwise report it as merely missing from the data.
         for key in vanished:
             entry = self.data[str(device_id)].get(key)
-            if isinstance(entry, dict) and entry.get("value") is not None:
+            if isinstance(entry, Reading) and entry.value is not None:
                 _LOGGER.debug(
                     "Scraped row %s is no longer on the page; its last value "
                     "is not current any more.",
                     key,
                 )
-                entry["value"] = None
-
-    def reset_transport(self):
-        """Throw away the HTTP state and force a fresh login next cycle.
-
-        This is the recovery the coordinator reaches for after repeated
-        errors, and it replaces rebuilding the whole object. Rebuilding was
-        never the remedy - the remedy is a clean connection - and it kept
-        causing the problem it was meant to solve: a fresh instance starts
-        every one of its 31 fields from scratch, so each piece of state that
-        had to survive was carried across by hand, and each new field was a
-        new chance to forget one. Two were forgotten in practice.
-
-        Three things it silently reset are worth naming, because they were
-        never intended and no test would have caught them:
-
-          * the statistics and circuit-times timestamps, which are portal
-            RATE LIMITS (an hour each). Every recovery let the next cycle
-            refetch both immediately - on a portal that had just been failing.
-          * the shared API lock. A poll running in a worker thread held the
-            OLD lock while the new object handed out a fresh, unheld one, so
-            a write could interleave with the very poll the lock exists to
-            serialise against.
-
-        What actually needs to go is the transport: the HTTP sessions, the
-        login state and the cookies. Everything else - discovered modules,
-        cooldowns, backoffs, timestamps, the lock - is deliberately kept,
-        because none of it is what "corrupted session" refers to.
-
-        `expert_cookies` is the one that looks like transport and is not. It
-        caches a live web session for the expert path, and dropping it would
-        force a full Fachmann login on the next expert operation - requests
-        against a portal that blocks the IP for 12 hours past 10,000 of them.
-        An API failure says nothing about that session, so it stays.
-
-        Which field is which is not left to this docstring: the split is
-        declared and enforced in tests/test_hardening.py, so a new field
-        fails the suite until someone classifies it.
-
-        Runs UNDER the shared api lock, and that is not decoration. A failed
-        poll releases the lock in its `finally`; a change_value() worker that
-        was waiting takes it in that same instant, and this then closed the
-        session out from under the write. Taking the lock is also why the
-        coordinator hands this to an executor instead of calling it on the
-        event loop - see WemPortalDataUpdateCoordinator.
-        """
-        if not self._api_lock.acquire(timeout=API_LOCK_TIMEOUT_SECONDS):
-            # Best-effort by design. The recovery must not raise into the
-            # coordinator's error handling, and a connection still in use is
-            # exactly when tearing it down does the damage. The next failed
-            # cycle tries again.
-            _LOGGER.warning(
-                "Not resetting the connection: it is still in use by another "
-                "operation. Trying again on the next failed cycle."
-            )
-            return
-        try:
-            self._reset_transport_locked()
-        finally:
-            self._api_lock.release()
-
-    def close_transport(self, timeout=API_LOCK_TIMEOUT_SECONDS):
-        """Close the HTTP sessions because this object is being discarded.
-
-        Unlike reset_transport this WAITS for the lock rather than skipping:
-        an unload that leaves a session open leaks it for the life of the
-        process, so the close has to happen even if it has to wait for the
-        operation holding the lock. It still closes on timeout - a leaked
-        connection is worse than a request that fails as everything around it
-        is being torn down anyway.
-
-        Taking the lock at all is the point. A write or a poll can be inside
-        make_api_call at this moment, and closing its session underneath it
-        turns an orderly teardown into a connection error.
-        """
-        acquired = self._api_lock.acquire(timeout=timeout)
-        if not acquired:
-            _LOGGER.debug(
-                "Closing the HTTP sessions while another operation still holds "
-                "the api lock; it waited %ss.",
-                timeout,
-            )
-        try:
-            self._close_sessions()
-        finally:
-            if acquired:
-                self._api_lock.release()
-
-    def _close_sessions(self):
-        """Close both HTTP sessions. Never raises: every caller is either
-        discarding this object or replacing its transport."""
-        if self.session is not None:
-            try:
-                self.session.close()
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.debug("Ignoring error while closing the API session: %s", exc)
-            self.session = None
-        self._reset_scraper()
-
-    def _reset_transport_locked(self):
-        """The teardown itself. Only called with the api lock held."""
-        _LOGGER.info(
-            "Persistent API errors: dropping the HTTP sessions and logging in "
-            "again on the next cycle."
-        )
-        self._close_sessions()
-        self.valid_login = False
-        self.api_version = None
-        # The web cookie belongs to the discarded scraper session.
-        self.webscraping_cookie = {}
-        # Re-run device discovery once on the next cycle: it is cheap, and the
-        # failures being recovered from may have left the module view partial.
-        self._devices_fetched_this_session = False
+                entry.value = None
 
     def _reset_scraper(self):
         """Discard the persistent scraper instance (closing its HTTP
@@ -1231,6 +1230,15 @@ class WemPortalApi:
             # global cooldown the API path uses, discard the scraper
             # (fresh connection once the cooldown expires), and let the
             # error propagate so the coordinator's backoff kicks in too.
+            #
+            # Counted like every other failed exit, and this one was missed
+            # the longest. The count does two jobs: it ages the scraped
+            # readings after three failures, and it is what says the scrape
+            # is still keeping a shared row fresh (see
+            # _kept_fresh_by_the_scrape). Left at zero, a rate-limited
+            # scrape delivered nothing while its last values were exempt
+            # from every ageing pass in the integration.
+            self._register_scrape_failure()
             self._activate_cooldown()
             self._reset_scraper()
             raise
@@ -1250,14 +1258,6 @@ class WemPortalApi:
             raise AuthError(
                 "AuthenticationError: Could not login with provided username and password. "
                 "Check if your config contains the right credentials"
-            ) from exc
-
-        except ExpiredSessionError as exc:
-            # Handle errors due to expired session (fresh start next cycle).
-            self.webscraping_cookie = None
-            self._reset_scraper()
-            raise ExpiredSessionError(
-                "ExpiredSessionError: Session expired. Next update will try to login again."
             ) from exc
 
         except Exception as exc:
@@ -1285,457 +1285,6 @@ class WemPortalApi:
         # Return the scraped data
         return data
 
-    def api_login(self):
-        # The cooldown gate belongs on every outbound request, and a login is
-        # the most expensive one to get wrong. _fetch_data and make_api_call
-        # both ask, so the polling path was covered - but the config and
-        # reauth flows call this directly, and those are exactly where
-        # somebody lands after deleting and re-adding the integration to
-        # "fix" a blockade. Every one of those attempts extended it.
-        self.check_cooldown()
-        # And the deadline, for the same reason: this is a request, and it is
-        # reached without passing make_api_call - from _ensure_api_session
-        # after a long wait for the lock, and again on the reauth retry after
-        # a request came back expired. A cycle with nothing left could start
-        # a fresh login from either and run past the coordinator's timeout
-        # still holding the lock. A no-op outside a poll, so the config and
-        # reauth flows are unaffected.
-        self.check_deadline()
-        payload = {
-            "Name": self.username,
-            "PasswordUTF8": self.password,
-            "AppID": "com.weishaupt.wemapp",
-            "AppVersion": "2.0.2",
-            "ClientOS": "Android",
-        }
-        if self.session is not None:
-            self.session.close()
-        self.session = requests.Session()
-        self.session.cookies.clear()
-        self.session.headers.update(self.headers)
-        # Initialized BEFORE the try block: if the POST itself fails with a
-        # pure network error (connection reset, DNS, timeout), `response`
-        # would otherwise not exist yet and the error handler below would
-        # crash with an UnboundLocalError instead of raising the intended
-        # UnknownAuthError.
-        response = None
-        try:
-            response = self.session.post(
-                API_LOGIN_URL,
-                data=payload,
-                timeout=API_REQUEST_TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-
-            # Verify the response is actually valid JSON and successful
-            response_data = response.json()
-            if not status_is_success(response_data.get("Status")):
-                raise AuthError(f"Login failed: Server returned {response_data}")
-
-            self.api_version = response_data.get("Version")
-            # No username: there is one account per config entry, so naming it adds
-            # nothing - and a debug log is exactly what people paste into an
-            # issue when asking for help.
-            _LOGGER.debug("API login successful.")
-            self.valid_login = True
-
-        except ValueError as exc:  # Catches JSONDecodeError if response is HTML
-            # Username (email) is PII and deliberately kept out of the log
-            # entirely - people paste logs into issues/forums, and with one
-            # account per config entry naming it adds nothing.
-            _LOGGER.warning("API login failed. Received HTML instead of JSON.")
-            self.valid_login = False
-            raise WemPortalError(
-                "API login failed: received HTML instead of JSON (Possible rate limit or WAF block)"
-            ) from exc
-        except requests.exceptions.RequestException as exc:
-            # Broader than just HTTPError: also covers ConnectionError,
-            # Timeout, etc. - genuine network failures that aren't tied to
-            # a specific HTTP status code, which previously weren't caught
-            # here at all and would fall through to the generic
-            # "unexpected error" wrapper in fetch_data() instead of a
-            # clear, specific error message.
-            _LOGGER.warning("API login failed with a network/HTTP error.")
-            self.valid_login = False
-            self._raise_login_failure(response, exc)
-
-    def _raise_login_failure(self, response, exc):
-        """Turn a failed login into the error that fits what came back.
-
-        Always raises - the type is what the caller acts on: wrong password,
-        rate limit, portal fault, or "never got there". Written as guards
-        rather than an if/elif chain, which nested one level per status and
-        put the last case five deep.
-
-        Messages carry the HTTP status plus the server's own status and
-        message fields, but NOT the raw response body: they surface in the UI
-        and in logs, and a whole HTML error page does not belong there.
-        """
-        if response is None:
-            raise UnknownAuthError(
-                f"Authentication Error: Could not reach WEM Portal ({exc})."
-            ) from exc
-
-        response_status, response_message = self.get_response_details(response)
-        server_said = (
-            f"Server returned internal status code: {response_status} "
-            f"and message: {response_message}"
-        )
-
-        if response.status_code == 400:
-            raise AuthError(
-                "Authentication Error: Check if your login credentials are "
-                f"correct. Received response code: {response.status_code}. "
-                f"{server_said}"
-            ) from exc
-        if response.status_code == 403:
-            self._activate_cooldown()
-            raise ForbiddenError(f"WemPortal forbidden error: {server_said}") from exc
-        if response.status_code == 500:
-            raise ServerError(f"WemPortal server error: {server_said}") from exc
-        raise UnknownAuthError(
-            "Authentication Error: Encountered an unknown authentication "
-            f"error. Received response code: {response.status_code}. "
-            f"{server_said}"
-        ) from exc
-
-    def web_login(self):
-        """
-        Logs into the WEM Portal web interface by mimicking browser behavior.
-        Args:
-            username (str): The user's username (email).
-            password (str): The user's password.
-        Returns:
-            dict: Session cookies for the authenticated session.
-        Raises:
-            AuthError: If the login credentials are invalid.
-            ForbiddenError: If access is forbidden.
-            UnknownAuthError: For other unknown login errors.
-        """
-        self.check_cooldown()
-        session = requests.Session()
-        login_url = WEB_LOGIN_URL
-
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Accept-Language": "de,en;q=0.9",
-        }
-
-        # Step 1: Fetch the login page
-        initial_response = None
-        try:
-            initial_response = session.get(
-                login_url,
-                headers=headers,
-                timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-            )
-            initial_response.raise_for_status()
-        except requests.exceptions.RequestException as exc:
-            # A 403 here is the same refusal the POST below already
-            # recognises, and it arrives FIRST - this is the request that
-            # meets a blocked IP. Reported as "could not load the page" it
-            # read like a network problem, invited an immediate retry, and
-            # started no cooldown, so the next cycle walked into it again.
-            if initial_response is not None and initial_response.status_code == 403:
-                self._activate_cooldown()
-                raise ForbiddenError(
-                    "Access forbidden while loading the login page."
-                ) from exc
-            raise UnknownAuthError(f"Failed to load the login page: {exc}") from exc
-
-        # Planned downtime: bail out BEFORE posting the credentials. The form
-        # is fully present during maintenance, so submitting would just fail
-        # as "invalid username or password" and, after three cycles, ask the
-        # user to re-enter working credentials. It also avoids sending the
-        # password to a page that cannot process it.
-        notice = maintenance_notice(initial_response.text)
-        if notice:
-            raise PortalMaintenanceError(notice)
-
-        # Step 2: Parse the login page and extract hidden form fields.
-        #
-        # Read with lxml, which the scraper already uses for the far more
-        # involved expert page - so this is the only thing beautifulsoup4 was
-        # installed for, three lines of it, and the dependency is gone.
-        #
-        # The `string(@name)` half of the selector is not decoration: the old
-        # code tested the name for truthiness, which skips `name=""`, while a
-        # bare `[@name]` would keep it and post a field the portal never sent.
-        try:
-            page = html.fromstring(initial_response.text)
-        except ParserError as exc:
-            # An empty or unparseable body. The old parser returned no fields
-            # here and let the login POST go ahead, which sent the password to
-            # a page that had answered with nothing, collected no ASP.NET
-            # state to echo back, and could only be refused. Same reasoning as
-            # the maintenance bail-out above: do not hand over credentials to
-            # a page that cannot process them.
-            raise UnknownAuthError(
-                "The WEM Portal login page could not be read; no credentials were sent."
-            ) from exc
-        form_data = {
-            element.get("name"): element.get("value", "")
-            for element in page.xpath('//input[@type="hidden"][string(@name)]')
-        }
-
-        # Add username and password to the form data
-        form_data["ctl00$content$tbxUserName"] = self.username
-        form_data["ctl00$content$tbxPassword"] = self.password
-        form_data["ctl00$content$btnLogin"] = "Anmelden"  # Login button value
-
-        # Step 3: Submit the login form
-        response = None
-        try:
-            response = session.post(
-                login_url,
-                data=form_data,
-                headers={
-                    **headers,
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-
-            # Step 4: Read the answer. Three outcomes, not two.
-            if WEB_LOGGED_IN_MARKER in response.text:
-                _LOGGER.debug("WEB login successful.")
-                return
-            # Maintenance is checked on this answer too, not only on the page
-            # fetched above: the window can open between the two requests, and
-            # the portal serves the notice with HTTP 200 either way.
-            notice = maintenance_notice(response.text)
-            if notice:
-                raise PortalMaintenanceError(notice)
-            if WEB_LOGIN_FORM_MARKER in response.text:
-                raise AuthError("Login failed: Invalid username or password.")
-            # Neither logged in, nor the login form back, nor maintenance:
-            # some other page. Saying "wrong password" about it counted a
-            # portal hiccup towards the reauth prompt, and three of those in a
-            # row take the integration down until somebody re-enters
-            # credentials that were correct the whole time.
-            raise UnknownAuthError(
-                "Login failed: the portal answered with a page that is neither "
-                "the logged-in view nor the login form."
-            )
-        except requests.exceptions.RequestException as exc:
-            if response is not None and response.status_code == 403:
-                self._activate_cooldown()
-                raise ForbiddenError("Access forbidden during login.") from exc
-            raise UnknownAuthError(f"Failed to submit the login form: {exc}") from exc
-
-    def get_response_details(self, response: requests.Response):
-        server_status = ""
-        server_message = ""
-        # Use "is not None" rather than a plain truthiness check: a
-        # requests.Response object is falsy whenever status_code >= 400
-        # (see Response.__bool__), i.e. exactly when there's an error to
-        # diagnose. The previous check silently skipped reading the body
-        # in that case, discarding the server's own error details.
-        if response is not None:
-            try:
-                response_data = response.json()
-                _LOGGER.debug(response_data)
-                # Status we get back from server
-                server_status = response_data["Status"]
-                server_message = response_data["Message"]
-            except (KeyError, ValueError):
-                pass
-        return server_status, server_message
-
-    def _send(self, url, headers, data):
-        """GET when the call carries no body, POST when it does."""
-        if not data:
-            _LOGGER.debug("Sending GET request to %s with headers: %s", url, headers)
-            return self.session.get(
-                url, headers=headers, timeout=API_REQUEST_TIMEOUT_SECONDS
-            )
-        _LOGGER.debug(
-            "Sending POST request to %s with headers: %s and data: %s",
-            url,
-            headers,
-            data,
-        )
-        return self.session.post(
-            url, headers=headers, json=data, timeout=API_REQUEST_TIMEOUT_SECONDS
-        )
-
-    def _recover_or_raise(
-        self, exc, response, url, *, last_attempt, delay, retry_transport
-    ) -> None:
-        """What a failed attempt means: returns to retry it, raises otherwise.
-
-        Returning is the signal to loop round again, so every path that is
-        NOT worth another request ends in a raise. Split out of make_api_call
-        because all of it sat two levels deep, inside a loop and a handler,
-        which put every one of these decisions at a nesting cost of three.
-        """
-        status_code = (
-            response.status_code
-            if isinstance(exc, requests.exceptions.RequestException)
-            and response is not None
-            else None
-        )
-
-        if status_code == 403:
-            # A 403 means the server is already unhappy with our request
-            # rate - immediately retrying with a fresh login (as we do for a
-            # plain expired session below) would itself be an extra request
-            # at exactly the wrong time. Back off hard instead: no retry,
-            # pause everything for a while, and surface it as ForbiddenError
-            # so callers' existing 403-handling (e.g. get_parameters()'s
-            # forbidden_count) still works.
-            self._activate_cooldown()
-            server_status, server_message = self.get_response_details(response)
-            self.valid_login = False
-            forbidden_error = ForbiddenError(
-                f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
-            )
-            forbidden_error.server_status = server_status
-            raise forbidden_error from exc
-
-        # Nothing came back at all: the request timed out, the connection was
-        # reset, DNS failed. `response` is set to None at the top of every
-        # attempt and only ever assigned by the send below, so this is exactly
-        # "no HTTP response was received" - a 403, a 401 and the login-redirect
-        # check all need a response to have been raised in the first place.
-        is_transport_error = response is None
-
-        if is_transport_error and retry_transport and not last_attempt:
-            # Deliberately no re-login: the session is fine, the network was
-            # not. Logging in again would spend an extra request at the worst
-            # possible moment and throw away a session that nothing is wrong
-            # with.
-            _LOGGER.info(
-                "Request to %s did not reach the portal (%s). Retrying once.", url, exc
-            )
-            time.sleep(API_TRANSPORT_RETRY_DELAY_SECONDS)
-            return
-
-        # A genuinely expired session (401, or a stealthy redirect to the
-        # login page) is worth one immediate retry with a fresh login - unlike
-        # a 403, this isn't a sign we're sending too many requests, just that
-        # the current session is no longer valid.
-        is_session_error = isinstance(exc, ExpiredSessionError) or status_code == 401
-
-        if is_session_error and not last_attempt:
-            _LOGGER.info("Session expired for %s. Re-authenticating...", url)
-            self.api_login()
-            time.sleep(delay)
-            return
-
-        # Out of retries, or an error of a completely different kind:
-        server_status, server_message = self.get_response_details(response)
-
-        # The old logic recreated the entire API instance when this happened.
-        # To emulate that recovery mechanism without losing cached metadata,
-        # we invalidate the login state so the next cycle creates a fresh
-        # requests.Session.
-        self.valid_login = False
-
-        if is_transport_error:
-            # There was no server and no answer, so there is no status code
-            # and no message to report. Saying "Server returned status code:
-            # and message: " anyway - which is what a timeout produced - sends
-            # every reader of that line looking at the portal for a fault that
-            # is on this side of the connection. The web path already words
-            # this correctly; see scraper.py's login handler.
-            wem_error = WemPortalError(
-                f"{DATA_GATHERING_ERROR} Could not reach the WEM Portal: {exc}"
-            )
-        else:
-            wem_error = WemPortalError(
-                f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
-            )
-        # Expose the server-side status code so callers can react to specific
-        # ones (e.g. Statistics skips an invalid group) without parsing the
-        # message string.
-        wem_error.server_status = server_status
-        raise wem_error from exc
-
-    def make_api_call(
-        self,
-        url: str,
-        headers=None,
-        data=None,
-        do_retry=True,
-        delay=5,
-        retry_transport=False,
-    ) -> requests.Response:
-        """One mobile-API request, with two kinds of retry sharing one attempt.
-
-        `do_retry` covers an expired session: re-login once and try again.
-        `retry_transport` covers a request that never reached the portal at
-        all - a timeout, a reset connection, DNS.
-
-        They are separate REASONS, not separate budgets: there is exactly one
-        extra attempt, whichever reason claims it. A transport hiccup followed
-        by an expired session is therefore not retried twice, on purpose - the
-        cycle has a time budget and a third attempt would eat into it.
-
-        `retry_transport` is opt-in per call site rather than on by default,
-        for two different reasons. Cost: an hourly cycle is roughly fifteen
-        requests on a single-device installation and more on larger ones, so
-        letting all of them retry into a timeout would push a bad cycle well
-        past the coordinator's own limit. Safety: a request that starts
-        something at the portal must not be repeated when only its answer was
-        lost. Only the two reads that carry values ask for this.
-        """
-        attempts = 2 if (do_retry or retry_transport) else 1
-        response = None
-
-        for attempt in range(attempts):
-            # Reset per attempt: on a network failure during a retry the
-            # error handler below would otherwise read stale details from
-            # the PREVIOUS attempt's response.
-            response = None
-            # Fail fast if we're still cooling down from a previous 403 -
-            # applies to every single call site that goes through here,
-            # not just the one that originally triggered it.
-            self.check_cooldown()
-            # Same idea, different budget: stop a poll cycle that is out of
-            # time before spending another request on it. Inside the attempt
-            # loop on purpose, so a retry cannot carry a cycle past the
-            # deadline the first attempt was still inside of.
-            self.check_deadline()
-
-            time.sleep(1)  # Wait 1 sec between requests to be graceful to the API.
-            # Merge any call-specific headers on top of the default headers,
-            # instead of replacing them outright. Previously, passing e.g.
-            # headers={"X-Api-Version": "2.0.0.0"} (as get_statistics() does)
-            # would silently drop "Host", "User-Agent" and "Accept" for that
-            # call, which could cause it to be rejected by the server.
-            current_headers = {**self.headers, **(headers or {})}
-
-            try:
-                response = self._send(url, current_headers, data)
-
-                response.raise_for_status()
-
-                # Check for stealthy session expiration (HTML redirect)
-                if "Account/Login" in response.url or (
-                    hasattr(response, "redirect_url")
-                    and response.redirect_url
-                    and "Account/Login" in str(response.redirect_url)
-                ):
-                    raise ExpiredSessionError("Redirected to Account/Login")
-
-                _LOGGER.debug(response)
-                return response
-
-            except (requests.exceptions.RequestException, ExpiredSessionError) as exc:
-                self._recover_or_raise(
-                    exc,
-                    response,
-                    url,
-                    last_attempt=attempt >= attempts - 1,
-                    delay=delay,
-                    retry_transport=retry_transport,
-                )
-
-        return response
-
     def get_devices(self):
         """Fetch the current device/module list from the API.
 
@@ -1751,6 +1300,7 @@ class WemPortalApi:
         """
         _LOGGER.debug("Fetching api device data")
         previously_known_modules = self.modules or {}
+        previously_known_readings = self.data or {}
         # Build the fresh device/module view in LOCAL dicts first and only
         # assign to self.modules/self.data once everything succeeded.
         # Previously both were wiped BEFORE the API call: a single failing
@@ -1758,42 +1308,120 @@ class WemPortalApi:
         # run saw no previously-known modules - silently discarding all
         # cached parameter definitions and forcing the slow, rate-limited
         # full discovery in get_parameters() that the cache exists to avoid.
-        data = self.make_api_call(API_DEVICE_READ_URL, do_retry=True).json()
+        payload = as_answer_dict(
+            self.make_api_call(API_DEVICE_READ_URL, do_retry=True).json()
+        )
+        device_rows = payload.get("Devices") if payload is not None else None
+        if not isinstance(device_rows, list):
+            # Valid JSON outside the contract. Said as the portal-side error
+            # it is, so the coordinator classifies it like any other server
+            # fault - a raw KeyError here arrived as "unexpected error" with
+            # no hint that the portal answered at all.
+            raise ServerError(
+                "The WEM Portal answered the device list without a Devices "
+                "list - nothing to set up from."
+            )
 
         new_modules = {}
         new_data = {}
-        for device in data["Devices"]:
-            device_id_str = str(device["ID"])
-            new_data[device_id_str] = {}
-            new_modules[device_id_str] = {}
-            previously_known_device_modules = previously_known_modules.get(
-                device_id_str, {}
+        for device in device_rows:
+            try:
+                self._register_device(
+                    device,
+                    previously_known_modules,
+                    previously_known_readings,
+                    new_modules,
+                    new_data,
+                )
+            except (KeyError, TypeError) as exc:
+                # One malformed device row must not cost the whole account.
+                _LOGGER.warning(
+                    "Skipping one device row the portal answered outside "
+                    "its contract: %s",
+                    exc,
+                )
+
+        if not new_data:
+            # Skipping ONE unusable row costs that device; skipping every row
+            # and adopting the result costs the account. Committing here
+            # replaced the readings with nothing and reported a successful
+            # cycle - on a one-device installation, everything gone with no
+            # error, and get_devices only runs once per session, so nothing
+            # brought it back before a reload.
+            raise ServerError(
+                f"The WEM Portal answered with {len(device_rows)} device "
+                "row(s) and none of them was readable - keeping what was "
+                "there rather than reporting an empty account."
             )
-            for module in device["Modules"]:
-                module_key = (module["Index"], module["Type"])
-                module_entry = {
-                    "Index": module["Index"],
-                    "Type": module["Type"],
-                    "Name": module["Name"],
-                }
-                cached_module = previously_known_device_modules.get(module_key)
-                if cached_module and "parameters" in cached_module:
-                    module_entry["parameters"] = cached_module["parameters"]
-                    # Carried across with the list it belongs to. Left behind,
-                    # every session would look like the cache had just expired
-                    # and re-read every module on the first cycle - the exact
-                    # portal load the interval exists to avoid.
-                    module_entry["parameters_fetched_at"] = cached_module.get(
-                        "parameters_fetched_at", 0
-                    )
-                new_modules[device_id_str][module_key] = module_entry
-            new_data[device_id_str]["ConnectionStatus"] = device["ConnectionStatus"]
-            # Kept out of new_data: the entity platforms iterate that dict
-            # and would try to build an entity from it.
-            if device.get("DeviceType") is not None:
-                self.device_types[device_id_str] = device["DeviceType"]
+
         self.modules = new_modules
         self.data = new_data
+
+    def _register_device(
+        self,
+        device,
+        previously_known_modules,
+        previously_known_readings,
+        new_modules,
+        new_data,
+    ) -> None:
+        """Adopt one device row of the device-list answer.
+
+        Raises KeyError/TypeError on a row outside the contract; the caller
+        skips that row. Split out so the skip does not wrap thirty lines in
+        a try block. Everything is read into locals FIRST and committed only
+        at the end: a row that dies halfway must leave no half-adopted
+        device behind.
+        """
+        device_id_str = str(device["ID"])
+        previously_known_device_modules = previously_known_modules.get(
+            device_id_str, {}
+        )
+        device_modules = {}
+        for module in device["Modules"]:
+            module_key = ModuleRef(
+                module_index=module["Index"], module_type=module["Type"]
+            )
+            module_entry = {
+                "Index": module["Index"],
+                "Type": module["Type"],
+                "Name": module["Name"],
+            }
+            cached_module = previously_known_device_modules.get(module_key)
+            if cached_module and "parameters" in cached_module:
+                module_entry["parameters"] = cached_module["parameters"]
+                # Carried across with the list it belongs to. Left behind,
+                # every session would look like the cache had just expired
+                # and re-read every module on the first cycle - the exact
+                # portal load the interval exists to avoid.
+                module_entry["parameters_fetched_at"] = cached_module.get(
+                    "parameters_fetched_at", 0
+                )
+            device_modules[module_key] = module_entry
+        connection_status = device["ConnectionStatus"]
+
+        new_modules[device_id_str] = device_modules
+        # The readings come across with the device. This call refreshes the
+        # device and module LIST; it runs once per session, and a transport
+        # recovery starts a new one. The api half is rewritten in the same
+        # cycle either way - but a web-only row has no api half, so wiping
+        # here took those values away for as long as the scrape was not due
+        # or was in its backoff.
+        # Rows of a module that has since disappeared come across with the
+        # rest, and the per-module ageing walks the NEW list, so nothing
+        # owns them. Left that way on purpose: reconciling here would drop
+        # good values whenever one answer omits a module, and it would miss
+        # the case that actually turns up - a RENAMED module keeps its index
+        # and type, so only its row keys change. They do age out with the
+        # device the next time it stops answering.
+        new_data[device_id_str] = {
+            **previously_known_readings.get(device_id_str, {}),
+            "ConnectionStatus": connection_status,
+        }
+        # Kept out of new_data: the entity platforms iterate that dict
+        # and would try to build an entity from it.
+        if device.get("DeviceType") is not None:
+            self.device_types[device_id_str] = device["DeviceType"]
 
     def _note_undescribed_module(self, device_id, values, why, unsupported):
         """A module the portal would not describe. Nothing is ever thrown away.
@@ -1957,72 +1585,63 @@ class WemPortalApi:
         )
         return True
 
-    def _note_rate_limited_module(self, device_id, values, forbidden_count, exc) -> int:
-        """Count one 403 against this device, and give up after three.
-
-        Returns the new strike count. Three in a row means the portal is
-        refusing this IP rather than this request, so the whole integration
-        backs off instead of walking the remaining modules into the same wall.
-        """
-        forbidden_count += 1
-        if forbidden_count >= 3:
-            _LOGGER.error(
-                "Rate limited (403) three times while fetching parameters "
-                "for device %s. Aborting.",
-                device_id,
-            )
-            self._activate_cooldown()
-            raise ForbiddenError("Rate limited during get_parameters") from exc
-        _LOGGER.warning(
-            "Rate limit warning (403) for device %s module %s. Strike %s of 3.",
-            device_id,
-            values["Index"],
-            forbidden_count,
-        )
-        return forbidden_count
-
     def _store_module_description(self, device_id, key, values, response) -> None:
-        """Keep what the portal said this module has, or book why it did not."""
-        parameters = {}
+        """Keep what the portal said this module has, or book why it did not.
+
+        Every unusable answer is BOOKED, never merely logged: skipping with a
+        log line left the module with no timestamp at all, so the age check
+        never held it back and a portal answering nonsense was asked again
+        every single cycle, without limit - the one failure mode the whole
+        retry budget exists to bound.
+        """
         try:
-            for parameter in response.json()["Parameters"]:
-                parameters[parameter["ParameterID"]] = parameter
-            if not parameters:
-                self._note_undescribed_module(
-                    device_id,
-                    values,
-                    "it described no parameters",
-                    unsupported=False,
-                )
-            else:
-                self.modules[device_id][key]["parameters"] = parameters
-                self.modules[device_id][key]["parameters_fetched_at"] = time.time()
-                # The portal answered this time. Clearing it here rather than
-                # only on the empty branch matters: the flag is persisted with
-                # the module cache, so a refusal that was never cleared would
-                # outlive the restart that fixed it.
-                self.modules[device_id][key].pop("description_refused", None)
-        except (KeyError, ValueError):
-            # ValueError also covers a JSON-decode failure (e.g. an HTML error
-            # page returned instead of JSON) - without it, a single malformed
-            # response here would abort discovery for every remaining module
-            # on this device, not just skip this one.
-            #
-            # Booked like every other unusable answer. Skipping with only a
-            # log line left the module with no timestamp at all, so the age
-            # check never held it back and a portal answering nonsense was
-            # asked again every single cycle, without limit - the one failure
-            # mode the whole retry budget exists to bound.
+            payload = response.json()
+        except ValueError:
+            # Not JSON at all - an HTML error page, typically.
             self._note_undescribed_module(
                 device_id,
                 values,
                 "its description could not be read",
                 unsupported=True,
             )
+            return
+
+        described = described_parameters(payload)
+        if described is None:
+            # Valid JSON outside the contract: {"Parameters": null}, a bare
+            # list, a string. This used to travel into the loop below and die
+            # as a TypeError past the KeyError handler, aborting discovery
+            # for every remaining module of the device.
+            self._note_undescribed_module(
+                device_id,
+                values,
+                "its parameter list was not readable",
+                unsupported=True,
+            )
+            return
+
+        parameters = {parameter["ParameterID"]: parameter for parameter in described}
+        if not parameters:
+            self._note_undescribed_module(
+                device_id,
+                values,
+                "it described no parameters",
+                unsupported=False,
+            )
+            return
+
+        # Before the replacement: it needs the list as it stands today.
+        forget_dropped_parameters(self.data.get(device_id), values, parameters)
+        self.modules[device_id][key]["parameters"] = parameters
+        self.modules[device_id][key]["parameters_fetched_at"] = time.time()
+        # The portal answered this time. Clearing it here rather than only on
+        # the empty branch matters: the flag is persisted with the module
+        # cache, so a refusal that was never cleared would outlive the
+        # restart that fixed it.
+        self.modules[device_id][key].pop("description_refused", None)
 
     def _discover_device_parameters(self, device_id) -> None:
         """Read every module description of one device that is due."""
-        forbidden_count = 0
         for key, values in self.modules[device_id].items():
             if not self._module_description_is_due(device_id, values):
                 continue
@@ -2039,10 +1658,20 @@ class WemPortalApi:
             except WemPortalError as exc:
                 status_code = self._http_status(exc)
                 if status_code == 403:
-                    forbidden_count = self._note_rate_limited_module(
-                        device_id, values, forbidden_count, exc
+                    # One refusal is the whole budget, and the code used to
+                    # promise three: make_api_call activates the shared
+                    # cooldown as soon as the portal answers 403, so the next
+                    # module's request is refused before it is sent - by a
+                    # ForbiddenError carrying no HTTP status, which misses
+                    # this branch and re-raises below. The counter could
+                    # never reach two while the log said "strike 1 of 3".
+                    _LOGGER.error(
+                        "Rate limited (403) while reading parameters for "
+                        "device %s. Discovery stops here: the portal is "
+                        "refusing this network, not this request.",
+                        device_id,
                     )
-                    continue
+                    raise
                 if status_code == 400:
                     self._note_undescribed_module(
                         device_id,
@@ -2054,19 +1683,50 @@ class WemPortalApi:
                 raise
             self._store_module_description(device_id, key, values, response)
 
-    def get_parameters(self):
+    def get_parameters(self, enabled_devices=None):
+        """Read the per-module parameter definitions of every enabled device.
+
+        The filter matters more here than anywhere else this integration
+        honours it: discovery sleeps five seconds and spends at least one
+        request PER MODULE, and the portal counts requests per IP. A device
+        the user switched off used to pay all of that, daily.
+        """
         if self.modules is None:
             _LOGGER.debug(
                 "get_parameters() called with no module data available yet; skipping."
             )
             return
         for device_id, device_data in self.data.items():
+            if not self._device_is_enabled(device_id, enabled_devices):
+                continue
             if device_data.get("ConnectionStatus") != 0:
                 continue
             _LOGGER.debug("Fetching api parameters data for device %s", device_id)
-            _LOGGER.debug(self.data)
-            _LOGGER.debug(self.modules[device_id])
             self._discover_device_parameters(device_id)
+
+    def _publish_accepted_values(
+        self, device_id, module_index, module_type, written
+    ) -> None:
+        """Bring the stored readings in line with what the portal just took.
+
+        Matched on the module ADDRESS plus the parameter id rather than on a
+        row key: which key a reading lives under depends on whether it was
+        merged into a scraped row, while the address is what the write itself
+        was addressed with. The module is part of that because two heating
+        circuits share one parameter catalogue - the same ParameterID in
+        another module is another reading, and writing one must not touch it.
+
+        Only what the portal accepted: a refused write raises before this,
+        which is what keeps the integration from being certain of a value the
+        heating system never took.
+        """
+        for row in (self.data.get(str(device_id)) or {}).values():
+            if not isinstance(row, Reading):
+                continue
+            if (row.module_index, row.module_type) != (module_index, module_type):
+                continue
+            if row.parameter_id in written:
+                row.value = written[row.parameter_id]
 
     def change_value(
         self,
@@ -2078,10 +1738,35 @@ class WemPortalApi:
         together_with=None,
     ):
         """Change a value under the shared API lock, so a write can't
-        interleave with a poll cycle on the same session/state."""
+        interleave with a poll cycle on the same session/state.
+
+        Reading the companions and publishing the result both belong here,
+        and they are two halves of one thing: a write queued behind another
+        has to READ the module's other rows after the wait, and the write in
+        front of it has to have WRITTEN what the portal accepted before it
+        lets go of the lock.
+
+        Publishing used to be an optional callback the caller passed in,
+        which failed twice over: the holiday service passed none at all, so
+        a two-date write published nothing, and the entity path passed one
+        for its main value only, leaving the companions it had just sent
+        showing their old readings. Whoever was next in line then read
+        exactly those and sent them back, undoing part of a write that had
+        just succeeded. This is the only place that knows the whole request.
+        """
         self._acquire_api_lock("parameter write")
         try:
-            return self._change_value(
+            # A write does not go through _ensure_api_session, and after two
+            # failing cycles the transport has dropped its session and given
+            # up `valid_login`. A poll puts both back; a service call or an
+            # automation landing in that window went straight to the wire
+            # with nothing to send on. Under the lock, so it cannot race a
+            # poll doing the same thing.
+            if not self.valid_login:
+                self.api_login()
+            if callable(together_with):
+                together_with = together_with()
+            result = self._change_value(
                 device_id,
                 parameter_id,
                 module_index,
@@ -2089,6 +1774,15 @@ class WemPortalApi:
                 numeric_value,
                 together_with=together_with,
             )
+            # Still under the lock, and only after the portal accepted: the
+            # next writer reads these rows the moment it gets in.
+            self._publish_accepted_values(
+                device_id,
+                module_index,
+                module_type,
+                {parameter_id: numeric_value, **(together_with or {})},
+            )
+            return result
         finally:
             self._api_lock.release()
 
@@ -2106,10 +1800,23 @@ class WemPortalApi:
         would let it interleave with a running cycle on the same session.
 
         Same polarity as _fetch_parameter_values: None means it worked.
+
+        Including the refused login, which that method raises for the poll's
+        benefit. This is the one caller that is NOT a poll: it runs after a
+        write the portal has already accepted, and both callers decide what
+        to publish from the return value. Raised past them, the service call
+        reports a failure for a value that reached the heating system - and
+        their `_forget_written_value()` never runs, so the value recorded
+        before this read stands as verified, which is the single claim the
+        read-back exists to prevent. The failure is not lost: api_login gives
+        up `valid_login` before raising, so the next cycle logs in and the
+        coordinator counts it there.
         """
         self._acquire_api_lock("value re-read")
         try:
             return self._fetch_parameter_values(str(device_id))
+        except AuthError as exc:
+            return str(exc)
         finally:
             self._api_lock.release()
 
@@ -2352,7 +2059,16 @@ class WemPortalApi:
                 retry_transport=True,
             ).json()
 
-            raw_status = status_response.get("ConnectionStatus", -1)
+            # Indexed, not `.get(..., -1)`: an answer that does not say is not
+            # an answer that says "unknown". Defaulted, a payload with the
+            # field missing became the unknown STATE - which this method
+            # reports as a successful read of a device that is not online, so
+            # it returned False and the parameter read never ran, while the
+            # error sensors went out saying nothing is wrong on evidence
+            # nobody had. The KeyError lands in the handler below, which is
+            # the one that clears what it cannot vouch for and still lets the
+            # parameters have their chance.
+            raw_status = status_response["ConnectionStatus"]
             status_map = {0: "online", 7: "wrong_secret", 8: "busy", 50: "offline"}
             conn_status = status_map.get(raw_status, "unknown")
 
@@ -2365,51 +2081,38 @@ class WemPortalApi:
             # reload fixed it.
             self.data[device_id]["ConnectionStatus"] = raw_status
 
-            self.data[device_id][f"{device_id}-{DEVICE_STATUS_CONNECTION}"] = {
-                "friendlyName": "Connection Status",
-                "ParameterID": DEVICE_STATUS_CONNECTION,
-                "unit": None,
-                "value": conn_status,
-                "IsWriteable": False,
-                "DataType": -1,
-                "ModuleIndex": -1,
-                "ModuleType": -1,
-                "platform": "sensor",
-                "icon": "mdi:network",
-            }
+            self.data[device_id][f"{device_id}-{DEVICE_STATUS_CONNECTION}"] = Reading(
+                friendly_name="Connection Status",
+                parameter_id=DEVICE_STATUS_CONNECTION,
+                value=conn_status,
+                platform="sensor",
+                icon="mdi:network",
+            )
 
-            errors = status_response.get("Errors", [])
+            errors = portal_list(status_response, "Errors")
             has_errors = "Yes" if errors else "No"
             error_message, error_detail = error_state_and_detail(errors)
 
-            self.data[device_id][f"{device_id}-{DEVICE_STATUS_HAS_ERRORS}"] = {
-                "friendlyName": "Has Errors",
-                "ParameterID": DEVICE_STATUS_HAS_ERRORS,
-                "unit": None,
-                "value": has_errors,
-                "IsWriteable": False,
-                "DataType": -1,
-                "ModuleIndex": -1,
-                "ModuleType": -1,
-                "platform": "sensor",
-                "icon": "mdi:alert",
-            }
+            self.data[device_id][f"{device_id}-{DEVICE_STATUS_HAS_ERRORS}"] = Reading(
+                friendly_name="Has Errors",
+                parameter_id=DEVICE_STATUS_HAS_ERRORS,
+                value=has_errors,
+                platform="sensor",
+                icon="mdi:alert",
+            )
 
-            self.data[device_id][f"{device_id}-{DEVICE_STATUS_ERROR_MESSAGES}"] = {
-                "friendlyName": "Error Messages",
-                "ParameterID": DEVICE_STATUS_ERROR_MESSAGES,
-                "unit": None,
-                "value": error_message,
-                # Every fault, whatever the state could hold. The state is
-                # capped by Home Assistant; this is not.
-                "Errors": error_detail,
-                "IsWriteable": False,
-                "DataType": -1,
-                "ModuleIndex": -1,
-                "ModuleType": -1,
-                "platform": "sensor",
-                "icon": "mdi:message-alert",
-            }
+            self.data[device_id][f"{device_id}-{DEVICE_STATUS_ERROR_MESSAGES}"] = (
+                Reading(
+                    friendly_name="Error Messages",
+                    parameter_id=DEVICE_STATUS_ERROR_MESSAGES,
+                    value=error_message,
+                    # Every fault, whatever the state could hold. The state
+                    # is capped by Home Assistant; this attribute is not.
+                    errors=error_detail,
+                    platform="sensor",
+                    icon="mdi:message-alert",
+                )
+            )
 
             previous = self._last_connection_status.get(device_id)
             self._last_connection_status[device_id] = conn_status
@@ -2426,6 +2129,10 @@ class WemPortalApi:
             if previous is not None and previous != "online":
                 _LOGGER.info("Device %s is back online.", device_id)
 
+        # skipcq: PYL-W0706 - shields the catch-all, not redundant
+        except AuthError:
+            # A rejected login is not an unreadable status; see AuthError.
+            raise
         except Exception as exc:  # noqa: BLE001
             # Broad: an unreadable status must not stop the poll. The
             # caller treats "unknown" as reachable, which is the safe
@@ -2457,8 +2164,8 @@ class WemPortalApi:
             return
         for row_name in DEVICE_STATUS_ROWS:
             row = device_data.get(f"{device_id}-{row_name}")
-            if isinstance(row, dict):
-                row["value"] = None
+            if isinstance(row, Reading):
+                row.value = None
 
     def _fetch_parameter_values(self, device_id: str) -> str | None:
         """Refresh and read all known parameter values for one device.
@@ -2642,16 +2349,30 @@ class WemPortalApi:
                 # ever been observed present. So this measures instead of
                 # guessing: one warning per device, and the decision can be
                 # made on evidence. Same approach as the maintenance marker.
-                _report_missing_job_id(device_id)
+                _report_missing_job_id(
+                    device_id, self._account_state.missing_job_ids_reported
+                )
             else:
                 read_data = {**data, "JobID": ticket.job_id}
             time.sleep(5)
-            values = self.make_api_call(
-                API_DATA_ACCESS_READ_URL,
-                data=read_data,
-                do_retry=True,
-                retry_transport=True,
-            ).json()
+            values = as_answer_dict(
+                self.make_api_call(
+                    API_DATA_ACCESS_READ_URL,
+                    data=read_data,
+                    do_retry=True,
+                    retry_transport=True,
+                ).json()
+            )
+            if values is None:
+                # `null` is valid JSON and used to die on the .get below
+                # instead of taking the treat-as-failed path.
+                _LOGGER.warning(
+                    "Device %s answered the value read with something that "
+                    "is not an answer object; treating the cycle as failed "
+                    "rather than keeping stale readings.",
+                    short_device_id(device_id),
+                )
+                return "the value read did not come back as an answer object"
             # An HTTP 200 with nothing in it is not a refreshed device. The
             # mapper simply finds no modules to walk, so this used to return
             # True and count as a success: the cycle was reported as good and
@@ -2680,8 +2401,26 @@ class WemPortalApi:
                 scraper_device_id=(
                     self.resolve_scraper_device_id() if self.mode == "both" else None
                 ),
+                # So the ageing pass keeps a merged row the scrape delivered
+                # this cycle even when the API omits its counterpart - only the
+                # api instance knows which rows the scrape still feeds.
+                scrape_still_feeds=self._kept_fresh_by_the_scrape,
             )
+            # Freshness lives on the MODULE, not only on the device: a
+            # successful answer naming module A refreshes the device-level
+            # stamp, and module B - missing from the very same answer - kept
+            # presenting its last readings indefinitely. _clear_unanswered
+            # cannot see B (it walks the answer), _forget_stale_device_values
+            # cannot either (the device did answer).
+            self._stamp_answered_modules(device_id, values)
+            self._forget_unanswered_module_values(device_id)
             return None
+        # skipcq: PYL-W0706 - shields the catch-all, not redundant
+        except AuthError:
+            # Not this device failing: an account is one login. Returned as
+            # a reason string here, it stops being an error anyone can
+            # count; see AuthError.
+            raise
         except Exception as exc:  # noqa: BLE001
             # Broad: one device's parameter read failing must not take
             # the other devices' readings with it. The reason goes to the
@@ -2689,6 +2428,24 @@ class WemPortalApi:
             # ends up showing the user when the whole cycle fails.
             _LOGGER.warning("Failed to fetch parameter data... %s", exc)
             return str(exc)
+
+    def _schedule_row_key(self, device_id, module, parameter_id) -> str:
+        """Where a programme's reading actually lives: the scraped row the
+        value read merged it into, if any, else its own key.
+
+        In `both` mode the value read may have merged this programme into a
+        scraped row, and all three schedule steps have to find it there:
+        recognising one reads its value, the detail fetch writes onto its row,
+        the failure drop clears that row's stale detail. Keyed on the
+        reconstructed own key, recognition missed a 3.1.3.0 programme's JSON
+        value so its fetch never ran, the read built a second detail-carrying
+        row under a key no entity is made from, and the drop cleared nothing.
+        Same device-scoped merge map _clear_unanswered follows.
+        """
+        own_key = f"{module['Name']}-{parameter_id}"
+        module_ref = ModuleRef(module_index=module["Index"], module_type=module["Type"])
+        merged = self.scraping_mapper.get((device_id, module_ref, parameter_id))
+        return merged[0] if merged else own_key
 
     def _is_schedule_parameter(
         self, device_id, module, parameter_id, parameter_data
@@ -2703,22 +2460,121 @@ class WemPortalApi:
         it was never entered, which is why nothing about it appeared in any
         log.
         """
-        row = self.data.get(device_id, {}).get(f"{module['Name']}-{parameter_id}")
+        row = self.data.get(device_id, {}).get(
+            self._schedule_row_key(device_id, module, parameter_id)
+        )
+        row_value = row.value if isinstance(row, Reading) else None
         return parameter_data.get(
             "DataType"
-        ) == WemDataType.PROGRAM or looks_like_schedule((row or {}).get("value"))
+        ) == WemDataType.PROGRAM or looks_like_schedule(row_value)
 
-    def _schedule_is_due(self, device_id, parameter_id) -> bool:
+    def _values_stale_after_seconds(self) -> float:
+        """How long a device or module may stay silent before what it last
+        said stops being shown as current."""
+        return max(
+            DEVICE_VALUES_STALE_AFTER_SECONDS,
+            DEVICE_VALUES_STALE_AFTER_POLLS * self.scan_interval_api.total_seconds(),
+        )
+
+    def _schedule_is_due(self, device_id, module, parameter_id) -> bool:
         """Whether this programme may be asked for again yet.
 
         Heating schedules rarely change - only through the WEM Portal app
         directly, since this integration shows them read-only - so refetching
         one on every coordinator cycle is load for nothing.
-        """
-        last_fetch = self._last_circuit_times_fetch.get((device_id, parameter_id), 0)
-        return time.time() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
 
-    def _record_schedule_attempt(self, device_id, parameter_id, attempted_at, fetched):
+        Monotonic, and a missing key is "never fetched" rather than zero -
+        AccountState says why each of those matters.
+        """
+        key = _schedule_throttle_key(device_id, module, parameter_id)
+        last_fetch = self._last_circuit_times_fetch.get(key)
+        if last_fetch is None:
+            return True
+        return time.monotonic() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
+
+    def _stamp_answered_modules(self, device_id, values) -> None:
+        """Note WHEN each module last appeared in a values answer.
+
+        Kept BESIDE the module list rather than inside it, and that is the
+        whole point of the separate dict: a module that drops out of the
+        device list used to take its own stamp with it, so the ageing pass -
+        which reads those stamps - never visited its readings again. They
+        were then neither refreshed (the mapper skips a module it has no
+        description for) nor aged, and sat on the dashboard as current for
+        good. Outliving the list is exactly what makes them reachable.
+
+        Monotonic, and never persisted: it is meaningless across restarts.
+        """
+        answered = self._module_answered_at.setdefault(device_id, {})
+        for module in values.get("Modules") or []:
+            if not isinstance(module, dict):
+                continue
+            key = ModuleRef(module.get("ModuleIndex"), module.get("ModuleType"))
+            # Around the ASSIGNMENT, like mapper._described_module: an id the
+            # portal sent as a list builds a ModuleRef without complaint and
+            # only raises where something hashes it.
+            try:
+                answered[key] = time.monotonic()
+            except TypeError:
+                continue
+
+    def _forget_unanswered_module_values(self, device_id) -> None:
+        """Stop presenting a module's readings once IT has stopped answering.
+
+        The per-module half of _forget_stale_device_values, for the case
+        that one cannot see: the device answers - with module A - and module
+        B is simply absent from every answer. Same TTL, same rule (only the
+        value goes, identity stays), same no-evidence exemption: a module
+        never stamped this session has nothing on display this could be
+        about.
+
+        Weekly programmes are exempt like in _clear_unanswered - the
+        schedule fetch owns their staleness and drops its own detail when a
+        due refresh fails.
+        """
+        now = time.monotonic()
+        device_rows = self.data.get(device_id) or {}
+        answered = self._module_answered_at.get(device_id, {})
+        # Over the STAMPS, not over the module list: a module the portal has
+        # stopped listing is exactly the one whose readings nothing else can
+        # reach, and walking the list skipped it.
+        for module_key, answered_at in list(answered.items()):
+            stale_for = now - answered_at
+            if stale_for < self._values_stale_after_seconds():
+                continue
+
+            forgotten = []
+            for row_name, row in self._rows_this_module_owns(
+                device_rows,
+                module_key,
+                # Whether the schedule fetch can still reach this module at
+                # all: it walks the module list, and the stamps this loop
+                # runs over deliberately outlive it.
+                schedule_runs=module_key in (self.modules or {}).get(device_id, {}),
+            ):
+                if row.value is not None:
+                    row.value = None
+                    forgotten.append(row_name)
+            if not forgotten:
+                continue
+            # Reset, so the next silence is measured from here rather than
+            # repeating this warning every cycle - same as the device level.
+            answered[module_key] = now
+            _LOGGER.warning(
+                "Device %s module %d/%d has not been in an answer for %d "
+                "minutes. Its %d reading(s) are no longer current and are "
+                "now shown as unknown rather than as the values they had "
+                "then.",
+                short_device_id(device_id),
+                module_key.module_index,
+                module_key.module_type,
+                int(stale_for // 60),
+                len(forgotten),
+            )
+
+    def _record_schedule_attempt(
+        self, device_id, module, parameter_id, attempted_at, fetched
+    ):
         """Book the ATTEMPT, however it ended.
 
         Written only after a SUCCESS, as it once was, the interval guard never
@@ -2728,15 +2584,33 @@ class WemPortalApi:
         Back-dated rather than blocked outright when it did not work out, so
         one bad cycle does not cost a full hour either. Same shape and same
         reasoning as get_statistics().
+
+        A failure also DROPS the row's stale detail attributes. The sensor
+        prefers CircuitTimesDay over the raw value, so detail fetched last
+        week kept overruling a newer raw plan for as long as the refresh
+        failed - the existing JSON fallback takes over once the detail is
+        gone, and the next successful refresh puts it back.
         """
+        key = _schedule_throttle_key(device_id, module, parameter_id)
         if fetched:
-            self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at
+            self._last_circuit_times_fetch[key] = attempted_at
             return
-        self._last_circuit_times_fetch[(device_id, parameter_id)] = attempted_at - max(
+        self._last_circuit_times_fetch[key] = attempted_at - max(
             0,
             CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS
             - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
         )
+        row = self.data.get(device_id, {}).get(
+            self._schedule_row_key(device_id, module, parameter_id)
+        )
+        if isinstance(row, Reading) and row.circuit_times_day is not None:
+            row.circuit_times_day = None
+            row.possible_values = None
+            _LOGGER.debug(
+                "Schedule %s: refresh failed, dropping the stale detail so "
+                "the raw plan shows instead.",
+                parameter_id,
+            )
 
     def _read_one_schedule(self, device_id, module, parameter_id) -> bool:
         """Ask the device for one programme and store what it reports.
@@ -2767,35 +2641,85 @@ class WemPortalApi:
             do_retry=True,
         ).json()
 
-        sensor_name = f"{module['Name']}-{parameter_id}"
-        if sensor_name not in self.data[device_id]:
-            self.data[device_id][sensor_name] = {
-                "friendlyName": translate(
+        # What the portal actually delivered, before any of this counts as a
+        # successful read. `{}` and `{"Status": 3}` are both answers it gives,
+        # and both used to be stored and stamped as a fresh schedule: the hour
+        # of throttle was spent, the sensor threw the empty week away and fell
+        # back to the raw plan, and - since the ageing pass learned to exempt a
+        # programme "while the fetch still feeds it" - an empty list read as
+        # being fed. Not a list, or an empty one, is a failed read.
+        days = (
+            schedule_resp.get("CircuitTimesDay")
+            if isinstance(schedule_resp, dict)
+            else None
+        )
+        # The same question the ageing exemption asks, which is the point of
+        # sharing it: a week of bare days renders to nothing, so storing it
+        # and stamping the read as successful bought an hour of throttle for
+        # an answer the sensor throws away - and then the exemption read that
+        # very list as proof something was still feeding the row.
+        if not week_carries_a_programme(days):
+            _LOGGER.debug(
+                "Schedule %s: the portal answered without a usable week; "
+                "treating it as a failed read rather than an empty schedule.",
+                parameter_id,
+            )
+            return False
+
+        sensor_name = self._schedule_row_key(device_id, module, parameter_id)
+        row = self.data[device_id].get(sensor_name)
+        if not isinstance(row, Reading):
+            row = Reading(
+                friendly_name=translate(
                     self.language, friendly_name_mapper(parameter_id)
                 ),
-                "ParameterID": parameter_id,
-                "unit": None,
-                "value": "Active",
-                "IsWriteable": False,
-                "DataType": 6,
-                "ModuleIndex": module_index,
-                "ModuleType": module_type,
-                "platform": "sensor",
-                "icon": "mdi:calendar-clock",
-            }
+                parameter_id=parameter_id,
+                unit=None,
+                value="Active",
+                data_type=WemDataType.PROGRAM,
+                module_index=module_index,
+                module_type=module_type,
+                platform="sensor",
+                icon="mdi:calendar-clock",
+            )
+            self.data[device_id][sensor_name] = row
 
-        self.data[device_id][sensor_name]["CircuitTimesDay"] = schedule_resp.get(
-            "CircuitTimesDay", []
-        )
-        self.data[device_id][sensor_name]["PossibleValues"] = schedule_resp.get(
-            "PossibleValues", []
-        )
+        row.circuit_times_day = days
+        row.possible_values = portal_list(schedule_resp, "PossibleValues")
         # The value is NOT touched. This fetch adds detail to a row the value
         # read already filled; writing "Active" over it replaced a readable
         # week with a placeholder once an hour, until the next cycle put the
         # programme back. Only a row that did not exist gets the placeholder,
         # above - there the fetch is the only source there is.
         return True
+
+    def _read_and_record_one_schedule(self, device_id, module, parameter_id) -> None:
+        """Read one weekly programme, and stamp the attempt either way.
+
+        The stamp is what the throttle reads, so it has to be written whether
+        the read worked or not - otherwise a programme that fails every time
+        is retried every cycle, which is the traffic the throttle exists to
+        prevent.
+        """
+        attempted_at = time.monotonic()
+        fetched = False
+        try:
+            fetched = self._read_one_schedule(device_id, module, parameter_id)
+        # skipcq: PYL-W0706 - shields the catch-all, not redundant
+        except AuthError:
+            # A refused login is not one programme failing, and the rest
+            # would each spend another one; see AuthError.
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # Broad: one heating program failing is not a reason to skip the
+            # rest.
+            _LOGGER.warning(
+                "Failed to fetch CircuitTimes for %s: %s", parameter_id, exc
+            )
+        finally:
+            self._record_schedule_attempt(
+                device_id, module, parameter_id, attempted_at, fetched
+            )
 
     def _fetch_circuit_times(self, device_id: str) -> None:
         """Fetch the device's own view of every weekly programme it has,
@@ -2809,278 +2733,15 @@ class WemPortalApi:
                         device_id, module, parameter_id, parameter_data
                     ):
                         continue
-                    if not self._schedule_is_due(device_id, parameter_id):
+                    if not self._schedule_is_due(device_id, module, parameter_id):
                         continue
-                    attempted_at = time.time()
-                    fetched = False
-                    try:
-                        fetched = self._read_one_schedule(
-                            device_id, module, parameter_id
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        # Broad: one heating program failing is not a reason
-                        # to skip the rest.
-                        _LOGGER.warning(
-                            "Failed to fetch CircuitTimes for %s: %s",
-                            parameter_id,
-                            exc,
-                        )
-                    finally:
-                        self._record_schedule_attempt(
-                            device_id, parameter_id, attempted_at, fetched
-                        )
+                    self._read_and_record_one_schedule(device_id, module, parameter_id)
+        # skipcq: PYL-W0706 - shields the catch-all, not redundant
+        except AuthError:
+            # The outer half of the same rule: extra detail may be lost, a
+            # login that is being refused may not be hidden. See AuthError.
+            raise
         except Exception as exc:  # noqa: BLE001
             # Broad: heating programs are extra detail on top of the
             # readings. Losing them must never cost the update itself.
             _LOGGER.warning("Error processing CircuitTimes: %s", exc)
-
-    def _statistics_devices(self, enabled_devices=None) -> list:
-        """The devices this cycle should ask the portal about."""
-        # `is not None`, NOT truthiness: an EMPTY list means "every device is
-        # disabled", and treating that as "no filter given" polled all of them -
-        # the exact opposite of what the caller asked for.
-        target_devices = (
-            enabled_devices if enabled_devices is not None else list(self.data.keys())
-        )
-        # Same str-normalization as in get_data(): self.data is keyed
-        # by str, callers may pass ints. Scraper-only devices (e.g. the "0000"
-        # placeholder) have no API statistics; they are skipped so
-        # int("0000")=0 isn't sent to the portal.
-        return [
-            str(device_id)
-            for device_id in target_devices
-            if str(device_id) in self.data and str(device_id) in self.modules
-        ]
-
-    def _statistics_group_name(self, group: dict) -> str:
-        """The display name for one statistics group: the portal's own
-        description where it has one, a fixed fallback where it is blank."""
-        group_id = group.get("GroupType")
-        group_name = group.get("Description")
-        if not group_name or group_name.strip() == "":
-            fallback_names = {
-                1: "Heating Energy Yield",
-                2: "Hot Water Energy Yield",
-                3: "Cooling Energy Yield",
-                4: "Total Energy Yield",
-                5: "Power Consumption Heating",
-                6: "Power Consumption Hot Water",
-                7: "Power Consumption Cooling",
-                8: "Total Power Consumption",
-            }
-            group_name = fallback_names.get(group_id, f"Energy {group_id}")
-        else:
-            translated_group = translate(self.language, group_name)
-            if "energy" not in translated_group.lower():
-                group_name = f"{translated_group} Energy"
-            else:
-                group_name = translated_group
-        return group_name
-
-    def _store_statistics_group(
-        self, device_id, group_id, group_name, stats_resp
-    ) -> None:
-        """Turn one group's read response into its energy sensor.
-
-        Returns without writing wherever the group loop used to `continue`:
-        either way there is nothing left to do for this group.
-        """
-        values = stats_resp.get("Values", [])
-        if not values:
-            return
-
-        # Pick by the Date the entry carries, not by list
-        # position - see utils.latest_statistics_entry.
-        latest_stat = latest_statistics_entry(values)
-        current_value = latest_stat.get("Value")
-        _LOGGER.debug(
-            "Statistics group %s: using entry dated %s of %d",
-            group_id,
-            latest_stat.get("Date", "?"),
-            len(values),
-        )
-
-        sensor_name = f"Energy_{group_id}"
-
-        if current_value is None:
-            # Missing reading this cycle - keep the last known
-            # value instead of falling back to 0.0, which would
-            # otherwise show up as a false drop/spike on the
-            # Energy Dashboard.
-            old_sensor = self.data.get(device_id, {}).get(f"{device_id}-{sensor_name}")
-            if isinstance(old_sensor, dict) and old_sensor.get("value") is not None:
-                current_value = old_sensor.get("value")
-            else:
-                # No previous value either: skip rather than
-                # invent a 0.0, which the Energy Dashboard
-                # reads as a meter reset on a
-                # total_increasing sensor.
-                _LOGGER.debug(
-                    "Statistics group %s has no value yet; "
-                    "skipping instead of reporting 0.",
-                    group_id,
-                )
-                return
-
-        unit = stats_resp.get("Unit", "kWh")
-
-        self.data[device_id][f"{device_id}-{sensor_name}"] = {
-            "friendlyName": group_name,
-            "ParameterID": sensor_name,
-            "unit": unit,
-            "value": current_value,
-            "IsWriteable": False,
-            "DataType": -1,
-            "ModuleIndex": -1,
-            "ModuleType": -1,
-            "platform": "sensor",
-            "device_class": "energy",
-            "state_class": "total_increasing",
-        }
-
-    def _fetch_device_statistics(self, device_id: str) -> None:
-        """Read every statistics group the portal lists for one device.
-
-        Lets the refresh call's exception through: a device whose refresh
-        failed is a failed device for the retry bookkeeping in get_statistics.
-        A single rejected GROUP is a different matter and handled here - the
-        portal routinely lists groups it then refuses to read.
-
-        But "a single group" quietly became "all of them": every group error
-        was swallowed here, so a device whose every group failed still
-        returned normally and counted as a success in get_statistics. The
-        shorter retry then never engaged and the readings waited the full
-        refresh interval - the one case where waiting is most clearly wrong.
-        Raises when nothing came back AND something actually failed.
-
-        Status 3001 is not a failure. It means the group does not apply to
-        this module, so there is nothing to fetch sooner; a device whose
-        groups are all 3001 has no statistics at all and retrying earlier
-        would only cost requests.
-        """
-        refresh_resp = self.make_api_call(
-            API_STATISTICS_REFRESH_URL, data={"DeviceID": int(device_id)}, do_retry=True
-        ).json()
-
-        group_types = refresh_resp.get("GroupTypeDescriptions", [])
-        headers = {"X-Api-Version": "2.0.0.0"}
-        read = 0
-        failed = 0
-
-        for group in group_types:
-            group_id = group.get("GroupType")
-            group_name = self._statistics_group_name(group)
-
-            read_payload = {
-                "DeviceID": int(device_id),
-                "ModuleType": 7,
-                "ModuleIndex": 0,
-                "GroupType": group_id,
-                "Type": 1,
-            }
-
-            try:
-                time.sleep(2)  # Avoid hammering the API
-                stats_resp = self.make_api_call(
-                    API_STATISTICS_READ_URL,
-                    headers=headers,
-                    data=read_payload,
-                    do_retry=True,
-                ).json()
-
-                self._store_statistics_group(
-                    device_id, group_id, group_name, stats_resp
-                )
-                read += 1
-
-            # skipcq: PYL-W0706 - shields the catch-all, not redundant
-            except ForbiddenError:
-                # The portal is refusing this IP, which is not a fact about
-                # this group. Every remaining group would take the same
-                # answer - make_api_call's cooldown check now returns it
-                # without a request, so the cost is not traffic but a warning
-                # per group about one refusal, and a final message blaming
-                # the groups rather than the block. Let it out instead: the
-                # coordinator has a handler for exactly this.
-                raise
-            except Exception as exc:  # noqa: BLE001
-                # Status 3001 = this statistics group isn't valid for
-                # the queried module. The refresh call lists such
-                # groups but reading them is rejected; that's expected
-                # and harmless, so skip it quietly instead of warning
-                # on every startup. Any other error is still surfaced.
-                # Compared as str so an int or str server_status both match.
-                server_status = getattr(exc, "server_status", None)
-                if str(server_status) == str(WEM_INVALID_PARAMETER_STATUS):
-                    _LOGGER.debug(
-                        "Skipping statistics group %s: not valid for this module (status %s).",
-                        group_id,
-                        WEM_INVALID_PARAMETER_STATUS,
-                    )
-                else:
-                    failed += 1
-                    _LOGGER.warning(
-                        "Failed to fetch Statistics for group %s: %s", group_id, exc
-                    )
-
-        if failed and not read:
-            raise WemPortalError(
-                f"Every statistics group of device {device_id} failed to read "
-                f"({failed} of {len(group_types)})."
-            )
-
-    def get_statistics(self, enabled_devices=None):
-        """Fetch historical statistics from the API, rate limited to once per hour.
-
-        The timestamp is set BEFORE fetching, on purpose: it records the last
-        ATTEMPT, so a portal that keeps failing (or is rate-limiting us) is
-        never asked more than once per interval. The downside is that a single
-        failure would otherwise cost a full hour of statistics, so a cycle that
-        failed for every device shortens the wait to
-        STATISTICS_RETRY_INTERVAL_SECONDS instead (see the end of this method).
-        """
-        now = time.time()
-        if (
-            self.last_statistics_fetch is not None
-            and (now - self.last_statistics_fetch) < STATISTICS_REFRESH_INTERVAL_SECONDS
-        ):
-            return
-
-        self.last_statistics_fetch = now
-        _LOGGER.debug("Fetching statistics data")
-
-        # Track per-device outcomes so a completely failed cycle can retry
-        # sooner. Only the outer (per-device) call counts: individual
-        # statistics groups are routinely rejected (status 3001) for modules
-        # they don't apply to, which is expected and not a failure.
-        attempted = 0
-        succeeded = 0
-
-        for device_id in self._statistics_devices(enabled_devices):
-            attempted += 1
-            try:
-                self._fetch_device_statistics(device_id)
-                succeeded += 1
-            except Exception as exc:  # noqa: BLE001
-                # Broad: one device's statistics failing must not stop
-                # the others. `succeeded` stays unincremented, which is
-                # what the retry back-dating below reads.
-                _LOGGER.warning("Error processing Statistics: %s", exc)
-
-        # Every attempted device failed: back-date the timestamp so the next
-        # cycle retries after the shorter retry interval rather than waiting a
-        # full refresh interval. The guard itself stays intact - a portal that
-        # keeps failing is still only asked once per retry interval, never on
-        # every coordinator cycle.
-        if attempted and not succeeded:
-            self.last_statistics_fetch = now - max(
-                0,
-                STATISTICS_REFRESH_INTERVAL_SECONDS - STATISTICS_RETRY_INTERVAL_SECONDS,
-            )
-            _LOGGER.debug(
-                "Statistics failed for all %d device(s); retrying in ~%d min "
-                "instead of %d min.",
-                attempted,
-                STATISTICS_RETRY_INTERVAL_SECONDS // 60,
-                STATISTICS_REFRESH_INTERVAL_SECONDS // 60,
-            )

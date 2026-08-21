@@ -10,7 +10,11 @@ against the live option list from the freshly fetched edit form and
 verifies the result by re-reading the form afterwards.
 """
 
+from typing import Final
+import logging
+
 import hashlib
+import math
 import random
 import re
 import time
@@ -20,59 +24,17 @@ from curl_cffi import requests
 from lxml import html
 
 from .const import (
-    _LOGGER,
     CONF_EXPERT_NOTIFY_ON_SUCCESS,
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
     CONF_EXPERT_WRITE,
-    EXPERT_ASYNCPOST_FIELD,
-    EXPERT_DIALOG_RADAJAX_ID,
-    EXPERT_DIALOG_RTS_STATE_FIELD,
-    EXPERT_DIALOG_RTS_STATE_VALUE,
-    EXPERT_DIALOG_SAVE_TARGET,
-    EXPERT_DIALOG_TSM_FIELD,
-    EXPERT_DIALOG_TSM_ID_FIELD,
-    EXPERT_DIALOG_TSM_ID_VALUE,
-    EXPERT_DIALOG_TSM_VALUE,
-    EXPERT_FORM_MAX_ATTEMPTS,
-    EXPERT_FORM_RETRY_DELAY_SECONDS,
-    EXPERT_MODULE_ARG_HEATPUMP,
-    EXPERT_MODULE_ICONMENU_STATE_FIELD,
-    EXPERT_MODULE_ICONMENU_STATE_TEMPLATE,
-    EXPERT_MODULE_MENU_TARGET,
-    EXPERT_PAGE_TSM_FIELD,
-    EXPERT_PAGE_TSM_ID_FIELD,
-    EXPERT_PAGE_TSM_PANEL_BY_TARGET,
-    EXPERT_PAGE_TSM_VALUE,
-    EXPERT_RAM_MASTER_RADAJAX_ID,
-    EXPERT_RAM_MASTER_REFRESH_BUTTON_FIELD,
-    EXPERT_RAM_MASTER_REFRESH_BUTTON_VALUE,
-    EXPERT_RAM_MASTER_TARGET,
-    EXPERT_RAM_MASTER_TSM_VALUE,
-    EXPERT_RAM_MASTER_UNLOCK_ARGUMENT,
-    EXPERT_SECURITY_CODE,
-    EXPERT_SECURITY_CODE_FIELD,
-    EXPERT_SESSION_MAX_AGE_SECONDS,
-    EXPERT_SKIP_MODULE_NAV,
-    EXPERT_SKIP_SECURITY_CODE,
     EXPERT_SLOT_COUNT,
-    EXPERT_SUBMENU_ARG,
-    EXPERT_SUBMENU_CLIENTSTATE_FIELD,
-    EXPERT_SUBMENU_CLIENTSTATE_VALUE,
-    EXPERT_SUBMENU_TARGET,
-    EXPERT_TIMER_TARGET,
-    EXPERT_VIEWSTATE_FIELDS,
     MIN_EXPERT_ENTITYVALUE_LENGTH,
     SCRAPER_REQUEST_TIMEOUT_SECONDS,
-    WEB_ACCEPT_AJAX,
-    WEB_ACCEPT_LANGUAGE,
-    WEB_ACCEPT_NAV,
-    WEB_CODE_EXPERTS_URL,
     WEB_LOGGED_IN_MARKER,
     WEB_LOGIN_FORM_MARKER,
     WEB_LOGIN_URL,
     WEB_MAIN_URL,
-    WEB_PORTAL_ORIGIN,
 )
 from .exceptions import (
     AuthError,
@@ -82,10 +44,281 @@ from .exceptions import (
     PortalMaintenanceError,
     ServerError,
 )
-from .utils import (
-    maintenance_notice,
-    report_unexpected_maintenance_marker,
+from .models import account_state
+from .utils import parse_portal_number
+from .web_protocol import maintenance_notice, report_unexpected_maintenance_marker
+
+_LOGGER = logging.getLogger(__name__)
+
+# Telerik RadAjax async-postback marker. Real async postbacks (module
+# select, timer polls, dialog saves) carry this field set to "true" in the
+# body AND the X-MicrosoftAjax: Delta=true header. The submenu unlock is
+# NOT an async postback - it's a classic full postback ending in a 302
+# redirect - so it must omit both.
+EXPERT_ASYNCPOST_FIELD: Final = "__ASYNCPOST"
+
+# Extra fields the code-experts dialog's async postback needs (from HAR).
+# The dialog is a RadAjax async postback: besides __ASYNCPOST=true it
+# needs the RadAjax control id, the ScriptManager target, and the dialog
+# RadTabStrip client state (a JS-generated field the server accepts with
+# this default). Portal-specific constants captured from the browser flow.
+EXPERT_DIALOG_RADAJAX_ID: Final = "ctl00_RAMPDialogMaster"
+
+EXPERT_DIALOG_RTS_STATE_FIELD: Final = "ctl00_DialogContent_RTSDialog_ClientState"
+
+EXPERT_DIALOG_RTS_STATE_VALUE: Final = (
+    '{"selectedIndexes":["0"],"logEntries":[],"scrollState":{}}'
 )
+
+# Save button inside a RadWindow dialog (Fachmann code + parameter write).
+EXPERT_DIALOG_SAVE_TARGET: Final = "ctl00$DialogContent$BtnSave"
+
+EXPERT_DIALOG_TSM_FIELD: Final = "ctl00$TSMeControlNetDialog"
+
+# The dialog's OWN ScriptManager also needs its TSM version-blob hidden
+# field (analogous to EXPERT_PAGE_TSM_ID_FIELD for the main page's
+# ScriptManager) - confirmed present in the dialog's own response
+# (window.__TsmHiddenField = $get('ctl00_TSMeControlNetDialog_TSM')) but
+# never sent by our client. Verified identical (deployment-fixed, not
+# session-specific) across four independent captured sessions.
+EXPERT_DIALOG_TSM_ID_FIELD: Final = "ctl00_TSMeControlNetDialog_TSM"
+
+EXPERT_DIALOG_TSM_ID_VALUE: Final = (
+    ";;Telerik.Web.UI, Version=2020.1.114.45, Culture=neutral, "
+    "PublicKeyToken=121fae78165ba3d4:de:40a36146-6362-49db-b4b5-57ab81f34dac:"
+    "e330518b:16e4e7cd:f7645509:24ee1bba:33715776:88144a7a:1e771326:"
+    "8e6f0d33:1f3a7489:6a6d718d:c128760b:19620875:874f8ea2:c172ae1e:"
+    "f46195d3:9cdfc6e7:2003d0b8:c8618e41:e4f8f289:1a73651d:333f8d94:ed16cbdc"
+)
+
+EXPERT_DIALOG_TSM_VALUE: Final = (
+    "ctl00$ctl00$DialogContent$DivDialogPanel|ctl00$DialogContent$BtnSave"
+)
+
+# How many times _fetch_form fetches the parameter dialog before giving up
+# if it still comes back with an empty dropdown, and how long to wait
+# between those attempts. Each empty attempt also fires one on-demand
+# live-value timer postback (see EXPERT_TIMER_TARGET) before retrying.
+EXPERT_FORM_MAX_ATTEMPTS: Final = 4
+
+EXPERT_FORM_RETRY_DELAY_SECONDS: Final = 3
+
+EXPERT_MODULE_ARG_HEATPUMP: Final = "6"
+
+# The icon-menu control's own client state (confirmed via HAR:
+# {"logEntries":[],"selectedItemIndex":"6"}). Live testing showed the
+# module-select postback is accepted (real response, valid page state) but
+# the parameter dialog still comes back empty afterwards - suggesting the
+# server needs this control-level state, not just the postback event
+# target/argument, to register "module N selected" in the session. Only
+# relevant for the module-select postback, not the timer polls.
+EXPERT_MODULE_ICONMENU_STATE_FIELD: Final = (
+    "ctl00_rdMain_C_controlExtension_iconMenu_rmMenuLayer_ClientState"
+)
+
+EXPERT_MODULE_ICONMENU_STATE_TEMPLATE: Final = (
+    '{"logEntries":[],"selectedItemIndex":"%s"}'
+)
+
+# Icon-menu postback selecting a device module; ARG "6" = heat pump on the
+# reference installation. Configurable via CONF_EXPERT_MODULE_ARG because
+# the menu index can differ on other installations/module layouts.
+EXPERT_MODULE_MENU_TARGET: Final = (
+    "ctl00$rdMain$C$controlExtension$iconMenu$rmMenuLayer"
+)
+
+# Extra fields the MAIN PAGE's async postbacks (module select, timer polls)
+# need, distinct from the dialog's (see above). Confirmed via HAR: the
+# security-code fix worked with only its 4 essential fields (no need to
+# replicate the page's full _ClientState clutter), so the same minimal
+# approach is tried here: __ASYNCPOST plus the ScriptManager field and its
+# static TSM version blob (identical across module-select and timer-poll
+# in the capture, i.e. tied to the page/session, not the specific postback).
+EXPERT_PAGE_TSM_FIELD: Final = "ctl00$RSMeControlNetPage"
+
+EXPERT_PAGE_TSM_ID_FIELD: Final = "ctl00_RSMeControlNetPage_TSM"
+
+# ScriptManager panel prefix per event target - the value sent is always
+# "ctl00$ctl00$<panel>|<event_target>" (confirmed via HAR for both targets).
+EXPERT_PAGE_TSM_PANEL_BY_TARGET: Final = {
+    "ctl00$rdMain$C$controlExtension$iconMenu$rmMenuLayer": "ctl00$ctl00$rdMain$C$controlExtension$ContentWithoutGridPanel",
+    "ctl00$DeviceContextControl1$timerUpdateData": "ctl00$ctl00$DeviceContextControl1Panel",
+}
+
+EXPERT_PAGE_TSM_VALUE: Final = (
+    ";;Telerik.Web.UI, Version=2020.1.114.45, Culture=neutral, "
+    "PublicKeyToken=121fae78165ba3d4:en-US:40a36146-6362-49db-b4b5-"
+    "57ab81f34dac:16e4e7cd:33715776:f7645509:24ee1bba:6d43f6d9:e330518b:"
+    "2003d0b8:c128760b:88144a7a:1e771326:c8618e41:1a73651d:333f8d94;"
+    "System.Web.Extensions, Version=4.0.0.0, Culture=neutral, "
+    "PublicKeyToken=31bf3856ad364e35:en-US:64455737-15dd-482f-b336-"
+    "7074c5c53f91:76254418;Telerik.Web.UI, Version=2020.1.114.45, "
+    "Culture=neutral, PublicKeyToken=121fae78165ba3d4:en-US:40a36146-6362-"
+    "49db-b4b5-57ab81f34dac:f46195d3:854aa0a7:b2e06756:92fe8ea0:fa31b949:"
+    "4877f69a:607498fe:4cacbc31:2a8622d7:19620875:874f8ea2:490a9d4e:"
+    "bd8f85e4:c172ae1e:9cdfc6e7:e4f8f289:ed16cbdc;"
+)
+
+EXPERT_RAM_MASTER_RADAJAX_ID: Final = "ctl00_RAMMasterPage"
+
+# The "Aktualisieren" (refresh) button's ClientState - confirmed via a
+# structural field comparison against a real browser's RAMMasterPage
+# postback: this field is NOT present as a hidden input anywhere on the
+# page (the button's default state is a client-side constant the browser
+# always knows, never server-rendered) but IS present in the real
+# postback body. Missing it was the one remaining gap found (31/32
+# fields already matched before this).
+EXPERT_RAM_MASTER_REFRESH_BUTTON_FIELD: Final = (
+    "ctl00_DeviceContextControl1_RefreshDeviceDataButton_ClientState"
+)
+
+EXPERT_RAM_MASTER_REFRESH_BUTTON_VALUE: Final = (
+    '{"text":"Aktualisieren","value":"","checked":false,"target":"",'
+    '"navigateUrl":"","commandName":"","commandArgument":"F003",'
+    '"autoPostBack":true,"selectedToggleStateIndex":0,'
+    '"validationGroup":null,"readOnly":false,"primary":false,"enabled":true}'
+)
+
+# RadAjaxManager client-event callback the browser fires on the PARENT
+# page whenever a RadWindow dialog (Fachmann unlock, parameter write)
+# closes with a "refresh" signal. Confirmed via HAR: this is what actually
+# registers state changes server-side - a plain page reload (what we did
+# before) carries NO such signal and leaves the change inert. The dialog
+# runs in its own independent ViewState/ScriptManager context, so this
+# callback must use the PARENT page's own prior state, not the dialog's -
+# specifically the state from the main-page timer postback that runs just
+# before the security-code POST (byte-for-byte identical in the capture),
+# not the earlier submenu reload.
+EXPERT_RAM_MASTER_TARGET: Final = "ctl00$RAMMasterPage"
+
+EXPERT_RAM_MASTER_TSM_VALUE: Final = "ctl00$RAMMasterPageSU|ctl00$RAMMasterPage"
+
+# The "Function" value differs by which dialog just closed (observed:
+# "columns" after the Fachmann-unlock dialog, "refreshdata" after a
+# parameter write) - only the unlock case is needed for navigation.
+EXPERT_RAM_MASTER_UNLOCK_ARGUMENT: Final = (
+    '{"Sender":"1","Function":"columns","ValueType":"Int32","Value":"1","Arguments":[]}'
+)
+
+EXPERT_SECURITY_CODE: Final = "11"
+
+# Field carrying the Fachmann security code ("11", publicly known).
+EXPERT_SECURITY_CODE_FIELD: Final = "ctl00$DialogContent$tbxSecurityCode"
+
+# How long a cached expert web session may be reused before we log in again.
+#
+# Every expert operation used to perform a FULL login, which is the one thing
+# the portal reliably rejected (403 on Login.aspx) while the very same portal
+# stayed reachable in a browser. The scraper has had cookie reuse for exactly
+# this reason; the expert path now does too.
+#
+# The age cap is deliberate: a reuse attempt that fails costs two extra
+# requests before falling back to a login, so we only try while the session is
+# plausibly still alive. Kept in memory only - a session cookie is as good as
+# a credential and has no business on disk.
+EXPERT_SESSION_MAX_AGE_SECONDS: Final = 900  # 15 minutes
+
+# Skip the module-select postback (True by default). A live read proved
+# the parameter dialog comes back fully populated WITHOUT selecting a
+# module first, even though the heat pump is NOT the first menu entry -
+# so the entityvalue in the dialog URL already addresses the device/
+# module/parameter completely, and the former "module selected" session
+# state is not needed. Skipping it removes one postback per operation
+# (less load, less 403 exposure) and one point of failure. The module-
+# select code is KEPT (see EXPERT_MODULE_MENU_TARGET / _establish_context)
+# as a safety net for hypothetical other module layouts where a parameter
+# might not resolve without it: set this to False to restore the module
+# postback, or switch it per installation with CONF_EXPERT_ENABLE_MODULE_NAV.
+# The module is chosen by EXPERT_MODULE_ARG_HEATPUMP (icon-menu argument
+# "6" = heat pump on the reference installation), overridable per install
+# via CONF_EXPERT_MODULE_ARG.
+EXPERT_SKIP_MODULE_NAV: Final = True
+
+# The Fachmann security-code sub-sequence (dialog GET + code "11" POST +
+# RAMMasterPage unlock callback, and the timer postback that feeds it) is
+# DISABLED by default (True). It was proven unnecessary: a live read AND a
+# live write both succeed with it skipped, because the submenu ClientState
+# alone puts the session on the Fachmann level - exactly how the web
+# scraper already reaches the expert view without any code. The code is
+# deliberately KEPT (not deleted) as a safety net: should Weishaupt ever
+# make the Fachmann level require the code again - e.g. if an account's
+# permanent Fachmann unlock expires and the code becomes mandatory per
+# session - flipping this back to False restores the full, HAR-verified
+# unlock choreography without having to reconstruct it. Set to False, or
+# switch it per installation with CONF_EXPERT_ENABLE_SECURITY_CODE, only to
+# re-test that path.
+EXPERT_SKIP_SECURITY_CODE: Final = True
+
+EXPERT_SUBMENU_ARG: Final = "3"
+
+# RadMenu client state selecting the "Fachmann" entry (index 3). This
+# JS-generated field is what tells the server which submenu item was
+# clicked; it is NOT a server-rendered hidden input, so it must be
+# supplied explicitly. Confirmed via HAR: the real submenu POST carries
+# selectedItemIndex:3 with "Fachmann" selected:true, and only then does
+# the reloaded page contain Fachmann-only parameters. Without it the
+# postback lands on the plain user level (~146 KB) instead of the Fachmann
+# level (~207 KB). The value codes 110/222/223/225/224 are deployment
+# constants, not installation-specific; the installation line (index 1) is
+# intentionally left blank here since its text is per-installation and does
+# not affect which item is selected.
+EXPERT_SUBMENU_CLIENTSTATE_FIELD: Final = "ctl00_SubMenuControl1_subMenu_ClientState"
+
+EXPERT_SUBMENU_CLIENTSTATE_VALUE: Final = (
+    '{"logEntries":[{"Type":3},'
+    '{"Type":1,"Index":"0","Data":{"text":"Übersicht","value":"110"}},'
+    '{"Type":1,"Index":"1","Data":{"text":"","value":""}},'
+    '{"Type":1,"Index":"2","Data":{"text":"Benutzer","value":"222"}},'
+    '{"Type":1,"Index":"3","Data":{"text":"Fachmann","value":"223","selected":true}},'
+    '{"Type":1,"Index":"4","Data":{"text":"Statistik","value":"225"}},'
+    '{"Type":1,"Index":"5","Data":{"text":"Datenlogger","value":"224"}}],'
+    '"selectedItemIndex":"3"}'
+)
+
+# Submenu postback that opens the expert-code (Fachmann) dialog.
+EXPERT_SUBMENU_TARGET: Final = "ctl00$SubMenuControl1$subMenu"
+
+# Timer postback that pulls live values after navigating to a module.
+EXPERT_TIMER_TARGET: Final = "ctl00$DeviceContextControl1$timerUpdateData"
+
+# The portal's main pages don't use the standard __VIEWSTATE hidden field
+# but a Telerik/ECN variant, __ECNPAGEVIEWSTATE. The dialog pages
+# (CodeExpertsDetails, WwpsParameterDetails) do use plain __VIEWSTATE.
+# Both names are treated as the page's state field so diagnostics and
+# checks work across all navigation steps.
+EXPERT_VIEWSTATE_FIELDS: Final = ("__ECNPAGEVIEWSTATE", "__VIEWSTATE")
+
+WEB_ACCEPT_AJAX: Final = "*/*"
+
+# Accept-Language is identical across every request type (confirmed via
+# HAR) and was never sent at all - notable given this project's own prior
+# history of portal language-mismatch bugs. Accept differs by request
+# shape: navigational requests (page loads, the full submenu postback)
+# send the long browser-default value; async/XHR postbacks send "*/*".
+WEB_ACCEPT_LANGUAGE: Final = "de-DE,de;q=0.9,en-DE;q=0.8,en;q=0.7,en-US;q=0.6"
+
+WEB_ACCEPT_NAV: Final = (
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,"
+    "image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+)
+
+# --- Expert web navigation (Fachmann level) -----------------------------
+# The Fachmann parameters (e.g. Leistungsbegrenzung) live behind a second
+# authentication step and a stateful navigation sequence, reconstructed
+# from a real browser HAR capture. These identify the ASP.NET postback
+# targets/arguments of that sequence.
+# (Formerly a second WEB_DEFAULT_URL constant existed with the identical
+# value as WEB_MAIN_URL; consolidated into WEB_MAIN_URL.)
+WEB_CODE_EXPERTS_URL: Final = "https://www.wemportal.com/Web/UControls/Weishaupt/DataDisplay/CodeExpertsDetails.aspx"
+
+# The portal origin, sent on every postback (confirmed via HAR) - both
+# full and async postbacks include it. Async postbacks additionally
+# include X-Requested-With: XMLHttpRequest, which the ASP.NET AJAX
+# infrastructure commonly checks to recognize a legitimate AJAX callback
+# rather than a plain form submission. Neither header was being sent
+# before, which may explain why the Fachmann permission never actually
+# took effect server-side despite every postback being accepted.
+WEB_PORTAL_ORIGIN: Final = "https://www.wemportal.com"
 
 # Edit dialog endpoint; entityvalue identifies device/module/parameter.
 EXPERT_PARAMETER_URL = (
@@ -308,16 +541,21 @@ def parse_module_list(html_content) -> list:
     ]
 
 
-def _as_number(text):
-    """The number a dropdown label carries, or None if it carries none.
+# Dropdown labels are decimal ("1.5", "1,5") on a scaled parameter and plain
+# on the rest; an enum reads "Aus" and has no number at all. Parsed by the
+# shared utils.parse_portal_number, like every other portal value.
 
-    Labels are decimal ("1.5", "1,5") on a scaled parameter and plain on the
-    rest; an enum reads "Aus" and has no number at all.
-    """
-    try:
-        return float((text or "").strip().replace(",", "."))
-    except ValueError:
-        return None
+# Places of decimals a portal value is taken to have. Two on the labels seen
+# so far (0.05 steps on a heating curve); ten leaves room for anything it may
+# yet offer while still being far coarser than the error of a float
+# subtraction, which is what this exists to strip.
+PORTAL_DECIMALS: Final = 10
+
+# How far apart two numbers may be and still mean the same option. The error
+# of a float grid, not a tolerance on the value itself: the smallest step any
+# parameter has offered is 0.05, so this is six orders of magnitude away from
+# telling two real options apart.
+FLOAT_NOISE: Final = 1e-9
 
 
 def _smallest_gap(options):
@@ -331,6 +569,12 @@ def _smallest_gap(options):
 
     No guard for a short list: one option produces no pair to subtract, so
     the comprehension is empty and the answer is already None.
+
+    Rounded, because a gap is the SUBTRACTION of two parsed labels and
+    carries the float error of both: the 0.05 of a heating curve came out as
+    0.04999999999999982. That is the number the entity publishes and a UI
+    builds its grid from, so the grid could not land on the very list the
+    step was derived from.
     """
     ordered = sorted(options or [])
     gaps = [
@@ -338,7 +582,26 @@ def _smallest_gap(options):
         for earlier, later in zip(ordered, ordered[1:])
         if later > earlier
     ]
-    return min(gaps) if gaps else None
+    return round(min(gaps), PORTAL_DECIMALS) if gaps else None
+
+
+def _option_meant_by(options, value):
+    """The offered option `value` names, or None if it names none of them.
+
+    Not `in`: the options are parsed from decimal labels while the value
+    arrives off a number entity's grid (min + n * step), so the two spell the
+    same reading with different float error - 0.15 against
+    0.15000000000000002. Compared exactly, a 0.05-step parameter refused most
+    of the values it can be set to, naming a range that contains them.
+
+    A tolerance for that error and nothing wider: a value the device does not
+    offer stays refused. Snapping it to the nearest one would write something
+    other than what was asked for, on a heating system.
+    """
+    for option in options or []:
+        if math.isclose(option, value, rel_tol=FLOAT_NOISE, abs_tol=FLOAT_NOISE):
+            return option
+    return None
 
 
 class ExpertParameterState:
@@ -420,6 +683,9 @@ class WemPortalExpertClient:
     ):
         self.username = username
         self.password = password
+        # Once-per-subject warning memory shared with the scraper - both talk
+        # to the same portal for the same account. See models.AccountState.
+        self._account_state = account_state(username)
         # Shared, in-memory cookie cache for session reuse across operations
         # (a plain dict owned by the WemPortalApi, passed by reference, so
         # every short-lived client instance sees the same one). Structure:
@@ -535,7 +801,9 @@ class WemPortalExpertClient:
                 raise PortalMaintenanceError(notice)
             # Not acted on here - but worth knowing about, because it is the
             # open question that keeps the check from being universal.
-            report_unexpected_maintenance_marker(notice, what)
+            report_unexpected_maintenance_marker(
+                notice, what, self._account_state.maintenance_markers_reported
+            )
 
     def _raise_if_forbidden(self, response):
         if response.status_code == 403:
@@ -658,7 +926,17 @@ class WemPortalExpertClient:
         viewstate = tree.xpath("//*[@id='__VIEWSTATE']/@value")
         eventval = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
         if not viewstate or not eventval:
-            raise AuthError("Expert client: login form fields not found.")
+            # NOT an AuthError: the password has not been sent yet - these
+            # fields are what it would be sent WITH, so a page without them
+            # says nothing about the credentials. The scraper reached the
+            # same conclusion for the same lines, and its comment names the
+            # transport handler as "the half that got left behind" - this
+            # was the third.
+            raise ServerError(
+                "The WEM Portal login page came back without its form fields, "
+                "so there was nothing to log in with. This is a portal-side "
+                "problem, not a credential one."
+            )
 
         login_data = {
             "__VIEWSTATE": viewstate[0],
@@ -763,14 +1041,15 @@ class WemPortalExpertClient:
             },
         )
         # --- Fachmann security-code sub-sequence (retained safety net) ---
-        # DISABLED by default (EXPERT_SKIP_SECURITY_CODE=True in const.py).
+        # DISABLED by default (EXPERT_SKIP_SECURITY_CODE, at the top of THIS
+        # file - const.py has never held it).
         # Proven unnecessary for both read and write: the submenu ClientState
         # alone puts the session on the Fachmann level (same as the scraper,
         # which reads the expert view with no code at all). The full block
         # below is kept, not deleted, so it can be re-enabled instantly if
         # Weishaupt ever makes the code mandatory again (e.g. a per-session
-        # unlock). See the constant's comment in const.py for the full
-        # rationale. When active, it fires: timer postback -> security-code
+        # unlock). See that constant's own comment for the full rationale.
+        # When active, it fires: timer postback -> security-code
         # dialog+POST -> RAMMasterPage unlock callback.
         if self._do_security_code:
             # HAR-confirmed: after the security-code dialog opens and before
@@ -1137,14 +1416,13 @@ class WemPortalExpertClient:
         pairs = []
         for option in select[0].xpath(".//option"):
             attribute = (option.get("value") or "").strip()
-            try:
-                posted = float(attribute.replace(",", "."))
-            except ValueError:
+            posted = parse_portal_number(attribute)
+            if posted is None:
                 continue
             label = (option.text or "").strip()
             pairs.append(
                 (
-                    _as_number(label),
+                    parse_portal_number(label),
                     posted,
                     attribute,
                     option.get("selected") is not None,
@@ -1231,20 +1509,6 @@ class WemPortalExpertClient:
         )
 
     # ------------------------------------------------------------------
-    def read_parameter(self, entityvalue: str) -> ExpertParameterState:
-        """Login, fetch one parameter's edit form, parse it, close session.
-
-        Total server load: 3 requests (login page, login POST, form GET),
-        only when explicitly invoked - never periodically.
-        """
-        self._validate_entityvalue(entityvalue)
-        self._check_gates()
-        try:
-            self._login()
-            return self._fetch_form(entityvalue)
-        finally:
-            self.close()
-
     def read_many(self, entityvalues) -> dict:
         """Read several parameters on ONE shared session.
 
@@ -1437,7 +1701,9 @@ class WemPortalExpertClient:
 
             # Validate against the live option list; option values are the
             # exact strings the server expects back.
-            value_str, expected_word = self._requested_option(state, value)
+            value_str, expected_word, expected_number = self._requested_option(
+                state, value
+            )
 
             # The Senden button is type=button and submits via a JS
             # __doPostBack('ctl00$DialogContent$BtnSave', '') - replicate
@@ -1469,7 +1735,18 @@ class WemPortalExpertClient:
             # report the new value as selected. The value is applied
             # immediately, so a short retry budget is enough here (unlike
             # the initial read, where live values may still be loading).
-            verify = self._fetch_form(entityvalue, max_attempts=2)
+            try:
+                verify = self._fetch_form(entityvalue, max_attempts=2)
+            except ExpertOperationAborted as aborted:
+                # The gates are asked before every request, this read
+                # included - and by here the postback is through, so the
+                # heating system already has the value. Said plainly, because
+                # an abort that reads like every other one sends whoever
+                # asked for the write to repeat a change that has happened.
+                raise ExpertOperationAborted(
+                    f"{aborted}. The value was posted and the portal accepted "
+                    "it; only the confirming read did not run."
+                ) from aborted
             # A word is confirmed by the word the dialog shows, because a
             # value beside the scale leaves `current` empty by design - that
             # is what makes it special in the first place.
@@ -1477,8 +1754,8 @@ class WemPortalExpertClient:
                 confirmed = verify.portal_text == expected_word
                 shown, wanted = verify.portal_text, expected_word
             else:
-                confirmed = verify.current == float(value)
-                shown, wanted = verify.current, float(value)
+                confirmed = verify.current == expected_number
+                shown, wanted = verify.current, expected_number
             if not confirmed:
                 raise ParameterWriteError(
                     f"Write not confirmed: form still shows {shown}, "
@@ -1496,33 +1773,36 @@ class WemPortalExpertClient:
 
     @staticmethod
     def _requested_option(state, value):
-        """The token to post, and the word to verify against - or None.
+        """The token to post, plus what to verify against: word or number.
 
-        A word addresses an option that sits BESIDE the scale ("Aus"), and
-        naming it is the only way to reach one: it has no place on a number,
-        so neither the entity nor Home Assistant's range check - which runs
-        before this integration is asked - can carry it.
+        Exactly one of the two is not None. A word addresses an option that
+        sits BESIDE the scale ("Aus"), and naming it is the only way to
+        reach one: it has no place on a number, so neither the entity nor
+        Home Assistant's range check - which runs before this integration is
+        asked - can carry it. Matched case-insensitively: the word comes
+        from a human typing what the portal displays, and "aus" for "Aus"
+        failing would be a puzzle with no clue in it.
 
-        Matched case-insensitively. The word comes from a human typing what
-        the portal displays, and "aus" for "Aus" failing would be a puzzle
-        with no clue in it.
+        Numbers go through the shared portal parser, so "0,55" typed the way
+        the German UI writes it means the same option as "0.55" - the dialog
+        itself accepts both spellings, and the service used to refuse one.
         """
         word = str(value).strip()
         for offered, attribute in state.special_values.items():
             if offered.casefold() == word.casefold():
-                return attribute, offered
+                return attribute, offered, None
 
-        try:
-            value_f = float(value)
-        except (TypeError, ValueError) as exc:
+        value_number = parse_portal_number(value)
+        if value_number is None:
             offers = ", ".join(state.special_values) or "no non-numeric option"
             raise ParameterWriteError(
                 f"{word!r} is not a value this parameter takes. It accepts "
                 f"{state.min_value}..{state.max_value} and {offers}.",
                 state=state,
-            ) from exc
+            )
 
-        if value_f not in state.options:
+        offered = _option_meant_by(state.options, value_number)
+        if offered is None:
             # Carries the state: a caller whose idea of the range is out
             # of date is precisely the caller that lands here.
             raise ParameterWriteError(
@@ -1531,7 +1811,10 @@ class WemPortalExpertClient:
                 f"({len(state.options)} discrete options).",
                 state=state,
             )
-        return state.post_value_for(value_f), None
+        # The OPTION from here on, not what was asked with: the post token is
+        # looked up by it, and so is the value the verify below compares the
+        # form against - both against the portal's own spelling.
+        return state.post_value_for(offered), None, offered
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -1685,13 +1968,6 @@ EXPERT_UNKNOWN_BOUND = 100000.0
 # that would fetch the real step.
 EXPERT_UNKNOWN_STEP = 0.01
 
-# What every slot claimed before the placeholders existed. Kept only to
-# recognise such a record on the first start after an upgrade - see
-# WemPortalExpertNumber._is_the_old_assumption.
-LEGACY_ASSUMED_MIN = 0
-LEGACY_ASSUMED_MAX = 100
-LEGACY_ASSUMED_STEP = 1
-
 try:
     from homeassistant.components.number import NumberMode, RestoreNumber
     from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -1769,8 +2045,18 @@ try:
             self._removed = False
 
         async def async_added_to_hass(self):
-            """Restore what the last run knew about this parameter."""
+            """Restore what the last run knew, and join the poll.
+
+            Joining HERE rather than at platform setup is what makes the
+            user's decision stick. An entity disabled in the registry is
+            built and handed over like any other and simply never added,
+            so a list collected at setup went on asking the portal for its
+            id every cycle - a login and a form read against an account
+            the portal blocks after 10,000 requests - and could raise a
+            repair issue about a parameter nobody is looking at.
+            """
             await super().async_added_to_hass()
+            self._config_entry.runtime_data.expert.attach_entity(self)
             last = await self.async_get_last_number_data()
             if last is not None:
                 self._restore_from(last)
@@ -1796,52 +2082,24 @@ try:
                 self._factory_default = state.factory_default
 
         def _restore_from(self, last):
-            """Take back the stored range as well as the stored value.
+            """Take back the stored VALUE and nothing else.
 
-            Only the value came back before, so after a restart a parameter
-            whose real range is 200-800 sat at its stored value inside the
-            assumed 0-100 and could not be set at all until the next
-            successful read - which, with the auto-poll off, may be never.
+            A stored range once came back too, and that is a trap in slow
+            motion: Home Assistant validates a write against the published
+            bounds before this integration is asked, and a heating
+            parameter's limits can depend on other settings - so a range
+            restored from last month can exclude exactly the value whose
+            write would have fetched the current one. The in-session refusal
+            correction cannot reach that case; it needs the write to arrive,
+            and where old and new range do not overlap, it never does.
 
-            Except when what is stored is the assumption itself. RestoreNumber
-            persists min, max and step with or without a value, so a slot that
-            existed before the placeholders did has 0/100/1 on disk although
-            it was never read - and taking that back on the first start after
-            an upgrade would reinstate the lock for exactly the installations
-            the placeholders are for.
+            The bounds therefore stay the permissive placeholders until the
+            portal itself has answered - a read, a write or the auto-poll.
+            The price, documented in the README and CHANGELOG: after a
+            restart the parameter is a typing box, not a slider, until then.
             """
             if last.native_value is not None:
                 self._attr_native_value = last.native_value
-            if self._is_the_old_assumption(last):
-                _LOGGER.debug(
-                    "%s: ignoring a stored range that predates the portal "
-                    "ever being asked; keeping the placeholders.",
-                    self._attr_name,
-                )
-                return
-            if last.native_min_value is not None:
-                self._attr_native_min_value = last.native_min_value
-            if last.native_max_value is not None:
-                self._attr_native_max_value = last.native_max_value
-            if last.native_step is not None:
-                self._attr_native_step = last.native_step
-
-        @staticmethod
-        def _is_the_old_assumption(last) -> bool:
-            """Whether a stored range is the pre-fix guess rather than a fact.
-
-            Both halves are needed. 0 to 100 in steps of 1 is a plausible real
-            range - a percentage - so the numbers alone do not say. What says
-            it is that there is no value with them: a real range can only have
-            been learnt by reading or writing the parameter, and either would
-            have stored the value too.
-            """
-            return (
-                last.native_value is None
-                and last.native_min_value == LEGACY_ASSUMED_MIN
-                and last.native_max_value == LEGACY_ASSUMED_MAX
-                and last.native_step == LEGACY_ASSUMED_STEP
-            )
 
         @property
         def extra_state_attributes(self):
@@ -1902,6 +2160,8 @@ try:
             """
             if state is None:
                 return
+            if not self._is_in_home_assistant():
+                return
             if self._write_in_progress:
                 _LOGGER.debug(
                     "Discarding poll result for %s: a write is in progress.",
@@ -1910,6 +2170,38 @@ try:
                 return
             self._apply_state(state)
             self.async_write_ha_state()
+
+        @callback
+        def forget_value(self):
+            """Stop showing a value no read can confirm any more.
+
+            This entity restores its last value after a restart and is no
+            coordinator row, so no ageing pass elsewhere reaches it: once
+            the auto-poll stops answering, the dashboard keeps the last
+            number that worked with nothing behind it. Only the value goes,
+            the rule the api and scrape paths follow.
+            """
+            if not self._is_in_home_assistant():
+                return
+            self._attr_native_value = None
+            self.async_write_ha_state()
+
+        def _is_in_home_assistant(self) -> bool:
+            """Whether Home Assistant actually took this entity.
+
+            An entity disabled in the registry is CONSTRUCTED like every
+            other one and handed to the auto-poll controller, and Home
+            Assistant then does not add it - so it has no `hass`, and
+            publishing state for it raises. The poll applies its result to
+            every configured parameter, so that happened once per cycle,
+            forever, for a parameter the user had deliberately switched off.
+
+            On the write path the damage is worse than noise: the value has
+            reached the heating system by the time the state is published, so
+            the raise reads like a failed write and invites a retry that
+            writes twice.
+            """
+            return self.hass is not None
 
         async def async_set_native_value(self, value: float) -> None:
             """Write the value and wait for the portal to confirm it.
@@ -1956,6 +2248,12 @@ try:
             cannot abort the request anyway.
             """
             self._removed = True
+            # And leave the poll, with this id's bookkeeping. Disabling an
+            # entity in the registry lands here too, and it is a decision
+            # about the parameter: a failure streak and a repair issue left
+            # standing would outlive the thing they are about, and
+            # re-enabling would start from a count nobody can see.
+            self._config_entry.runtime_data.expert.detach_entity(self)
             await super().async_will_remove_from_hass()
 
         def _raise_if_removed(self) -> None:
@@ -2058,7 +2356,8 @@ try:
 
             # Verified value from the portal, plus the real device range.
             self._apply_state(state)
-            self.async_write_ha_state()
+            if self._is_in_home_assistant():
+                self.async_write_ha_state()
             _LOGGER.info(
                 "Expert parameter %s set and verified: %s",
                 self._attr_name,

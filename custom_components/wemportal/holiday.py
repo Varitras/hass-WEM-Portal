@@ -22,8 +22,10 @@ and which the end - the ids are the portal's own, and reading intent into
 them would be a guess dressed up as a feature.
 """
 
+import logging
+
 from functools import partial
-from typing import NamedTuple
+from typing import Final, NamedTuple
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -32,9 +34,15 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.service import async_register_admin_service
 
-from .const import _LOGGER, DOMAIN, SERVICE_SET_HOLIDAY
+from .const import (
+    DOMAIN,
+)
 from .date import date_to_epoch
-from .models import raise_if_not_writable
+from .models import Reading, is_still_serving, raise_if_not_writable
+
+_LOGGER = logging.getLogger(__name__)
+
+SERVICE_SET_HOLIDAY: Final = "set_holiday"
 
 
 class DateTarget(NamedTuple):
@@ -45,12 +53,12 @@ class DateTarget(NamedTuple):
     data: object
     device_id: str
     data_key: str
-    row: dict
+    row: Reading
 
     @property
     def address(self):
         """The module this parameter belongs to, as the portal addresses it."""
-        return (self.row.get("ModuleIndex"), self.row.get("ModuleType"))
+        return (self.row.module_index, self.row.module_type)
 
 
 def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
@@ -87,10 +95,21 @@ def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
     data = raise_if_not_writable(entry, f"Setting the holiday of {entity_id}")
 
     row = (data.coordinator.data or {}).get(device_id, {}).get(data_key)
-    if not isinstance(row, dict):
+    if not isinstance(row, Reading):
         raise HomeAssistantError(
             f"{entity_id} has no reading yet, so there is nothing to write "
             "against. Wait for the next update."
+        )
+    # The entity_id above says how Home Assistant files the entity; the row
+    # says what the portal currently calls the parameter, and the daily
+    # re-discovery can change that underneath a loaded entity. The entities'
+    # own write path asks the same question - without it here, the service
+    # could still send an epoch to a parameter that has become a switch.
+    if row.platform != "date":
+        raise HomeAssistantError(
+            f"{entity_id} is filed as a date, but the portal now describes "
+            f"that parameter as a {row.platform}. Reload the integration to "
+            "pick up the change; nothing was written."
         )
     return DateTarget(entity_id, entry, data, device_id, data_key, row)
 
@@ -141,20 +160,39 @@ async def _write_holiday(hass: HomeAssistant, call) -> None:
         partial(
             begin.data.api.change_value,
             begin.device_id,
-            begin.row.get("ParameterID", begin.data_key),
+            begin.row.parameter_id or begin.data_key,
             module_index,
             module_type,
             begin_epoch,
-            together_with={end.row.get("ParameterID", end.data_key): end_epoch},
+            together_with={(end.row.parameter_id or end.data_key): end_epoch},
         )
     )
 
-    # Only now, and for BOTH rows: change_value raises when the portal
-    # refuses, so nothing below runs on a write that did not happen. Leaving
-    # the rows behind would make the next write send the old dates back as
-    # companions - the defect this service exists alongside.
-    begin.row["value"] = begin_epoch
-    end.row["value"] = end_epoch
+    # Ask what was kept rather than publishing what was asked for. Returning
+    # without raising means the portal ACCEPTED the request: measured on this
+    # endpoint, a range ending before it starts comes back as Status 0 and is
+    # discarded. That one pair is refused above, but the check covers only
+    # the rejection somebody measured. One read for the whole device, at a
+    # service used a few times a year.
+    failure = await hass.async_add_executor_job(
+        begin.data.api.reread_device_values, begin.device_id
+    )
+    if failure is not None:
+        # The write itself went through, so this is not a failed service
+        # call - what is unknown is whether it was kept, and an unknown
+        # answer is not the written day. Both rows, because both were sent:
+        # leaving either behind would make the next write send a date the
+        # portal may never have taken back as a companion.
+        _LOGGER.warning(
+            "Wrote the holiday from %s to %s but could not read it back (%s). "
+            "Both dates are shown as unknown until the next update says what "
+            "the portal actually stored.",
+            begin_day,
+            end_day,
+            failure,
+        )
+        begin.row.value = None
+        end.row.value = None
     begin.data.coordinator.async_update_listeners()
 
     _LOGGER.info(
@@ -200,8 +238,7 @@ def async_release_holiday_service(hass: HomeAssistant, config_entry) -> None:
     if not hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY):
         return
     still_loaded = any(
-        other.entry_id != config_entry.entry_id
-        and getattr(other, "runtime_data", None) is not None
+        other.entry_id != config_entry.entry_id and is_still_serving(other)
         for other in hass.config_entries.async_entries(DOMAIN)
     )
     if not still_loaded:

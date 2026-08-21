@@ -36,6 +36,40 @@ jobs:
       - name: Check formatting
         run: ruff format --check .
 
+  mypy:
+    # The guard on the typed data model (rebuild phase 3): types without a
+    # checker rot. Scope lives in mypy.ini and grows with the rebuild -
+    # widening it is part of each phase's definition of done.
+    name: mypy
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v7"
+      - uses: "actions/setup-python@v7"
+        with:
+          # The same version the "current HA" test job runs on, and that is
+          # the point: the test requirements resolve to whatever Home
+          # Assistant release fits the interpreter, so checking types on an
+          # older one meant mypy vouching for a type surface nothing else
+          # runs against. Verified green on this pairing before the change.
+          python-version: "3.14"
+      # Home Assistant has to be importable for the checked modules' own
+      # imports - and it has to be the SAME release the "current HA" test job
+      # runs, or this job vouches for a type surface nothing else touches.
+      # requirements_test.txt is unpinned, so it can resolve to a Home
+      # Assistant beta while the test job pins the last final one; both go
+      # through the same resolver now. Mypy is pinned for the reason Ruff is:
+      # an unpinned checker fails builds nobody changed.
+      - name: Resolve the plugin version to install
+        run: |
+          python .github/scripts/resolve_phcc.py latest-stable-ha \
+            | tee -a "$GITHUB_ENV"
+      - name: Install dependencies
+        run: |
+          pip install "$PHCC_SPEC" -r requirements_runtime.txt
+          pip install "mypy==2.3.0"
+      - name: Type check
+        run: mypy
+
   pytest:
     # Two ends of the supported range, because they catch opposite mistakes.
     #
@@ -58,6 +92,9 @@ jobs:
         include:
           - name: "minimum HA 2024.12"
             python-version: "3.12"
+            # This job is the one with a version it MUST be running; the
+            # current job has no fixed expectation to check against.
+            check-declared-minimum: true
             # Pinned to the plugin release that ships exactly the Home
             # Assistant version hacs.json declares as the minimum. Raise both
             # together, never one alone.
@@ -79,9 +116,16 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install "$PHCC_SPEC" -r requirements_runtime.txt
+          # pytest-timeout by name: these jobs deliberately do not install
+          # requirements_test.txt, so nothing else here would bring it - and
+          # the timeout that stops a hung run is exactly what must not depend
+          # on some other package still happening to pull it in.
+          pip install "$PHCC_SPEC" pytest-timeout -r requirements_runtime.txt
       - name: Show the Home Assistant version under test
         run: python -c "from homeassistant.const import __version__; print(__version__)"
+      - name: The minimum job must run the version hacs.json declares
+        if: matrix.check-declared-minimum
+        run: python .github/scripts/check_min_ha.py
       # -m "" cancels the `-m "not e2e"` default from pytest.ini, so the slow
       # end-to-end tests against a real Home Assistant run here. Without it
       # the marker would become a silent coverage gap.

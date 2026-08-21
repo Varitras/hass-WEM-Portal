@@ -14,6 +14,8 @@ see the structural guard in tests/test_security.py.
 
 from __future__ import annotations
 
+import logging
+
 import random
 import threading
 from typing import Any
@@ -21,15 +23,28 @@ from typing import Any
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.issue_registry import (
+    IssueSeverity,
+    async_create_issue,
+    async_delete_issue,
+)
 
 from .const import (
-    _LOGGER,
     CONF_EXPERT_AUTO_POLL,
     CONF_EXPERT_POLL_INTERVAL,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
+    DOMAIN,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
 )
 from .exceptions import ExpertOperationAborted
+from .expert_options import canonical_entityvalue
+
+_LOGGER = logging.getLogger(__name__)
+
+# The issue_id stem of the per-parameter read-failure repair issue; the full
+# id is "{entry_id}_{stem}_{digest}", entry-prefixed so async_remove_entry
+# can clean it up by prefix (see tests/test_repairs.py).
+EXPERT_POLL_FAIL_ISSUE = "expert_poll_fail"
 
 # Fraction of extra, random delay added on top of the configured interval each
 # cycle (0..20%). Jitter is added ONLY upwards, so the effective interval is
@@ -38,8 +53,18 @@ from .exceptions import ExpertOperationAborted
 # configured.
 JITTER_FRACTION = 0.20
 
-# Consecutive misses before the user is told to check the configured id.
+# Consecutive misses before the user is told to check the configured id -
+# and before the value that id last read stops being shown. One threshold
+# for both because they answer the same question: after this many failures
+# in a row, nothing about that parameter is worth asserting any more.
 FAILURES_BEFORE_NOTIFYING = 3
+
+# Consecutive cycles in which the read produced nothing at all before the
+# values stop being shown. Two rather than three: the poll runs hourly, so
+# three would be three hours of a number nobody confirmed - and unlike a
+# single id failing, a dead batch says nothing about which parameter is at
+# fault, so there is no per-id notification covering it either.
+BATCH_FAILURES_BEFORE_VALUES_ARE_STALE = 2
 
 
 def poll_interval_minutes(entry) -> int:
@@ -54,11 +79,24 @@ def poll_interval_minutes(entry) -> int:
         return DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
 
 
-def read_expert_values(entry, api, entityvalues: list, abort_check=None) -> dict:
+class ExpertBusy(Exception):
+    """Another expert operation of this account holds the portal session."""
+
+
+def read_expert_values(
+    entry, api, entityvalues: list, abort_check=None, lock=None
+) -> dict:
     """One shared portal session for every configured id.
 
     Runs in an executor thread - the expert client is blocking - and imports
     it there, which is what keeps curl_cffi off the setup path.
+
+    Takes and releases the account lock ITSELF rather than being called
+    with it held. Acquired on the event loop and released in the awaiting
+    coroutine's `finally`, a cancellation - a reload, an unload, a timeout -
+    freed the lock while this thread was still driving the portal, and the
+    next operation of the same account opened a second session beside it.
+    Owned here, the lock is held for exactly as long as the work is.
     """
     from .expert_options import expert_client_options
     from .expert_writer import WemPortalExpertClient
@@ -72,22 +110,28 @@ def read_expert_values(entry, api, entityvalues: list, abort_check=None) -> dict
         abort_check=abort_check,
         **expert_client_options(entry.options),
     )
-    return client.read_many(entityvalues)
+    if lock is not None and not lock.acquire(blocking=False):
+        raise ExpertBusy("another expert operation of this account is in progress")
+    try:
+        return client.read_many(entityvalues)
+    finally:
+        if lock is not None:
+            lock.release()
 
 
 class ExpertController:
     """The expert path of one config entry: lock, entities, timer, tally."""
 
     def __init__(self) -> None:
-        # Shared per-account lock. A poll, an entity write and the domain
-        # service all use the same portal session for this account, so they
-        # serialise against each other here.
-        self.lock: threading.Lock = threading.Lock()
         self.entities: list[Any] = []
         # Per-id consecutive misses. Only counted when a batch SUCCEEDED and
         # one id was missing from the answer - see apply_read.
         self.fail_counts: dict[str, int] = {}
         self.fail_notified: set[str] = set()
+        # Consecutive cycles whose read produced nothing at all. Separate
+        # from the per-id tally on purpose: a dead batch is not evidence
+        # about any single id, but it is evidence about every VALUE.
+        self._batch_failures = 0
 
         self._data: Any = None
         self._hass: HomeAssistant | None = None
@@ -126,11 +170,61 @@ class ExpertController:
         if self.entities:
             self.start()
 
-    def attach_entities(self, entities: list) -> None:
-        """Hand the expert entities over, and start if the timer is armed."""
-        self.entities = entities
+    @property
+    def lock(self) -> threading.Lock | None:
+        """The one expert lock of this ACCOUNT.
+
+        A poll, an entity write and the domain service all drive the same
+        Fachmann session, so they have to serialise - and this controller is
+        per ENTRY. A legacy duplicate entry of one account is still allowed
+        to load, and it built a second controller with a second lock, which
+        serialises nothing. It lives with the rest of the per-account memory
+        now (see models.AccountState).
+
+        None before `bind`, which is the same answer the callers already
+        handle: nothing to serialise against yet either.
+        """
+        from .models import account_state
+
+        if self._data is None:
+            return None
+        return account_state(self._data.api.username).expert_lock
+
+    @property
+    def live_entities(self) -> list:
+        """The entities Home Assistant currently has added.
+
+        Every entry here got in through async_added_to_hass and leaves
+        through async_will_remove_from_hass, so this is the list Home
+        Assistant itself maintains rather than a guess about one. The
+        guess it replaces was `entity.hass is not None`, which is only
+        cleared when ADDING is aborted - an entity the user disables later
+        keeps its reference, so it went on being polled.
+        """
+        return list(self.entities)
+
+    def attach_entity(self, entity) -> None:
+        """One entity joins the poll, from async_added_to_hass."""
+        if entity not in self.entities:
+            self.entities.append(entity)
         if self._armed:
             self.start()
+
+    def detach_entity(self, entity) -> None:
+        """One entity leaves, and its bookkeeping goes with it.
+
+        The streak, the notification marker and the repair issue are
+        statements about a parameter somebody is watching. Left behind,
+        they outlive the entity and a re-enable starts from a count
+        nobody can see.
+        """
+        if entity in self.entities:
+            self.entities.remove(entity)
+        entityvalue = entity.entityvalue
+        self.fail_counts.pop(entityvalue, None)
+        if entityvalue in self.fail_notified:
+            self.fail_notified.discard(entityvalue)
+            self._clear_read_failure_issue(entityvalue)
 
     def start(self) -> None:
         """Begin the timer chain. Idempotent - one chain per entry."""
@@ -208,7 +302,7 @@ class ExpertController:
     async def poll(self, _now=None) -> None:
         """One cycle: read every configured id in one session, apply, re-arm."""
         try:
-            entities = self.entities
+            entities = self.live_entities
             entityvalues = [entity.entityvalue for entity in entities]
             if not entityvalues:
                 return
@@ -227,13 +321,6 @@ class ExpertController:
             # survives the unload that drops runtime_data while this read is
             # still in flight.
             current_api = self._data.api
-            lock = self.lock
-            if lock is not None and not lock.acquire(blocking=False):
-                _LOGGER.debug(
-                    "Expert auto-poll: another expert operation in progress, "
-                    "skipping this cycle."
-                )
-                return
 
             try:
                 results = await self._hass.async_add_executor_job(
@@ -242,7 +329,15 @@ class ExpertController:
                     current_api,
                     entityvalues,
                     self._raise_if_stopped,
+                    self.lock,
                 )
+            except ExpertBusy as exc:
+                # The worker refused: another operation of this account is
+                # driving the portal. Skipping is what this cycle did before,
+                # the difference being who decides - the thread that will do
+                # the work, not the coroutine that may be cancelled first.
+                _LOGGER.debug("Expert auto-poll: %s, skipping this cycle.", exc)
+                return
             except ExpertOperationAborted as exc:
                 # Not a failure: the configuration this read belongs to is
                 # gone. Feeding it through the counters below would blame
@@ -254,17 +349,58 @@ class ExpertController:
                 # the per-id counters below mean "the portal answered, but
                 # not for this id". Feeding an outage through them would
                 # blame every configured id for a problem that is not theirs.
+                # The read itself never got anywhere - a web login that
+                # failed, a session that broke. Counted like a dead batch:
+                # the values are just as unconfirmed as when the portal
+                # answers and every id comes back empty.
                 _LOGGER.warning("Expert auto-poll read failed: %s", exc)
+                self._register_batch_failure()
                 return
-            finally:
-                if lock is not None:
-                    lock.release()
 
             self.apply_read(results)
         finally:
             # Always reschedule the next run (with fresh jitter), even if this
             # cycle failed - a transient error must not stop future polls.
             self._schedule_next()
+
+    def _note_batch_outcome(self, results: dict, whole_batch_failed: bool) -> None:
+        """What this cycle says about the values as a whole.
+
+        A different question from the per-id tally beside it: one outage is
+        not evidence about any single parameter, but it is evidence about
+        every value. Anything that answered clears the streak.
+        """
+        if any(state is not None for state in results.values()):
+            self._batch_failures = 0
+            return
+        if whole_batch_failed:
+            self._register_batch_failure()
+
+    def _register_batch_failure(self) -> None:
+        """One more cycle that produced no answer at all.
+
+        The per-id tally deliberately skips these - one outage is not
+        evidence about any single parameter - which left nothing happening
+        for the values themselves. They are the last ones a read confirmed,
+        and after this many cycles that is no longer a claim worth making.
+        """
+        self._batch_failures += 1
+        # Exactly ON the threshold, not from then on. The count keeps rising
+        # while the outage lasts and the condition stays true, so `>=` said
+        # the same thing again every hour and rewrote the state of every
+        # configured entity for a value that was already gone. Safe here in
+        # a way it was not for the scraped rows: nothing refills an expert
+        # value except a read that works, and that resets the count.
+        if self._batch_failures != BATCH_FAILURES_BEFORE_VALUES_ARE_STALE:
+            return
+        _LOGGER.warning(
+            "Expert auto-poll: %d cycles in a row produced no answer. The "
+            "parameter values are no longer current and are shown as unknown "
+            "rather than as the values they had then.",
+            self._batch_failures,
+        )
+        for entity in self.live_entities:
+            entity.forget_value()
 
     def apply_read(self, results: dict) -> None:
         """Hand a batch to the entities and keep the per-id failure tally.
@@ -300,6 +436,7 @@ class ExpertController:
             entityvalue for entityvalue, state in results.items() if state is None
         ]
         whole_batch_failed = len(results) >= 2 and len(failed) == len(results)
+        self._note_batch_outcome(results, whole_batch_failed)
         if whole_batch_failed:
             _LOGGER.warning(
                 "Expert auto-poll: all %d configured parameter(s) failed to "
@@ -309,7 +446,7 @@ class ExpertController:
                 len(failed),
             )
 
-        for entity in self.entities:
+        for entity in self.live_entities:
             entityvalue = entity.entityvalue
             state = results.get(entityvalue)
             unreadable_id = entityvalue not in results
@@ -324,13 +461,45 @@ class ExpertController:
                     and entityvalue not in self.fail_notified
                 ):
                     self.fail_notified.add(entityvalue)
-                    self._notify_read_failure(
+                    self._report_read_failure(
                         entity, self.fail_counts[entityvalue], unreadable_id
                     )
+                    # The value goes with the report, and for the same
+                    # reason. Ageing used to hang off the batch counter
+                    # alone, which needs at least two configured ids to
+                    # apply and is cleared by any sibling that answers - so
+                    # the two installations where a value most needed
+                    # emptying were the two it never reached: a single
+                    # configured parameter, and one broken id beside a
+                    # working one. Guarded by fail_notified, so this happens
+                    # once per streak rather than every cycle.
+                    entity.forget_value()
             elif state is not None:
-                self.fail_counts.pop(entityvalue, None)
-                self.fail_notified.discard(entityvalue)
+                self._note_the_id_answered(entityvalue)
             entity.apply_read_state(state)
+
+    def _note_the_id_answered(self, entityvalue: str) -> None:
+        """Everything a confirmed answer for one id undoes.
+
+        Shared by the poll and by a verified write, because a write the
+        portal read back is the strongest answer there is - stronger than a
+        poll, which only asks. The write route used to update the entity and
+        nothing else, so the repair issue stayed up for a parameter that had
+        just demonstrably worked, and the id stayed in `fail_notified` - which
+        is what decides whether the NEXT run of failures may empty the value.
+        A parameter written once would then have kept its number for good.
+
+        The batch tally goes too: it counts cycles that produced no answer at
+        all, and this is one.
+        """
+        # Read BEFORE the discard below forgets it: only a streak that was
+        # actually reported has an issue to take down.
+        was_reported = entityvalue in self.fail_notified
+        self.fail_counts.pop(entityvalue, None)
+        self.fail_notified.discard(entityvalue)
+        self._batch_failures = 0
+        if was_reported:
+            self._clear_read_failure_issue(entityvalue)
 
     def apply_verified_write(self, entityvalue: str, state) -> None:
         """Show what a write read back on the entity holding that id.
@@ -345,44 +514,66 @@ class ExpertController:
         MISSING from the batch as a failed read, so handing it this single
         result would count a miss against every other configured parameter
         and, after three writes, notify about ids that were never asked for.
+
+        Compared canonically, like the allowlist that let this id through:
+        a caller who spells it in another case addresses the same parameter,
+        so the raw comparison found no entity and left it on the old value
+        after a write the portal had already confirmed.
         """
+        wanted = canonical_entityvalue(entityvalue)
         for entity in self.entities:
-            if entity.entityvalue == entityvalue:
+            if canonical_entityvalue(entity.entityvalue) == wanted:
+                # Under the entity's own spelling, because that is the one
+                # the tally and the issue id were built from.
+                self._note_the_id_answered(entity.entityvalue)
                 entity.apply_read_state(state)
 
-    def _notify_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
-        """Tell the user about a parameter that keeps not being read.
+    def _report_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
+        """Raise a repair issue for a parameter that keeps not being read.
 
-        The wording says only what is known. An id that never left the house
-        can only be the configured value; an id that was requested and failed
-        can be that OR the portal, and asserting the first sent people to
-        check a setting that was correct.
+        A repairs entry rather than a notification: it is translatable, it
+        lands where Home Assistant collects actionable problems, and the
+        recovery path can take it back down again (see apply_read).
+
+        Two separate translations, because they say only what is known. An
+        id that never left the house can only be the configured value; an id
+        that was requested and failed can be that OR the portal, and
+        asserting the first sent people to check a setting that was correct.
         """
         from .expert_writer import entityvalue_digest
 
-        entityvalue = entity.entityvalue
+        digest = entityvalue_digest(entity.entityvalue)
         if unreadable_id:
-            reason = (
-                f"The configured ID for '{entity.name}' is not a readable "
-                "parameter ID, so it was never requested. Fix or clear it in "
-                "the integration options."
+            async_create_issue(
+                self._hass,
+                DOMAIN,
+                f"{self._entry.entry_id}_{EXPERT_POLL_FAIL_ISSUE}_{digest}",
+                is_fixable=False,
+                severity=IssueSeverity.WARNING,
+                translation_key="expert_poll_unreadable_id",
+                translation_placeholders={"name": entity.name},
             )
-        else:
-            reason = (
-                f"Reading '{entity.name}' has failed {failures} times in a "
-                "row while other parameters were read successfully. That is "
-                "usually a wrong ID in the integration options, but the "
-                "portal can refuse a single parameter too."
-            )
-        self._hass.async_create_task(
-            self._hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "WEM Portal expert auto-poll",
-                    "message": reason,
-                    "notification_id": f"wemportal_poll_fail_{entityvalue_digest(entityvalue)}",
-                },
-                blocking=False,
-            )
+            return
+        async_create_issue(
+            self._hass,
+            DOMAIN,
+            f"{self._entry.entry_id}_{EXPERT_POLL_FAIL_ISSUE}_{digest}",
+            is_fixable=False,
+            severity=IssueSeverity.WARNING,
+            translation_key="expert_poll_read_failures",
+            translation_placeholders={
+                "name": entity.name,
+                "failures": str(failures),
+            },
+        )
+
+    def _clear_read_failure_issue(self, entityvalue: str) -> None:
+        """Take the repair issue down once its parameter reads again."""
+        from .expert_writer import entityvalue_digest
+
+        digest = entityvalue_digest(entityvalue)
+        async_delete_issue(
+            self._hass,
+            DOMAIN,
+            f"{self._entry.entry_id}_{EXPERT_POLL_FAIL_ISSUE}_{digest}",
         )

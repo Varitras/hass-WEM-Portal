@@ -1,5 +1,8 @@
 """Utility functions for WEM Portal."""
 
+from typing import Final
+import logging
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
     MAX_LENGTH_STATE_STATE,
@@ -12,16 +15,26 @@ from homeassistant.const import (
     UnitOfVolumeFlowRate,
 )
 
+from .models import ModuleRef, Reading
 from .const import (
-    _LOGGER,
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
-    DEFAULT_DEVICE_MODEL,
-    DEVICE_TYPE_NAMES,
     DOMAIN,
-    MISSING_DATA_STRINGS,
-    WEB_MAINTENANCE_MARKER,
 )
+
+_LOGGER = logging.getLogger(__name__)
+
+DEFAULT_DEVICE_MODEL: Final = "WEM Portal"
+
+# DeviceType as reported by Device/Read. Only used for the device model
+# shown in Home Assistant; an unknown value falls back to the generic name.
+DEVICE_TYPE_NAMES: Final = {
+    1: "Combi boiler",
+    2: "Heat pump",
+}
+
+# Scraper Constants
+MISSING_DATA_STRINGS: Final = ["--", "label ist null", "label ist null "]
 
 
 def clamped_scan_interval(options, key, default, minimum):
@@ -86,29 +99,6 @@ def short_device_id(device_id) -> str:
     return f"…{text[-2:]}" if len(text) > 2 else text
 
 
-def close_api_sessions(api) -> None:
-    """Close a WemPortalApi's HTTP sessions, under its own lock.
-
-    Called after an entry is unloaded or reloaded, after a failed setup, and
-    after config-flow validation, so neither the API `requests` session nor
-    the persistent scraper's curl_cffi session lingers with an open
-    connection.
-
-    A plain call, deliberately. This used to reach in with
-    `getattr(api, "session", None)` and `getattr(api, "_reset_scraper", None)`,
-    which reads as defensive and is the opposite: the defaults meant that
-    renaming or moving either one turned the whole function into a silent
-    no-op, closing nothing, raising nothing, and failing no test - while the
-    docstring went on promising the sessions were closed. Naming the method
-    makes that failure an AttributeError instead of a leak.
-
-    The api owns the teardown because the api owns the lock: an operation can
-    be inside make_api_call right now, and closing its session underneath it
-    is the thing this must not do.
-    """
-    api.close_transport()
-
-
 def build_device_info(entry_id, device_id, sw_version=None, model=None):
     """Build the DeviceInfo dict for a WEM Portal sub-device.
 
@@ -129,6 +119,84 @@ def build_device_info(entry_id, device_id, sw_version=None, model=None):
     if sw_version:
         info["sw_version"] = sw_version
     return info
+
+
+def schedule_fetch_still_feeds(row) -> bool:
+    """Whether a weekly programme is still being refreshed by its own fetch.
+
+    Both ageing passes exempt programmes, because the hourly schedule fetch
+    owns their staleness - and that fetch drops its own detail the moment a
+    due refresh fails. So the exemption is a CONDITION, not a category: a
+    programme without detail is one nothing refreshes any more.
+
+    Shared because the two passes have to answer this identically, and the
+    first repair reached only one of them: the other went on exempting a
+    programme neither source fed, which kept a pre-outage plan on display
+    without limit. See models.Reading.circuit_times_day.
+
+    Three things have to hold, and each of them was missing once. The row has
+    to BE one; the week has to carry switching times, because a list of bare
+    days renders to nothing and is therefore no evidence that anything is
+    feeding it; and the value has to still be there, because the day names
+    are read out of it - the device-level ageing empties it and the schedule
+    read deliberately does not put it back, which left a row nothing could
+    render and an exemption insisting otherwise.
+    """
+    return (
+        isinstance(row, Reading)
+        and row.value is not None
+        and week_carries_a_programme(row.circuit_times_day)
+    )
+
+
+def week_carries_a_programme(days) -> bool:
+    """Whether a week the device reported holds an actual programme.
+
+    Asked of the DATA, not of what the sensor makes of it: a day without
+    switching times contributes nothing to the rendered week, so a list of
+    those is an answer with no programme in it. Both the read that accepts
+    such an answer and the ageing that exempts the row have to agree on that,
+    and they only do if they ask the same question.
+    """
+    if not isinstance(days, list):
+        return False
+    return any(isinstance(day, dict) and day.get("CircuitTimes") for day in days)
+
+
+def portal_list(payload, key):
+    """The list the portal sent under `key`, empty if it sent none.
+
+    `payload.get(key, [])` covers an ABSENT key only. The portal also
+    answers with an explicit null - a module with nothing to report comes
+    back as `"Values": null` - and that returns None, which the reads then
+    iterate. One quiet module cost the whole device its readings that way,
+    every cycle, for as long as the portal kept answering like that.
+
+    Shared rather than an `or []` at each site: the sites are in three
+    modules, and the next reader of a portal list is the one who would not
+    know to add it.
+    """
+    return payload.get(key) or []
+
+
+def parse_portal_number(value):
+    """The number a portal value carries, or None if it carries none.
+
+    The portal spells decimals with a dot in dialog labels and API strings
+    and with a comma in scraped cells and values people type ("21,5",
+    "0,55"). Every reader shares this one parser - a second one is how the
+    edit dialog came to accept "0,55" while the service refused it.
+
+    None rather than a raise: each caller has its own answer to "no number
+    here" (skip the option, keep the raw string, name the accepted words),
+    and an exception would turn every one of them into a try block.
+    """
+    if value is None:
+        return None
+    try:
+        return float(str(value).strip().replace(",", "."))
+    except ValueError:
+        return None
 
 
 def sanitize_value(value_str):
@@ -192,38 +260,38 @@ def sanitize_value(value_str):
     if value_lower in BOOLEAN_ON_STRINGS:
         return 1.0
 
-    try:
-        return float(value_str)
-    except ValueError:
-        return value_str
+    number = parse_portal_number(value_str)
+    if number is not None:
+        return number
+    return value_str
 
 
 def serialize_modules(modules: dict) -> dict:
     """Convert the in-memory `modules` dict into a JSON-serializable dict.
 
-    `modules` is keyed as `{device_id: {(module_index, module_type): {...}}}`.
-    Tuple keys are not valid JSON object keys, so they are flattened into
-    "index:type" strings here. Used to persist discovered module/parameter
-    metadata across Home Assistant restarts (see `deserialize_modules` for
-    the inverse operation).
+    `modules` is keyed as `{device_id: {ModuleRef: {...}}}`. Tuple keys are
+    not valid JSON object keys, so ModuleRef's own storage spelling is used.
+    Built via `ModuleRef(*key)` on purpose: during the typed-model migration
+    the same dict can briefly hold bare-tuple keys from older code paths and
+    tests, and both must serialize identically.
     """
     if not modules:
         return {}
     serialized = {}
     for device_id, device_modules in modules.items():
         serialized[device_id] = {
-            f"{module_index}:{module_type}": module_data
-            for (module_index, module_type), module_data in device_modules.items()
+            ModuleRef(*module_key).as_storage_key(): dict(module_data)
+            for module_key, module_data in device_modules.items()
         }
     return serialized
 
 
 def deserialize_modules(data: dict) -> dict:
-    """Convert a persisted modules dict back into the in-memory tuple-keyed format.
+    """Convert a persisted modules dict back into the in-memory keyed format.
 
-    Inverse of `serialize_modules`. Returns an empty dict (not None) if
-    `data` is empty/None, so callers can safely treat the result as
-    "no cached data" without extra None-checks.
+    Inverse of `serialize_modules`; the keys come back as ModuleRef. Returns
+    an empty dict (not None) if `data` is empty/None, so callers can safely
+    treat the result as "no cached data" without extra None-checks.
     """
     if not data:
         return {}
@@ -231,8 +299,7 @@ def deserialize_modules(data: dict) -> dict:
     for device_id, device_modules in data.items():
         modules[device_id] = {}
         for key, module_data in device_modules.items():
-            index_str, type_str = key.split(":", 1)
-            modules[device_id][(int(index_str), int(type_str))] = module_data
+            modules[device_id][ModuleRef.from_storage_key(key)] = module_data
     return modules
 
 
@@ -249,11 +316,17 @@ def fix_value_and_unit(value, unit):
         of its unit of measurement (e.g., a status text)
     """
 
-    # special case: volume flow rate
+    # special case: volume flow rate, the one unit that is read out of the
+    # value instead of the unit field. Through the shared parser like every
+    # other number here: a scraped cell spells its decimals with a comma, and
+    # a bare float() raised on it - out of a platform mid-update, so it cost
+    # more than the reading it could not parse. A value carrying the unit but
+    # no number (the portal's placeholder) falls through to the handling
+    # below, which keeps it as the text it is.
     if isinstance(value, str) and value.endswith("m3/h"):
-        return float(
-            value.replace("m3/h", "")
-        ), UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
+        flow_rate = parse_portal_number(value.replace("m3/h", ""))
+        if flow_rate is not None:
+            return flow_rate, UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
 
     # special case: no unit of measurement
     if unit is None:
@@ -285,6 +358,22 @@ def fix_value_and_unit(value, unit):
     return value, unit
 
 
+def _unit_lookup_key(unit) -> str:
+    """How a unit is spelled when a table is asked about it.
+
+    BOTH sides need this, and that is the whole point: the keys of those
+    tables are Home Assistant constants in their own casing ("kW", "°C",
+    "K"), so lowering only the value would miss every one of them. The
+    portal delivers "BAR" where the constant is "bar", and a stray space is
+    just as easy to get.
+
+    Deliberately not folding None into "": a reading with no unit and a
+    reading whose unit is the empty string are different questions, and the
+    second one has a state class.
+    """
+    return str(unit).strip().lower()
+
+
 def unit_to_device_class(unit):
     """Return the device_class of this unit of measurement, if any."""
 
@@ -314,12 +403,17 @@ def unit_to_device_class(unit):
         UnitOfTime.HOURS: SensorDeviceClass.DURATION,
         UnitOfFrequency.HERTZ: SensorDeviceClass.FREQUENCY,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorDeviceClass.VOLUME_FLOW_RATE,
+        # The portal's own spelling of the same unit. Case folding covers
+        # "BAR" for "bar" but not a different CHARACTER, so this was the one
+        # unit the portal writes that went unrecognised - and unit_to_icon
+        # then pinned its "mdi:flash" default on it, which beats the icon the
+        # device class would have given it. Listed rather than translated at
+        # the callers: both questions are asked in several places, and they
+        # have to agree wherever they are asked.
+        "m3/h": SensorDeviceClass.VOLUME_FLOW_RATE,
     }
-    # Both sides normalised - the KEYS above are Home Assistant constants
-    # in their own casing ("kW", "°C", "K"), so lowering only the lookup
-    # value would miss every one of them.
-    return {str(key).strip().lower(): value for key, value in mapping.items()}.get(
-        str(unit).strip().lower()
+    return {_unit_lookup_key(key): value for key, value in mapping.items()}.get(
+        _unit_lookup_key(unit)
     )
 
 
@@ -344,7 +438,14 @@ def unit_to_state_class(unit):
     """Return the state class of this unit of measurement, if any."""
 
     # see: <https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes>
-    return {
+    #
+    # Spelled the same way as the device class one function above. They
+    # answer two halves of one question, and where they disagreed the result
+    # was a sensor with a device class and no state class - which Home
+    # Assistant accepts and the Energy Dashboard refuses.
+    if unit is None:
+        return None
+    mapping = {
         "": SensorStateClass.MEASUREMENT,
         "%": SensorStateClass.MEASUREMENT,
         UnitOfTemperature.CELSIUS: SensorStateClass.MEASUREMENT,
@@ -356,74 +457,11 @@ def unit_to_state_class(unit):
         UnitOfTime.HOURS: SensorStateClass.TOTAL_INCREASING,
         UnitOfFrequency.HERTZ: SensorStateClass.MEASUREMENT,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorStateClass.MEASUREMENT,
-    }.get(unit)  # return None if no state class is available
-
-
-# Request labels for which an unexpected maintenance marker has already been
-# reported. Bounded by the number of request sites, so this can never grow
-# without limit - and one report per site is all the evidence needed.
-_MARKER_REPORTED: set[str] = set()
-
-
-def report_unexpected_maintenance_marker(notice, what) -> None:
-    """Note a maintenance marker on a response that is not treated as downtime.
-
-    The marker check is currently enabled only where a real maintenance page
-    was observed. Whether it is safe everywhere depends on one question that
-    cannot be answered by reading the code: can the marker also appear on a
-    HEALTHY portal page? Enabling it everywhere on the assumption that it
-    cannot would trade a known gap for an unknown false positive - one that
-    would report the portal as down while it is serving fine.
-
-    So the question is measured instead. This fires only if the marker turns
-    up somewhere it is not acted on, which under the current assumption should
-    be never. Silence over a few days is the evidence that the check can be
-    applied to every request; a hit names the exact request that would have
-    produced a false alarm.
-
-    Warning level, because the user has to see it without enabling debug
-    logging - and once per request label, so a marker that IS on every page
-    cannot flood the log.
-    """
-    if what in _MARKER_REPORTED:
-        _LOGGER.debug("Maintenance marker seen again on the %s.", what)
-        return
-    _MARKER_REPORTED.add(what)
-    _LOGGER.warning(
-        "The WEM Portal maintenance marker appeared in the response to the "
-        "%s, which is NOT treated as downtime. If the portal was working "
-        "normally, please report this - it decides whether the maintenance "
-        "check can be applied to every request. Notice text: %s",
-        what,
-        notice,
+    }
+    # None if this unit has no state class.
+    return {_unit_lookup_key(key): value for key, value in mapping.items()}.get(
+        _unit_lookup_key(unit)
     )
-
-
-def maintenance_notice(html_text):
-    """Return the portal's maintenance notice, or None if there is none.
-
-    Detected via the dedicated `offlinecontent` container (see
-    WEB_MAINTENANCE_MARKER), not via keywords: the announcement text is
-    localised and changes every time, the class does not. The text is only
-    read out afterwards, to put the actual window into the log.
-    """
-    if not html_text or WEB_MAINTENANCE_MARKER not in html_text:
-        return None
-    try:
-        from lxml import html as lxml_html
-
-        tree = lxml_html.fromstring(html_text)
-        for div in tree.xpath(
-            "//*[contains(concat(' ', normalize-space(@class), ' '),"
-            " ' " + WEB_MAINTENANCE_MARKER + " ')]"
-        ):
-            text = " ".join(div.text_content().split())
-            if text:
-                return text
-    except Exception as exc:  # noqa: BLE001
-        _LOGGER.debug("Could not read the maintenance notice: %s", exc)
-    # Marker present but unreadable - still a maintenance page.
-    return "The portal reports scheduled maintenance."
 
 
 def device_model(api, device_id):
@@ -437,7 +475,7 @@ def device_model(api, device_id):
 
 
 def latest_statistics_entry(values):
-    """Pick the newest statistics entry by its Date, not by list position.
+    """Pick the newest statistics entry that carries a reading.
 
     The API returns one entry per day and the newest happens to be last, so
     the code used values[-1] and never looked at Date. That is an assumption
@@ -445,6 +483,14 @@ def latest_statistics_entry(values):
     placeholder, would silently yield the wrong day's reading. Sorting by the
     Date the entry carries removes the assumption; entries without a usable
     Date fall back to the previous positional behaviour.
+
+    "That carries a reading" is the second half, and it was missing. The
+    portal ships the current day with `Value: null` until it has one, so
+    picking by date alone answered null for an answer that also contained
+    yesterday's number - and the caller then reached past this whole
+    response for its own last stored value, which is older still. Only when
+    NO entry has a value is that fallback the right one, and this returns
+    the newest dateless entry then, so the caller still sees the null.
     """
     if not values:
         return None
@@ -453,7 +499,8 @@ def latest_statistics_entry(values):
         return values[-1]
     # ISO-8601 ("2026-04-27T00:00:00") sorts correctly as text, so no date
     # parsing - and thus no locale or format surprises - is needed.
-    return max(dated, key=lambda entry: str(entry["Date"]))
+    with_a_reading = [entry for entry in dated if entry.get("Value") is not None]
+    return max(with_a_reading or dated, key=lambda entry: str(entry["Date"]))
 
 
 _MORE = " (+{} more)"
@@ -539,6 +586,6 @@ def device_is_reachable(coordinator_data, device_id) -> bool:
     if not isinstance(device_data, dict):
         return True
     status = device_data.get(f"{device_id}-ConnectionStatus")
-    if not isinstance(status, dict):
+    if not isinstance(status, Reading):
         return True
-    return status.get("value") not in UNREACHABLE_CONNECTION_STATES
+    return status.value not in UNREACHABLE_CONNECTION_STATES

@@ -1,0 +1,19 @@
+version: 2
+
+# Only the workflow actions. Python dependencies are deliberately absent:
+# a Home Assistant custom component installs into whatever environment HA
+# brings along, so pinning here would describe a machine that does not
+# exist. The test matrix in test.yaml is what proves the version range.
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    # One pull request for all of them - action bumps travel together and
+    # each one on its own is a review nobody does.
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"

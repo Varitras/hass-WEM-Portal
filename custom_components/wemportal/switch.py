@@ -2,14 +2,17 @@
 Switch platform for wemportal component
 """
 
+import logging
+
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import _LOGGER
-from .entity import WemPortalEntity
+from .entity import async_add_readings_as_they_appear, WemPortalEntity
 from .utils import fix_value_and_unit
+
+_LOGGER = logging.getLogger(__name__)
 
 # Recognized "on" values, covering both the numeric form (API path) and the
 # German/English text forms a value may arrive in (e.g. depending on the
@@ -27,22 +30,9 @@ async def async_setup_entry(
 ) -> None:
     """Switch entry setup."""
 
-    coordinator = config_entry.runtime_data.coordinator
-    entities: list[WemPortalSwitch] = []
-    for device_id, entity_data in coordinator.data.items():
-        for unique_id, values in entity_data.items():
-            if isinstance(values, int):
-                continue
-            # .get() instead of direct indexing: one malformed data point
-            # should not crash setup for every switch entity on this device.
-            if values.get("platform") == "switch":
-                entities.append(
-                    WemPortalSwitch(
-                        coordinator, config_entry, device_id, unique_id, values
-                    )
-                )
-
-    async_add_entities(entities)
+    async_add_readings_as_they_appear(
+        config_entry, async_add_entities, "switch", WemPortalSwitch
+    )
 
 
 class WemPortalSwitch(WemPortalEntity, SwitchEntity):
@@ -59,14 +49,7 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
-        # .get() with sensible fallbacks rather than direct indexing: an
-        # unexpected/malformed data point should degrade gracefully
-        # (skip this one entity's optional metadata) instead of raising a
-        # KeyError that would abort setup for every switch entity on this
-        # device.
-        value, unit = fix_value_and_unit(
-            entity_data.get("value"), entity_data.get("unit")
-        )
+        value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
 
         self._attr_unit = unit
         # None means "no reading this cycle", which is not the same as
@@ -95,35 +78,25 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        try:
-            temp_val = self.coordinator.data[self._device_id][self._data_key]["value"]
-            # Same distinction as in __init__: a key that is present but
-            # carries no reading is "unknown", not "off". Guarding only the
-            # constructor covered the very first cycle - the one case where
-            # a missing reading is least likely - and left every later one
-            # reporting a real switch-off to any automation watching it.
-            self._attr_is_on = (
-                None if temp_val is None else temp_val in WEM_SWITCH_ON_VALUES
-            )
-
-            _LOGGER.debug(
-                'Update switch: %s: "%s" [%s]',
-                self._attr_name,
-                self._attr_is_on,
-                self._attr_unit,
-            )
-
-        except KeyError:
+        row = self._coordinator_row()
+        if row is None:
             self._attr_is_on = None
-            _LOGGER.warning("Can't find %s", self._attr_unique_id)
-            _LOGGER.debug("Sensor data %s", self.coordinator.data)
+            self._report_no_reading()
+            self.async_write_ha_state()
+            return
 
+        # Same distinction as in __init__: a key that is present but carries
+        # no reading is "unknown", not "off". Guarding only the constructor
+        # covered the very first cycle - the one case where a missing reading
+        # is least likely - and left every later one reporting a real
+        # switch-off to any automation watching it.
+        self._attr_is_on = (
+            None if row.value is None else row.value in WEM_SWITCH_ON_VALUES
+        )
+        _LOGGER.debug(
+            'Update switch: %s: "%s" [%s]',
+            self._attr_name,
+            self._attr_is_on,
+            self._attr_unit,
+        )
         self.async_write_ha_state()
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes of this device."""
-        attributes = {}
-        if self._last_updated is not None:
-            attributes["Last Updated"] = self._last_updated
-        return attributes

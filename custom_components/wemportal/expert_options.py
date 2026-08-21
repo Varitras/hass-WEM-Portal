@@ -44,11 +44,34 @@ def discovery_option_list(discovered, current_ids) -> list:
     return options
 
 
+def canonical_entityvalue(raw) -> str:
+    """One spelling to compare entityvalues by.
+
+    They are hex, so case carries no meaning: `3A7F` and `3a7f` are the same
+    parameter of the same installation. Comparing them verbatim let one id
+    occupy two slots, and made the service's allowlist refuse whichever
+    spelling the caller did not happen to use.
+
+    Only for COMPARING. What goes to the portal is the spelling CONFIGURED
+    in the slot - it came out of discovery, so the portal has accepted it,
+    while the caller's has proved nothing. This used to pass the typed one
+    on, which turned the same uncertainty the other way round: not knowing
+    whether the portal is as relaxed is the reason to send the id that is
+    known to work.
+    """
+    return (raw or "").strip().casefold()
+
+
 def duplicate_entityvalues(id_values) -> set:
-    """Return the set of entityvalues used more than once (non-empty)."""
+    """Return the set of entityvalues used more than once (non-empty).
+
+    Reported in the canonical spelling: two slots differing only in case
+    are one duplicate, and naming it in either of their spellings would be
+    arbitrary.
+    """
     counts: dict[str, int] = {}
     for raw in id_values or []:
-        entityvalue = (raw or "").strip()
+        entityvalue = canonical_entityvalue(raw)
         if entityvalue:
             counts[entityvalue] = counts.get(entityvalue, 0) + 1
     return {entityvalue for entityvalue, count in counts.items() if count > 1}

@@ -13,65 +13,83 @@ coordinator, and a full instance per test costs about sixteen seconds.
 """
 
 import types
+from dataclasses import replace
 from datetime import date
 
 import pytest
 
 from custom_components.wemportal import holiday
 from custom_components.wemportal.date import date_to_epoch
-from custom_components.wemportal.models import WemPortalData
+from custom_components.wemportal.models import Reading, WemPortalData
 
 pytest.importorskip("homeassistant")
 
 from homeassistant.exceptions import HomeAssistantError
 
-BEGIN_ROW = {
-    "friendlyName": "Holiday begin",
-    "ParameterID": "U_Beginn",
-    "value": date_to_epoch(date(2026, 8, 3)),
-    "unit": None,
-    "platform": "date",
-    "ModuleIndex": 1,
-    "ModuleType": 2,
-}
-END_ROW = {
-    "friendlyName": "Holiday end",
-    "ParameterID": "U_Ende",
-    "value": date_to_epoch(date(2026, 8, 4)),
-    "unit": None,
-    "platform": "date",
-    "ModuleIndex": 1,
-    "ModuleType": 2,
-}
+BEGIN_ROW = Reading(
+    friendly_name="Holiday begin",
+    parameter_id="U_Beginn",
+    value=date_to_epoch(date(2026, 8, 3)),
+    unit=None,
+    platform="date",
+    module_index=1,
+    module_type=2,
+)
+END_ROW = Reading(
+    friendly_name="Holiday end",
+    parameter_id="U_Ende",
+    value=date_to_epoch(date(2026, 8, 4)),
+    unit=None,
+    platform="date",
+    module_index=1,
+    module_type=2,
+)
 
 
 class _Api:
-    """Records the writes, and can be told to refuse them."""
+    """Records the writes, and can be told to refuse them.
 
-    def __init__(self, refuse=False):
+    `kept` is what a read-back finds in the rows afterwards - the portal
+    answering "accepted" and storing something else is the case the
+    read-back exists for, and it was measured on a live installation.
+    """
+
+    def __init__(self, refuse=False, rows=None, kept=None, reread_fails=None):
         self.calls = []
         self.refuse = refuse
+        self.rows = rows if rows is not None else {}
+        self.kept = kept or {}
+        self.reread_fails = reread_fails
+        self.rereads = []
 
     def change_value(self, *args, **kwargs):
         self.calls.append((args, kwargs))
         if self.refuse:
             raise RuntimeError("portal said no")
 
+    def reread_device_values(self, device_id):
+        self.rereads.append(device_id)
+        if self.reread_fails is not None:
+            return self.reread_fails
+        for key, value in self.kept.items():
+            self.rows[key].value = value
+        return None
 
-def _world(monkeypatch, rows=None, refuse=False):
+
+def _world(monkeypatch, rows=None, refuse=False, kept=None, reread_fails=None):
     """One loaded account with a holiday pair, wired to a fake registry."""
     rows = (
         rows
         if rows is not None
         else {
-            "Circuit-U_Beginn": dict(BEGIN_ROW),
-            "Circuit-U_Ende": dict(END_ROW),
+            "Circuit-U_Beginn": replace(BEGIN_ROW),
+            "Circuit-U_Ende": replace(END_ROW),
         }
     )
     coordinator = types.SimpleNamespace(
         data={"1234": rows}, async_update_listeners=lambda: None
     )
-    api = _Api(refuse=refuse)
+    api = _Api(refuse=refuse, rows=rows, kept=kept, reread_fails=reread_fails)
     entry = types.SimpleNamespace(entry_id="e1")
     entry.runtime_data = WemPortalData(api=api, coordinator=coordinator)
 
@@ -147,13 +165,55 @@ async def test_both_dates_travel_in_one_request(monkeypatch):
 
 async def test_the_written_range_reaches_the_coordinator(monkeypatch):
     """Both rows, not just the one that was addressed - otherwise the next
-    write sends the other date back as a stale companion."""
-    hass, _api, rows = _world(monkeypatch)
+    write sends the other date back as a stale companion.
+
+    The values arrive through the read-back now, so `kept` is the ordinary
+    case: the portal stored what it was sent.
+    """
+    kept = {
+        "Circuit-U_Beginn": date_to_epoch(date(2026, 8, 20)),
+        "Circuit-U_Ende": date_to_epoch(date(2026, 8, 27)),
+    }
+    hass, _api, rows = _world(monkeypatch, kept=kept)
 
     await holiday._write_holiday(hass, _call())
 
-    assert rows["Circuit-U_Beginn"]["value"] == date_to_epoch(date(2026, 8, 20))
-    assert rows["Circuit-U_Ende"]["value"] == date_to_epoch(date(2026, 8, 27))
+    assert rows["Circuit-U_Beginn"].value == date_to_epoch(date(2026, 8, 20))
+    assert rows["Circuit-U_Ende"].value == date_to_epoch(date(2026, 8, 27))
+
+
+async def test_the_service_publishes_what_the_portal_kept(monkeypatch):
+    """A write that returns without raising was ACCEPTED, not stored.
+
+    Measured on this endpoint: a range that ends before it starts comes
+    back as Status 0 and is quietly discarded. The service refuses that
+    particular pair up front, which is why the single date entity reads
+    back and this did not - but the check only covers the one rejection
+    anybody has measured. Anything else the portal declines to keep was
+    published here as fact until the next poll took it away again.
+    """
+    kept = {
+        "Circuit-U_Beginn": date_to_epoch(date(2026, 9, 1)),
+        "Circuit-U_Ende": date_to_epoch(date(2026, 9, 8)),
+    }
+    hass, api, rows = _world(monkeypatch, kept=kept)
+
+    await holiday._write_holiday(hass, _call())
+
+    assert api.rereads == ["1234"], "the write was published without asking back"
+    assert rows["Circuit-U_Beginn"].value == kept["Circuit-U_Beginn"]
+    assert rows["Circuit-U_Ende"].value == kept["Circuit-U_Ende"]
+
+
+async def test_a_read_back_that_fails_leaves_neither_date_asserted(monkeypatch):
+    """The write happened, so this is not a failed service call - but what
+    the portal kept is now unknown, and unknown is not the written day."""
+    hass, _api, rows = _world(monkeypatch, reread_fails="portal did not answer")
+
+    await holiday._write_holiday(hass, _call())
+
+    assert rows["Circuit-U_Beginn"].value is None
+    assert rows["Circuit-U_Ende"].value is None
 
 
 async def test_a_refused_write_changes_nothing(monkeypatch):
@@ -165,8 +225,8 @@ async def test_a_refused_write_changes_nothing(monkeypatch):
     with pytest.raises(RuntimeError):
         await holiday._write_holiday(hass, call)
 
-    assert rows["Circuit-U_Beginn"]["value"] == date_to_epoch(date(2026, 8, 3))
-    assert rows["Circuit-U_Ende"]["value"] == date_to_epoch(date(2026, 8, 4))
+    assert rows["Circuit-U_Beginn"].value == date_to_epoch(date(2026, 8, 3))
+    assert rows["Circuit-U_Ende"].value == date_to_epoch(date(2026, 8, 4))
 
 
 async def test_a_range_that_ends_before_it_starts_is_refused(monkeypatch):
@@ -197,8 +257,8 @@ async def test_two_dates_of_different_modules_are_refused(monkeypatch):
     """The portal addresses parameters per module; one request cannot carry
     two modules, and pretending otherwise would write to the wrong circuit."""
     rows = {
-        "Circuit-U_Beginn": dict(BEGIN_ROW),
-        "Other-U_Ende": {**END_ROW, "ModuleIndex": 2},
+        "Circuit-U_Beginn": replace(BEGIN_ROW),
+        "Other-U_Ende": replace(END_ROW, module_index=2),
     }
     hass, api, _rows = _world(monkeypatch, rows=rows)
     across_modules = _call(end_entity="date.other_module")
@@ -238,6 +298,30 @@ def test_an_entity_that_is_not_a_date_is_refused(monkeypatch):
         holiday.resolve_date_target(hass, "number.some_setpoint")
 
     assert "not a date entity" in str(excinfo.value)
+
+
+async def test_a_row_the_portal_no_longer_calls_a_date_is_refused(monkeypatch):
+    """The entity says date; the row is what decides what the parameter is.
+
+    Both halves of the check are needed because they answer different
+    questions. The entity_id above says how Home Assistant files the entity,
+    and the daily re-discovery can reclassify the parameter underneath it -
+    the date entity then stays loaded until the next reload while the row it
+    points at has become a switch or a number. The entity's own write path
+    gained that check; this service resolves the row by hand and kept only
+    "is it a Reading", so it could still send a holiday epoch to a parameter
+    the portal now describes as something else.
+    """
+    rows = {
+        "Circuit-U_Beginn": replace(BEGIN_ROW, platform="switch"),
+        "Circuit-U_Ende": replace(END_ROW),
+    }
+    hass, api, _rows = _world(monkeypatch, rows=rows)
+
+    with pytest.raises(HomeAssistantError):
+        await holiday._write_holiday(hass, _call())
+
+    assert api.calls == [], "an epoch was written to a row that is not a date"
 
 
 async def test_a_write_into_an_unloading_entry_is_refused(monkeypatch):

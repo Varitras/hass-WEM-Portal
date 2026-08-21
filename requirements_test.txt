@@ -9,14 +9,24 @@
 # pinning to 0.13.205 / HA 2025.1.4 hid the removal of the OptionsFlow
 # `_config_entry` compatibility shim, which only showed up against HA 2026.7.2.)
 #
-# CI does NOT install this file. Both matrix jobs install the plugin directly,
-# because unpinned is not good enough there: the plugin publishes a normal
-# release for every Home Assistant BETA too, so "newest" quietly became a beta
-# and nothing tested the release people run. See .github/workflows/test.yaml
-# and .github/scripts/resolve_phcc.py.
+# The two TEST matrix jobs do NOT install this file. They install the plugin
+# directly, because unpinned is not good enough there: the plugin publishes a
+# normal release for every Home Assistant BETA too, so "newest" quietly became
+# a beta and nothing tested the release people run. See
+# .github/workflows/test.yaml and .github/scripts/resolve_phcc.py.
+#
+# The mypy job DOES install it - it needs Home Assistant's own type
+# information, and which HA version it type-checks against does not decide
+# what the test suite runs on.
 #
 # The OPPOSITE mistake - using an API that does not exist yet on the declared
 # minimum - is caught by the "minimum" job of the test workflow, which pins
 # the plugin release matching hacs.json.
 pytest-homeassistant-custom-component
+# Declared rather than inherited. It arrives through the plugin above today,
+# and tests/test_e2e.py already relies on it (`pytest.mark.timeout(120)`) - so
+# the day that transitive dependency changes, a marker nothing registers
+# becomes a silent no-op and the timeout is simply gone. The matrix jobs do
+# not install this file at all, which is why they name it themselves.
+pytest-timeout
 -r requirements_runtime.txt

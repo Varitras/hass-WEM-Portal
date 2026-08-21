@@ -13,6 +13,8 @@ exactly on midnight UTC. Whole days, no time component - which is why this is
 a date platform and not a datetime one.
 """
 
+import logging
+
 from datetime import UTC, date, datetime
 
 from homeassistant.components.date import DateEntity
@@ -20,8 +22,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import _LOGGER
-from .entity import WemPortalEntity
+from .entity import async_add_readings_as_they_appear, WemPortalEntity
+from .models import date_companions
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def epoch_to_date(value) -> date | None:
@@ -61,22 +65,9 @@ async def async_setup_entry(
 ) -> None:
     """Date entry setup."""
 
-    coordinator = config_entry.runtime_data.coordinator
-    entities: list[WemPortalDate] = []
-    for device_id, entity_data in coordinator.data.items():
-        for unique_id, values in entity_data.items():
-            if isinstance(values, int):
-                continue
-            # .get() instead of direct indexing: one malformed data point
-            # should not crash setup for every date entity on this device.
-            if values.get("platform") == "date":
-                entities.append(
-                    WemPortalDate(
-                        coordinator, config_entry, device_id, unique_id, values
-                    )
-                )
-
-    async_add_entities(entities)
+    async_add_readings_as_they_appear(
+        config_entry, async_add_entities, "date", WemPortalDate
+    )
 
 
 class WemPortalDate(WemPortalEntity, DateEntity):
@@ -93,11 +84,11 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         """Initialize the date entity."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
-        self._attr_native_value = epoch_to_date(entity_data.get("value"))
+        self._attr_native_value = epoch_to_date(entity_data.value)
 
         _LOGGER.debug("Init date: %s: %s", self._attr_name, self._attr_native_value)
 
-    def _companion_dates(self) -> dict:
+    def _companion_dates(self) -> dict[str, float]:
         """The other date parameters of this module, at their current value.
 
         A holiday is a range, and the portal appears to want the whole of it:
@@ -106,32 +97,17 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         setpoint on the same account and the same endpoint is accepted. So the
         write carries the module's other dates along, unchanged.
 
-        Found through the coordinator rather than by naming the two parameters
-        literally: their ids are the portal's, and a rule that reads "the date
-        parameters of this module" does not have to be revisited when an
-        installation calls them something else.
+        Read from the api's own rows, under the api lock this write runs
+        beneath (see change_value): the coordinator's published snapshot lags a
+        rebind behind after a transport reset, and reading a companion off it
+        there sent a stale value that undid a concurrent write.
         """
-        companions = {}
-        device = self.coordinator.data.get(self._device_id, {})
-        for key, row in device.items():
-            # Some rows are plain counters, not parameters - skip anything
-            # that is not one, rather than assuming the shape.
-            if not isinstance(row, dict) or key == self._data_key:
-                continue
-            if row.get("platform") != "date":
-                continue
-            if (row.get("ModuleIndex"), row.get("ModuleType")) != (
-                self._module_index,
-                self._module_type,
-            ):
-                continue
-            try:
-                companions[row.get("ParameterID", key)] = float(row.get("value"))
-            except (TypeError, ValueError):
-                # No readable value to repeat. Sending a guess would set a
-                # date on the heating system that nobody asked for.
-                continue
-        return companions
+        return date_companions(
+            self.coordinator.api.data.get(self._device_id, {}),
+            self._module_index,
+            self._module_type,
+            self._data_key,
+        )
 
     async def async_set_value(self, value: date) -> None:
         """Write a new day to the portal, then ask what it kept.
@@ -154,8 +130,11 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         a few times a year, not once a cycle, and the alternative is
         reporting a setting that did not happen.
         """
+        # The method, not its result: it is read once this write holds the
+        # shared api lock, so a write still in flight has finished updating
+        # the rows it is taken from. See WemPortalApi.change_value.
         await self.async_write_parameter(
-            date_to_epoch(value), together_with=self._companion_dates()
+            date_to_epoch(value), together_with=self._companion_dates
         )
 
         failure = await self.hass.async_add_executor_job(
@@ -182,29 +161,18 @@ class WemPortalDate(WemPortalEntity, DateEntity):
     def _current_value(self):
         """This parameter's value as the coordinator now holds it."""
         row = self._coordinator_row()
-        return row.get("value") if row is not None else None
+        return row.value if row is not None else None
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        try:
-            self._attr_native_value = epoch_to_date(
-                self.coordinator.data[self._device_id][self._data_key]["value"]
-            )
-            _LOGGER.debug(
-                "Update date: %s: %s", self._attr_name, self._attr_native_value
-            )
-        except KeyError:
+        row = self._coordinator_row()
+        if row is None:
             self._attr_native_value = None
-            _LOGGER.warning("Can't find %s", self._attr_unique_id)
-            _LOGGER.debug("Sensor data %s", self.coordinator.data)
+            self._report_no_reading()
+            self.async_write_ha_state()
+            return
 
+        self._attr_native_value = epoch_to_date(row.value)
+        _LOGGER.debug("Update date: %s: %s", self._attr_name, self._attr_native_value)
         self.async_write_ha_state()
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes of this device."""
-        attributes = {}
-        if self._last_updated is not None:
-            attributes["Last Updated"] = self._last_updated
-        return attributes

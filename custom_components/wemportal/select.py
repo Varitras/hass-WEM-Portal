@@ -2,15 +2,21 @@
 Select platform for wemportal component
 """
 
+import logging
+
 import difflib
+from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import _LOGGER, BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
-from .entity import WemPortalEntity
+from .const import BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
+from .entity import async_add_readings_as_they_appear, WemPortalEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -20,22 +26,9 @@ async def async_setup_entry(
 ) -> None:
     """Select entry setup."""
 
-    coordinator = config_entry.runtime_data.coordinator
-    entities: list[WemPortalSelect] = []
-    for device_id, entity_data in coordinator.data.items():
-        for unique_id, values in entity_data.items():
-            if isinstance(values, int):
-                continue
-            # .get() instead of direct indexing: one malformed data point
-            # should not crash setup for every select entity on this device.
-            if values.get("platform") == "select":
-                entities.append(
-                    WemPortalSelect(
-                        coordinator, config_entry, device_id, unique_id, values
-                    )
-                )
-
-    async_add_entities(entities)
+    async_add_readings_as_they_appear(
+        config_entry, async_add_entities, "select", WemPortalSelect
+    )
 
 
 class WemPortalSelect(WemPortalEntity, SelectEntity):
@@ -132,16 +125,16 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
-        self._options = entity_data.get("options", [])
-        self._options_names = entity_data.get("optionsNames", [])
+        self._options: list[Any] = entity_data.options or []
+        self._options_names: list[Any] = entity_data.options_names or []
 
         try:
-            self._attr_current_option = self._resolve_option(entity_data.get("value"))
+            self._attr_current_option = self._resolve_option(entity_data.value)
         except (ValueError, TypeError):
             self._attr_current_option = None
             _LOGGER.warning(
                 "Value %s not found in options %s (names: %s) for select %s",
-                entity_data.get("value"),
+                entity_data.value,
                 self._options,
                 self._options_names,
                 self._attr_name,
@@ -150,11 +143,42 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
             'Init select: %s: "%s"', self._attr_name, self._attr_current_option
         )
 
+    def _portal_value_for(self, option: str) -> Any:
+        """The portal value the chosen name stands for.
+
+        Found by PAIRING the two lists, not by the position of the first
+        matching name. The portal decides what an EnumValues list looks
+        like, and two entries sharing a display name made that position a
+        coin toss: choosing the second one wrote the first one's value into
+        the heating system, while the entity went on showing the name that
+        was clicked - nothing in the log, nothing in the state.
+
+        A set, so two entries that agree on both name and value are still
+        one answer; it is only a name meaning two different values that
+        cannot be resolved.
+
+        Refusing is the honest answer for both of the ways this fails: which
+        of two values the user meant is not knowable from what the portal
+        sent, and a name with no value paired to it (the two lists are
+        refreshed under separate guards) must not fall back to whatever
+        happens to sit at that index.
+        """
+        candidates = {
+            value
+            for value, name in zip(self._options, self._options_names, strict=False)
+            if name == option
+        }
+        if len(candidates) != 1:
+            raise HomeAssistantError(
+                f'Cannot set "{self._attr_name}" to "{option}": the portal '
+                f"offers {len(candidates)} values under that name, so which "
+                "one was meant is not decidable. Nothing was written."
+            )
+        return candidates.pop()
+
     async def async_select_option(self, option: str) -> None:
         """Call the API to change the parameter value"""
-        await self.async_write_parameter(
-            self._options[self._options_names.index(option)]
-        )
+        await self.async_write_parameter(self._portal_value_for(option))
 
         self._attr_current_option = option
 
@@ -165,25 +189,28 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
         """Return list of available options."""
         return self._options_names
 
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes of this device."""
-        attributes = {}
-        if self._last_updated is not None:
-            attributes["Last Updated"] = self._last_updated
-        return attributes
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
 
-        try:
-            value = self.coordinator.data[self._device_id][self._data_key]["value"]
-            self._attr_current_option = self._resolve_option(value)
-        except KeyError:
+        row = self._coordinator_row()
+        if row is None:
             self._attr_current_option = None
-            _LOGGER.warning("Can't find %s", self._attr_unique_id)
-            _LOGGER.debug("Sensor data %s", self.coordinator.data)
+            self._report_no_reading()
+            self.async_write_ha_state()
+            return
+
+        # Options BEFORE the value, for the same reason number refreshes its
+        # bounds: rediscovery can add an option, and a device already ON it
+        # read as unknown against the construction-time list -
+        # indistinguishable from a failed read.
+        if row.options is not None:
+            self._options = row.options
+        if row.options_names is not None:
+            self._options_names = row.options_names
+        value = row.value
+        try:
+            self._attr_current_option = self._resolve_option(value)
         except (ValueError, TypeError):
             self._attr_current_option = None
             _LOGGER.warning(

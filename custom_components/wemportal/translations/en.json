@@ -103,6 +103,24 @@
       "discovery_aborted": "The WEM Portal account this was searching was reloaded or removed, so the search stopped. Nothing was changed. Open the options again once the integration has finished loading."
     }
   },
+  "issues": {
+    "rate_limited": {
+      "title": "WEM Portal is refusing requests (rate limit)",
+      "description": "The WEM Portal is refusing requests from this network right now, which it does after too many in a short time. Polling is paused and resumes by itself; every extra attempt makes the block last longer. Your username and password are not the problem. This issue clears itself with the next successful update."
+    },
+    "web_scrape_failing": {
+      "title": "WEM Portal web access is not working",
+      "description": "This account polls both the mobile API and the web portal, and the web half has failed several times in a row. The API half is unaffected and keeps delivering, so the sensors it provides are current - the ones that come from the web page are not, and are shown as unknown. The two are separate logins, so one working says nothing about the other. Check whether the portal's web page can be opened in a browser with these credentials, or switch the integration to API-only mode in the options. This issue clears itself once a web scrape succeeds again."
+    },
+    "expert_poll_unreadable_id": {
+      "title": "Expert parameter {name} cannot be requested",
+      "description": "The configured ID for {name} is not a readable parameter ID, so it was never requested. Fix or clear it in the integration options."
+    },
+    "expert_poll_read_failures": {
+      "title": "Expert parameter {name} keeps failing to read",
+      "description": "Reading {name} has failed {failures} times in a row while other parameters were read successfully. That is usually a wrong ID in the integration options, but the portal can refuse a single parameter too. This issue clears itself once the parameter reads again."
+    }
+  },
   "services": {
     "set_expert_parameter": {
       "name": "Set expert parameter",
@@ -114,7 +132,7 @@
         },
         "value": {
           "name": "Value",
-          "description": "New value. Must be one of the options the device offers."
+          "description": "New value: a number, or the word the portal shows for an option that is not one (for example \"Aus\"; case does not matter). Must be one of the options the device offers."
         }
       }
     },

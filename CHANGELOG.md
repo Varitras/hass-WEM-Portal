@@ -6,6 +6,602 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.12.0b4] – 2026-08-22
+
+### Fixed
+
+- **In `both` mode, the web scrape no longer goes silently API-only after a
+  restart.** The list of devices a cycle may poll was read from the API module
+  cache or the live readings, but never from the scraper's own device id, which
+  is stored apart from both. After a restart the readings are gone and the
+  cache holds only the API device, so the scrape's own device was dropped from
+  the filter, the scraper refused it, and the web half stopped running - and
+  because it never ran, its id never came back to restore itself. The known
+  devices are now the union of all three sources.
+- **A holiday date written by hand is no longer undone by a poll running at
+  the same time.** A single-date write carries the module's other dates along
+  unchanged, read once the write holds the portal lock. They were read from the
+  coordinator's published snapshot, which briefly lags the live data after the
+  connection is re-established, so a write landing in that window sent a stale
+  companion and reset a value another write had just stored. The companions are
+  now read from the locked live data.
+- **A cancelled expert write can no longer open a second portal session for the
+  same account.** The service took the shared per-account lock on the event
+  loop and released it if the awaiting call was cancelled - by a reload, an
+  unload, or shutting Home Assistant down - while the worker thread was still
+  driving the portal, leaving the next operation free to start beside it. The
+  lock is now held by the worker for exactly as long as the work runs, the way
+  the other expert paths already do.
+- **A manual "re-scan parameters" is no longer lost when the entry reloads or
+  is removed at the same moment.** The re-scan wrote the module cache to disk
+  outside the lock the teardown waits on, so a write in flight could re-create a
+  store that had just been deleted, or an older cycle's save could put the old
+  timestamps back over the marks. It now goes through the same lock and guard
+  the cycle's own saves use.
+- **After a rate-limit refusal, statistics are retried up to 45 minutes
+  sooner.** A statistics cycle that failed for every device shortens its next
+  attempt, but the shortening was skipped when the failure was a refused login
+  or a rejected request, leaving the full hour in place - so a 403, which also
+  starts a 15-minute cooldown, could keep statistics locked for 45 minutes past
+  the cooldown's end.
+- **The web-scrape interval holds across daylight-saving changes.** The gate
+  measured the time since the last scrape by subtracting two timezone-aware
+  timestamps, which Python does as a naive wall-clock difference - so a DST
+  change landed in the interval, scraping an hour early in spring and skipping
+  an hour of cycles in autumn. It now compares absolute timestamps.
+- **A poll cycle that runs out of time no longer starts one more request.** The
+  deadline was checked just before a one-second courtesy pause rather than after
+  it, so a cycle with under a second of budget left passed the check, spent the
+  budget in the pause, and sent the request anyway.
+
+## [1.12.0b3] – 2026-08-19
+
+### Fixed
+
+- **With more than one device, a reading the portal stops sending is aged on
+  the right one.** The map that links an API reading to the scraped row showing
+  the same value carried no device id, so a second device with a module and
+  parameter of the same address looked up the first device's row, found nothing
+  of its own, and kept its own dropped reading on display as current.
+- **In `both` mode, a value the web scrape delivered this cycle is no longer
+  blanked because the API left its counterpart out.** Both sources feed one row
+  on their own schedules, so the ageing pass now leaves a row the scrape is
+  still delivering to the scrape's own staleness handling instead of clearing a
+  reading that arrived seconds ago.
+- **A weekly programme that shares its row with the web scrape now shows its
+  switching times.** When the value read had merged a programme into a scraped
+  row, the schedule fetch still looked under the programme's own key: on a
+  3.1.3.0 portal it did not recognise the programme at all, so its schedule was
+  never fetched, and elsewhere it wrote the detail onto a second row no entity
+  is built from - leaving the visible one on the raw plan.
+- **An entity left showing `unknown` after its reading merged into another row
+  is removed.** In `both` mode the first API cycle can build an entity under a
+  key the web scrape then merges away; nothing took that entity down, so it sat
+  on the dashboard as unavailable for the life of the session. It is removed
+  once the merge retires its key - and only then, so a reading missing for a
+  single cycle keeps its entity.
+
+- **An expert parameter whose entity you disable is dropped from the poll for
+  good, along with its failure count and any repair issue it raised.** The
+  previous fix only recognised an entity whose initial adding was aborted;
+  Home Assistant keeps the reference when you disable one later, so it went
+  on being read from the portal every cycle.
+- **A scrape that starts working later no longer leaves a second entity for
+  the same reading behind.** In `both` mode before the first successful
+  scrape, every cycle writes the API reading under its own key - and those
+  rows were then accepted as merge targets themselves, because "is this a
+  scraped row" was decided from the shape of the name. The reading went to
+  both rows, so the same measurement appeared twice. Scraped rows carry no
+  module, which is what tells them apart.
+- **In `both` mode, a reading merged into a scraped row stops being shown as
+  current when the portal leaves it out.** The ageing pass looked for the
+  reading under the API parameter's own key - and a merged parameter has no
+  row there any more, so it found nothing and moved on while the row that
+  does carry the value kept showing the last answer indefinitely.
+- **Two date writes at once can no longer undo one another.** A date write
+  carries the module's other dates along unchanged, read from the stored
+  reading - and that reading was updated only after the api lock had been
+  released, so a second write queued behind the first read the value from
+  before it and sent it back. Setting holiday begin and end in quick
+  succession could leave the begin date as it was, with both calls reporting
+  success.
+- **A write that arrives right after a connection reset logs in again.** Polls
+  restore the session; a write went straight to the portal, so a service call
+  or an automation in that window failed until the next poll happened to run.
+- **An expert parameter whose entity you disabled is no longer polled.** It
+  published nothing but went on costing a login and a form read every cycle,
+  and could raise a repair issue about a parameter nobody is looking at.
+- **The expert lock is per account rather than per config entry**, so a legacy
+  duplicate entry of the same account can no longer drive a second portal
+  session in parallel with the first.
+- **A store write already in flight is finished before the entry comes down**,
+  so it can no longer land after a removal deleted those files or after a
+  reload wrote new ones.
+- **A weekly programme is only exempt from ageing while something really
+  feeds it.** Three paths disagreed about what that means: any non-empty list
+  of days counted as a delivered week even though a day without switching
+  times renders to nothing; a programme whose value the device-level ageing
+  had emptied still counted, although the day names are read out of that
+  value; and a module the re-discovery dropped kept its exemption forever,
+  because the fetch that would clear it walks the module list. All three now
+  ask the same question, and the schedule read refuses an answer that does
+  not pass it.
+- **A setup that is cancelled is rolled back like one that fails.** Home
+  Assistant cancels a setup task on shutdown and when setup takes too long,
+  and a cancellation is not an `Exception` - so the rollback was skipped for
+  the one ending that leaves the most behind: forwarded platforms, a
+  coordinator with its timer armed, and two open HTTP sessions.
+- **A poll finishing during an unload no longer writes to storage.** The gate
+  asked only whether the store still holds this coordinator, which it does for
+  the whole teardown - so a save could still start and land after the stores
+  had been deleted or a reload had published new ones.
+- **Unloading one of two entries of the same account keeps the shared
+  auth-failure streak.** The count belongs to the account, and a legacy
+  duplicate entry is still allowed to load; clearing it on unload took it out
+  from under the entry that stays, pushing the reauth dialog back out of
+  reach.
+- **One device can no longer adopt or delete another device's entity during
+  the unique_id migration.** The old id formats name neither a device nor a
+  parameter - a bare key, a friendly name - so two devices with a parameter of
+  the same name propose exactly the same one. Whichever the cycle walked first
+  took the other's entity, or removed it. An id more than one reading answers
+  to is now left alone, which is the only outcome that loses nothing.
+- **A device status answer that carries no status is treated as a failed
+  read.** A missing `ConnectionStatus` was read as the "unknown" state, which
+  counts as a successful read of a device that is not online: the parameter
+  read was skipped for that cycle and the fault sensors were published as "no
+  errors" on no evidence at all.
+- **No credentials are sent to a login page that has no login form.** A page
+  can parse perfectly and still carry none of the ASP.NET fields a login is
+  posted with; the password went out anyway and could only be refused, which
+  then read as a wrong password. The scraper and the expert client already
+  refused to do this.
+- **A portal answer that announces itself as XML no longer costs the whole
+  scrape.** An unreadable body was already allowed to fall back to a fresh
+  login, but only when the parser refused it by its own error type - and the
+  one answer that is plainly not the page, a document carrying an encoding
+  declaration, is refused as an ordinary `ValueError` instead. That went
+  straight past the fallback.
+- **A failed API read now counts against the API interval.** In `both` mode
+  the mobile API is read on its own interval rather than on every web cycle,
+  but a cycle that FAILED left the interval unspent - and the coordinator's
+  backoff, which was supposed to pace the retry, needs three failures in a row
+  and is cleared by any success in between. A portal answering every other
+  cycle with an error therefore put the API half back on the web interval.
+- **A parameter that changed platform is no longer logged as missing once per
+  cycle.** The entity of the platform it no longer is stays loaded until the
+  next reload, and each cycle it warned "Can't find" about a reading that is
+  right there. Now said once as a debug line, naming what the parameter has
+  become; a reading that really is gone still warns.
+- **The unavailable entity left behind by a parameter that changed platform
+  is now removed even when it predates the current id format.** A parameter
+  reclassified between releases - holiday begin and end went from switches to
+  dates - leaves its old registry entry sitting unavailable beside the working
+  one. That was already cleaned up, but only for entities registered under the
+  current unique_id; one registered by an older release was searched for only
+  on the platform the parameter is today, so it was found by neither half and
+  stayed for good.
+- **A login page served without its form is no longer reported as a wrong
+  password on the expert path either.** The password has not been sent at
+  that point - the missing fields are what it would be sent with. The web
+  scraper already said so; the expert client still called it a credential
+  problem.
+- **An answer that is not HTML at all no longer costs the whole scrape.**
+  The cheap session-reuse attempt is allowed to come back with "this is not
+  the expert page" so a fresh login can follow - but a body the parser
+  cannot read raised past that, and the fallback never ran.
+- **A portal blocking this network during the energy statistics is reported
+  as that.** The group loop deliberately let the refusal out so the
+  coordinator could act on it; the device loop above caught it again, logged
+  it as one device's statistics problem and tried the next device.
+- **The expert service writes the parameter id you configured, not the one
+  you typed.** Hex ids mean the same parameter in either case, so the check
+  against your configured slots ignores case - and then the typed spelling
+  was what went to the portal. The configured one came out of discovery and
+  the portal has accepted it; that is the one that now travels.
+- **A flow-rate sensor gets the icon its device class calls for.** The unit
+  lookup matches case-insensitively, which covers "BAR" for "bar" but not
+  "m3/h" for "m³/h" - a different character. That left the one unit the
+  portal spells its own way without a device class, and the fallback icon
+  "mdi:flash" was pinned on it, which overrides whatever the device class
+  would have given it.
+- **A portal that refuses this network stops the parameter discovery at
+  once.** The log promised a budget of three refusals, and the code could
+  never spend more than one: the first 403 pauses every request, so the
+  second was refused before it was sent and left the counter where it was.
+  What it said and what it did now match.
+- **A cycle that runs out of time keeps what it discovered.** Discovery is
+  stopped where it stands when a cycle exhausts its budget, and what it had
+  found by then was only written to disk by a cycle that finished. An
+  installation with enough modules to run out of time every cycle therefore
+  never saved any of it and started from nothing after each restart -
+  spending five seconds and a request per module all over again.
+- **Two holiday dates written right after one another no longer undo each
+  other.** A date write carries the module's other dates along unchanged,
+  and that snapshot was taken before the write queued for the shared
+  connection - so while the first write was still running, the second one
+  had already read the value it was about to replace, and sent it back.
+- **Removing the integration no longer leaves its cache behind after all.**
+  A poll runs in a thread that cannot be cancelled, so one still running
+  when the entry is removed finishes afterwards - and wrote the module cache
+  and device id straight back into storage that had just been cleaned up,
+  where they stayed for good.
+- **Re-entering your password no longer leaves the failed logins that asked
+  for it standing.** The count that escalates to a credentials prompt is
+  kept on the account so it survives the reloads a failing setup causes -
+  and nothing cleared it when the prompt was answered correctly. The very
+  next login page the portal handed out was then the fourth in a row and
+  asked for the same password again.
+- **A weekly programme nothing is refreshing any more ages out like every
+  other reading.** Programmes were exempt from the ageing that follows a
+  module going silent, on the grounds that the hourly schedule fetch keeps
+  them current. That fetch drops its own detail as soon as a due refresh
+  fails - so where both had stopped, the plan from before the outage stood
+  as the current one, without limit.
+- **A module with nothing to report no longer costs the whole device its
+  readings.** Such a module comes back as `"Values": null`, and a default
+  for a missing key does not cover a key that is present and null - so the
+  read raised, every cycle, for as long as the portal answered that way.
+  Every list the portal sends is now read through one place that knows the
+  difference.
+- **An expert parameter with fractional steps takes the values it offers
+  again.** The step is measured as the distance between two options, and a
+  subtraction of two decimals carries their float error: a heating curve's
+  0.05 was published as 0.04999999999999982. The write path then matched the
+  value against the option list exactly, so most of what the entity could be
+  set to came back as "not allowed" - naming a range that contains it.
+- **An expert write interrupted by a reload no longer denies what it
+  already did.** The abort gate is asked before every request, the read that
+  confirms the write included, and said "stopped before the write reached
+  the portal" in every case - including after the heating system had taken
+  the value. It now says what happened at that point.
+- **A flow-rate reading written with a decimal comma no longer breaks the
+  update.** "m3/h" is the one unit read out of the value rather than the unit
+  field, and it was the only one parsed with a bare conversion instead of the
+  shared parser every other number goes through - so a scraped "0,55m3/h"
+  raised, out of a platform mid-update, costing more than the one reading.
+- **A lasting outage no longer leaves the last readings standing as
+  current.** One failed cycle is tolerated on purpose - the portal answers
+  one with "Unbekannter Fehler" now and then and the next one succeeds. But
+  Home Assistant notifies entities on the refresh that fails first and on
+  none after it, so the moment that tolerance ran out was never published:
+  every entity of the account kept showing its pre-outage value, marked
+  available, for as long as the outage lasted.
+- **`both` mode no longer reads the mobile API at the web interval.** With
+  the two intervals set apart - a five-minute scrape next to a half-hourly
+  API read, say - the API was read on every scrape cycle rather than on its
+  own: six times the requests that setting asks for, against a portal that
+  counts 10,000 per 12 hours and IP. The scrape half was gated for exactly
+  this; the API half was not.
+- **A device you switched off is no longer asked for its parameter
+  definitions.** The filter reached the readings and stopped there: the
+  discovery in between was called without it. That discovery is the most
+  expensive thing this integration does - five seconds of waiting and at
+  least one request per module - and a disabled device paid all of it, on
+  every install whose cache is incomplete and once a day after that. The
+  portal counts requests per IP.
+- **A parameter the portal names nothing for no longer costs the whole
+  device its readings.** Where the portal sends no bounds, the plausible
+  range is guessed from the parameter's name - and that name is optional.
+  With none, the guess raised and took every reading of that device down
+  with it for the cycle. Found by type-checking the module that builds the
+  readings, which is now part of what CI checks.
+- **Removing a duplicate entry of an account no longer wipes the other
+  one's memory.** Old installations may still carry two entries of the same
+  account, and both share what that account remembers - the rate-limit
+  backoff, the authentication-failure count, the warnings meant to appear
+  once. Removing either of them dropped all of it, so the entry that stayed
+  went back to polling as though the portal had never refused anything.
+
+## [1.12.0b2] – 2026-08-15
+
+Eight repairs found by auditing 1.12.0b1 and then auditing the repairs. Three
+of them are faults this pre-release introduced rather than inherited, and one
+of those could take a control away for good: the platform of a parameter is
+read from the value of each cycle, so a single odd answer moved a row to a
+plain sensor - and the entity of the platform it had been was deleted with
+nothing left to build it again. If you are running 1.12.0b1, this is the
+reason to update.
+
+### Fixed
+
+- **Two accounts unloading at the same time no longer leave a service
+  behind.** Each asked whether any other entry was still loaded, and Home
+  Assistant only drops that mark once an unload has finished - so each saw
+  the other as running and neither released the shared expert and holiday
+  services. They stayed registered with nothing able to answer them.
+- **A module the portal stops listing has its readings aged out too.** The
+  pass that does the ageing walked the current module list and read a stamp
+  kept inside each module's entry - so a module that dropped out of that list
+  took its own stamp with it and was never visited again. Its readings were
+  then the only ones nothing could touch: not refreshed, because a module
+  without a description is skipped, and not aged, because the pass could not
+  see them. They stood on the dashboard as current indefinitely. Readings the
+  web scrape still feeds are unaffected, as before.
+- **Switching the scraper's device off clears its repair issue.** The poll
+  already skips a disabled device, so nothing was being attempted - but the
+  report asked only whether the last attempts had failed, and only a scrape
+  that works resets that count. The issue therefore stood for as long as the
+  device stayed off, with nothing the user could do about it.
+- **An expert parameter that keeps failing to read stops showing its last
+  number.** Only a run of cycles in which *nothing at all* answered emptied
+  those values, which left out the two cases where it matters most: a single
+  configured parameter, where "all of them failed" is true every time one
+  does and the rule therefore does not apply, and one broken id beside a
+  working one, where the sibling's answer reset the count every cycle. Both
+  raised a repair issue and went on displaying a restored number behind it.
+  The value now goes when its own id has missed three reads in a row, once
+  per run rather than every hour. A write the portal read back ends that run
+  the same way a successful poll does - it is the stronger answer of the two,
+  and until now the repair issue stayed up for a parameter that had just
+  demonstrably worked.
+- **A password changed while Home Assistant runs is noticed a cycle sooner,
+  and costs far fewer refused logins.** A session that expires mid-cycle is
+  renewed from inside whatever request noticed, so a rejected login surfaces
+  in the middle of a partial read - where a handler whose job is to keep the
+  poll going caught it. Two things followed: the re-authentication dialog
+  stayed a cycle further away, because the count it needs is reset by any
+  cycle that ends another way; and since the session flag is only checked
+  once per cycle, every request after that one went out on the dead session
+  and spent another refused login finding out. On an installation with
+  several devices that is a login attempt per device and path, against a
+  portal that counts requests per IP. The read-back after a write is the one
+  place that still takes a refused login as an answer rather than an error:
+  the write went through, and reporting it as failed would invite a retry
+  while leaving the unconfirmed value on display as verified.
+- **A reclassified parameter is no longer shown by the entity it left
+  behind.** The daily re-discovery can decide that a parameter the portal
+  used to describe as a date is a switch, and both entities are loaded until
+  the next reload. Only the write path asked whether the row still belonged
+  to the entity reading it - each of the five display paths reached into the
+  coordinator's data directly, so the entity that was left over published the
+  new platform's value as its own type: a holiday epoch as a switch that is
+  on, a 0/1 as a date in 1970. The holiday service resolved its rows the same
+  way and could send an epoch to a parameter that is no longer a date.
+- **A reading that arrives after setup keeps its recorded history.** The
+  migration from the old unique_id formats ran once, during setup - and the
+  readings it has to reach are precisely the ones that are not there yet: a
+  device unreachable at that moment, the parameter re-discovery that waits
+  for the second cycle on purpose, the hourly statistics that appear minutes
+  later. The half that builds the entities was given a listener for those,
+  the half that migrates them was not, so a reading that showed up late got a
+  brand new entity - with none of the history its old one carries, and
+  nothing about the result looking wrong. Reclassifying a parameter while
+  Home Assistant runs now also takes down the entity of the platform it no
+  longer is, and builds the one it has become - both ways round, which
+  matters because the platform is read from the value of that cycle: a
+  holiday date answered once without a number is a plain sensor for one
+  cycle and a date again on the next.
+
+## [1.12.0b1] – 2026-08-12
+
+The theme is identity and freshness: which circuit, which module and which
+spelling a reading belongs to, and how long a value that stopped arriving may
+still be presented as current. Beside it, three failures that were visible
+only in the log - a rate-limit block, a web half that stopped delivering, an
+expert parameter that will not read - are repair issues now, in your language.
+Underneath, the integration was taken apart and put back together: transport,
+statistics and the data model are their own modules, with structural guards
+and a mutation run that keeps them that way. None of that is visible from the
+outside, which is why this is a pre-release.
+
+### Added
+- **A rate-limit block now shows up in Repairs, in your language.** A 403
+  cooldown pauses all polling for a long stretch - the one state a user
+  notices and could previously explain only from the log. It is a repair
+  issue while the block holds and clears itself with the next successful
+  update.
+- **A diagnostics download, written to be shareable.** Home Assistant's
+  three-dot menu on the integration now offers a diagnostics report:
+  coordinator health, readings and module counts. Credentials, configured
+  expert ids and the scraped session are redacted by key; device ids are
+  replaced by positional aliases (`device_1`) - they are dictionary keys,
+  which redaction cannot reach. Attach it to bug reports instead of
+  hand-picking log lines.
+
+### Changed
+- **The expert auto-poll reports a persistently unreadable parameter in
+  Repairs, not as a notification.** Same three-strike rule, same two
+  wordings (configured id vs. portal refusal) - but translatable, collected
+  where Home Assistant gathers actionable problems, and taken back down
+  automatically once the parameter reads again.
+- **After a restart an expert parameter restores its value, never its range.**
+  A stored range is a copy of a reading that no longer exists, and Home
+  Assistant checks the published range before this integration is asked - so
+  a stale restored range could block exactly the write that would have
+  fetched the current one. Bounds and step now stay permissive until the
+  portal has answered once. The price: after a restart the parameter is a
+  typing box, not a slider, until the first read or write.
+
+### Fixed
+- **A device whose name contains "HasErrors" no longer turns all its sensors
+  into diagnostics.** The diagnostic category was decided by searching the
+  whole unique_id - which also carries the entry id and the device id - for
+  one of the three status words. It is decided on the parameter id now, the
+  same way the availability rule beside it already was.
+- **Removing the integration removes its traces.** The module cache and the
+  scraper device id stayed in `.storage` forever, the account's remembered
+  state outlived the account, and a repair issue could outlive the entry
+  that raised it. Removal now deletes both stores, the entry's issues and
+  the account memory.
+- **A cleared expert slot no longer leaves a dead number entity behind.**
+  The registry entry of a slot that is no longer configured (or of every
+  slot, once expert write is off) was never offered again and sat
+  permanently unavailable. It is removed on the next reload; because the
+  unique_id is stable, re-configuring the slot re-creates the entity under
+  its old entity_id, so recorded history survives.
+- **New bounds and options reach entities that already exist.** Rediscovery
+  replaces the parameter descriptions once a day and every cycle delivers
+  fresh metadata - but Number published its construction-time range forever
+  (a value the device newly accepts was refused by Home Assistant before
+  this integration was asked), and Select resolved against its
+  construction-time options (a device already on a newly added option read
+  as unknown). Both now take metadata from every coordinator update, before
+  the value.
+- **A module the portal stops answering for ages out - its siblings stay.**
+  Freshness was tracked per device, so as long as module A kept answering,
+  the readings of a module B missing from every answer were presented as
+  current indefinitely - the only symptom was a number that never changed.
+  Each module now carries its own freshness; after the same tolerance - half
+  an hour, or two API intervals where those are longer - the silent module's
+  readings go unknown, with one warning naming the module, while everything
+  that answers is untouched.
+- **A weekly programme whose refresh keeps failing shows the current raw
+  plan, not last week's detail.** The schedule sensor prefers the fetched
+  detail (`CircuitTimesDay`) over the raw value, and a failed refresh kept
+  that stale detail on display over a newer plan the ordinary read had long
+  delivered. A failed attempt of a due refresh now drops the stale detail;
+  the existing raw-plan fallback takes over until a refresh succeeds again.
+- **An answer outside the portal's own contract no longer detonates mid-code.**
+  Valid JSON is not the same as the expected shape: `{"Parameters": null}`
+  aborted the rest of a device's discovery with a TypeError and left the
+  module with no retry timestamp; a device list without its `Devices` array
+  surfaced as "unexpected error"; a value read answered with `null` failed
+  with `'NoneType' object has no attribute 'get'` as its reason. Each answer
+  form is now shape-checked where it arrives: the unreadable module is booked
+  like a refusal, the device list raises a classified portal-side error (one
+  malformed device row is skipped and logged, the rest of the account
+  survives), and the null read fails with a reason a person can act on.
+- **A German decimal reaches the write as the number it means.** The
+  portal's own dialog accepts `1,5`; the `set_expert_parameter` action
+  refused the same spelling, and an API string value like `21,5` stayed
+  text where a scraped cell already read 21.5. Every portal number now goes
+  through one shared parser, in both spellings.
+- **The service dialog explains word values.** Home Assistant renders the
+  translations, not `services.yaml` - so the hint that "Aus" works lived
+  only where nobody saw it. Both translations now say it.
+- **Two heating circuits no longer share one reading.** A parameter id
+  identifies a parameter within its module, and two circuits are two
+  modules of one type with one parameter catalogue - so the same id appears
+  twice on a device. It was used bare, so the second circuit wrote its
+  value into the first circuit's sensor and got no entity of its own. One
+  circuit was publishing the other's temperature, the other was missing,
+  and nothing said so.
+- **The second circuit's weekly programme is read at all.** The hourly
+  refresh was throttled per device and parameter id, without the module -
+  so whichever circuit was fetched first blocked the other one, on that
+  cycle and on every cycle after it.
+- **A weekly programme keeps the week the portal reported.** The programme
+  is fetched once an hour, the values every few minutes, and the value read
+  rebuilt the row without the schedule - so the readable week survived
+  roughly one cycle in twelve and the sensor fell back to the raw JSON in
+  between.
+- **A parameter the portal stops offering stops being shown as current.**
+  Its last value used to stand unchanged for the rest of the session, with
+  nothing in the log. It is now dropped when the portal's own parameter
+  list no longer contains it, and the entity says so instead.
+- **"Re-scan parameters" survives saving the settings form.** The request
+  was kept in memory only, and saving the form reloads the entry - which
+  rebuilt that memory from disk. The most natural next click undid it, as
+  did any restart before the next update.
+- **A rate-limit block is reported for as long as it holds.** The repair
+  issue is now driven by the block itself rather than by whichever error
+  happened to surface, so it appears while polling is paused and clears
+  when it resumes.
+- **An expert parameter id is one id however it is spelled.** The same
+  hexadecimal id in upper and lower case counted as two - two slots, two
+  entities, and a write that did not reach the configured one.
+- **One unreadable row costs one row.** A module or parameter id the portal
+  sent in a shape that cannot be used aborted the rest of that device;
+  every remaining reading of the device was lost with it. And a device list
+  in which no row at all can be read is now reported as the portal-side
+  error it is, instead of being adopted as an empty account.
+- **A reading that arrives later still gets its entity.** Entities were
+  decided once, during setup. A device that was unreachable at that moment,
+  a parameter found by the daily re-discovery, or statistics whose first
+  attempt failed produced values that no entity ever showed - until the
+  entry was reloaded by hand. They now appear on their own.
+- **A dropdown writes the value that belongs to the option you picked.**
+  The value was chosen by the position of the chosen name in a second list.
+  Where the portal offers the same display name twice, picking one wrote
+  the other one's value into the heating system while the entity showed
+  what was clicked. Unresolvable cases now refuse the write and say why.
+- **A control whose parameter is gone refuses to write.** The entity
+  outlives the reading it was built from and keeps the address it was given
+  at the time, so a click could still send a write for a parameter the
+  portal no longer answers for.
+- **A disabled expert entity no longer errors on every poll.** An entity
+  switched off in the entity registry is still built and handed to the
+  auto-poll, which then tried to publish state for something Home Assistant
+  had never added.
+- **A web half that stopped working says so.** In `both` mode a failing
+  scrape is deliberately swallowed, so it cannot cost the readings the API
+  half delivers - and with it went every trace that half the integration had
+  stopped. Nothing reached the coordinator, each successful API cycle reset
+  its counters, and on a fresh setup there were no scraped entities whose
+  absence could be noticed. The log line asked the user to check the
+  credentials, which the options form does not even contain. There is now a
+  repair issue at the same threshold that stops presenting scraped values as
+  current, naming the two things that actually help: check whether the
+  portal's web page opens in a browser, or switch to API-only mode.
+- **An expert parameter stops showing a value the poll can no longer
+  confirm.** These entities restore their last value after a restart and are
+  not coordinator readings, so none of the freshness rules elsewhere reached
+  them. When the auto-poll produced nothing at all - a web login that
+  failed, a session that broke - the per-parameter tally was deliberately
+  left alone, because one outage says nothing about any single parameter.
+  The result was that nothing happened at all: the dashboard kept a
+  plausible number with nothing behind it, and the next attempt was an hour
+  away. After two such cycles the values go to unknown; name and range stay.
+- **The holiday service shows what the portal kept, not what it was asked
+  for.** A write that returns without an error was accepted, which is not
+  the same as stored: on this endpoint a range ending before it starts comes
+  back as success and is discarded. That one pair is refused before it is
+  sent, but the single date entity has been reading its value back since it
+  turned out that check cannot cover everything. The service now does the
+  same - one read for the whole device, at something used a few times a
+  year. If the read-back fails, both dates go to unknown rather than
+  claiming a holiday nobody confirmed.
+- **A debug log no longer carries the whole installation.** Seven log calls
+  handed over an entire data structure - the account's readings keyed by
+  device id, or a device's module list - as a bare argument. Each was added
+  while debugging something and then stayed, and a debug log is what people
+  paste into an issue. The lines that name what is happening remain; for the
+  data itself there is the diagnostics download, which is anonymised.
+- **A scrape that arrives later still takes over its reading.** In `both`
+  mode the first cycle often has no scrape yet - it is not due, or it
+  failed. The merge then finds no scraped row for an API reading and points
+  it at itself, correctly for that moment, but never looked again. A scrape
+  arriving on a later cycle therefore produced a second entity for the same
+  measurement, refreshing on a different schedule. The mapping is now
+  rebuilt whenever the set of scraped rows changes, which costs no requests.
+- **One unusable module id no longer costs the whole device its reading.**
+  A `ModuleIndex` the portal sends as a list is dropped where the readings
+  are built, but the freshness bookkeeping right after it used the same
+  answer again without that guard. The failure landed inside the device's
+  read, so values that had just been mapped correctly were reported as a
+  failed read - the device counted as failed for that cycle and its
+  readings began ageing towards unknown.
+- **A control stops writing once its parameter belongs to another platform.**
+  The daily re-discovery re-reads what the portal says a parameter is, and
+  that decides whether it becomes a switch, a number or a date. When the
+  answer changes, the entity for the new platform appears - and the old one
+  stayed loaded and writeable until the next reload, still holding the
+  address it was built with. The write gate asked whether the reading was
+  still there, which it was; it now also asks whether it is still this
+  entity's.
+- **An expert parameter id is one parameter, however it is spelled.** Hex
+  ids carry no meaning in their case, and the integration already knew that
+  in two places - the duplicate check built its set that way, and the
+  service checks its argument that way. Both then compared the raw spelling
+  against it. Two slots differing only in case could pass the save as
+  unrelated parameters, and a service call in another case wrote the value,
+  got it confirmed, and left the entity showing the old one.
+- **A password changed while Home Assistant runs is noticed.** The old
+  session keeps working until it expires; the re-login that follows is then
+  turned down, and that rejection left the integration still believing it
+  was signed in. Every cycle after it skipped signing in and spent itself on
+  refused requests, which the per-device handlers swallow - so nothing ever
+  counted as an authentication failure and the re-authentication dialog
+  never appeared. It stayed quietly dead until someone reloaded it by hand.
+- **The two hourly portal limits no longer follow the wall clock.**
+  Statistics and heating schedules are each asked for at most once an hour,
+  and both measured that hour on a clock that can be corrected - NTP right
+  after a boot being the reliable case. A correction forward made every
+  stamp look old enough to fetch again. Weishaupt counts requests per IP,
+  so a limit that drops open is exactly the traffic it exists to prevent.
+  Both now read a clock that cannot jump.
+
 ## [1.11.0] – 2026-08-09
 
 Same code as prerelease 1.11.0b4; only the version number changed.
