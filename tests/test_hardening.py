@@ -913,6 +913,38 @@ def test_a_verified_write_ends_the_failure_streak_it_disproves():
     )
 
 
+def test_disabling_an_entity_clears_its_failure_bookkeeping():
+    """detach_entity takes the streak, the notification marker AND the repair
+    issue down with the entity - left behind, they outlive it and a re-enable
+    starts from a count nobody can see. All three branches only run when there
+    IS a failure to clear, which the disabled-not-polled test never builds, so
+    dropping the tally or the issue cleanup would go unnoticed there.
+    """
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _showing_expert_entity(controller)
+    cleared = []
+    controller._clear_read_failure_issue = cleared.append
+
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+    assert entity.entityvalue in controller.fail_counts, "no streak was built"
+    assert entity.entityvalue in controller.fail_notified, "the streak never notified"
+
+    controller.detach_entity(entity)
+
+    assert entity.entityvalue not in controller.fail_counts, (
+        "the failure streak of a disabled entity was left behind"
+    )
+    assert entity.entityvalue not in controller.fail_notified, (
+        "the notification marker of a disabled entity was left behind"
+    )
+    assert cleared == [entity.entityvalue], (
+        f"detach_entity did not clear the repair issue: {cleared}"
+    )
+
+
 def test_a_dead_batch_is_announced_once_rather_than_every_hour(caplog):
     """Past the threshold the count keeps rising, and the condition stays
     true.

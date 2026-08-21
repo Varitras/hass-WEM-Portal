@@ -3451,6 +3451,20 @@
     "tests": "week_with_no_switching_times_in_it_does_not_count_as_being_fed"
   },
   {
+    "label": "disable cleanup: a disabled entity's failure tally left behind",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        entityvalue = entity.entityvalue\n        self.fail_counts.pop(entityvalue, None)",
+    "new": "        entityvalue = entity.entityvalue\n        pass",
+    "tests": "disabling_an_entity_clears_its_failure_bookkeeping"
+  },
+  {
+    "label": "disable cleanup: a disabled entity's repair issue left standing",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        if entityvalue in self.fail_notified:\n            self.fail_notified.discard(entityvalue)\n            self._clear_read_failure_issue(entityvalue)",
+    "new": "        if entityvalue in self.fail_notified:\n            self.fail_notified.discard(entityvalue)",
+    "tests": "disabling_an_entity_clears_its_failure_bookkeeping"
+  },
+  {
     "label": "schedule: a programme with no value left counted as fed",
     "path": "custom_components/wemportal/utils.py",
     "old": "        and row.value is not None\n",
