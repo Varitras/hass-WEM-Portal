@@ -2135,6 +2135,42 @@ async def test_a_disabled_device_is_filtered_out_on_the_first_cycle(hass, monkey
     )
 
 
+async def test_the_persisted_scraper_id_survives_a_restart_in_the_device_filter(
+    hass, monkeypatch
+):
+    """A `web`->`both` install goes silently API-only without this.
+
+    The device filter read api.data OR api.modules, never the scraper's own
+    device id, which is persisted apart from both. After a restart api.data is
+    empty and api.modules holds only the API device, so the scrape's pseudo-
+    device dropped out of the filter, _scraper_enabled said no, and the web
+    half never ran again - and because it never ran, its id never came back
+    into api.data to fix itself.
+    """
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    # A restart in `both` mode: readings gone, the API module cache still
+    # there, and the scraper's own id persisted separately from both.
+    coordinator.api.data = {}
+    coordinator.api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1}}}
+    coordinator.api.scraper_device_id = "0000"
+
+    seen = []
+
+    def record(self, enabled_devices=None):
+        seen.append(enabled_devices)
+        return FAKE_DATA
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", record)
+    await coordinator._async_update_data()
+
+    assert seen, "the poll never ran"
+    assert coordinator.api._scraper_enabled(seen[0]), (
+        f"the scraper's device 0000 was dropped from the filter {seen[0]}, so "
+        "`both` mode went silently API-only after the restart"
+    )
+
+
 async def test_saving_options_keeps_options_that_are_not_form_fields(hass):
     """Home Assistant REPLACES the options dict with what the flow returns.
 

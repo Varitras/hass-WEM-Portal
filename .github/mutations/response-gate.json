@@ -1694,11 +1694,18 @@
     "tests": "the_rescan_option_also_marks_a_refused_module"
   },
   {
-    "label": "cycle: known devices asked of this session's readings",
+    "label": "cycle: known devices asked of this session's readings only",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "        known_devices = self.api.data or self.api.modules or {}",
-    "new": "        known_devices = self.api.data",
+    "old": "            for source in (self.api.data, self.api.modules)",
+    "new": "            for source in (self.api.data,)",
     "tests": "a_disabled_device_is_filtered_out_on_the_first_cycle"
+  },
+  {
+    "label": "cycle: the persisted scraper id dropped from the device filter",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if self.api.scraper_device_id:",
+    "new": "        if False:",
+    "tests": "the_persisted_scraper_id_survives_a_restart_in_the_device_filter"
   },
   {
     "label": "discovery: an unreadable answer skipped without being booked",

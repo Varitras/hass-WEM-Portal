@@ -313,14 +313,25 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
 
         registry = device_registry.async_get(self.hass)
         # Which devices this integration KNOWS, not which it has already read
-        # this session. api.data is filled by get_devices() inside fetch_data,
-        # so right after a restart it is empty even for an install that has
-        # been running for months - and the filter below then let a disabled
-        # device be polled once per restart. The persisted module cache
-        # survives the restart and answers the same question.
-        known_devices = self.api.data or self.api.modules or {}
+        # this session. A UNION of three separate sources, not a fallback
+        # between them: api.data is filled by get_devices() inside fetch_data
+        # (empty right after a restart), api.modules is the persisted cache
+        # that survives one, and the scraper keeps its own device id apart from
+        # both. Reading only the first non-empty source dropped the scrape's
+        # own pseudo-device from the filter after a restart, so a `web`->`both`
+        # install went silently API-only. The RAW scraper id, not
+        # resolve_scraper_device_id(), which files it back as a side effect;
+        # a falsy id (undecided) does not join the set. Sorted for a stable
+        # filter order - membership is all any consumer reads.
+        known_devices = {
+            str(device_id)
+            for source in (self.api.data, self.api.modules)
+            for device_id in (source or {})
+        }
+        if self.api.scraper_device_id:
+            known_devices.add(str(self.api.scraper_device_id))
         enabled_devices = []
-        for device_id in known_devices:
+        for device_id in sorted(known_devices):
             # Look the device up under the SAME identifier the entity
             # platforms register (utils.device_identifier); previously this
             # used a bare (DOMAIN, device_id), which never matched, so a
