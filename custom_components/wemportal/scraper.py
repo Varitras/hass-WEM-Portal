@@ -29,12 +29,11 @@ from .exceptions import (
 )
 from .models import Reading, account_state
 from .utils import (
-    maintenance_notice,
     parse_portal_number,
-    report_unexpected_maintenance_marker,
     sanitize_value,
     unit_to_icon,
 )
+from .web_protocol import maintenance_notice, report_unexpected_maintenance_marker
 
 _LOGGER = logging.getLogger(__name__)
 

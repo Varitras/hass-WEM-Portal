@@ -232,7 +232,7 @@ HTML_PARSE_BOUNDARIES = {
         "parse_expert_page",
     },
     "transport.py": {"web_login"},
-    "utils.py": {"maintenance_notice"},
+    "web_protocol.py": {"maintenance_notice"},
 }
 
 

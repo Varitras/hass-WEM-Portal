@@ -48,7 +48,7 @@ from .exceptions import (
 # lists the domain modules, and neither of these is one of them - status_is_success
 # reads a status field, maintenance_notice reads a downtime page.
 from .mobile_protocol import as_answer_dict, status_is_success
-from .utils import maintenance_notice
+from .web_protocol import maintenance_notice
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -22,7 +22,7 @@
   },
   {
     "label": "marker probe: reporting more than once per site must be noticed",
-    "path": "custom_components/wemportal/utils.py",
+    "path": "custom_components/wemportal/web_protocol.py",
     "old": "    if what in reported:\n        _LOGGER.debug(\"Maintenance marker seen again on the %s.\", what)\n        return\n    reported.add(what)",
     "new": "    reported.add(what)",
     "tests": "once_per_request_label"
@@ -3236,9 +3236,9 @@
   {
     "label": "boundary: the scan must see a sibling import too",
     "path": "tests/test_transport_boundary.py",
-    "old": "            else:\n                # `from . import x, y` - the modules are the aliases.\n                imported.update(alias.name for alias in node.names)\n",
-    "new": "",
-    "tests": "the_scan_sees_every_spelling_of_an_import"
+    "old": "    return {alias.name for alias in node.names}",
+    "new": "    return set()",
+    "tests": "the_scan_reads_runtime_siblings_only"
   },
   {
     "label": "meta guard: the package-path spelling must be seen",
@@ -3519,5 +3519,12 @@
     "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_add_the_ones_without_an_entity)\n    )",
     "new": "    pass",
     "tests": "every_platform_builds_an_entity_for_a_late_reading"
+  },
+  {
+    "label": "boundary: the transport reaching for utils again must be caught",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "from .web_protocol import maintenance_notice",
+    "new": "from .utils import parse_portal_number",
+    "tests": "transport_imports_only_domain_free_siblings"
   }
 ]

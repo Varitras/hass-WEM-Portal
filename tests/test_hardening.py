@@ -3340,7 +3340,7 @@ NORMAL_LOGIN_PAGE = MAINTENANCE_PAGE.replace("offlinecontent", "someothercontent
 
 
 def test_maintenance_notice_is_detected_and_quoted():
-    from custom_components.wemportal.utils import maintenance_notice
+    from custom_components.wemportal.web_protocol import maintenance_notice
 
     notice = maintenance_notice(MAINTENANCE_PAGE)
 
@@ -3354,7 +3354,7 @@ def test_a_normal_login_page_is_not_mistaken_for_maintenance():
     """The dangerous direction: wrong credentials must still reach the reauth
     flow. Matching loosely (e.g. on the word "Wartungsarbeiten" anywhere)
     would risk swallowing a genuine credential failure forever."""
-    from custom_components.wemportal.utils import maintenance_notice
+    from custom_components.wemportal.web_protocol import maintenance_notice
 
     assert maintenance_notice(NORMAL_LOGIN_PAGE) is None
     assert maintenance_notice("") is None

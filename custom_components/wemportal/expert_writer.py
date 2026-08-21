@@ -45,11 +45,8 @@ from .exceptions import (
     ServerError,
 )
 from .models import account_state
-from .utils import (
-    maintenance_notice,
-    parse_portal_number,
-    report_unexpected_maintenance_marker,
-)
+from .utils import parse_portal_number
+from .web_protocol import maintenance_notice, report_unexpected_maintenance_marker
 
 _LOGGER = logging.getLogger(__name__)
 
