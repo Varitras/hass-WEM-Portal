@@ -6,6 +6,54 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.12.0b4] – 2026-08-22
+
+### Fixed
+
+- **In `both` mode, the web scrape no longer goes silently API-only after a
+  restart.** The list of devices a cycle may poll was read from the API module
+  cache or the live readings, but never from the scraper's own device id, which
+  is stored apart from both. After a restart the readings are gone and the
+  cache holds only the API device, so the scrape's own device was dropped from
+  the filter, the scraper refused it, and the web half stopped running - and
+  because it never ran, its id never came back to restore itself. The known
+  devices are now the union of all three sources.
+- **A holiday date written by hand is no longer undone by a poll running at
+  the same time.** A single-date write carries the module's other dates along
+  unchanged, read once the write holds the portal lock. They were read from the
+  coordinator's published snapshot, which briefly lags the live data after the
+  connection is re-established, so a write landing in that window sent a stale
+  companion and reset a value another write had just stored. The companions are
+  now read from the locked live data.
+- **A cancelled expert write can no longer open a second portal session for the
+  same account.** The service took the shared per-account lock on the event
+  loop and released it if the awaiting call was cancelled - by a reload, an
+  unload, or shutting Home Assistant down - while the worker thread was still
+  driving the portal, leaving the next operation free to start beside it. The
+  lock is now held by the worker for exactly as long as the work runs, the way
+  the other expert paths already do.
+- **A manual "re-scan parameters" is no longer lost when the entry reloads or
+  is removed at the same moment.** The re-scan wrote the module cache to disk
+  outside the lock the teardown waits on, so a write in flight could re-create a
+  store that had just been deleted, or an older cycle's save could put the old
+  timestamps back over the marks. It now goes through the same lock and guard
+  the cycle's own saves use.
+- **After a rate-limit refusal, statistics are retried up to 45 minutes
+  sooner.** A statistics cycle that failed for every device shortens its next
+  attempt, but the shortening was skipped when the failure was a refused login
+  or a rejected request, leaving the full hour in place - so a 403, which also
+  starts a 15-minute cooldown, could keep statistics locked for 45 minutes past
+  the cooldown's end.
+- **The web-scrape interval holds across daylight-saving changes.** The gate
+  measured the time since the last scrape by subtracting two timezone-aware
+  timestamps, which Python does as a naive wall-clock difference - so a DST
+  change landed in the interval, scraping an hour early in spring and skipping
+  an hour of cycles in autumn. It now compares absolute timestamps.
+- **A poll cycle that runs out of time no longer starts one more request.** The
+  deadline was checked just before a one-second courtesy pause rather than after
+  it, so a cycle with under a second of budget left passed the check, spent the
+  budget in the pause, and sent the request anyway.
+
 ## [1.12.0b3] – 2026-08-19
 
 ### Fixed
