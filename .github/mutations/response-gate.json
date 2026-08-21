@@ -814,8 +814,8 @@
   {
     "label": "auth: a refused re-login lost in the statistics device loop",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            except AuthError:\n                # An account is one login",
-    "new": "            except ForbiddenError:\n                # An account is one login",
+    "old": "                except AuthError:\n                    # An account is one login",
+    "new": "                except ForbiddenError:\n                    # An account is one login",
     "tests": "a_refused_relogin_survives_the_statistics_device_loop"
   },
   {
@@ -2018,9 +2018,16 @@
   {
     "label": "stats: a refusal caught again by the device loop's catch-all",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            except ForbiddenError:\n                # Same shape, and the shield the group loop above is missing",
-    "new": "            except ZeroDivisionError:",
+    "old": "                except ForbiddenError:\n                    # Same shape, and the shield the group loop above is missing",
+    "new": "                except ZeroDivisionError:",
     "tests": "a_refused_network_leaves_the_statistics_loop"
+  },
+  {
+    "label": "statistics: a propagated failure skips the short-retry back-dating",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "            if attempted and not succeeded:",
+    "new": "            if False:",
+    "tests": "a_propagated_statistics_failure_still_shortens_the_retry"
   },
   {
     "label": "stats: a refusal repeated once per remaining group",

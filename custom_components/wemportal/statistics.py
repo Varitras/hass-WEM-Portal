@@ -304,47 +304,53 @@ class WemPortalStatistics:
         attempted = 0
         succeeded = 0
 
-        for device_id in self._statistics_devices(enabled_devices):
-            attempted += 1
-            try:
-                self._fetch_device_statistics(device_id)
-                succeeded += 1
-            # skipcq: PYL-W0706 - shields the catch-all, not redundant
-            except AuthError:
-                # An account is one login, so a refused one says nothing
-                # about this device - and every device after it would spend
-                # another login attempt finding that out.
-                raise
-            # skipcq: PYL-W0706 - shields the catch-all, not redundant
-            except ForbiddenError:
-                # Same shape, and the shield the group loop above is missing
-                # its other half of: it lets a refusal out "because the
-                # coordinator has a handler for exactly this", and the
-                # catch-all below caught it again one frame further up. The
-                # block was then logged as this device's statistics problem,
-                # every remaining device was walked into it, and the
-                # coordinator never learned the network is refused.
-                raise
-            except Exception as exc:  # noqa: BLE001
-                # Broad: one device's statistics failing must not stop
-                # the others. `succeeded` stays unincremented, which is
-                # what the retry back-dating below reads.
-                _LOGGER.warning("Error processing Statistics: %s", exc)
-
-        # Every attempted device failed: back-date the timestamp so the next
-        # cycle retries after the shorter retry interval rather than waiting a
-        # full refresh interval. The guard itself stays intact - a portal that
-        # keeps failing is still only asked once per retry interval, never on
-        # every coordinator cycle.
-        if attempted and not succeeded:
-            self.last_statistics_fetch = now - max(
-                0,
-                STATISTICS_REFRESH_INTERVAL_SECONDS - STATISTICS_RETRY_INTERVAL_SECONDS,
-            )
-            _LOGGER.debug(
-                "Statistics failed for all %d device(s); retrying in ~%d min "
-                "instead of %d min.",
-                attempted,
-                STATISTICS_RETRY_INTERVAL_SECONDS // 60,
-                STATISTICS_REFRESH_INTERVAL_SECONDS // 60,
-            )
+        try:
+            for device_id in self._statistics_devices(enabled_devices):
+                attempted += 1
+                try:
+                    self._fetch_device_statistics(device_id)
+                    succeeded += 1
+                # skipcq: PYL-W0706 - shields the catch-all, not redundant
+                except AuthError:
+                    # An account is one login, so a refused one says nothing
+                    # about this device - and every device after it would spend
+                    # another login attempt finding that out.
+                    raise
+                # skipcq: PYL-W0706 - shields the catch-all, not redundant
+                except ForbiddenError:
+                    # Same shape, and the shield the group loop above is missing
+                    # its other half of: it lets a refusal out "because the
+                    # coordinator has a handler for exactly this", and the
+                    # catch-all below caught it again one frame further up. The
+                    # block was then logged as this device's statistics problem,
+                    # every remaining device was walked into it, and the
+                    # coordinator never learned the network is refused.
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    # Broad: one device's statistics failing must not stop
+                    # the others. `succeeded` stays unincremented, which is
+                    # what the retry back-dating below reads.
+                    _LOGGER.warning("Error processing Statistics: %s", exc)
+        finally:
+            # Every attempted device failed: back-date the timestamp so the
+            # next cycle retries after the shorter retry interval rather than
+            # waiting a full refresh interval. In a `finally` so a failure that
+            # leaves this method - a re-raised AuthError/ForbiddenError, or the
+            # BaseException PollDeadlineExceeded - shortens the retry on the way
+            # out too, instead of leaving the full-interval stamp: a 403 arms a
+            # 15-minute cooldown, and the old placement kept statistics locked
+            # ~45 minutes past its end. The guard itself stays intact - a portal
+            # that keeps failing is still only asked once per retry interval.
+            if attempted and not succeeded:
+                self.last_statistics_fetch = now - max(
+                    0,
+                    STATISTICS_REFRESH_INTERVAL_SECONDS
+                    - STATISTICS_RETRY_INTERVAL_SECONDS,
+                )
+                _LOGGER.debug(
+                    "Statistics failed for all %d device(s); retrying in ~%d min "
+                    "instead of %d min.",
+                    attempted,
+                    STATISTICS_RETRY_INTERVAL_SECONDS // 60,
+                    STATISTICS_REFRESH_INTERVAL_SECONDS // 60,
+                )

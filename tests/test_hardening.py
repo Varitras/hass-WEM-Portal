@@ -618,6 +618,44 @@ def test_groups_that_do_not_apply_are_not_failures():
     assert _remaining_wait(api) > statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        exceptions.AuthError("login refused"),
+        exceptions.ForbiddenError("rate limited"),
+        exceptions.PollDeadlineExceeded("cycle out of time"),
+    ],
+    ids=["auth", "forbidden", "poll-deadline"],
+)
+def test_a_propagated_statistics_failure_still_shortens_the_retry(error):
+    """The short-retry back-dating sat AFTER the device loop, so a failure
+    that left the method first skipped it and kept the full-interval stamp.
+
+    A 403 both arms a 15-minute cooldown and raises ForbiddenError, so the
+    statistics stayed locked ~45 minutes past the cooldown's end;
+    PollDeadlineExceeded is a BaseException and slips the catch-all the same
+    way. The stamp must be shortened on the way out - and the exception must
+    still propagate.
+    """
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+
+    def failing_portal(_device_id):
+        raise error
+
+    api._fetch_device_statistics = failing_portal
+
+    with pytest.raises(type(error)):
+        api.get_statistics(enabled_devices=["1234"])
+
+    remaining = _remaining_wait(api)
+    assert remaining <= statistics.STATISTICS_RETRY_INTERVAL_SECONDS + 5, (
+        "a propagated failure left the full-interval stamp"
+    )
+    assert remaining > 0, "the rate limit must not be dropped entirely"
+
+
 def test_statistics_timestamp_is_kept_when_nothing_was_attempted():
     """No eligible device means nothing failed - the shorter retry must not
     kick in just because the loop had nothing to do."""
