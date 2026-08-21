@@ -2107,6 +2107,13 @@
     "tests": "the_scrape_timestamp_carries_its_timezone"
   },
   {
+    "label": "scrape gate: a naive subtraction lets a DST change move the interval",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        elapsed = dt_util.now().timestamp() - self.last_scraping_update.timestamp()",
+    "new": "        elapsed = (dt_util.now() - self.last_scraping_update).total_seconds()",
+    "tests": "the_scrape_gate_measures_real_time_across_a_dst_change"
+  },
+  {
     "label": "options: the discovery list shared by every flow again",
     "path": "custom_components/wemportal/config_flow.py",
     "old": "        self._discovered: list = []",

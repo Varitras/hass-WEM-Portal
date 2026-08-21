@@ -901,14 +901,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
             return False
         if self.last_scraping_update is None:
             return True
-        # Timezone-aware on both sides, and that is the point rather than a
-        # formality. Two NAIVE local timestamps are subtracted as if the clock
-        # never moved, so a DST change lands in this difference: in spring it
-        # reads an hour too long and scrapes at once, in autumn an hour too
-        # short and skips a whole hour's worth of cycles. Aware values carry
-        # their offset, so Python normalises both to UTC before subtracting.
-        waited = dt_util.now() - self.last_scraping_update + timedelta(seconds=10)
-        return waited > self.scan_interval
+        # POSIX timestamps, not a datetime subtraction: two aware stamps with
+        # the SAME tzinfo object subtract as naive wall-clock times, so a DST
+        # change lands in the difference - spring scrapes an hour early, autumn
+        # skips an hour of cycles. Epoch seconds are absolute. The stamp stays
+        # local aware for the "no longer current" warning that prints it (see
+        # _scrape_and_merge).
+        elapsed = dt_util.now().timestamp() - self.last_scraping_update.timestamp()
+        return elapsed + 10 > self.scan_interval.total_seconds()
 
     def _api_read_is_due(self) -> bool:
         """Whether `both` mode should read the mobile API this cycle.

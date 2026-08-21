@@ -3093,17 +3093,14 @@ def _web_api(mode, scraped=None):
 
 
 def test_the_scrape_timestamp_carries_its_timezone():
-    """The scrape interval is a difference between two of these timestamps.
+    """The stored stamp stays aware and local, for the "no longer current"
+    warning that prints it in Home Assistant's timezone.
 
-    Naive local times are subtracted as if the clock never moved, so a
-    daylight-saving change lands squarely in that difference: in spring it
-    reads an hour too LONG and the next scrape fires at once, in autumn an
-    hour too SHORT and a whole hour of cycles is skipped. An aware timestamp
-    carries its offset, so Python normalises both sides to UTC first.
-
-    Asserted on the stored value rather than by simulating a DST change: the
-    offset is the property that makes the arithmetic right, and a test that
-    moved the clock would only be testing Python's own subtraction.
+    It is NOT what makes the scrape interval right: two aware stamps with the
+    same tzinfo object still subtract as naive wall-clock times, so the gate
+    measures elapsed time from POSIX timestamps instead - see
+    test_the_scrape_gate_measures_real_time_across_a_dst_change. This only
+    guards that the stored value keeps its offset for display.
     """
     api = _web_api("both")
     api.spider_wait_interval = 0
@@ -3112,7 +3109,35 @@ def test_the_scrape_timestamp_carries_its_timezone():
     api._scrape_and_merge()
 
     assert api.last_scraping_update.tzinfo is not None, (
-        "a naive timestamp puts the DST jump straight into the scrape interval"
+        "a naive stamp would print the wrong offset in the not-current warning"
+    )
+
+
+def test_the_scrape_gate_measures_real_time_across_a_dst_change(monkeypatch):
+    """Two aware stamps with the SAME tzinfo object are subtracted as naive
+    wall-clock times, so a DST change lands in the difference. Across the
+    spring-forward gap 45 real minutes read as 1h45 of wall clock, firing a
+    one-hour scrape interval at once - an extra portal login the rate limit
+    counts, for a value that is not due. The gate has to measure real elapsed
+    time, whatever the wall clock did.
+    """
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    berlin = ZoneInfo("Europe/Berlin")
+    # 2025-03-30: 02:00 CET -> 03:00 CEST. 45 real minutes span the gap.
+    before = datetime(2025, 3, 30, 1, 30, tzinfo=berlin)  # 00:30 UTC
+    after = datetime(2025, 3, 30, 3, 15, tzinfo=berlin)  # 01:15 UTC
+
+    api = _api()
+    api.last_scraping_update = before
+    api.scan_interval = timedelta(hours=1)
+    api.spider_wait_interval = 0
+    monkeypatch.setattr(wemportalapi.dt_util, "now", lambda: after)
+
+    assert not api._scrape_is_due(None), (
+        "the scrape fired 45 real minutes into a one-hour interval, counting "
+        "the spring-forward hour as elapsed time"
     )
 
 
