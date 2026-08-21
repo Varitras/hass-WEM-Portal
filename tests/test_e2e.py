@@ -306,7 +306,29 @@ async def test_a_poll_finishing_during_the_unload_does_not_write(hass, hass_stor
     )
 
 
-async def test_a_store_write_in_flight_blocks_the_unload_gate(hass):
+def _prepare_module_cache_save(coordinator, slow_disk):
+    """A module-cache save on the (slow) disk, holding the store lock."""
+    coordinator.api.modules = {"1234": {(0, 1): {"Name": "Heat pump"}}}
+    coordinator._saved_modules_snapshot = None
+    coordinator._modules_store.async_save = slow_disk
+    return coordinator._async_save_modules_cache()
+
+
+def _prepare_scraper_id_save(coordinator, slow_disk):
+    """A scraper-device-id save on the (slow) disk, holding the store lock -
+    the second writer the barrier has to cover, not only the module cache."""
+    coordinator.api.scraper_device_id = "device-42"
+    coordinator._saved_scraper_device_id = None
+    coordinator._scraper_device_store.async_save = slow_disk
+    return coordinator._async_save_scraper_device_id()
+
+
+@pytest.mark.parametrize(
+    "prepare_save",
+    [_prepare_module_cache_save, _prepare_scraper_id_save],
+    ids=["module-cache", "scraper-device-id"],
+)
+async def test_a_store_write_in_flight_blocks_the_unload_gate(hass, prepare_save):
     """The gate the unload awaits must not return while a save holds the lock.
 
     A save that had already passed the "may I start" gate is on the disk with
@@ -315,12 +337,16 @@ async def test_a_store_write_in_flight_blocks_the_unload_gate(hass):
     after the removal that deletes those stores, or the reload that replaced
     them, and lands on top of either.
 
+    BOTH persisted stores go through the same locked helper, so both are run
+    here: the module cache AND the scraper device id. The order check this
+    replaced covered only the module cache - and only by chance, reading the
+    right answer when the unload happened to run long, which is how the
+    matching mutation survived a full run while passing in isolation.
+
     Asserted as the gate's OWN state, not as a race between two tasks: with a
     free lock the gate returns within a single loop step (the acquire does not
     yield), so a gate that is still pending after one step is one the lock held
-    back. The order-of-completion check this replaced could read the right
-    answer by chance when the unload happened to run long, which is how the
-    matching mutation survived a full run while passing in isolation.
+    back.
     """
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
@@ -332,11 +358,7 @@ async def test_a_store_write_in_flight_blocks_the_unload_gate(hass):
     async def slow_disk(_data):
         await let_the_disk_answer.wait()
 
-    coordinator.api.modules = {"1234": {(0, 1): {"Name": "Heat pump"}}}
-    coordinator._saved_modules_snapshot = None
-    coordinator._modules_store.async_save = slow_disk
-
-    writing = hass.async_create_task(coordinator._async_save_modules_cache())
+    writing = hass.async_create_task(prepare_save(coordinator, slow_disk))
     await asyncio.sleep(0)  # the save takes the lock and blocks on the disk
 
     waiting = hass.async_create_task(coordinator.async_wait_for_store_writes())

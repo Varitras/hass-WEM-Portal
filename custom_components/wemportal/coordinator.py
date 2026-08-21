@@ -233,6 +233,20 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         async with self._store_writes:
             return
 
+    async def _save_under_store_lock(self, store, data) -> None:
+        """Persist to a Store under _store_writes - the lock the unload waits on.
+
+        Both persisted stores (the module cache and the scraper device id)
+        write through here, so the barrier the teardown depends on lives in
+        one place. A save that had passed its own gate is still on the disk
+        while the entry comes down; holding this lock is what makes
+        async_wait_for_store_writes wait for it, so the removal or reload that
+        follows cannot overtake it. Dropping it at even one writer reopens
+        that window - which is why the guard mutates this line.
+        """
+        async with self._store_writes:
+            await store.async_save(data)
+
     async def _async_save_scraper_device_id(self) -> None:
         """Persist the stable scraper device id once it has been decided.
 
@@ -248,8 +262,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         if not self._may_still_write_to_disk():
             return
         try:
-            async with self._store_writes:
-                await self._scraper_device_store.async_save(device_id)
+            await self._save_under_store_lock(self._scraper_device_store, device_id)
             self._saved_scraper_device_id = device_id
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not persist WEM Portal scraper device id: %s", exc)
@@ -272,8 +285,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             serialized = serialize_modules(self.api.modules)
             if serialized == self._saved_modules_snapshot:
                 return
-            async with self._store_writes:
-                await self._modules_store.async_save(serialized)
+            await self._save_under_store_lock(self._modules_store, serialized)
             self._saved_modules_snapshot = serialized
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Could not persist WEM Portal module cache: %s", exc)
