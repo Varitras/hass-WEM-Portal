@@ -2388,8 +2388,6 @@ async def test_every_platform_builds_an_entity_for_a_late_reading(hass, platform
     situations produce a reading only on a LATER cycle, and each of them ends
     as coordinator data nobody renders if a platform gets this wrong.
     """
-    from custom_components.wemportal.models import Reading
-
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
     before = len(hass.states.async_entity_ids(platform))
@@ -3485,7 +3483,6 @@ async def test_a_successful_reauth_clears_the_auth_failure_streak(hass, monkeypa
     already answered, so it escalated straight back to a reauth prompt - for
     a password the portal had just accepted.
     """
-    from custom_components.wemportal.exceptions import AuthError
     from custom_components.wemportal.models import account_state
 
     def refusing_portal(self, *_args, **_kwargs):
@@ -4171,8 +4168,6 @@ async def test_a_cancelled_setup_is_rolled_back_like_a_failed_one(hass, monkeypa
     which is the only window where the platforms are up and setup can still
     end early.
     """
-    import asyncio
-
     from custom_components.wemportal.expert_controller import ExpertController
 
     monkeypatch.setattr(

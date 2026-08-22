@@ -607,8 +607,6 @@ def _writeable(cls, unloading=False, calls=None):
 
 @pytest.mark.parametrize("name", sorted(WRITEABLE))
 async def test_no_platform_writes_while_the_entry_is_unloading(name):
-    from homeassistant.exceptions import HomeAssistantError
-
     calls = []
     entity = _writeable(WRITEABLE[name], unloading=True, calls=calls)
 
@@ -620,8 +618,6 @@ async def test_no_platform_writes_while_the_entry_is_unloading(name):
 
 @pytest.mark.parametrize("name", sorted(WRITEABLE))
 async def test_no_platform_writes_after_the_entry_is_gone(name):
-    from homeassistant.exceptions import HomeAssistantError
-
     calls = []
     entity = _writeable(WRITEABLE[name], calls=calls)
     del entity._config_entry.runtime_data

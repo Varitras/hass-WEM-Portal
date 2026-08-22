@@ -58,8 +58,6 @@ class FakeRegistry:
         prefix, so the registry can answer with an entity of a DIFFERENT WEM
         account. Only this object knows that, which is why the fake has to.
         """
-        import types
-
         owner = self.owners.get(entity_id)
         return None if owner is None else types.SimpleNamespace(config_entry_id=owner)
 
@@ -421,8 +419,6 @@ async def test_a_reclassification_after_setup_takes_the_old_entity_down(monkeypa
 
 def _entry_with_a_coordinator(coordinator):
     """A config entry the entity builder accepts, sharing `coordinator`."""
-    import types
-
     entry = FakeConfigEntry()
     entry.runtime_data = types.SimpleNamespace(coordinator=coordinator)
     return entry

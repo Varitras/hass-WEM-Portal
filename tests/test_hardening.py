@@ -731,8 +731,6 @@ def test_none_enabled_devices_still_polls_everything():
 
 def _expert_entity(api, entry_id="e1", entityvalue="A" * 36):
     """An expert number entity wired to `api` through its entry's runtime data."""
-    import types
-
     from custom_components.wemportal import expert_writer
     from custom_components.wemportal.models import WemPortalData
 
@@ -1002,8 +1000,6 @@ def test_a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise():
     before it raises, so the cycle after this one logs in and reaches the
     coordinator with it.
     """
-    import types
-
     api = _api()
     # The lock is not what is under test, and releasing one this test never
     # took raises on its own.
@@ -1026,8 +1022,6 @@ def _two_entries_being_unloaded(both_unloading=True, expert=True):
     drops it after async_unload_entry RETURNS - which is the whole reason
     this case exists.
     """
-    import types
-
     from custom_components.wemportal.const import CONF_EXPERT_WRITE
     from custom_components.wemportal.models import WemPortalData
 
@@ -1096,8 +1090,6 @@ def test_removing_one_of_two_entries_of_an_account_keeps_the_shared_state():
     markers out from under the entry that stays. The next reload then starts
     polling as though the portal had never refused anything.
     """
-    import types
-
     from custom_components.wemportal import models
 
     models.reset_account_states_for_tests()
@@ -1120,8 +1112,6 @@ def test_removing_one_of_two_entries_of_an_account_keeps_the_shared_state():
 def test_removing_the_last_entry_of_an_account_does_drop_its_state():
     """The other half - without it, never forgetting would pass just as well
     and the state would outlive the account for the life of the process."""
-    import types
-
     from custom_components.wemportal import models
 
     models.reset_account_states_for_tests()
@@ -2113,8 +2103,6 @@ def test_restore_brings_back_the_value_and_never_the_bounds():
     instead of a slider until the portal has answered once, and the price
     is documented.
     """
-    import types
-
     from homeassistant.components.number import NumberMode
 
     from custom_components.wemportal import expert_writer
@@ -2145,8 +2133,6 @@ def test_a_slot_with_no_stored_value_stays_on_the_placeholders():
     """RestoreNumber persists bounds with or without a value, so a slot that
     was never read still has the pre-placeholder 0/100/1 on disk. Nothing of
     that may come back - there is no reading it could belong to."""
-    import types
-
     from custom_components.wemportal import expert_writer
 
     entity = _expert_entity(_api())
@@ -2195,8 +2181,6 @@ def test_entity_write_reuses_the_shared_session_cache():
 def test_expert_accessors_degrade_safely_without_a_store():
     """During unload the entry store is gone; the accessors must return None
     rather than raise."""
-    import types
-
     from custom_components.wemportal import expert_writer
 
     # No runtime_data at all: exactly what an unloaded entry looks like.
@@ -2874,8 +2858,6 @@ def test_maintenance_answering_the_login_post_is_not_a_wrong_password(monkeypatc
     inside one maintenance window, and Home Assistant asks for a password
     that was right all along.
     """
-    import types
-
     from custom_components.wemportal.scraper import WemPortalScraper
 
     class _Response:
@@ -2915,8 +2897,6 @@ def test_a_portal_error_page_on_the_login_url_is_not_a_wrong_password(monkeypatc
     maintenance notice, then the login FORM. Only the form is evidence that
     credentials were seen and rejected.
     """
-    import types
-
     from custom_components.wemportal.scraper import WemPortalScraper
 
     class _Response:
@@ -2950,8 +2930,6 @@ def test_a_portal_error_page_on_the_login_url_is_not_a_wrong_password(monkeypatc
 def test_the_login_form_coming_back_is_still_a_wrong_password(monkeypatch):
     """The counter-test: when the portal DOES show the form again, the
     credentials really were refused and reauth is the right escalation."""
-    import types
-
     from custom_components.wemportal.scraper import WemPortalScraper
 
     class _Response:
@@ -2993,8 +2971,6 @@ def test_a_main_page_without_its_state_after_a_login_is_not_a_wrong_password(
     ago - and feeds the counter that eventually asks the user to re-enter
     them.
     """
-    import types
-
     from custom_components.wemportal.scraper import WemPortalScraper
 
     class _Session:
@@ -3941,8 +3917,6 @@ def test_web_mode_validation_does_not_accept_a_config_that_cannot_poll(monkeypat
 
 def _validate_with(monkeypatch, error):
     """Run the config-flow validation against a login that raises `error`."""
-    import asyncio
-
     from custom_components.wemportal import config_flow
     from custom_components.wemportal.const import CONF_MODE
 
@@ -4350,8 +4324,6 @@ def test_one_device_that_worked_still_keeps_the_cycle_green():
 
 def _switch(value):
     """A switch entity built from one reading, without Home Assistant."""
-    import types
-
     from custom_components.wemportal.switch import WemPortalSwitch
 
     coordinator = types.SimpleNamespace(
@@ -4939,8 +4911,6 @@ def test_a_write_that_fails_with_a_plain_error_still_reaches_the_caller(monkeypa
 
 def test_a_successful_write_leaves_the_verified_value_behind(monkeypatch):
     """The counter-test: awaiting the write must not lose what it returns."""
-    import asyncio
-
     api = _api()
     entity, built = _write_entity(api, monkeypatch)
 
@@ -5004,8 +4974,6 @@ def test_a_removed_entity_does_not_open_a_portal_session(monkeypatch):
 
 def test_a_normal_write_still_reaches_the_portal(monkeypatch):
     """The guard must not disable writing altogether."""
-    import asyncio
-
     api = _api()
     entity, built = _write_entity(api, monkeypatch)
 
@@ -5152,8 +5120,6 @@ def test_the_auto_poll_hands_its_read_a_stop_gate(monkeypatch):
     nothing to check - the entity write could be stopped mid-teardown and the
     scheduled read could not.
     """
-    import types
-
     from custom_components.wemportal import expert_controller, expert_writer
 
     class _Client:
@@ -7651,8 +7617,6 @@ def _sensor_from_row(key, row):
     """One sensor entity built from one coordinator row, without Home
     Assistant. The row IS the object the coordinator holds, so whatever the
     entity reads back out of it, it reads the way production does."""
-    import types
-
     from custom_components.wemportal.sensor import WemPortalSensor
 
     coordinator = types.SimpleNamespace(
