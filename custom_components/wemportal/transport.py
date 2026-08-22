@@ -374,7 +374,7 @@ class WemPortalTransport:
         self.valid_login = False
         self.api_version = None
         # The web cookie belongs to the discarded scraper session.
-        self.webscraping_cookie = {}
+        self.webscraping_cookie: dict[str, Any] | None = {}
         # Re-run device discovery once on the next cycle: it is cheap, and the
         # failures being recovered from may have left the module view partial.
         self._devices_fetched_this_session = False

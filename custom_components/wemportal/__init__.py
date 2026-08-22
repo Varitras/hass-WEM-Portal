@@ -164,8 +164,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
 
     # Creating API object
     api = WemPortalApi(
-        entry.data.get(CONF_USERNAME),
-        entry.data.get(CONF_PASSWORD),
+        entry.data[CONF_USERNAME],
+        entry.data[CONF_PASSWORD],
         config=entry.options,
         cached_modules=cached_modules,
         scraper_device_id=scraper_device_id,

@@ -24,7 +24,6 @@ MYPY_INI = REPO / "mypy.ini"
 # What is deliberately still outside, and why. Emptying this list is the
 # point; every entry is a promise, not a permanent exemption.
 NOT_TYPE_CHECKED_YET = {
-    "wemportalapi.py": "the remaining god module - typing it is the next rebuild phase, not a side quest",
     "expert_writer.py": "a Telerik form protocol written out longhand; mostly literal field ids",
     "config_flow.py": "voluptuous schemas type-check to Any, so strict mode says little here",
     "translations.py": "a table of strings",

@@ -324,7 +324,7 @@
   {
     "label": "recovery: a transport field that stops being reset must be noticed",
     "path": "custom_components/wemportal/transport.py",
-    "old": "        # The web cookie belongs to the discarded scraper session.\n        self.webscraping_cookie = {}",
+    "old": "        # The web cookie belongs to the discarded scraper session.\n        self.webscraping_cookie: dict[str, Any] | None = {}",
     "new": "        # The web cookie belongs to the discarded scraper session.",
     "tests": "recovery_touches_exactly_the_transport or transport_in_the_state"
   },
@@ -2074,7 +2074,7 @@
   {
     "label": "rediscovery: a refusal that survives the description fixing it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        self.modules[device_id][key].pop(\"description_refused\", None)",
+    "old": "        modules[device_id][key].pop(\"description_refused\", None)",
     "new": "        pass",
     "tests": "a_description_that_arrives_clears_the_refusal"
   },
@@ -2116,8 +2116,8 @@
   {
     "label": "scrape gate: a naive subtraction lets a DST change move the interval",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        elapsed = dt_util.now().timestamp() - self.last_scraping_update.timestamp()",
-    "new": "        elapsed = (dt_util.now() - self.last_scraping_update).total_seconds()",
+    "old": "        elapsed: float = (\n            dt_util.now().timestamp() - self.last_scraping_update.timestamp()\n        )",
+    "new": "        elapsed: float = (dt_util.now() - self.last_scraping_update).total_seconds()",
     "tests": "the_scrape_gate_measures_real_time_across_a_dst_change"
   },
   {

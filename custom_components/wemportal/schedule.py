@@ -16,6 +16,8 @@ import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Final
 
+import requests
+
 from .const import WemDataType
 from .exceptions import AuthError
 from .models import ModuleRef, Reading
@@ -70,12 +72,24 @@ class WemPortalSchedule:
 
     if TYPE_CHECKING:
         data: dict[str, dict[str, Any]]
-        modules: dict[str, Any]
+        # Optional: None until discovery populates it, which the fetch below
+        # treats as "no modules to walk yet".
+        modules: dict[str, Any] | None
         language: str
         scraping_mapper: dict[Any, Any]
         _last_circuit_times_fetch: dict[tuple[Any, ...], float]
 
-        def make_api_call(self, url: str, **kwargs: Any) -> Any: ...
+        # The host's transport half; the full signature so the three mixins
+        # agree on it when merged into the one WemPortalApi.
+        def make_api_call(
+            self,
+            url: str,
+            headers: Any = None,
+            data: Any = None,
+            do_retry: bool = True,
+            delay: int = 5,
+            retry_transport: bool = False,
+        ) -> requests.Response: ...
 
     def _schedule_row_key(
         self, device_id: str, module: Mapping[str, Any], parameter_id: str
@@ -302,7 +316,7 @@ class WemPortalSchedule:
         """Fetch the device's own view of every weekly programme it has,
         throttled per programme."""
         try:
-            for module in self.modules[device_id].values():
+            for module in (self.modules or {}).get(device_id, {}).values():
                 for parameter_id, parameter_data in (
                     module.get("parameters") or {}
                 ).items():

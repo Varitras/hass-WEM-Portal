@@ -2,13 +2,14 @@
 Weishaupt webscraping and API library
 """
 
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
+from collections.abc import Callable, Iterator, Mapping
 import logging
 
 import copy
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import requests
 from homeassistant.const import CONF_SCAN_INTERVAL
@@ -60,6 +61,11 @@ from .utils import (
     schedule_fetch_still_feeds,
     short_device_id,
 )
+
+if TYPE_CHECKING:
+    # Imported lazily at runtime (see fetch_webscraping_data); named here only
+    # to type the persistent scraper handle.
+    from .scraper import WemPortalScraper
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -189,7 +195,7 @@ DEVICE_STATUS_ROWS = (
 )
 
 
-def _report_missing_job_id(device_id, reported):
+def _report_missing_job_id(device_id: str, reported: set[str]) -> None:
     """Say once that a device started no identifiable measurement job.
 
     A read without a JobID is answered from the most recent job, which may be
@@ -215,15 +221,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
 
     def __init__(
         self,
-        username,
-        password,
-        config=None,
-        existing_data=None,
-        cached_modules=None,
-        blocked_until=0.0,
-        scraper_device_id=None,
-        expert_blocked_until=0.0,
-        scraper_backoff=None,
+        username: str,
+        password: str,
+        config: Mapping[str, Any] | None = None,
+        existing_data: dict[str, dict[str, Any]] | None = None,
+        cached_modules: dict[str, Any] | None = None,
+        blocked_until: float = 0.0,
+        scraper_device_id: str | None = None,
+        expert_blocked_until: float = 0.0,
+        scraper_backoff: tuple[int, int, datetime | None] | None = None,
     ) -> None:
         """Assemble the api object from three sources, kept apart because
         they have different lifetimes: the user's options, the state the
@@ -247,7 +253,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         )
         self._init_runtime_state()
 
-    def _init_from_config(self, config):
+    def _init_from_config(self, config: Mapping[str, Any] | None) -> None:
         """Everything the user chose in the options flow."""
         if config is None:
             config = {}
@@ -275,13 +281,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
 
     def _init_from_storage(
         self,
-        existing_data,
-        cached_modules,
-        scraper_device_id,
-        blocked_until,
-        expert_blocked_until,
-        scraper_backoff,
-    ):
+        existing_data: dict[str, dict[str, Any]] | None,
+        cached_modules: dict[str, Any] | None,
+        scraper_device_id: str | None,
+        blocked_until: float,
+        expert_blocked_until: float,
+        scraper_backoff: tuple[int, int, datetime | None] | None,
+    ) -> None:
         """State the coordinator persisted, handed back after a restart.
 
         Every argument here exists because starting from zero was wrong:
@@ -303,7 +309,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # per-module parameter discovery in get_parameters() and go
         # straight to normal polling. `None` means "no cache available" and
         # preserves the original behavior of doing a full discovery.
-        self.modules = copy.deepcopy(cached_modules) if cached_modules else None
+        self.modules: dict[str, Any] | None = (
+            copy.deepcopy(cached_modules) if cached_modules else None
+        )
         # When each module was last named in a values answer, per device.
         # Deliberately NOT inside self.modules: the list is replaced wholesale
         # on every re-discovery, and a module that drops out of it is exactly
@@ -343,7 +351,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         self.spider_retry_count = retry_count
         self.last_scraping_update = last_update
 
-    def _init_runtime_state(self):
+    def _init_runtime_state(self) -> None:
         """State that always starts empty: the HTTP transport, the
         per-session caches and the timestamps a cycle fills in.
         """
@@ -356,7 +364,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # When the mobile API was last read, for the `both`-mode gate. None
         # rather than 0.0: zero on the monotonic clock is the moment the
         # machine booted, which would read as "long overdue" only by luck.
-        self._last_api_read = None
+        self._last_api_read: float | None = None
         # Tracks whether get_devices() has already run once during the
         # lifetime of this WemPortalApi instance (i.e. once per Home
         # Assistant session/restart), so it isn't repeated on every single
@@ -374,7 +382,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # no poll is running. Only fetch_data sets it: an on-demand write or a
         # service call has a user waiting on it and no coordinator timeout
         # behind it, so neither gets a deadline.
-        self._deadline = None
+        self._deadline: float | None = None
         # device_id -> when its values were last refreshed, for the staleness
         # check above. Monotonic because it measures a duration and never
         # appears in output; a restart starts empty, which is correct - there
@@ -388,7 +396,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # fetch_webscraping_data(). Note: the session-cookie reuse (which
         # skips the login *requests*) is separate from this - keeping the
         # instance also skips the per-cycle connection setup itself.
-        self._scraper = None
+        self._scraper: WemPortalScraper | None = None
         # Headers used for all API calls
         self.headers = {
             "User-Agent": "WeishauptWEMApp",
@@ -398,13 +406,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         }
         # DeviceType per device id, as reported by Device/Read. Only feeds
         # the model name shown in Home Assistant.
-        self.device_types = {}
+        self.device_types: dict[str, Any] = {}
         # Scraped keys seen in the previous cycle, to notice when the
         # portal relabels a row (see _warn_about_renamed_scraper_keys).
-        self._previous_scraper_keys = None
+        self._previous_scraper_keys: set[str] | None = None
         # Last connection status per device, so the offline log line is
         # edge-triggered rather than repeated every cycle.
-        self._last_connection_status = {}
+        self._last_connection_status: dict[str, Any] = {}
         self.scraping_mapper = {}
         # The two hourly gates. Here rather than on the account state, so
         # they are forgotten by the same reload that forgets the readings
@@ -421,7 +429,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         self.expert_cookies = {}
         self.api_version = None
 
-    def _register_scrape_failure(self):
+    def _register_scrape_failure(self) -> None:
         """Count one failed scrape and make the next cycles wait for it.
 
         Every failing exit from the scrape has to go through here. Four of
@@ -504,7 +512,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             len(forgotten),
         )
 
-    def _rows_this_module_owns(self, device_rows, module_key, schedule_runs=True):
+    def _rows_this_module_owns(
+        self,
+        device_rows: dict[str, Any],
+        module_key: ModuleRef,
+        schedule_runs: bool = True,
+    ) -> Iterator[tuple[str, Reading]]:
         """The rows a silent module may take down with it.
 
         Four things disqualify a row, and none of them is about the module
@@ -535,7 +548,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 continue
             yield row_name, row
 
-    def _kept_fresh_by_the_scrape(self, row_name) -> bool:
+    def _kept_fresh_by_the_scrape(self, row_name: str) -> bool:
         """Whether the scrape is still delivering this row.
 
         Both ageing passes ask this - the device-level one and the
@@ -559,7 +572,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return False
         return row_name in (self._previous_scraper_keys or ())
 
-    def web_scrape_is_failing(self, enabled_devices=None) -> bool:
+    def web_scrape_is_failing(self, enabled_devices: list[str] | None = None) -> bool:
         """Whether the web half has stopped delivering, as a question about
         STATE - the same shape as is_rate_limited, and for the same reason.
 
@@ -585,7 +598,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return False
         return self.spider_retry_count >= SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
 
-    def _forget_scraped_values(self):
+    def _forget_scraped_values(self) -> None:
         """Stop presenting readings from a scrape that stopped working.
 
         The API path has the same rule and a much easier job: the portal
@@ -629,7 +642,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             )
 
     @property
-    def scraper_backoff(self):
+    def scraper_backoff(self) -> tuple[int, int, datetime | None]:
         """The scrape backoff as the constructor takes it back.
 
         Exposed as one value so a caller carrying state across an instance
@@ -641,7 +654,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             self.last_scraping_update,
         )
 
-    def resolve_scraper_device_id(self):
+    def resolve_scraper_device_id(self) -> str:
         """Return the stable device id to store scraped sensors under.
 
         Locked in ONCE, then reused forever (persisted by the coordinator):
@@ -691,7 +704,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         return self.scraper_device_id
 
     @staticmethod
-    def _device_is_enabled(device_id, enabled_devices) -> bool:
+    def _device_is_enabled(device_id: str, enabled_devices: list[str] | None) -> bool:
         """Whether the caller's filter admits this device.
 
         The two meanings the coordinator builds, spelled out once: `None` is
@@ -705,7 +718,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return True
         return str(device_id) in {str(enabled) for enabled in enabled_devices}
 
-    def _scraper_enabled(self, enabled_devices) -> bool:
+    def _scraper_enabled(self, enabled_devices: list[str] | None) -> bool:
         """Whether the web scraper's pseudo-device is in the caller's filter.
 
         Scraping produces exactly ONE device (see resolve_scraper_device_id).
@@ -732,7 +745,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return True
         return str(device_id) in {str(enabled) for enabled in enabled_devices}
 
-    def _acquire_api_lock(self, what):
+    def _acquire_api_lock(self, what: str) -> None:
         """Take the shared API lock, or fail with a message the user can act on.
 
         Blocking forever was the old behaviour: a poll whose await had already
@@ -746,7 +759,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 f"in a moment."
             )
 
-    def fetch_data(self, enabled_devices=None):
+    def fetch_data(
+        self, enabled_devices: list[str] | None = None
+    ) -> dict[str, dict[str, Any]]:
         """Run a full poll cycle under the shared API lock, so it can't
         interleave with an on-demand write (change_value) on the same
         session/state."""
@@ -766,7 +781,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             self._deadline = None
             self._api_lock.release()
 
-    def remaining_budget(self):
+    def remaining_budget(self) -> float | None:
         """Seconds this cycle has left, or None when no poll is running.
 
         The scrape needs the NUMBER, not just a yes/no: its requests carry
@@ -780,7 +795,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return None
         return self._deadline - time.monotonic()
 
-    def check_deadline(self):
+    def check_deadline(self) -> None:
         """Stop the poll cycle if it has used up its time budget.
 
         Checked at the two points every long cycle passes through - each
@@ -801,7 +816,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 f"connection for the next one instead of holding it."
             )
 
-    def _discover_parameters_if_due(self, enabled_devices=None):
+    def _discover_parameters_if_due(
+        self, enabled_devices: list[str] | None = None
+    ) -> None:
         """Read the per-module parameter definitions, if any are due.
 
         Two different reasons to run it, with different urgency.
@@ -818,7 +835,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         due = [
             module
-            for device_id, modules in self.modules.items()
+            for device_id, modules in (self.modules or {}).items()
             if self._device_is_enabled(device_id, enabled_devices)
             for module in modules.values()
         ]
@@ -832,7 +849,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         )
         self.get_parameters(enabled_devices)
 
-    def _ensure_api_session(self, enabled_devices=None):
+    def _ensure_api_session(self, enabled_devices: list[str] | None = None) -> None:
         """Everything the API paths need before they can read anything."""
         if not self.valid_login:
             self.api_login()
@@ -849,7 +866,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # entirely after a restart, which is what makes startup fast again.
         self._discover_parameters_if_due(enabled_devices)
 
-    def _scrape_is_due(self, enabled_devices) -> bool:
+    def _scrape_is_due(self, enabled_devices: list[str] | None) -> bool:
         """Whether `both` mode should scrape this cycle.
 
         The order of these guards is load-bearing, which is why they are
@@ -874,7 +891,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # skips an hour of cycles. Epoch seconds are absolute. The stamp stays
         # local aware for the "no longer current" warning that prints it (see
         # _scrape_and_merge).
-        elapsed = dt_util.now().timestamp() - self.last_scraping_update.timestamp()
+        elapsed: float = (
+            dt_util.now().timestamp() - self.last_scraping_update.timestamp()
+        )
         return elapsed + 10 > self.scan_interval.total_seconds()
 
     def _api_read_is_due(self) -> bool:
@@ -898,15 +917,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         if self._last_api_read is None:
             return True
-        waited = time.monotonic() - self._last_api_read
+        waited: float = time.monotonic() - self._last_api_read
         return waited >= self.scan_interval_api.total_seconds()
 
-    def _count_down_scrape_backoff(self):
+    def _count_down_scrape_backoff(self) -> None:
         """One cycle closer to the next scrape attempt."""
         if self.spider_wait_interval > 0:
             self.spider_wait_interval -= 1
 
-    def _scrape_and_merge(self):
+    def _scrape_and_merge(self) -> None:
         """Scrape once and merge the result. The timestamp moves only after
         both have worked."""
         webscraping_data = self.fetch_webscraping_data()
@@ -916,7 +935,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # _scrape_is_due) and in the timezone Home Assistant is configured for.
         self.last_scraping_update = dt_util.now()
 
-    def _collect_web(self, enabled_devices):
+    def _collect_web(self, enabled_devices: list[str] | None) -> None:
         """`web` mode: the scrape is the only source there is."""
         if not self._scraper_enabled(enabled_devices):
             _LOGGER.debug("Skipping web scrape: its device is disabled.")
@@ -924,7 +943,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         webscraping_data = self.fetch_webscraping_data()
         self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
 
-    def _collect_both(self, enabled_devices):
+    def _collect_both(self, enabled_devices: list[str] | None) -> None:
         """`both` mode: scrape when due, then read the API either way."""
         if self._scrape_is_due(enabled_devices):
             try:
@@ -960,7 +979,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # drift together instead of apart.
             self._last_api_read = time.monotonic()
 
-    def _fetch_data(self, enabled_devices=None):
+    def _fetch_data(
+        self, enabled_devices: list[str] | None = None
+    ) -> dict[str, dict[str, Any]]:
         # Fail fast, without any network activity at all, if we're still
         # within a cooldown window from a previous 403 (see
         # _activate_cooldown). This is checked again inside
@@ -998,7 +1019,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 "Unexpected error occurred while fetching data"
             ) from exc
 
-    def _warn_about_renamed_scraper_keys(self, scraped_keys):
+    def _warn_about_renamed_scraper_keys(self, scraped_keys: list[str]) -> set[str]:
         """Point out a relabelled row before the user has to guess.
 
         Scraped sensors have no stable id from the portal - the entityvalue
@@ -1059,7 +1080,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             )
         return gone
 
-    def _prepare_scraped_row(self, row, previous) -> None:
+    def _prepare_scraped_row(self, row: Reading, previous: Any) -> None:
         """Translate the row's name and keep a unit this scrape did not bring.
 
         Mutates `row` in place, which is what the caller stores. Split out of
@@ -1094,7 +1115,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         if isinstance(previous, Reading) and previous.unit not in (None, ""):
             row.unit = previous.unit
 
-    def _merge_webscraping_data(self, device_id, webscraping_data):
+    def _merge_webscraping_data(
+        self, device_id: str, webscraping_data: dict[str, Any]
+    ) -> None:
         if str(device_id) not in self.data:
             self.data[str(device_id)] = {}
 
@@ -1121,7 +1144,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 )
                 entry.value = None
 
-    def _reset_scraper(self):
+    def _reset_scraper(self) -> None:
         """Discard the persistent scraper instance (closing its HTTP
         session) so the next scraping cycle starts with a completely
         fresh connection - used after auth/session errors where reusing
@@ -1130,7 +1153,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             self._scraper.close()
             self._scraper = None
 
-    def fetch_webscraping_data(self):
+    def fetch_webscraping_data(self) -> dict[str, Any]:
         """
         Call scraper to crawl WEM Portal.
         This function manages the process of initiating a web scraping job,
@@ -1252,7 +1275,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # Return the scraped data
         return data
 
-    def get_devices(self):
+    def get_devices(self) -> None:
         """Fetch the current device/module list from the API.
 
         This refreshes the device list, module list and connection status
@@ -1289,8 +1312,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 "list - nothing to set up from."
             )
 
-        new_modules = {}
-        new_data = {}
+        new_modules: dict[str, Any] = {}
+        new_data: dict[str, dict[str, Any]] = {}
         for device in device_rows:
             try:
                 self._register_device(
@@ -1326,11 +1349,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
 
     def _register_device(
         self,
-        device,
-        previously_known_modules,
-        previously_known_readings,
-        new_modules,
-        new_data,
+        device: dict[str, Any],
+        previously_known_modules: dict[str, Any],
+        previously_known_readings: dict[str, dict[str, Any]],
+        new_modules: dict[str, Any],
+        new_data: dict[str, dict[str, Any]],
     ) -> None:
         """Adopt one device row of the device-list answer.
 
@@ -1390,7 +1413,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         if device.get("DeviceType") is not None:
             self.device_types[device_id_str] = device["DeviceType"]
 
-    def _note_undescribed_module(self, device_id, values, why, unsupported):
+    def _note_undescribed_module(
+        self, device_id: str, values: dict[str, Any], why: str, unsupported: bool
+    ) -> None:
         """A module the portal would not describe. Nothing is ever thrown away.
 
         This is what makes a re-scan purely ADDITIVE, and it is the condition
@@ -1491,7 +1516,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             values["parameters_fetched_at"] = time.time()
         values["parameters"] = {}
 
-    def _parameters_are_stale(self, module) -> bool:
+    def _parameters_are_stale(self, module: dict[str, Any]) -> bool:
         """Whether this module's parameter list is due for a re-read.
 
         A module with no list at all is NOT stale - it is missing, which is a
@@ -1499,11 +1524,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         if "parameters" not in module:
             return False
-        age = time.time() - module.get("parameters_fetched_at", 0)
+        age: float = time.time() - module.get("parameters_fetched_at", 0)
         return age >= PARAMETER_REDISCOVERY_INTERVAL_SECONDS
 
     @staticmethod
-    def _http_status(exc):
+    def _http_status(exc: Exception) -> int | None:
         """The HTTP status behind a WemPortalError, or None if it had none.
 
         Read explicitly rather than through getattr with a default: a typo in
@@ -1513,9 +1538,16 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         cause = exc.__cause__
         if not isinstance(cause, requests.exceptions.HTTPError):
             return None
+        # HTTPError.response is Optional in the type stubs and genuinely
+        # unset for a locally-raised error; only a real HTTP answer has a
+        # status. Read explicitly for the same reason as the isinstance above.
+        if cause.response is None:
+            return None
         return cause.response.status_code
 
-    def _module_description_is_due(self, device_id, values) -> bool:
+    def _module_description_is_due(
+        self, device_id: str, values: dict[str, Any]
+    ) -> bool:
         """Whether this module's parameter list has to be read again.
 
         Cached AND still young enough to trust. Without the age check the list
@@ -1552,7 +1584,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         )
         return True
 
-    def _store_module_description(self, device_id, key, values, response) -> None:
+    def _store_module_description(
+        self,
+        device_id: str,
+        key: ModuleRef,
+        values: dict[str, Any],
+        response: requests.Response,
+    ) -> None:
         """Keep what the portal said this module has, or book why it did not.
 
         Every unusable answer is BOOKED, never merely logged: skipping with a
@@ -1599,17 +1637,20 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
 
         # Before the replacement: it needs the list as it stands today.
         forget_dropped_parameters(self.data.get(device_id), values, parameters)
-        self.modules[device_id][key]["parameters"] = parameters
-        self.modules[device_id][key]["parameters_fetched_at"] = time.time()
+        # Non-None here: this path runs only under get_parameters, which
+        # returns early while the module list is still None.
+        modules = self.modules or {}
+        modules[device_id][key]["parameters"] = parameters
+        modules[device_id][key]["parameters_fetched_at"] = time.time()
         # The portal answered this time. Clearing it here rather than only on
         # the empty branch matters: the flag is persisted with the module
         # cache, so a refusal that was never cleared would outlive the
         # restart that fixed it.
-        self.modules[device_id][key].pop("description_refused", None)
+        modules[device_id][key].pop("description_refused", None)
 
-    def _discover_device_parameters(self, device_id) -> None:
+    def _discover_device_parameters(self, device_id: str) -> None:
         """Read every module description of one device that is due."""
-        for key, values in self.modules[device_id].items():
+        for key, values in (self.modules or {})[device_id].items():
             if not self._module_description_is_due(device_id, values):
                 continue
             data = {
@@ -1650,7 +1691,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 raise
             self._store_module_description(device_id, key, values, response)
 
-    def get_parameters(self, enabled_devices=None):
+    def get_parameters(self, enabled_devices: list[str] | None = None) -> None:
         """Read the per-module parameter definitions of every enabled device.
 
         The filter matters more here than anywhere else this integration
@@ -1672,7 +1713,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             self._discover_device_parameters(device_id)
 
     def _publish_accepted_values(
-        self, device_id, module_index, module_type, written
+        self,
+        device_id: str,
+        module_index: int,
+        module_type: int,
+        written: dict[str, Any],
     ) -> None:
         """Bring the stored readings in line with what the portal just took.
 
@@ -1697,13 +1742,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
 
     def change_value(
         self,
-        device_id,
-        parameter_id,
-        module_index,
-        module_type,
-        numeric_value,
-        together_with=None,
-    ):
+        device_id: str,
+        parameter_id: str,
+        module_index: int | None,
+        module_type: int | None,
+        numeric_value: float | str,
+        together_with: dict[str, float] | Callable[[], dict[str, float]] | None = None,
+    ) -> None:
         """Change a value under the shared API lock, so a write can't
         interleave with a poll cycle on the same session/state.
 
@@ -1721,6 +1766,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         exactly those and sent them back, undoing part of a write that had
         just succeeded. This is the only place that knows the whole request.
         """
+        # A writable entity always carries a real module address; the write
+        # payload cannot express a missing one, and the int() coercion in
+        # _change_value has nothing to work on without it. Narrowed here, the
+        # same shape as the expert path's asserts.
+        assert module_index is not None and module_type is not None
         self._acquire_api_lock("parameter write")
         try:
             # A write does not go through _ensure_api_session, and after two
@@ -1752,7 +1802,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         finally:
             self._api_lock.release()
 
-    def reread_device_values(self, device_id) -> str | None:
+    def reread_device_values(self, device_id: str) -> str | None:
         """Read one device's parameter values again, under the shared lock.
 
         For asking the portal what it actually stored. `Status: 0` on a write
@@ -1788,13 +1838,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
 
     def _change_value(
         self,
-        device_id,
-        parameter_id,
-        module_index,
-        module_type,
-        numeric_value,
-        together_with=None,
-    ):
+        device_id: str,
+        parameter_id: str,
+        module_index: int,
+        module_type: int,
+        numeric_value: float | str,
+        together_with: dict[str, float] | None = None,
+    ) -> None:
         """POST request to API to change a specific value.
 
         `together_with` maps further parameter ids of the SAME module to the
@@ -1914,7 +1964,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             )
 
     # Refresh data and retrieve new data
-    def get_data(self, enabled_devices=None):
+    def get_data(self, enabled_devices: list[str] | None = None) -> None:
         """Refresh all data for the target devices.
 
         Thin per-device orchestration; the actual work is split into the
@@ -1955,7 +2005,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # no API-discovered modules, so the API refresh below has nothing
             # to fetch and self.modules[device_id] would raise KeyError.
             # Their scraped sensors are handled entirely by the scraper path.
-            if device_id not in self.modules:
+            if device_id not in (self.modules or {}):
                 _LOGGER.debug(
                     "Skipping device %s: no API modules (scraper-only).", device_id
                 )
@@ -2151,6 +2201,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         nothing else. Correlating that with the warning above it by timestamp
         was work the caller could do for the user.
         """
+        # Reached only from get_data, which skips any device_id that is not in
+        # self.modules - so the module list is a real dict at this point.
+        assert self.modules is not None
         try:
             data = {
                 "DeviceID": int(device_id),
@@ -2403,7 +2456,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             DEVICE_VALUES_STALE_AFTER_POLLS * self.scan_interval_api.total_seconds(),
         )
 
-    def _stamp_answered_modules(self, device_id, values) -> None:
+    def _stamp_answered_modules(self, device_id: str, values: dict[str, Any]) -> None:
         """Note WHEN each module last appeared in a values answer.
 
         Kept BESIDE the module list rather than inside it, and that is the
@@ -2420,7 +2473,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         for module in values.get("Modules") or []:
             if not isinstance(module, dict):
                 continue
-            key = ModuleRef(module.get("ModuleIndex"), module.get("ModuleType"))
+            # Read as Any on purpose: these are raw portal fields, and a
+            # ModuleRef is built from whatever they hold - the guard is the
+            # try below, not the type.
+            module_index: Any = module.get("ModuleIndex")
+            module_type: Any = module.get("ModuleType")
+            key = ModuleRef(module_index, module_type)
             # Around the ASSIGNMENT, like mapper._described_module: an id the
             # portal sent as a list builds a ModuleRef without complaint and
             # only raises where something hashes it.
@@ -2429,7 +2487,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             except TypeError:
                 continue
 
-    def _forget_unanswered_module_values(self, device_id) -> None:
+    def _forget_unanswered_module_values(self, device_id: str) -> None:
         """Stop presenting a module's readings once IT has stopped answering.
 
         The per-module half of _forget_stale_device_values, for the case

@@ -14,6 +14,8 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Final
 
+import requests
+
 from .exceptions import AuthError, ForbiddenError, WemPortalError
 from .models import Reading
 from .translations import translate
@@ -56,14 +58,26 @@ class WemPortalStatistics:
 
     if TYPE_CHECKING:
         data: dict[str, dict[str, Any]]
-        modules: dict[str, Any]
+        # Optional: None until discovery populates it, which the device
+        # filter below treats as "no devices to ask yet".
+        modules: dict[str, Any] | None
         language: str
         # Optional, because "never fetched in this session" is a state the
         # gate below reads explicitly. Declared as a plain float, the one
         # thing this declaration exists to make visible was wrong.
         last_statistics_fetch: float | None
 
-        def make_api_call(self, url: str, **kwargs: Any) -> Any: ...
+        # The host's transport half; the full signature so the three mixins
+        # agree on it when merged into the one WemPortalApi.
+        def make_api_call(
+            self,
+            url: str,
+            headers: Any = None,
+            data: Any = None,
+            do_retry: bool = True,
+            delay: int = 5,
+            retry_transport: bool = False,
+        ) -> requests.Response: ...
 
     def _statistics_devices(self, enabled_devices=None) -> list[str]:
         """The devices this cycle should ask the portal about."""
@@ -80,7 +94,7 @@ class WemPortalStatistics:
         return [
             str(device_id)
             for device_id in target_devices
-            if str(device_id) in self.data and str(device_id) in self.modules
+            if str(device_id) in self.data and str(device_id) in (self.modules or {})
         ]
 
     def _statistics_group_name(self, group: dict[str, Any]) -> str:
