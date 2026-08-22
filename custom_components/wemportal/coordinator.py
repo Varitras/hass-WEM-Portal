@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 
 import asyncio
+from datetime import timedelta
 from time import monotonic
+from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_USERNAME
@@ -92,12 +94,12 @@ WEB_SCRAPE_ISSUE = "web_scrape_failing"
 # see models.AccountState. Cleared on success and on unload.
 
 
-def forget_auth_failures(config_entry) -> None:
+def forget_auth_failures(config_entry: ConfigEntry) -> None:
     """Drop the account's auth-failure count (unload/removal)."""
     account_state(config_entry.data.get(CONF_USERNAME)).auth_failures = 0
 
 
-def get_modules_store(hass: HomeAssistant, entry_id: str) -> Store:
+def get_modules_store(hass: HomeAssistant, entry_id: str) -> Store[Any]:
     """Return the Store used to persist discovered module/parameter metadata.
 
     Used both by __init__.py (to load the cache before creating the
@@ -107,7 +109,7 @@ def get_modules_store(hass: HomeAssistant, entry_id: str) -> Store:
     return Store(hass, MODULES_STORAGE_VERSION, f"{DOMAIN}_{entry_id}_modules")
 
 
-def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store:
+def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store[Any]:
     """Return the Store used to persist the stable scraper device id.
 
     Loaded by __init__.py before creating the WemPortalApi instance and
@@ -120,7 +122,11 @@ def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store:
     )
 
 
-def device_by_identifier(registry, identifier, config_entry_id):
+def device_by_identifier(
+    registry: device_registry.DeviceRegistry,
+    identifier: tuple[str, str],
+    config_entry_id: str,
+) -> device_registry.DeviceEntry | None:
     """One registered device, looked up the way this Home Assistant allows.
 
     `async_get_device(identifiers=...)` matches on the identifier alone, so
@@ -136,19 +142,26 @@ def device_by_identifier(registry, identifier, config_entry_id):
     """
     unambiguous_lookup = getattr(registry, "async_get_device_by_identifier", None)
     if unambiguous_lookup is not None:
-        return unambiguous_lookup(identifier, config_entry_id)
+        return cast(
+            "device_registry.DeviceEntry | None",
+            unambiguous_lookup(identifier, config_entry_id),
+        )
     return registry.async_get_device(identifiers={identifier})
 
 
 class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
     """DataUpdateCoordinator for wemportal component"""
 
+    # Always set (passed in __init__); narrows the base's Optional so the
+    # entry_id/state accesses below do not each need a None check.
+    config_entry: ConfigEntry
+
     def __init__(
         self,
         hass: HomeAssistant,
         api: WemPortalApi,
         config_entry: ConfigEntry,
-        update_interval,
+        update_interval: timedelta | None,
     ) -> None:
         """Initialize DataUpdateCoordinator for the wemportal component"""
         # config_entry is passed to the base class (current HA convention;
@@ -163,7 +176,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             config_entry=config_entry,
         )
         self.api = api
-        self.last_try = None
+        self.last_try: float | None = None
         self.num_failed = 0
         # Consecutive AuthError counter, separate from num_failed: only
         # after AUTH_ERROR_ESCALATION_THRESHOLD auth failures IN A ROW do we
@@ -178,11 +191,11 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         )
         # Remember the last-persisted scraper device id so we only write the
         # store when it actually changes (it's decided once and then stable).
-        self._saved_scraper_device_id = None
+        self._saved_scraper_device_id: str | None = None
         # Fingerprint of the last-written module cache, so an unchanged one
         # is not rewritten on every successful cycle (~288 writes a day at a
         # five-minute interval, for data that changes almost never).
-        self._saved_modules_snapshot: dict | None = None
+        self._saved_modules_snapshot: dict[str, Any] | None = None
         # Held for the duration of a store write, and taken by the unload
         # before it lets go. The gate below decides whether a save may START;
         # the write itself is asynchronous, so a removal or a reload landing
@@ -233,7 +246,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         async with self._store_writes:
             return
 
-    async def _save_under_store_lock(self, store, data) -> None:
+    async def _save_under_store_lock(self, store: Store[Any], data: Any) -> None:
         """Persist to a Store under _store_writes - the lock the unload waits on.
 
         Both persisted stores (the module cache and the scraper device id)
@@ -314,7 +327,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         await self._save_under_store_lock(self._modules_store, serialized)
         self._saved_modules_snapshot = serialized
 
-    async def _async_update_data(self):
+    async def _async_update_data(self) -> Any:
         """Fetch data from the wemportal api"""
         if self.num_failed > 2:
             # Wait longer than the plain scan interval before retrying,
@@ -431,7 +444,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             return
         async_delete_issue(self.hass, DOMAIN, issue_id)
 
-    def _sync_web_scrape_issue(self, device_filter) -> None:
+    def _sync_web_scrape_issue(self, device_filter: list[str] | None) -> None:
         """Report a web half that has stopped delivering, withdraw it if not.
 
         Separate from the rate-limit report beside it: that one says the
@@ -494,7 +507,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         if self.num_failed == API_FAILURES_TOLERATED + 1:
             self.async_update_listeners()
 
-    async def _update_within_timeout(self, device_filter):
+    async def _update_within_timeout(self, device_filter: list[str] | None) -> Any:
         """The guarded update itself. Split out so the timeout can be caught
         around it without moving the error handling one level in."""
         async with asyncio.timeout(DEFAULT_TIMEOUT):
