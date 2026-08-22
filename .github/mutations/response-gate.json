@@ -2123,7 +2123,7 @@
   {
     "label": "options: the discovery list shared by every flow again",
     "path": "custom_components/wemportal/options_flow.py",
-    "old": "        self._discovered: list = []",
+    "old": "        self._discovered: list[dict[str, Any]] = []",
     "new": "        WemportalOptionsFlow._discovered = []",
     "tests": "two_options_flows_do_not_share_their_discovery"
   },

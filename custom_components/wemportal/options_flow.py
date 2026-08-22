@@ -12,6 +12,7 @@ tests/test_security.py enforces.
 
 from __future__ import annotations
 
+from typing import Any
 import logging
 import re
 
@@ -89,7 +90,7 @@ class WemportalOptionsFlow(OptionsFlow):
     _discovery_detail: str = ""
     # Module list fetched during THIS flow. Persisted only by the final save,
     # so discovery never triggers an integration reload mid-flow.
-    _module_list: list | None = None
+    _module_list: list[dict[str, Any]] | None = None
 
     def __init__(self) -> None:
         # Per-flow, not per-class. Discovery result and the modules the user
@@ -105,8 +106,8 @@ class WemportalOptionsFlow(OptionsFlow):
         # parameter ids in the other account's dropdown. The others above stay
         # class attributes: they are immutable defaults, which cannot be
         # shared by accident.
-        self._discovered: list = []
-        self._selected_modules: list = []
+        self._discovered: list[dict[str, Any]] = []
+        self._selected_modules: list[dict[str, Any]] = []
 
     async def async_step_init(self, user_input=None):
         """Options menu: configure, discover expert parameters, or re-scan."""
@@ -153,6 +154,9 @@ class WemportalOptionsFlow(OptionsFlow):
             # a removal could re-create it or a stale cycle save overwrite it.
             # A failure is not a slower next start like the cycle's own save -
             # it is the request itself going missing, so it is not swallowed.
+            # marked > 0 means the module list was walked, so runtime_data and
+            # its coordinator are present.
+            assert data is not None
             await data.coordinator.async_persist_rescan()
             _LOGGER.info(
                 "Options: marked the parameter list of %d module(s) for a "
@@ -210,7 +214,7 @@ class WemportalOptionsFlow(OptionsFlow):
             data_schema=self._configure_schema(prefill, id_options),
         )
 
-    async def _validate_mode_change(self, user_input) -> dict:
+    async def _validate_mode_change(self, user_input) -> dict[str, str]:
         """Check the credentials against the transport the new mode needs.
 
         The initial setup deliberately validates exactly the transport the
@@ -238,7 +242,7 @@ class WemportalOptionsFlow(OptionsFlow):
             return {"base": "cannot_connect"}
         return {}
 
-    def _validate_configure_input(self, user_input) -> dict:
+    def _validate_configure_input(self, user_input) -> dict[str, str]:
         """Check the submitted options and return the per-field errors.
 
         NORMALISES `user_input` IN PLACE, and that is load-bearing rather
@@ -466,7 +470,7 @@ class WemportalOptionsFlow(OptionsFlow):
                 sort=False,
             )
         )
-        fields = {}
+        fields: dict[Any, Any] = {}
         for slot in range(1, EXPERT_SLOT_COUNT + 1):
             name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % slot
             id_key = CONF_EXPERT_SLOT_ID_TEMPLATE % slot
@@ -484,11 +488,12 @@ class WemportalOptionsFlow(OptionsFlow):
             ] = id_selector
         return fields
 
-    def _known_modules(self) -> list:
+    def _known_modules(self) -> list[dict[str, Any]]:
         """Module list for this flow: freshly fetched one first, else stored."""
         if self._module_list is not None:
             return self._module_list
-        return self.config_entry.options.get(CONF_EXPERT_MODULE_LIST) or []
+        stored = self.config_entry.options.get(CONF_EXPERT_MODULE_LIST)
+        return stored if isinstance(stored, list) else []
 
     # --- Expert parameter discovery -----------------------------------
     def _expert_client(self):
