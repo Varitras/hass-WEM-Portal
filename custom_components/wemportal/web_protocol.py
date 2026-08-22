@@ -23,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 WEB_MAINTENANCE_MARKER: Final = "offlinecontent"
 
 
-def maintenance_notice(html_text):
+def maintenance_notice(html_text: str) -> str | None:
     """Return the portal's maintenance notice, or None if there is none.
 
     Detected via the dedicated `offlinecontent` container (see
@@ -50,7 +50,9 @@ def maintenance_notice(html_text):
     return "The portal reports scheduled maintenance."
 
 
-def report_unexpected_maintenance_marker(notice, what, reported) -> None:
+def report_unexpected_maintenance_marker(
+    notice: str, what: str, reported: set[str]
+) -> None:
     """Note a maintenance marker on a response that is not treated as downtime.
 
     The marker check is currently enabled only where a real maintenance page

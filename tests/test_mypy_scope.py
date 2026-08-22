@@ -33,9 +33,6 @@ NOT_TYPE_CHECKED_YET = {
     "expert_controller.py": "waiting for expert_writer, whose entities it holds",
     "scraper.py": "lxml and curl_cffi are both untyped; the noise would drown the signal",
     "utils.py": "helpers for the modules above, typed when their callers are",
-    "web_protocol.py": "the web login's maintenance protocol lifted out of utils; typed with it",
-    "holiday.py": "waiting for the api surface it writes through",
-    "expert_options.py": "options parsing for the expert path, typed with it",
     "translations.py": "a table of strings",
     "const.py": "constants only",
 }

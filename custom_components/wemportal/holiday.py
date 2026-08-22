@@ -29,7 +29,8 @@ from typing import Final, NamedTuple
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.service import async_register_admin_service
@@ -38,7 +39,7 @@ from .const import (
     DOMAIN,
 )
 from .date import date_to_epoch
-from .models import Reading, is_still_serving, raise_if_not_writable
+from .models import Reading, WemPortalData, is_still_serving, raise_if_not_writable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,14 +50,14 @@ class DateTarget(NamedTuple):
     """Everything a write needs about one date entity."""
 
     entity_id: str
-    entry: object
-    data: object
+    entry: ConfigEntry
+    data: WemPortalData
     device_id: str
     data_key: str
     row: Reading
 
     @property
-    def address(self):
+    def address(self) -> tuple[int | None, int | None]:
         """The module this parameter belongs to, as the portal addresses it."""
         return (self.row.module_index, self.row.module_type)
 
@@ -87,7 +88,7 @@ def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
         )
     _entry_id, device_id, data_key = parts
 
-    entry = hass.config_entries.async_get_entry(registry_entry.config_entry_id)
+    entry = hass.config_entries.async_get_entry(registry_entry.config_entry_id or "")
     if entry is None:
         raise HomeAssistantError(f"The account behind {entity_id} no longer exists.")
     # Also the unload gate: a write must not start into an entry that is on
@@ -134,7 +135,7 @@ def _check_pair(begin: DateTarget, end: DateTarget) -> None:
         )
 
 
-async def _write_holiday(hass: HomeAssistant, call) -> None:
+async def _write_holiday(hass: HomeAssistant, call: ServiceCall) -> None:
     """Set both dates of one holiday in a single request."""
     begin_day = call.data["begin"]
     end_day = call.data["end"]
@@ -210,7 +211,7 @@ def async_register_holiday_service(hass: HomeAssistant) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY):
         return
 
-    async def _handle(call):
+    async def _handle(call: ServiceCall) -> None:
         await _write_holiday(hass, call)
 
     async_register_admin_service(
@@ -229,7 +230,9 @@ def async_register_holiday_service(hass: HomeAssistant) -> None:
     )
 
 
-def async_release_holiday_service(hass: HomeAssistant, config_entry) -> None:
+def async_release_holiday_service(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> None:
     """Drop the service once no loaded entry is left to serve it.
 
     One domain-wide registration shared by every account, so unloading one

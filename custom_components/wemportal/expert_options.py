@@ -8,6 +8,9 @@ was ever enabled. Splitting them out is what makes the lazy import of the
 client real rather than claimed.
 """
 
+from collections.abc import Iterable, Mapping
+from typing import Any
+
 from .const import (
     CONF_EXPERT_ENABLE_MODULE_NAV,
     CONF_EXPERT_ENABLE_SECURITY_CODE,
@@ -15,7 +18,10 @@ from .const import (
 )
 
 
-def discovery_option_list(discovered, current_ids) -> list:
+def discovery_option_list(
+    discovered: Iterable[Mapping[str, Any]] | None,
+    current_ids: Iterable[str | None] | None,
+) -> list[dict[str, str]]:
     """Build the slot-dropdown options from discovery + current selections.
 
     Discovered parameters come first (labelled "group / name (value)"); any
@@ -44,7 +50,7 @@ def discovery_option_list(discovered, current_ids) -> list:
     return options
 
 
-def canonical_entityvalue(raw) -> str:
+def canonical_entityvalue(raw: str | None) -> str:
     """One spelling to compare entityvalues by.
 
     They are hex, so case carries no meaning: `3A7F` and `3a7f` are the same
@@ -62,7 +68,7 @@ def canonical_entityvalue(raw) -> str:
     return (raw or "").strip().casefold()
 
 
-def duplicate_entityvalues(id_values) -> set:
+def duplicate_entityvalues(id_values: Iterable[str | None] | None) -> set[str]:
     """Return the set of entityvalues used more than once (non-empty).
 
     Reported in the canonical spelling: two slots differing only in case
@@ -77,7 +83,7 @@ def duplicate_entityvalues(id_values) -> set:
     return {entityvalue for entityvalue, count in counts.items() if count > 1}
 
 
-def expert_client_options(options):
+def expert_client_options(options: Mapping[str, Any]) -> dict[str, Any]:
     """Return the WemPortalExpertClient kwargs derived from entry options.
 
     Centralises reading the module argument and the two advanced navigation
