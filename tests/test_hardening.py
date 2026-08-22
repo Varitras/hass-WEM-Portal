@@ -785,6 +785,40 @@ def test_the_auto_poll_does_not_publish_state_for_an_entity_ha_never_added():
     )
 
 
+def test_a_missing_entity_class_fails_loud_instead_of_dropping_configured_slots(
+    monkeypatch,
+):
+    """A configured slot that cannot be built must raise, not yield an empty list.
+
+    When the Home Assistant imports the entity class rests on are missing, the
+    class is undefined. The old code swallowed that (try/except ImportError) and
+    create_expert_number_entities then returned [] - which number.py feeds
+    straight into _async_drop_ghost_expert_entities. With no built entity in the
+    "keep" set, that call deletes every configured slot's registry entry: its
+    entity_id, restored state and recorder history. So a transient import
+    failure silently wiped exactly the data it was meant to preserve. A slot
+    that is configured but cannot be built has to abort setup loudly instead.
+    """
+    from custom_components.wemportal import expert_number
+    from custom_components.wemportal.const import (
+        CONF_EXPERT_SLOT_ID_TEMPLATE,
+        CONF_EXPERT_WRITE,
+    )
+
+    entry = types.SimpleNamespace(
+        options={
+            CONF_EXPERT_WRITE: True,
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: "A" * 36,
+        }
+    )
+    # Stand in for "the entity class never got defined because its Home
+    # Assistant imports failed at module load".
+    monkeypatch.delattr(expert_number, "WemPortalExpertNumber", raising=False)
+
+    with pytest.raises(NameError):
+        expert_number.create_expert_number_entities(entry)
+
+
 def test_a_run_of_failed_batches_stops_showing_the_expert_value():
     """The expert number restores its last value and keeps it while reads fail.
 

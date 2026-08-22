@@ -408,8 +408,8 @@
   {
     "label": "unload gate: the expert entity must ask too",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            raise_if_not_writable(\n                self._config_entry, self._attr_name or str(self._attr_unique_id)\n            )",
-    "new": "            pass",
+    "old": "        raise_if_not_writable(\n            self._config_entry, self._attr_name or str(self._attr_unique_id)\n        )",
+    "new": "        pass",
     "tests": "expert_entity_does_not_start_a_write_while_unloading"
   },
   {
@@ -2256,8 +2256,8 @@
   {
     "label": "expert: every slot published as a percentage again",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        _attr_native_step = EXPERT_UNKNOWN_STEP",
-    "new": "        _attr_native_unit_of_measurement = \"%\"\n        _attr_native_step = EXPERT_UNKNOWN_STEP",
+    "old": "    _attr_native_step = EXPERT_UNKNOWN_STEP",
+    "new": "    _attr_native_unit_of_measurement = \"%\"\n    _attr_native_step = EXPERT_UNKNOWN_STEP",
     "tests": "an_expert_parameter_does_not_claim_to_be_a_percentage"
   },
   {
@@ -2305,15 +2305,15 @@
   {
     "label": "expert: the read applying its step to neither caller",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            if state.step is not None:\n                self._attr_native_step = state.step",
+    "old": "        if state.step is not None:\n            self._attr_native_step = state.step",
     "new": "",
     "tests": "the_step_of_a_whole_number_parameter_stays_whole"
   },
   {
     "label": "expert: restore taking the stored bounds back again",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            if last.native_value is not None:\n                self._attr_native_value = last.native_value",
-    "new": "            if last.native_value is not None:\n                self._attr_native_value = last.native_value\n            self._attr_native_min_value = last.native_min_value\n            self._attr_native_max_value = last.native_max_value\n            self._attr_native_step = last.native_step",
+    "old": "        if last.native_value is not None:\n            self._attr_native_value = last.native_value",
+    "new": "        if last.native_value is not None:\n            self._attr_native_value = last.native_value\n        self._attr_native_min_value = last.native_min_value\n        self._attr_native_max_value = last.native_max_value\n        self._attr_native_step = last.native_step",
     "tests": "restore_brings_back_the_value_and_never_the_bounds"
   },
   {
@@ -2326,22 +2326,22 @@
   {
     "label": "expert: the write going back to fire-and-forget",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            await self._async_write(value)",
-    "new": "            self.hass.async_create_background_task(self._async_write(value), name=\"w\")",
+    "old": "        await self._async_write(value)",
+    "new": "        self.hass.async_create_background_task(self._async_write(value), name=\"w\")",
     "tests": "a_failed_write_reaches_whoever_asked_for_it"
   },
   {
     "label": "expert: an unexpected failure swallowed instead of wrapped",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "                raise HomeAssistantError(\n                    f\"Setting {self._attr_name} to {value} failed: {exc}\"\n                ) from exc",
-    "new": "                return",
+    "old": "            raise HomeAssistantError(\n                f\"Setting {self._attr_name} to {value} failed: {exc}\"\n            ) from exc",
+    "new": "            return",
     "tests": "a_write_that_fails_with_a_plain_error_still_reaches_the_caller"
   },
   {
     "label": "expert: a teardown reported to the caller as a successful write",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            except ExpertOperationAborted as exc:",
-    "new": "            except _NeverRaised as exc:",
+    "old": "        except ExpertOperationAborted as exc:",
+    "new": "        except _NeverRaised as exc:",
     "tests": "a_write_stopped_by_a_teardown_reaches_the_caller_too"
   },
   {
@@ -2466,15 +2466,15 @@
   {
     "label": "expert: a never-read slot locking out the values it cannot know",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        _attr_native_min_value = -EXPERT_UNKNOWN_BOUND\n        _attr_native_max_value = EXPERT_UNKNOWN_BOUND",
-    "new": "        _attr_native_min_value = 0\n        _attr_native_max_value = 100",
+    "old": "    _attr_native_min_value = -EXPERT_UNKNOWN_BOUND\n    _attr_native_max_value = EXPERT_UNKNOWN_BOUND",
+    "new": "    _attr_native_min_value = 0\n    _attr_native_max_value = 100",
     "tests": "a_slot_that_has_never_been_read_forbids_nothing"
   },
   {
     "label": "expert: a never-read slot forcing whole numbers",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        _attr_native_step = EXPERT_UNKNOWN_STEP",
-    "new": "        _attr_native_step = 1",
+    "old": "    _attr_native_step = EXPERT_UNKNOWN_STEP",
+    "new": "    _attr_native_step = 1",
     "tests": "a_slot_that_has_never_been_read_allows_a_half_step"
   },
   {
@@ -2522,8 +2522,8 @@
   {
     "label": "expert: restore dropping the stored value too",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            if last.native_value is not None:\n                self._attr_native_value = last.native_value",
-    "new": "            if last.native_value is not None:\n                pass",
+    "old": "        if last.native_value is not None:\n            self._attr_native_value = last.native_value",
+    "new": "        if last.native_value is not None:\n            pass",
     "tests": "restore_brings_back_the_value_and_never_the_bounds"
   },
   {
@@ -2592,8 +2592,8 @@
   {
     "label": "expert: a known range that still shows spinner arrows",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            return NumberMode.AUTO if bounds_are_known else NumberMode.BOX",
-    "new": "            return NumberMode.BOX",
+    "old": "        return NumberMode.AUTO if bounds_are_known else NumberMode.BOX",
+    "new": "        return NumberMode.BOX",
     "tests": "a_parameter_whose_range_is_known_is_a_slider_again"
   },
   {
@@ -2627,15 +2627,15 @@
   {
     "label": "expert: an entity that keeps the range its write was refused by",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "                if exc.state is not None:\n                    self._apply_state(exc.state)\n                    self.async_write_ha_state()\n                raise",
-    "new": "                raise",
+    "old": "            if exc.state is not None:\n                self._apply_state(exc.state)\n                self.async_write_ha_state()\n            raise",
+    "new": "            raise",
     "tests": "a_refusal_corrects_the_range_that_caused_it"
   },
   {
     "label": "expert: the refusal clause behind the one that already catches it",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            except ParameterWriteError as exc:",
-    "new": "            except ValueError as exc:",
+    "old": "        except ParameterWriteError as exc:",
+    "new": "        except ValueError as exc:",
     "tests": "a_refusal_corrects_the_range_that_caused_it"
   },
   {
@@ -2718,14 +2718,14 @@
   {
     "label": "expert: the dialog's wording dropped on the way to the entity",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            if state.portal_text is not None:\n                self._portal_text = state.portal_text\n",
+    "old": "        if state.portal_text is not None:\n            self._portal_text = state.portal_text\n",
     "new": "",
     "tests": "the_dialog_wording_reaches_the_entity_that_has_to_show_it"
   },
   {
     "label": "expert: the only readable answer to a special value left unpublished",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            if self._portal_text is not None:\n                attributes[\"portal_value\"] = self._portal_text\n",
+    "old": "        if self._portal_text is not None:\n            attributes[\"portal_value\"] = self._portal_text\n",
     "new": "",
     "tests": "the_dialog_wording_reaches_the_entity_that_has_to_show_it"
   },
@@ -3229,8 +3229,8 @@
   {
     "label": "expert poll: an entity HA never added must not be published",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            if state is None:\n                return\n            if not self._is_in_home_assistant():\n                return\n",
-    "new": "            if state is None:\n                return\n",
+    "old": "        if state is None:\n            return\n        if not self._is_in_home_assistant():\n            return\n",
+    "new": "        if state is None:\n            return\n",
     "tests": "auto_poll_does_not_publish_state_for_an_entity_ha_never_added"
   },
   {
@@ -3502,8 +3502,8 @@
   {
     "label": "expert poll: an entity the user disabled polled again",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            self._config_entry.runtime_data.expert.detach_entity(self)\n            await super().async_will_remove_from_hass()",
-    "new": "            await super().async_will_remove_from_hass()",
+    "old": "        self._config_entry.runtime_data.expert.detach_entity(self)\n        await super().async_will_remove_from_hass()",
+    "new": "        await super().async_will_remove_from_hass()",
     "tests": "entity_the_user_disabled_is_not_polled"
   },
   {
