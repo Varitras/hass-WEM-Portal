@@ -3453,8 +3453,15 @@
   {
     "label": "schedule: a week of bare days accepted as a programme",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    return any(isinstance(day, dict) and day.get(\"CircuitTimes\") for day in days)",
+    "old": "    return any(_day_carries_switching_times(day) for day in days)",
     "new": "    return bool(days)",
+    "tests": "week_with_no_switching_times_in_it_does_not_count_as_being_fed"
+  },
+  {
+    "label": "schedule: a switching time taken from the list, not the field",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return any(\n        isinstance(entry, dict)\n        and isinstance(entry.get(\"MinutesSinceMidnight\"), (int, float))\n        and not isinstance(entry.get(\"MinutesSinceMidnight\"), bool)\n        for entry in times\n    )",
+    "new": "    return bool(times)",
     "tests": "week_with_no_switching_times_in_it_does_not_count_as_being_fed"
   },
   {

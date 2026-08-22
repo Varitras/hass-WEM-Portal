@@ -166,11 +166,35 @@ def week_carries_a_programme(days: object) -> bool:
     switching times contributes nothing to the rendered week, so a list of
     those is an answer with no programme in it. Both the read that accepts
     such an answer and the ageing that exempts the row have to agree on that,
-    and they only do if they ask the same question.
+    and they only do if they ask the same question the renderer asks - see
+    _day_carries_switching_times.
     """
     if not isinstance(days, list):
         return False
-    return any(isinstance(day, dict) and day.get("CircuitTimes") for day in days)
+    return any(_day_carries_switching_times(day) for day in days)
+
+
+def _day_carries_switching_times(day: object) -> bool:
+    """Whether one reported day carries a switching time the sensor can render.
+
+    A CircuitTimes entry becomes a stretch only through its MinutesSinceMidnight
+    - the end the sensor reads off it (see sensor._stretches). An entry without
+    a numeric one renders to nothing, so a day whose whole list is such entries
+    is no more a programme than a day carrying no list at all. Checking merely
+    that CircuitTimes is non-empty said otherwise, which left a row that renders
+    blank exempted from ageing as though something were still feeding it.
+    """
+    if not isinstance(day, dict):
+        return False
+    times = day.get("CircuitTimes")
+    if not isinstance(times, list):
+        return False
+    return any(
+        isinstance(entry, dict)
+        and isinstance(entry.get("MinutesSinceMidnight"), (int, float))
+        and not isinstance(entry.get("MinutesSinceMidnight"), bool)
+        for entry in times
+    )
 
 
 def portal_list(payload: Mapping[str, Any], key: str) -> list[Any]:

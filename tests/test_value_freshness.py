@@ -328,7 +328,7 @@ def test_a_module_never_stamped_is_not_aged():
 # A week the device actually reported a programme for. The switching times
 # are what makes it one: a list of bare days renders to nothing, so it is not
 # evidence that anything is still feeding the row.
-A_FED_WEEK = [{"Day": 1, "CircuitTimes": [{"Start": 6, "End": 22, "Level": 1}]}]
+A_FED_WEEK = [{"Day": 1, "CircuitTimes": [{"MinutesSinceMidnight": 360, "Value": 3}]}]
 
 
 def _programme_row(api, circuit_times_day):
@@ -379,6 +379,18 @@ def test_a_week_with_no_switching_times_in_it_does_not_count_as_being_fed():
 
     assert not schedule_fetch_still_feeds(
         Reading(parameter_id="P", value="MoDiMi", circuit_times_day=[{"Day": 1}])
+    )
+    # A day carrying a CircuitTimes LIST is no better if none of its entries
+    # give the sensor an end to render - a numeric MinutesSinceMidnight. The
+    # portal keys every stretch on that field (see sensor._stretches), so a
+    # list of entries without it renders to nothing just the same. Truthiness
+    # of the list said yes to this too.
+    assert not schedule_fetch_still_feeds(
+        Reading(
+            parameter_id="P",
+            value="MoDiMi",
+            circuit_times_day=[{"Day": 1, "CircuitTimes": [{"Start": 6, "End": 22}]}],
+        )
     )
 
 

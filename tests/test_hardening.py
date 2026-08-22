@@ -26,7 +26,7 @@ from custom_components.wemportal.wemportalapi import WemPortalApi
 # A week the device really reported a programme for: the switching times
 # are what makes it one, and both the read and the ageing exemption ask
 # for them now.
-A_FED_WEEK = [{"Day": 1, "CircuitTimes": [{"Start": 6, "End": 22, "Level": 1}]}]
+A_FED_WEEK = [{"Day": 1, "CircuitTimes": [{"MinutesSinceMidnight": 360, "Value": 3}]}]
 
 
 class FakeResponse:
