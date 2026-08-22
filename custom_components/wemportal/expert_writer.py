@@ -10,7 +10,7 @@ against the live option list from the freshly fetched edit form and
 verifies the result by re-reading the form afterwards.
 """
 
-from typing import Final
+from typing import Any, Final
 import logging
 
 import hashlib
@@ -442,7 +442,7 @@ _EDIT_LINK_RE = re.compile(r"entityvalue=([0-9A-Fa-f]+)&readdata=(?:True|False)"
 _MODULE_VALUE_RE = re.compile(r'"value":"([0-9A-Fa-f]{20,})"')
 
 
-def parse_parameter_list(html_content) -> list:
+def parse_parameter_list(html_content) -> list[dict[str, str]]:
     """Parse a Fachmann module overview page into a list of parameters.
 
     Returns one dict per editable row: {group, name, entityvalue, value}.
@@ -460,7 +460,7 @@ def parse_parameter_list(html_content) -> list:
     which is what this integration does for every parameter - answers with the
     same dropdown, current value and factory default.
     """
-    results: list[dict] = []
+    results: list[dict[str, str]] = []
     try:
         tree = html.fromstring(html_content)
     except Exception as exc:  # noqa: BLE001
@@ -476,7 +476,7 @@ def parse_parameter_list(html_content) -> list:
     return results
 
 
-def _parameter_from_edit_icon(icon, group) -> dict | None:
+def _parameter_from_edit_icon(icon, group) -> dict[str, str] | None:
     """The parameter an edit icon stands for, or None if it stands for none.
 
     Two ways to be none, and neither is an error: the icon's onclick carries
@@ -499,7 +499,7 @@ def _parameter_from_edit_icon(icon, group) -> dict | None:
     }
 
 
-def parse_module_list(html_content) -> list:
+def parse_module_list(html_content) -> list[dict[str, Any]]:
     """Parse the Fachmann icon menu into a list of selectable modules.
 
     Visible labels (li > a > span.rmText, document order) are zipped with the
@@ -722,7 +722,7 @@ class WemPortalExpertClient:
             if enable_security_code is None
             else bool(enable_security_code)
         )
-        self.session = None
+        self.session: Any = None
         # URL the last successfully fetched parameter dialog was served at
         # (including its real rwndrnd) - used as Referer for the following
         # write POST, matching the HAR's "same-page form submit" pattern.
@@ -732,7 +732,7 @@ class WemPortalExpertClient:
         # postback only when the dialog still comes back empty - replacing
         # the old fixed pre-poll loop with a demand-driven one (early exit
         # as soon as the dropdown is populated). Updated as polls advance.
-        self._nav_html = None
+        self._nav_html: str | None = None
 
     # ------------------------------------------------------------------
     def _check_gates(self):
@@ -1237,7 +1237,7 @@ class WemPortalExpertClient:
         return any(fields.get(name) for name in EXPERT_VIEWSTATE_FIELDS)
 
     @staticmethod
-    def _hidden_fields(content) -> dict:
+    def _hidden_fields(content) -> dict[str, str]:
         """Extract hidden fields (VIEWSTATE, EVENTVALIDATION, ...).
 
         Handles both response shapes:
@@ -1504,7 +1504,7 @@ class WemPortalExpertClient:
         )
 
     # ------------------------------------------------------------------
-    def read_many(self, entityvalues) -> dict:
+    def read_many(self, entityvalues) -> dict[str, ExpertParameterState | None]:
         """Read several parameters on ONE shared session.
 
         Logs in and navigates to the Fachmann level once, then fetches each
@@ -1561,7 +1561,7 @@ class WemPortalExpertClient:
         return result
 
     # ------------------------------------------------------------------
-    def list_modules(self) -> list:
+    def list_modules(self) -> list[dict[str, Any]]:
         """Login, read the Fachmann icon menu, return selectable modules.
 
         Returns [{index, value, label}]; on-demand only (a single short
@@ -1575,7 +1575,7 @@ class WemPortalExpertClient:
         finally:
             self.close()
 
-    def discover(self, modules) -> list:
+    def discover(self, modules) -> list[dict[str, str]]:
         """Login once, fetch each module's overview, return its parameters.
 
         `modules` are dicts from list_modules(). Returns the concatenated
@@ -1644,7 +1644,7 @@ class WemPortalExpertClient:
                 module.get("label"),
                 delta_rows,
             )
-            return self._nav_html
+            return self._nav_html or ""
 
         self._check_gates()
         response = self.session.get(
@@ -1669,7 +1669,7 @@ class WemPortalExpertClient:
             len(parse_parameter_list(response.text)),
             len(response.text),
         )
-        return response.text
+        return str(response.text)
 
     def write_parameter(self, entityvalue: str, value) -> ExpertParameterState:
         """Login, set a new value via the edit form, verify, close session.
@@ -1904,4 +1904,7 @@ class WemPortalExpertClient:
                 if attempt < max_attempts - 1:
                     self._poll_live_values_once()
                     time.sleep(EXPERT_FORM_RETRY_DELAY_SECONDS)
+        # Every attempt either returned or set last_error, and the loop runs at
+        # least once - so reaching here means a ValueError is in hand.
+        assert last_error is not None
         raise last_error

@@ -24,8 +24,6 @@ MYPY_INI = REPO / "mypy.ini"
 # What is deliberately still outside, and why. Emptying this list is the
 # point; every entry is a promise, not a permanent exemption.
 NOT_TYPE_CHECKED_YET = {
-    "expert_writer.py": "a Telerik form protocol written out longhand; mostly literal field ids",
-    "expert_number.py": "the expert number entity, just split out of expert_writer; typing it is the next step",
     "config_flow.py": "voluptuous schemas type-check to Any, so strict mode says little here",
     "translations.py": "a table of strings",
     "const.py": "constants only",

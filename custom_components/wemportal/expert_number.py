@@ -338,7 +338,9 @@ try:
             """
             from .models import raise_if_not_writable
 
-            raise_if_not_writable(self._config_entry, self._attr_name)
+            raise_if_not_writable(
+                self._config_entry, self._attr_name or str(self._attr_unique_id)
+            )
             if self._write_in_progress:
                 raise HomeAssistantError(
                     f"{self._attr_name}: a write is already in progress, please wait."

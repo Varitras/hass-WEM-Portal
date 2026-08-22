@@ -408,7 +408,7 @@
   {
     "label": "unload gate: the expert entity must ask too",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            raise_if_not_writable(self._config_entry, self._attr_name)",
+    "old": "            raise_if_not_writable(\n                self._config_entry, self._attr_name or str(self._attr_unique_id)\n            )",
     "new": "            pass",
     "tests": "expert_entity_does_not_start_a_write_while_unloading"
   },
