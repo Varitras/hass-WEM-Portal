@@ -737,12 +737,12 @@ def test_none_enabled_devices_still_polls_everything():
 
 def _expert_entity(api, entry_id="e1", entityvalue="A" * 36):
     """An expert number entity wired to `api` through its entry's runtime data."""
-    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal import expert_number
     from custom_components.wemportal.models import WemPortalData
 
     entry = types.SimpleNamespace(entry_id=entry_id, data={}, options={})
     entry.runtime_data = WemPortalData(api=api, coordinator=None)
-    entity = expert_writer.WemPortalExpertNumber(
+    entity = expert_number.WemPortalExpertNumber(
         entry, "expert_parameter_3", entityvalue
     )
     entity.hass = types.SimpleNamespace(data={})
@@ -2111,7 +2111,7 @@ def test_restore_brings_back_the_value_and_never_the_bounds():
     """
     from homeassistant.components.number import NumberMode
 
-    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal import expert_number
 
     entity = _expert_entity(_api())
 
@@ -2125,11 +2125,11 @@ def test_restore_brings_back_the_value_and_never_the_bounds():
     )
 
     assert entity.native_value == 350.0, "the stored value is the one thing to keep"
-    assert entity.native_min_value == -expert_writer.EXPERT_UNKNOWN_BOUND, (
+    assert entity.native_min_value == -expert_number.EXPERT_UNKNOWN_BOUND, (
         "a stored range came back and can lock out the correcting write"
     )
-    assert entity.native_max_value == expert_writer.EXPERT_UNKNOWN_BOUND
-    assert entity.native_step == expert_writer.EXPERT_UNKNOWN_STEP
+    assert entity.native_max_value == expert_number.EXPERT_UNKNOWN_BOUND
+    assert entity.native_step == expert_number.EXPERT_UNKNOWN_STEP
     assert entity.mode == NumberMode.BOX, (
         "a slider over placeholder bounds spans 200000 - it must be a box"
     )
@@ -2139,7 +2139,7 @@ def test_a_slot_with_no_stored_value_stays_on_the_placeholders():
     """RestoreNumber persists bounds with or without a value, so a slot that
     was never read still has the pre-placeholder 0/100/1 on disk. Nothing of
     that may come back - there is no reading it could belong to."""
-    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal import expert_number
 
     entity = _expert_entity(_api())
 
@@ -2153,8 +2153,8 @@ def test_a_slot_with_no_stored_value_stays_on_the_placeholders():
     )
 
     assert entity.native_value is None
-    assert entity.native_min_value == -expert_writer.EXPERT_UNKNOWN_BOUND
-    assert entity.native_max_value == expert_writer.EXPERT_UNKNOWN_BOUND
+    assert entity.native_min_value == -expert_number.EXPERT_UNKNOWN_BOUND
+    assert entity.native_max_value == expert_number.EXPERT_UNKNOWN_BOUND
 
 
 def test_entity_write_uses_the_expert_gate_not_the_global_one():
@@ -2187,11 +2187,11 @@ def test_entity_write_reuses_the_shared_session_cache():
 def test_expert_accessors_degrade_safely_without_a_store():
     """During unload the entry store is gone; the accessors must return None
     rather than raise."""
-    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal import expert_number
 
     # No runtime_data at all: exactly what an unloaded entry looks like.
     entry = types.SimpleNamespace(entry_id="gone", data={}, options={})
-    entity = expert_writer.WemPortalExpertNumber(entry, "slot", "B" * 36)
+    entity = expert_number.WemPortalExpertNumber(entry, "slot", "B" * 36)
     entity.hass = types.SimpleNamespace(data={})
 
     assert entity._cookie_jar() is None

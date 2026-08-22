@@ -45,7 +45,9 @@ LINE_BUDGETS = {
     # the TYPE_CHECKING import, the narrowing asserts - without adding code
     # paths. A one-time step up; the ceiling still only ratchets down from here.
     "wemportalapi.py": 2542,
-    "expert_writer.py": 2447,
+    # Lowered from 2447: the expert number entity (the Home Assistant view
+    # half) moved to expert_number.py, leaving the protocol client here.
+    "expert_writer.py": 1912,
     "config_flow.py": 939,
 }
 

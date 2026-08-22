@@ -27,7 +27,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.wemportal import expert_writer
+from custom_components.wemportal import expert_number, expert_writer
 from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
@@ -987,7 +987,7 @@ async def test_the_expert_module_is_only_loaded_when_it_is_enabled(hass, monkeyp
     """
     calls = []
     monkeypatch.setattr(
-        expert_writer,
+        expert_number,
         "create_expert_number_entities",
         lambda entry: calls.append(entry) or [],
     )

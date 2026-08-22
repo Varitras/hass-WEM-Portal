@@ -42,7 +42,7 @@ async def async_setup_entry(
     # tests/test_security.py.
     expert_entities = []
     if config_entry.options.get(CONF_EXPERT_WRITE, False):
-        from .expert_writer import create_expert_number_entities
+        from .expert_number import create_expert_number_entities
 
         expert_entities = create_expert_number_entities(config_entry)
         if expert_entities:
