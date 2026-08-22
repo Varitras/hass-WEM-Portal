@@ -18,8 +18,10 @@ import logging
 
 import random
 import threading
+from collections.abc import Callable
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
@@ -67,7 +69,7 @@ FAILURES_BEFORE_NOTIFYING = 3
 BATCH_FAILURES_BEFORE_VALUES_ARE_STALE = 2
 
 
-def poll_interval_minutes(entry) -> int:
+def poll_interval_minutes(entry: ConfigEntry) -> int:
     """The configured poll interval, never below the floor and never a value
     the options flow let through in a shape int() chokes on."""
     interval_min = entry.options.get(
@@ -84,8 +86,12 @@ class ExpertBusy(Exception):
 
 
 def read_expert_values(
-    entry, api, entityvalues: list, abort_check=None, lock=None
-) -> dict:
+    entry: ConfigEntry,
+    api: Any,
+    entityvalues: list[str],
+    abort_check: Callable[[], None] | None = None,
+    lock: threading.Lock | None = None,
+) -> dict[str, Any]:
     """One shared portal session for every configured id.
 
     Runs in an executor thread - the expert client is blocking - and imports
@@ -135,7 +141,7 @@ class ExpertController:
 
         self._data: Any = None
         self._hass: HomeAssistant | None = None
-        self._entry = None
+        self._entry: ConfigEntry | None = None
         self._interval_min = DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
         self._armed = False
         self._started = False
@@ -143,13 +149,13 @@ class ExpertController:
         self._initial_task: Any = None
         self._unsubscribe: Any = None
 
-    def bind(self, data) -> None:
+    def bind(self, data: Any) -> None:
         """Hold the runtime store this controller belongs to."""
         self._data = data
 
     # --- wiring --------------------------------------------------------
 
-    def setup_auto_poll(self, hass: HomeAssistant, entry) -> None:
+    def setup_auto_poll(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Arm the optional timer, if the option is on.
 
         OFF unless CONF_EXPERT_AUTO_POLL is enabled. Each read is a full
@@ -191,7 +197,7 @@ class ExpertController:
         return account_state(self._data.api.username).expert_lock
 
     @property
-    def live_entities(self) -> list:
+    def live_entities(self) -> list[Any]:
         """The entities Home Assistant currently has added.
 
         Every entry here got in through async_added_to_hass and leaves
@@ -203,14 +209,14 @@ class ExpertController:
         """
         return list(self.entities)
 
-    def attach_entity(self, entity) -> None:
+    def attach_entity(self, entity: Any) -> None:
         """One entity joins the poll, from async_added_to_hass."""
         if entity not in self.entities:
             self.entities.append(entity)
         if self._armed:
             self.start()
 
-    def detach_entity(self, entity) -> None:
+    def detach_entity(self, entity: Any) -> None:
         """One entity leaves, and its bookkeeping goes with it.
 
         The streak, the notification marker and the repair issue are
@@ -231,6 +237,9 @@ class ExpertController:
         if self._started or not self._armed:
             return
         self._started = True
+        # Set together in setup_auto_poll; start() only proceeds past the
+        # guard above when _armed, which is set there too.
+        assert self._hass is not None and self._entry is not None
         self._entry.async_on_unload(self.stop)
         _LOGGER.info(
             "Expert auto-poll enabled: reading configured parameters about "
@@ -292,6 +301,7 @@ class ExpertController:
             _LOGGER.debug("Expert auto-poll: entry unloaded, not rescheduling.")
             return
         delay = self._next_delay_seconds()
+        assert self._hass is not None  # only scheduled after setup_auto_poll
         self._unsubscribe = async_call_later(self._hass, delay, self.poll)
         _LOGGER.debug(
             "Expert auto-poll: next read in %.1f min (base %d min + jitter).",
@@ -299,7 +309,7 @@ class ExpertController:
             self._interval_min,
         )
 
-    async def poll(self, _now=None) -> None:
+    async def poll(self, _now: Any = None) -> None:
         """One cycle: read every configured id in one session, apply, re-arm."""
         try:
             entities = self.live_entities
@@ -322,6 +332,7 @@ class ExpertController:
             # still in flight.
             current_api = self._data.api
 
+            assert self._hass is not None and self._entry is not None
             try:
                 results = await self._hass.async_add_executor_job(
                     read_expert_values,
@@ -363,7 +374,9 @@ class ExpertController:
             # cycle failed - a transient error must not stop future polls.
             self._schedule_next()
 
-    def _note_batch_outcome(self, results: dict, whole_batch_failed: bool) -> None:
+    def _note_batch_outcome(
+        self, results: dict[str, Any], whole_batch_failed: bool
+    ) -> None:
         """What this cycle says about the values as a whole.
 
         A different question from the per-id tally beside it: one outage is
@@ -402,7 +415,7 @@ class ExpertController:
         for entity in self.live_entities:
             entity.forget_value()
 
-    def apply_read(self, results: dict) -> None:
+    def apply_read(self, results: dict[str, Any]) -> None:
         """Hand a batch to the entities and keep the per-id failure tally.
 
         A persistently failing id would otherwise only produce an hourly
@@ -501,7 +514,7 @@ class ExpertController:
         if was_reported:
             self._clear_read_failure_issue(entityvalue)
 
-    def apply_verified_write(self, entityvalue: str, state) -> None:
+    def apply_verified_write(self, entityvalue: str, state: Any) -> None:
         """Show what a write read back on the entity holding that id.
 
         Both routes to the same parameter end in a portal read-back, and the
@@ -528,7 +541,9 @@ class ExpertController:
                 self._note_the_id_answered(entity.entityvalue)
                 entity.apply_read_state(state)
 
-    def _report_read_failure(self, entity, failures: int, unreadable_id: bool) -> None:
+    def _report_read_failure(
+        self, entity: Any, failures: int, unreadable_id: bool
+    ) -> None:
         """Raise a repair issue for a parameter that keeps not being read.
 
         A repairs entry rather than a notification: it is translatable, it
@@ -543,6 +558,7 @@ class ExpertController:
         from .expert_writer import entityvalue_digest
 
         digest = entityvalue_digest(entity.entityvalue)
+        assert self._hass is not None and self._entry is not None
         if unreadable_id:
             async_create_issue(
                 self._hass,
@@ -572,6 +588,7 @@ class ExpertController:
         from .expert_writer import entityvalue_digest
 
         digest = entityvalue_digest(entityvalue)
+        assert self._hass is not None and self._entry is not None
         async_delete_issue(
             self._hass,
             DOMAIN,
