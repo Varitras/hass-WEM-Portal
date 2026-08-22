@@ -1,6 +1,7 @@
 """Web scraping scraper for WEM Portal using curl_cffi."""
 
-from typing import Final
+from collections.abc import Callable
+from typing import Any, Final
 import logging
 import time
 
@@ -87,7 +88,7 @@ def _panel_key(heading: str) -> str:
     )
 
 
-def _reading_and_unit(raw_value: str):
+def _reading_and_unit(raw_value: str) -> tuple[float | str, str | None]:
     """Split a cell like "21,5 °C" into a number and its unit.
 
     Anything that does not parse as a number keeps its FULL original string
@@ -112,7 +113,9 @@ def _unit_from_name(name: str) -> str:
     return ""
 
 
-def _report_duplicate_row(key, panel, row_name, reported) -> None:
+def _report_duplicate_row(
+    key: str, panel: str, row_name: str, reported: set[str]
+) -> None:
     """Say that one reading has just overwritten another.
 
     The parser assigns into the output by key, which overwrites without a
@@ -150,7 +153,13 @@ def _report_duplicate_row(key, panel, row_name, reported) -> None:
 class WemPortalScraper:
     """Scraper for navigating and extracting data from WEM Portal using curl_cffi."""
 
-    def __init__(self, username, password, cookie=None, budget=None):
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        cookie: dict[str, Any] | None = None,
+        budget: Callable[[], float | None] | None = None,
+    ) -> None:
         self.username = username
         self.password = password
         # Once-per-subject warning memory, surviving the reload that rebuilds
@@ -164,7 +173,7 @@ class WemPortalScraper:
         # it. See WemPortalApi.remaining_budget.
         self._budget = budget
 
-    def _request_timeout(self):
+    def _request_timeout(self) -> float:
         """How long the next request may take.
 
         The scrape's own timeout, unless the poll cycle has less than that
@@ -186,7 +195,9 @@ class WemPortalScraper:
             )
         return min(SCRAPER_REQUEST_TIMEOUT_SECONDS, remaining)
 
-    def _transport_failure(self, exc, what):
+    def _transport_failure(
+        self, exc: Exception, what: str
+    ) -> PollDeadlineExceeded | ServerError:
         """The right exception for a request that never came back.
 
         A timeout is normally the portal's problem. But the timeout handed to
@@ -210,7 +221,7 @@ class WemPortalScraper:
             )
         return ServerError(f"Could not {what}: {exc}")
 
-    def close(self):
+    def close(self) -> None:
         """Release the underlying HTTP session/connection.
 
         Called when the owning WemPortalApi discards this scraper (e.g.
@@ -223,7 +234,9 @@ class WemPortalScraper:
             # Closing is best-effort; the session is being discarded anyway.
             _LOGGER.debug("Ignoring error while closing scraper session: %s", exc)
 
-    def _check_response(self, response, what, check_maintenance=False):
+    def _check_response(
+        self, response: Any, what: str, check_maintenance: bool = False
+    ) -> None:
         """The single gate every portal response passes through.
 
         Same reasoning as in expert_writer: deciding per request site what to
@@ -259,7 +272,7 @@ class WemPortalScraper:
                 notice, what, self._account_state.maintenance_markers_reported
             )
 
-    def _load_expert_page(self):
+    def _load_expert_page(self) -> str | None:
         """GET the main portal page and POST to select the 'Expert' tab.
 
         This is the second half of the scraping flow (steps 3+4 of the
@@ -338,7 +351,7 @@ class WemPortalScraper:
         # stops the reuse path from answering a 500 with two more requests.
         return r_expert.text
 
-    def scrape(self):
+    def scrape(self) -> list[dict[str, Any]]:
         """Perform the scraping process and return the extracted data."""
         # --- Fast path: try to reuse the session/cookie from the previous
         # successful scrape first, instead of always performing a full
@@ -524,10 +537,15 @@ class WemPortalScraper:
                 "not a credential one."
             )
 
-        # 5. Extract data
-        return self.parse_expert_page(expert_html, source="the expert page")
+        # 5. Extract data. required=True (the default) raises rather than
+        # returning None, so the scrape always yields a list here.
+        panels = self.parse_expert_page(expert_html, source="the expert page")
+        assert panels is not None
+        return panels
 
-    def _report_empty_page(self, html_content, source, level=logging.WARNING):
+    def _report_empty_page(
+        self, html_content: str | None, source: str, level: int = logging.WARNING
+    ) -> None:
         """Say what the page WAS, because the failure message cannot.
 
         "Contained no readable panels" is true of two completely different
@@ -567,7 +585,7 @@ class WemPortalScraper:
             "means the page is there but its markup no longer matches.",
         )
 
-    def _panel_rows(self, div):
+    def _panel_rows(self, div: Any) -> tuple[str, str, Any] | None:
         """The heading of one panel and the rows under it, or None.
 
         No heading means no stable sensor name can be built for anything in
@@ -578,7 +596,9 @@ class WemPortalScraper:
             return None
         return headings[0].strip(), _panel_key(headings[0]), div.xpath(PANEL_ROW_XPATH)
 
-    def _row_sensor(self, heading, panel_key, row):
+    def _row_sensor(
+        self, heading: str, panel_key: str, row: Any
+    ) -> tuple[str, str, Reading] | None:
         """One reading from one table row, or None if the row carries none.
 
         Returns the row's key, the portal's own wording for it (which the
@@ -613,7 +633,9 @@ class WemPortalScraper:
             ),
         )
 
-    def _panel_readings(self, heading, panel_key, rows) -> list:
+    def _panel_readings(
+        self, heading: str, panel_key: str, rows: Any
+    ) -> list[tuple[str, str, Reading]]:
         """The rows of one panel that yielded a reading, in page order.
 
         Returns them rather than collecting into a dict: whether a name has
@@ -631,7 +653,12 @@ class WemPortalScraper:
             readings.append(reading)
         return readings
 
-    def parse_expert_page(self, html_content, source="the expert page", required=True):
+    def parse_expert_page(
+        self,
+        html_content: str | None,
+        source: str = "the expert page",
+        required: bool = True,
+    ) -> list[dict[str, Any]] | None:
         """Turn the expert page into sensor dicts.
 
         `required=False` means "tell me if this is not the expert page" -
@@ -641,7 +668,7 @@ class WemPortalScraper:
         login below exists to answer.
         """
         _LOGGER.debug("Parsing expert page HTML (%s)", source)
-        output = {}
+        output: dict[str, Any] = {}
         try:
             panels = html.fromstring(html_content).xpath(PANEL_XPATH)
         except (LxmlError, ValueError):
