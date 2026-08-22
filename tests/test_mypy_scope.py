@@ -27,7 +27,6 @@ NOT_TYPE_CHECKED_YET = {
     "wemportalapi.py": "the remaining god module - typing it is the next rebuild phase, not a side quest",
     "expert_writer.py": "a Telerik form protocol written out longhand; mostly literal field ids",
     "config_flow.py": "voluptuous schemas type-check to Any, so strict mode says little here",
-    "__init__.py": "the lifecycle, which is Home Assistant's own untyped surface",
     "translations.py": "a table of strings",
     "const.py": "constants only",
 }

@@ -6,7 +6,7 @@ https://github.com/erikkastelec/hass-WEM-Portal
 
 """
 
-from typing import Final
+from typing import Any, Final
 import logging
 
 from datetime import timedelta
@@ -15,7 +15,7 @@ import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import device_registry, issue_registry
 from homeassistant.helpers.service import async_register_admin_service
@@ -304,7 +304,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     return True
 
 
-def _async_release_expert_service(hass: HomeAssistant, config_entry) -> None:
+def _async_release_expert_service(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> None:
     """Drop the domain-wide expert service unless another entry still needs it.
 
     Called from two places, and the second one is why it is a function: an
@@ -346,7 +348,7 @@ def _resolve_expert_entry(
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _configured_expert_ids(config_entry) -> dict:
+def _configured_expert_ids(config_entry: ConfigEntry) -> dict[str, Any]:
     """The ids the user put in slots, keyed by their canonical spelling.
 
     Both halves of what the service needs: the keys answer "may this be
@@ -363,7 +365,7 @@ def _configured_expert_ids(config_entry) -> dict:
     return configured
 
 
-def _load_expert_writer():
+def _load_expert_writer() -> Any:
     """Import the expert client module. Runs in an executor - see the caller."""
     from . import expert_writer
 
@@ -389,7 +391,7 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
     entityvalue_digest = expert_writer.entityvalue_digest
     short_entityvalue = expert_writer.short_entityvalue
 
-    async def _handle_set_expert_parameter(call):
+    async def _handle_set_expert_parameter(call: ServiceCall) -> None:
         # Strip once at the boundary: the validity check strips internally,
         # but the raw value is what ends up in the request URL - stray
         # whitespace from a copy/paste would otherwise travel along.
@@ -437,7 +439,7 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
         lock = data.expert.lock
         ev_short = short_entityvalue(entityvalue)
 
-        def _raise_if_unloaded():
+        def _raise_if_unloaded() -> None:
             """Abort gate for a write whose entry is going away.
 
             The write runs in an executor thread and cannot be cancelled, so
@@ -460,7 +462,7 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
 
         from .expert_controller import ExpertBusy
 
-        def _do_write():
+        def _do_write() -> Any:
             # Own short-lived session per write; honors the shared 403
             # cooldown (check) and ENGAGES it on a 403 (activate).
             from .expert_options import expert_client_options
@@ -711,7 +713,9 @@ async def async_remove_entry(
     _forget_account_state_if_last_entry(hass, config_entry)
 
 
-def _another_entry_shares_this_account(hass: HomeAssistant, config_entry) -> bool:
+def _another_entry_shares_this_account(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> bool:
     """Whether a second entry of the same WEM account is configured.
 
     Asked by both halves of the teardown, which is why it is a function: the
@@ -727,7 +731,9 @@ def _another_entry_shares_this_account(hass: HomeAssistant, config_entry) -> boo
     )
 
 
-def _forget_account_state_if_last_entry(hass: HomeAssistant, config_entry) -> None:
+def _forget_account_state_if_last_entry(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> None:
     """Drop the account memory only once no entry is left that shares it.
 
     The two stores above belong to one entry and go with it. This one does
