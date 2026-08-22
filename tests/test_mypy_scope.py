@@ -25,6 +25,7 @@ MYPY_INI = REPO / "mypy.ini"
 # point; every entry is a promise, not a permanent exemption.
 NOT_TYPE_CHECKED_YET = {
     "config_flow.py": "voluptuous schemas type-check to Any, so strict mode says little here",
+    "options_flow.py": "the options flow, just split out of config_flow; typing it is the next step",
     "translations.py": "a table of strings",
     "const.py": "constants only",
 }

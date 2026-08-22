@@ -34,11 +34,12 @@ PACKAGE = (
 # 800 lines) and the three that carry the history.
 LINE_LIMIT = 900
 
-# The three that are over, frozen at what they weigh today. wemportalapi
+# The two that are over, frozen at what they weigh today. wemportalapi
 # and expert_writer are the remaining god modules - wemportalapi lost the
 # transport and the statistics path in the rebuild and should keep
 # shrinking; expert_writer is a Telerik form protocol written out longhand,
-# where the length is mostly literal field ids.
+# where the length is mostly literal field ids. config_flow dropped back
+# under the limit when its options flow left for options_flow.py.
 LINE_BUDGETS = {
     # 2485 after the weekly-programme path left for schedule.py; raised here
     # for the type-annotation phase, which adds lines - multi-line signatures,
@@ -48,7 +49,6 @@ LINE_BUDGETS = {
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     "expert_writer.py": 1912,
-    "config_flow.py": 939,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to
@@ -81,7 +81,7 @@ COMPLEXITY_BUDGETS = {
     # exactly the one branch.
     "wemportalapi.py::WemPortalApi._fetch_parameter_values": 20,
     "__init__.py::async_setup_entry": 18,
-    "config_flow.py::WemportalOptionsFlow._validate_configure_input": 17,
+    "options_flow.py::WemportalOptionsFlow._validate_configure_input": 17,
     "mapper.py::_writeable_entity": 17,
 }
 

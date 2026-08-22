@@ -1712,7 +1712,7 @@ async def test_the_expert_client_is_actually_buildable(hass, monkeypatch):
     whole suite green and would have raised NameError on a real user's first
     discovery run.
     """
-    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+    from custom_components.wemportal.options_flow import WemportalOptionsFlow
 
     entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
     flow = WemportalOptionsFlow()
@@ -1740,7 +1740,7 @@ async def test_an_aborted_discovery_ends_the_flow_instead_of_escaping(
     """
     from homeassistant.data_entry_flow import AbortFlow
 
-    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+    from custom_components.wemportal.options_flow import WemportalOptionsFlow
     from custom_components.wemportal.exceptions import ExpertOperationAborted
 
     entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
@@ -1780,7 +1780,7 @@ async def test_the_abort_survives_the_step_that_calls_it(
     from homeassistant.data_entry_flow import AbortFlow
 
     from custom_components.wemportal import config_flow as flow_module
-    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+    from custom_components.wemportal.options_flow import WemportalOptionsFlow
     from custom_components.wemportal.exceptions import ExpertOperationAborted
 
     entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
@@ -1819,7 +1819,7 @@ async def test_discovery_stops_when_its_entry_goes_away(hass, monkeypatch):
     had it navigate the portal to the end on credentials and options that were
     no longer current. Every other expert caller had this gate.
     """
-    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+    from custom_components.wemportal.options_flow import WemportalOptionsFlow
     from custom_components.wemportal.exceptions import ExpertOperationAborted
 
     entry = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
@@ -1870,7 +1870,7 @@ def test_two_options_flows_do_not_share_their_discovery():
     accounts, the first `.append()` anyone wrote would have offered one
     account's installation-specific parameter ids in the other's dropdown.
     """
-    from custom_components.wemportal.config_flow import WemportalOptionsFlow
+    from custom_components.wemportal.options_flow import WemportalOptionsFlow
 
     first = WemportalOptionsFlow()
     second = WemportalOptionsFlow()
@@ -1906,7 +1906,7 @@ async def test_options_flow_discovery_fills_slot_dropdown(hass, monkeypatch):
             return discovered
 
     monkeypatch.setattr(
-        "custom_components.wemportal.config_flow.WemportalOptionsFlow._expert_client",
+        "custom_components.wemportal.options_flow.WemportalOptionsFlow._expert_client",
         lambda self: _StubClient(),
     )
 
@@ -1944,7 +1944,7 @@ async def _run_discovery_with(hass, entry, monkeypatch, discover):
 
     _StubClient.discover = lambda self, selected: discover(selected)
     monkeypatch.setattr(
-        "custom_components.wemportal.config_flow.WemportalOptionsFlow._expert_client",
+        "custom_components.wemportal.options_flow.WemportalOptionsFlow._expert_client",
         lambda self: _StubClient(),
     )
 
@@ -1965,7 +1965,7 @@ def _forbidden_expert_client(monkeypatch):
             raise AssertionError("the portal was contacted while the lock was held")
 
     monkeypatch.setattr(
-        "custom_components.wemportal.config_flow.WemportalOptionsFlow._expert_client",
+        "custom_components.wemportal.options_flow.WemportalOptionsFlow._expert_client",
         lambda self: _StubClient(),
     )
 
@@ -2211,7 +2211,7 @@ async def test_submitting_no_module_is_reported(hass, monkeypatch):
             raise AssertionError("nothing was selected, so nothing may be searched")
 
     monkeypatch.setattr(
-        "custom_components.wemportal.config_flow.WemportalOptionsFlow._expert_client",
+        "custom_components.wemportal.options_flow.WemportalOptionsFlow._expert_client",
         lambda self: _StubClient(),
     )
 

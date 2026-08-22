@@ -253,35 +253,35 @@
   },
   {
     "label": "options: materialising the slot ids is load-bearing, not cosmetic",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "            user_input[id_key] = raw  # persist the stripped value",
     "new": "            pass  # persist the stripped value",
     "tests": "clearing_a_slot_id or slot_id_is_stored_stripped"
   },
   {
     "label": "options: an invalid entityvalue must be rejected",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "                errors[id_key] = \"invalid_entityvalue\"",
     "new": "                pass",
     "tests": "invalid_slot_id_is_rejected"
   },
   {
     "label": "options: a rejected form must prefill from what was typed",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "        source = user_input if user_input is not None else self.config_entry.options",
     "new": "        source = self.config_entry.options",
     "tests": "rejected_form_shows_what_the_user_typed"
   },
   {
     "label": "options: options outside the form must survive the save",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "        merged = {**current, **user_input}",
     "new": "        merged = dict(user_input)",
     "tests": "keeps_options_that_are_not_form_fields"
   },
   {
     "label": "options: an unchanged form must not trigger a reload",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "        if merged == current:\n            return self.async_abort(reason=\"no_changes\")",
     "new": "        if False:\n            return self.async_abort(reason=\"no_changes\")",
     "tests": "saving_without_a_change_is_not_a_write"
@@ -344,14 +344,14 @@
   },
   {
     "label": "load path: pulling the expert client back to module level must be noticed",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "from .expert_options import (",
     "new": "from .expert_writer import WemPortalExpertClient\nfrom .expert_options import (",
     "tests": "no_module_imports_the_expert_client"
   },
   {
     "label": "load path: dropping the lazy import must break discovery, not pass",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "        from .expert_writer import WemPortalExpertClient\n\n        entry = self.config_entry",
     "new": "        entry = self.config_entry",
     "tests": "expert_client_is_actually_buildable"
@@ -1128,7 +1128,7 @@
   },
   {
     "label": "rediscovery: the re-scan button must actually mark the lists",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "                    module[\"parameters_fetched_at\"] = 0",
     "new": "                    pass",
     "tests": "rescan_option_marks_the_cached_lists_as_due"
@@ -1695,7 +1695,7 @@
   },
   {
     "label": "rescan: a refused module's empty list read as a truth value",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "                if \"parameters\" in module:",
     "new": "                if module.get(\"parameters\"):",
     "tests": "the_rescan_option_also_marks_a_refused_module"
@@ -1758,14 +1758,14 @@
   },
   {
     "label": "options: a mode change saved without checking its transport",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "            if not errors:\n                errors.update(await self._validate_mode_change(user_input))\n",
     "new": "",
     "tests": "switching_mode_checks_the_transport_it_switches_to"
   },
   {
     "label": "options: an unchanged mode costs a portal login anyway",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "        if new_mode == self.config_entry.options.get(CONF_MODE, DEFAULT_MODE):\n            return {}\n",
     "new": "",
     "tests": "saving_without_touching_the_mode_costs_no_login"
@@ -1786,14 +1786,14 @@
   },
   {
     "label": "discovery: the module list read outside the shared lock",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "                modules = await self._run_expert(client.list_modules)",
     "new": "                modules = await self.hass.async_add_executor_job(client.list_modules)",
     "tests": "reading_the_module_list_waits_for_the_shared_expert_lock"
   },
   {
     "label": "discovery: the parameter search run outside the shared lock",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "                self._discovered = await self._run_expert(client.discover, modules)",
     "new": "                self._discovered = await self.hass.async_add_executor_job(\n                    client.discover, modules\n                )",
     "tests": "the_parameter_search_waits_for_the_shared_expert_lock"
@@ -1926,14 +1926,14 @@
   },
   {
     "label": "options: a cleared slot name that comes back from the merge",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "            name_key = CONF_EXPERT_SLOT_NAME_TEMPLATE % slot\n            user_input[name_key] = (user_input.get(name_key) or \"\").strip()",
     "new": "            pass",
     "tests": "a_cleared_slot_name_is_actually_cleared"
   },
   {
     "label": "options: a slot name stored with the whitespace around it",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "            user_input[name_key] = (user_input.get(name_key) or \"\").strip()",
     "new": "            user_input[name_key] = user_input.get(name_key) or \"\"",
     "tests": "a_slot_name_is_stored_stripped"
@@ -2122,7 +2122,7 @@
   },
   {
     "label": "options: the discovery list shared by every flow again",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "        self._discovered: list = []",
     "new": "        WemportalOptionsFlow._discovered = []",
     "tests": "two_options_flows_do_not_share_their_discovery"
@@ -2500,14 +2500,14 @@
   },
   {
     "label": "expert: discovery left without a way to stop",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "            abort_check=abort_if_the_entry_is_gone,\n",
     "new": "",
     "tests": "discovery_stops_when_its_entry_goes_away"
   },
   {
     "label": "discovery: an abort escaping the flow instead of ending it",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "        except ExpertOperationAborted as exc:",
     "new": "        except _NeverRaised as exc:",
     "tests": "an_aborted_discovery_ends_the_flow_instead_of_escaping"
@@ -2689,14 +2689,14 @@
   },
   {
     "label": "flow: the module step swallowing the abort again",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "            except AbortFlow:\n                raise\n            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                errors[\"base\"] = \"discovery_busy\"",
     "new": "            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                errors[\"base\"] = \"discovery_busy\"",
     "tests": "the_abort_survives_the_step_that_calls_it"
   },
   {
     "label": "flow: the discovery step swallowing the abort again",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "            except AbortFlow:\n                raise\n            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                self._discovery_error = \"discovery_busy\"",
     "new": "            except ExpertBusy:\n                _LOGGER.debug(\"Expert discovery: another operation holds the lock.\")\n                self._discovery_error = \"discovery_busy\"",
     "tests": "the_abort_survives_the_step_that_calls_it"
@@ -3137,7 +3137,7 @@
   },
   {
     "label": "rescan: the request must reach the disk, not just the api object",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "            await data.coordinator.async_persist_rescan()",
     "new": "            pass",
     "tests": "a_requested_rescan_outlives_the_reload_the_dialog_triggers"
@@ -3354,7 +3354,7 @@
   },
   {
     "label": "expert slots: comparing a raw spelling against a canonical set",
-    "path": "custom_components/wemportal/config_flow.py",
+    "path": "custom_components/wemportal/options_flow.py",
     "old": "                slot_id = user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)\n                if canonical_entityvalue(slot_id) in duplicates:\n",
     "new": "                slot_id = user_input.get(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)\n                if (slot_id or \"\").strip() in duplicates:\n",
     "tests": "options_flow_rejects_two_spellings_of_one_entityvalue"
