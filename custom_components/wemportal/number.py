@@ -67,7 +67,7 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
 
     Older versions embedded the raw, installation-specific entityvalue in
     the unique_id (persisted in .storage/core.entity_registry); it is now a
-    SHA-256 digest (see expert_writer.entityvalue_digest). Updating the registry
+    SHA-256 digest (see expert_options.entityvalue_digest). Updating the registry
     entry in place preserves the entity_id, history and restored state.
     Best-effort: a failure only means the entity is re-created under the
     new unique_id instead of migrated.

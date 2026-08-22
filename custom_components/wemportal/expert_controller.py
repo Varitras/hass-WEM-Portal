@@ -39,7 +39,7 @@ from .const import (
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
 )
 from .exceptions import ExpertOperationAborted
-from .expert_options import canonical_entityvalue
+from .expert_options import canonical_entityvalue, entityvalue_digest
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -555,8 +555,6 @@ class ExpertController:
         that was requested and failed can be that OR the portal, and
         asserting the first sent people to check a setting that was correct.
         """
-        from .expert_writer import entityvalue_digest
-
         digest = entityvalue_digest(entity.entityvalue)
         assert self._hass is not None and self._entry is not None
         if unreadable_id:
@@ -585,8 +583,6 @@ class ExpertController:
 
     def _clear_read_failure_issue(self, entityvalue: str) -> None:
         """Take the repair issue down once its parameter reads again."""
-        from .expert_writer import entityvalue_digest
-
         digest = entityvalue_digest(entityvalue)
         assert self._hass is not None and self._entry is not None
         async_delete_issue(

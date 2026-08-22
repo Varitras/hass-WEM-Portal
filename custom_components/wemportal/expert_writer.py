@@ -13,7 +13,6 @@ verifies the result by re-reading the form afterwards.
 from typing import Any, Final
 import logging
 
-import hashlib
 import math
 import random
 import re
@@ -377,21 +376,6 @@ def short_entityvalue(entityvalue: str) -> str:
     """
     text = entityvalue or ""
     return f"{text[:6]}…" if len(text) > 6 else text
-
-
-def entityvalue_digest(entityvalue: str) -> str:
-    """Short, stable digest of an entityvalue for use in internal IDs.
-
-    Used wherever an id derived from the entityvalue must be unique and
-    stable but ends up in persisted/inspectable places (entity-registry
-    unique_ids, persistent-notification ids, task names). The raw
-    entityvalue is installation-specific and shouldn't appear there
-    verbatim - someone sharing their .storage files or diagnostic dumps
-    would otherwise leak it. SHA-256 (truncated) keeps the mapping
-    deterministic without being reversible.
-    """
-    cleaned = (entityvalue or "").strip()
-    return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:16]
 
 
 def _is_valid_entityvalue(entityvalue) -> bool:

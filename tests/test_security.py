@@ -8,10 +8,8 @@ import pytest
 import requests as real_requests
 
 from custom_components.wemportal import exceptions, wemportalapi
-from custom_components.wemportal.expert_writer import (
-    WemPortalExpertClient,
-    entityvalue_digest,
-)
+from custom_components.wemportal.expert_options import entityvalue_digest
+from custom_components.wemportal.expert_writer import WemPortalExpertClient
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
 

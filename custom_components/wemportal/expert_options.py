@@ -1,13 +1,14 @@
-"""Option helpers for the expert path, without the expert client.
+"""Pure expert-path helpers, kept clear of the expert client.
 
-These three are pure functions over the entry options, but they used to live
-in expert_writer.py - which imports curl_cffi and lxml at module level. Since
-config_flow needs them on every options dialog, that single import decided
-that every installation loaded the HTTP stack, whether or not expert access
-was ever enabled. Splitting them out is what makes the lazy import of the
-client real rather than claimed.
+These used to live in expert_writer.py - which imports curl_cffi and lxml at
+module level. config_flow needs the option helpers on every options dialog and
+the entity needs the id digest at construction, so leaving them beside the
+client meant every installation loaded the HTTP stack whether or not expert
+access was ever enabled. Splitting them out is what makes the lazy import of
+the client real rather than claimed.
 """
 
+import hashlib
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -100,3 +101,18 @@ def expert_client_options(options: Mapping[str, Any]) -> dict[str, Any]:
             options.get(CONF_EXPERT_ENABLE_SECURITY_CODE, False)
         ),
     }
+
+
+def entityvalue_digest(entityvalue: str) -> str:
+    """Short, stable digest of an entityvalue for use in internal IDs.
+
+    Used wherever an id derived from the entityvalue must be unique and
+    stable but ends up in persisted/inspectable places (entity-registry
+    unique_ids, persistent-notification ids, task names). The raw
+    entityvalue is installation-specific and shouldn't appear there
+    verbatim - someone sharing their .storage files or diagnostic dumps
+    would otherwise leak it. SHA-256 (truncated) keeps the mapping
+    deterministic without being reversible.
+    """
+    cleaned = (entityvalue or "").strip()
+    return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:16]

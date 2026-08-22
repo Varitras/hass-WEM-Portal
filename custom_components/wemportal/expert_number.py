@@ -4,9 +4,11 @@ The Home Assistant view half of the expert feature, split from expert_writer.py
 so the protocol client stays free of the entity code and each half can be
 type-checked on its own terms. Imported only when CONF_EXPERT_WRITE is on (see
 number.py), which keeps curl_cffi - pulled transitively through the client - out
-of the load path while the option is off; the two references it needs from the
-client (entityvalue_digest, WemPortalExpertClient) are imported inside the
-methods that use them, the lazy shape tests/test_security.py enforces.
+of the load path while the option is off; WemPortalExpertClient, the one
+reference it still needs from the client, is imported inside the method that
+uses it, the lazy shape tests/test_security.py enforces. The unique-id digest
+comes from the light expert_options module, so building an entity pulls in no
+client at all.
 """
 
 import logging
@@ -26,6 +28,7 @@ from .const import (
     EXPERT_SLOT_COUNT,
 )
 from .exceptions import ExpertOperationAborted, ParameterWriteError
+from .expert_options import entityvalue_digest
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,8 +119,6 @@ class WemPortalExpertNumber(RestoreNumber):
     _attr_icon = "mdi:speedometer"
 
     def __init__(self, config_entry, name, entityvalue):
-        from .expert_writer import entityvalue_digest
-
         self._config_entry = config_entry
         self._entityvalue = entityvalue
         # Both are only known once the portal has been read; neither is

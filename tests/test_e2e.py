@@ -27,7 +27,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.wemportal import expert_number, expert_writer
+from custom_components.wemportal import expert_number, expert_options, expert_writer
 from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
@@ -486,8 +486,8 @@ async def test_a_reload_drops_expert_entities_whose_slot_is_gone(hass):
     """
     from homeassistant.helpers import entity_registry
 
-    digest_kept = expert_writer.entityvalue_digest(EV_A)
-    digest_gone = expert_writer.entityvalue_digest(EV_B)
+    digest_kept = expert_options.entityvalue_digest(EV_A)
+    digest_gone = expert_options.entityvalue_digest(EV_B)
     entry = _entry(
         hass,
         {CONF_EXPERT_WRITE: True, CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A},
@@ -527,7 +527,7 @@ async def test_disabling_expert_write_drops_its_registry_entries(hass):
     registry.async_get_or_create(
         "number",
         DOMAIN,
-        f"{entry.entry_id}:expert:{expert_writer.entityvalue_digest(EV_A)}",
+        f"{entry.entry_id}:expert:{expert_options.entityvalue_digest(EV_A)}",
         config_entry=entry,
     )
     bystander = registry.async_get_or_create(
@@ -543,7 +543,7 @@ async def test_disabling_expert_write_drops_its_registry_entries(hass):
         registry.async_get_entity_id(
             "number",
             DOMAIN,
-            f"{entry.entry_id}:expert:{expert_writer.entityvalue_digest(EV_A)}",
+            f"{entry.entry_id}:expert:{expert_options.entityvalue_digest(EV_A)}",
         )
         is None
     ), "a ghost expert entity survived disabling the option"

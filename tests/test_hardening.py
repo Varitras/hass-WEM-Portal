@@ -819,6 +819,36 @@ def test_a_missing_entity_class_fails_loud_instead_of_dropping_configured_slots(
         expert_number.create_expert_number_entities(entry)
 
 
+def test_building_an_expert_entity_does_not_import_the_client(monkeypatch):
+    """Constructing the entity must not pull in expert_writer.
+
+    expert_writer imports curl_cffi and lxml at module level (~114 ms,
+    measured), on the event loop. Only an actual write or auto-poll should pay
+    that; platform setup, which is what builds the entities, must not. The
+    unique_id digest __init__ needs now lives in expert_options (curl_cffi-free),
+    so construction no longer reaches into the client module. Asserting on the
+    import CALL, not on sys.modules: the test session imported expert_writer long
+    ago, so its mere presence there proves nothing.
+    """
+    import builtins
+
+    from custom_components.wemportal import expert_number
+
+    real_import = builtins.__import__
+    pulled = []
+
+    def tracking_import(name, *args, **kwargs):
+        if "expert_writer" in name:
+            pulled.append(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", tracking_import)
+    entry = types.SimpleNamespace(entry_id="e1", data={}, options={})
+    expert_number.WemPortalExpertNumber(entry, "expert_parameter_3", "A" * 36)
+
+    assert not pulled, f"building the entity imported the client: {pulled}"
+
+
 def test_a_run_of_failed_batches_stops_showing_the_expert_value():
     """The expert number restores its last value and keeps it while reads fail.
 

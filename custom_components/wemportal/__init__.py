@@ -388,7 +388,8 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
     # as well, so a second account does not arrange for it again.
     expert_writer = await hass.async_add_import_executor_job(_load_expert_writer)
     expert_client = expert_writer.WemPortalExpertClient
-    entityvalue_digest = expert_writer.entityvalue_digest
+    from .expert_options import entityvalue_digest
+
     short_entityvalue = expert_writer.short_entityvalue
 
     async def _handle_set_expert_parameter(call: ServiceCall) -> None:
