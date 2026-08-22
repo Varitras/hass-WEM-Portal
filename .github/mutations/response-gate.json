@@ -645,28 +645,28 @@
   },
   {
     "label": "schedules: recording the attempt only on success must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        if fetched:\n            self._last_circuit_times_fetch[key] = attempted_at\n            return\n",
     "new": "        if not fetched:\n            return\n        self._last_circuit_times_fetch[key] = attempted_at\n        return\n",
     "tests": "failing_schedule_is_not_refetched_on_every_cycle or refresh_without_a_job_id_also_counts"
   },
   {
     "label": "schedules: not shortening the wait after a failure must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        self._last_circuit_times_fetch[key] = attempted_at - max(\n            0,\n            CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS\n            - CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,\n        )",
     "new": "        self._last_circuit_times_fetch[key] = attempted_at",
     "tests": "failed_schedule_is_tried_again_after_the_retry_interval"
   },
   {
     "label": "schedules: back-dating a successful fetch must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        if fetched:\n            self._last_circuit_times_fetch[key] = attempted_at\n            return\n",
     "new": "        if False:\n            self._last_circuit_times_fetch[key] = attempted_at\n            return\n",
     "tests": "successful_schedule_keeps_the_full_interval"
   },
   {
     "label": "schedules: a merged programme's detail must follow the merge map",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        return merged[0] if merged else own_key",
     "new": "        return own_key",
     "tests": "merged_programme_lives or merged_3130"
@@ -792,14 +792,14 @@
   },
   {
     "label": "auth: a refused re-login lost inside the schedule read",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        except AuthError:\n            # A refused login is not one programme failing",
     "new": "        except UnknownAuthError:\n            # A refused login is not one programme failing",
     "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
   },
   {
     "label": "auth: a refused re-login lost around the schedule loop",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        except AuthError:\n            # The outer half of the same rule",
     "new": "        except UnknownAuthError:\n            # The outer half of the same rule",
     "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
@@ -1401,14 +1401,14 @@
   },
   {
     "label": "programme: keying on the declared type alone must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        return parameter_data.get(\n            \"DataType\"\n        ) == WemDataType.PROGRAM or looks_like_schedule(row_value)",
     "new": "        return parameter_data.get(\"DataType\") == WemDataType.PROGRAM",
     "tests": "a_programme_the_portal_types_as_a_switch_is_still_fetched"
   },
   {
     "label": "programme: fetching a schedule for a plain switch must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": " or looks_like_schedule(row_value)",
     "new": " or True",
     "tests": "a_plain_switch_is_not_mistaken_for_a_programme"
@@ -1422,7 +1422,7 @@
   },
   {
     "label": "programme: overwriting the week with a placeholder must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        row.possible_values = portal_list(schedule_resp, \"PossibleValues\")",
     "new": "        row.possible_values = portal_list(schedule_resp, \"PossibleValues\")\n        row.value = \"Active\"",
     "tests": "the_fetch_adds_to_the_programme_instead_of_replacing_it"
@@ -1989,7 +1989,7 @@
   },
   {
     "label": "schedule: any json object accepted as a delivered week",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        if not week_carries_a_programme(days):",
     "new": "        if False:",
     "tests": "an_answer_without_a_week_is_not_a_delivered_schedule"
@@ -2906,7 +2906,7 @@
   },
   {
     "label": "schedule: stale detail kept overruling the raw plan on failure",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        if isinstance(row, Reading) and row.circuit_times_day is not None:\n            row.circuit_times_day = None\n            row.possible_values = None",
     "new": "        if False:\n            row.circuit_times_day = None\n            row.possible_values = None",
     "tests": "a_failed_due_schedule_refresh_drops_the_stale_attributes"
@@ -3151,7 +3151,7 @@
   },
   {
     "label": "identity: the schedule throttle key must carry the module",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "    return (\n        device_id,\n        ModuleRef(module_index=module[\"Index\"], module_type=module[\"Type\"]),\n        parameter_id,\n    )",
     "new": "    return (device_id, parameter_id)",
     "tests": "two_circuits_with_the_same_programme_id_are_both_fetched"
@@ -3312,14 +3312,14 @@
   },
   {
     "label": "rate limits: the schedule guard must read the clock it stamped",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        return time.monotonic() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS",
     "new": "        return time.time() - last_fetch >= CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS",
     "tests": "schedule_guard_reads_the_clock_it_stamped"
   },
   {
     "label": "rate limits: a schedule attempt must be stamped on the guard's clock",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        attempted_at = time.monotonic()",
     "new": "        attempted_at = time.time()",
     "tests": "failed_schedule_is_tried_again_after_the_retry_interval or successful_schedule_keeps_the_full_interval"
@@ -3333,7 +3333,7 @@
   },
   {
     "label": "rate limits: a schedule never fetched must not read as fetched at boot",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/schedule.py",
     "old": "        last_fetch = self._last_circuit_times_fetch.get(key)\n        if last_fetch is None:\n            return True\n",
     "new": "        last_fetch = self._last_circuit_times_fetch.get(key, 0)\n",
     "tests": "schedule_is_fetched_on_the_first_cycle_after_a_reboot"

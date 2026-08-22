@@ -212,8 +212,8 @@ JSON_ANSWER_BOUNDARIES = {
         "_change_value",
         "_fetch_device_status",
         "_fetch_parameter_values",
-        "_read_one_schedule",
     },
+    "schedule.py": {"_read_one_schedule"},
 }
 
 # Every function that may parse portal HTML (or a Telerik delta stream).

@@ -45,7 +45,7 @@ LINE_BUDGETS = {
     # live. The direction is unchanged - the weekly-programme (schedule) path
     # is the next thing that could leave, the way transport, statistics and
     # now login did.
-    "wemportalapi.py": 2748,
+    "wemportalapi.py": 2485,
     "expert_writer.py": 2447,
     "config_flow.py": 939,
 }

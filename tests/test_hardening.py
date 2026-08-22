@@ -11,7 +11,13 @@ import types
 import pytest
 import requests as real_requests
 
-from custom_components.wemportal import exceptions, statistics, transport, wemportalapi
+from custom_components.wemportal import (
+    exceptions,
+    schedule,
+    statistics,
+    transport,
+    wemportalapi,
+)
 from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.const import WEB_LOGGED_IN_MARKER
 from custom_components.wemportal.wemportalapi import WemPortalApi
@@ -6333,10 +6339,10 @@ def test_the_failed_schedule_is_tried_again_after_the_retry_interval():
     stamp = api._last_circuit_times_fetch[("1234", ModuleRef(0, 1), "Heizprogramm1")]
 
     waited = time.monotonic() - stamp
-    assert waited >= wemportalapi.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS - (
-        wemportalapi.CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS + 5
+    assert waited >= schedule.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS - (
+        schedule.CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS + 5
     ), "the retry was pushed out further than the retry interval"
-    assert waited < wemportalapi.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS, (
+    assert waited < schedule.CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS, (
         "the schedule would be retried immediately"
     )
 
@@ -6470,7 +6476,7 @@ def test_a_schedule_is_fetched_on_the_first_cycle_after_a_reboot(monkeypatch):
     """The per-programme half of the zero-is-not-never rule: a missing key
     means never fetched, not "fetched when the machine booted"."""
     monkeypatch.setattr(
-        wemportalapi,
+        schedule,
         "CIRCUIT_TIMES_REFRESH_INTERVAL_SECONDS",
         time.monotonic() + 3600,
     )
