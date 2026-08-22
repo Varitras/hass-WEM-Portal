@@ -6,6 +6,36 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.12.0b5] – 2026-08-23
+
+### Fixed
+
+- **A malformed answer from the portal no longer reads as "nothing wrong".** A
+  field the portal was expected to return as a list, but returned as something
+  else, was quietly treated as empty - so a wrongly-typed `Errors` field showed
+  as "no errors" and a bad statistics container as legitimately empty. Such an
+  answer is now rejected, so the reading is discarded and retried instead of
+  published as a false all-clear.
+- **A transient failure to load the expert number entities no longer deletes
+  them from the registry.** If the entity class could not be built, setup
+  reported "no expert slots configured", and the cleanup that removes cleared
+  slots then deleted every configured slot's entity - its history and restored
+  state with it. A load failure now aborts the setup loudly, before the cleanup
+  runs, so nothing is removed.
+- **A heating schedule the app cannot render no longer sticks on the
+  dashboard.** A week is kept on display as long as the schedule fetch is
+  feeding it, but the check for whether it still is only asked whether the day
+  carried any switching-time list, not whether that list holds a time the
+  sensor can actually render. A week of unrenderable entries was held on the old
+  plan forever; it now ages like any other row that shows nothing.
+- **Shared services survive a refused unload during another account's unload.**
+  Unloading an account is announced before its platforms come down; a second
+  account unloading in that window saw the first as gone and released the
+  domain-wide expert-write and holiday services. If the first account's unload
+  was then refused, it stayed loaded but its services were gone, and every write
+  and `set_holiday` call failed until a restart. A refused unload now restores
+  the services the account still needs.
+
 ## [1.12.0b4] – 2026-08-22
 
 ### Fixed
