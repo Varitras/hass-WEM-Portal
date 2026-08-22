@@ -1024,9 +1024,16 @@
   {
     "label": "portal lists: an explicit null read as an absent key again",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    value = payload.get(key)\n    return value if isinstance(value, list) else []",
+    "old": "    value = payload.get(key)\n    if value is None:\n        return []\n    if not isinstance(value, list):\n        raise ServerError(\n            f\"The portal answered {key!r} with a {type(value).__name__}, not a list.\"\n        )\n    return value",
     "new": "    return payload.get(key, [])",
     "tests": "a_module_whose_value_list_is_null_costs_only_that_module"
+  },
+  {
+    "label": "portal lists: a malformed non-list read as empty again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        raise ServerError(\n            f\"The portal answered {key!r} with a {type(value).__name__}, not a list.\"\n        )",
+    "new": "        return []",
+    "tests": "non_list_portal_answer"
   },
   {
     "label": "freshness: clearing a module the portal never answered for must be noticed",

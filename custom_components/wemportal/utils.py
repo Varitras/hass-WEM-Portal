@@ -18,6 +18,7 @@ from homeassistant.const import (
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .models import ModuleRef, Reading
+from .exceptions import ServerError
 from .const import (
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
@@ -184,9 +185,22 @@ def portal_list(payload: Mapping[str, Any], key: str) -> list[Any]:
     Shared rather than an `or []` at each site: the sites are in three
     modules, and the next reader of a portal list is the one who would not
     know to add it.
+
+    A truthy NON-list is neither of those - it is a malformed answer, and
+    quietly emptying it hid real faults: an `Errors` field typed wrong read as
+    "Has Errors: No", and a bad statistics container read as legitimately
+    empty. Raised, so the caller's boundary handler discards the read (the
+    status row stays unknown, the retry engages) instead of publishing an
+    all-clear built on a shape the portal never promised.
     """
     value = payload.get(key)
-    return value if isinstance(value, list) else []
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ServerError(
+            f"The portal answered {key!r} with a {type(value).__name__}, not a list."
+        )
+    return value
 
 
 def parse_portal_number(value: object) -> float | None:

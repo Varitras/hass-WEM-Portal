@@ -8232,3 +8232,29 @@ def test_a_failed_api_read_still_counts_against_the_interval(monkeypatch):
         f"the api was tried on {len(attempts)} of 7 web cycles; a failed "
         "read reopened the gate the user's interval had closed"
     )
+
+
+def test_a_non_list_portal_answer_is_surfaced_not_read_as_an_empty_list():
+    """A list field answered with a truthy non-list is malformed, not empty.
+
+    portal_list normalised every non-list to [] to satisfy its list return
+    type. That turned a fault field typed wrong (`Errors: "E12"`, or an error
+    OBJECT) into [], and _fetch_device_status then published "Has Errors: No" -
+    the one direction a fault sensor must never fail in - while the statistics
+    boundary read a malformed group container as a legitimate empty one. The
+    documented empties (absent key, explicit null) stay empty; any other
+    non-list is raised so the boundary handler discards the read rather than
+    the row quietly claiming nothing is wrong.
+    """
+    from custom_components.wemportal.exceptions import ServerError
+    from custom_components.wemportal.utils import portal_list
+
+    assert portal_list({}, "Errors") == []
+    assert portal_list({"Errors": None}, "Errors") == []
+    assert portal_list({"Errors": []}, "Errors") == []
+    assert portal_list({"Errors": ["E12"]}, "Errors") == ["E12"]
+
+    with pytest.raises(ServerError):
+        portal_list({"Errors": "E12"}, "Errors")
+    with pytest.raises(ServerError):
+        portal_list({"Errors": {"code": "E12"}}, "Errors")
