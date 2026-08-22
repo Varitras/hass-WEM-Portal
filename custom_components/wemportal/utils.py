@@ -1,6 +1,7 @@
 """Utility functions for WEM Portal."""
 
-from typing import Final
+from collections.abc import Iterable, Mapping
+from typing import Any, Final
 import logging
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
@@ -14,6 +15,7 @@ from homeassistant.const import (
     UnitOfTime,
     UnitOfVolumeFlowRate,
 )
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .models import ModuleRef, Reading
 from .const import (
@@ -37,7 +39,9 @@ DEVICE_TYPE_NAMES: Final = {
 MISSING_DATA_STRINGS: Final = ["--", "label ist null", "label ist null "]
 
 
-def clamped_scan_interval(options, key, default, minimum):
+def clamped_scan_interval(
+    options: Mapping[str, Any], key: str, default: int, minimum: int
+) -> int:
     """Read a stored scan interval and hold it to its floor.
 
     The floors were only ever enforced by the options-flow schema, which
@@ -74,7 +78,7 @@ def clamped_scan_interval(options, key, default, minimum):
     return value
 
 
-def device_identifier(entry_id, device_id):
+def device_identifier(entry_id: str, device_id: str) -> tuple[str, str]:
     """Return the device-registry identifier for a WEM Portal sub-device.
 
     Single source of truth so the entity platforms (via build_device_info)
@@ -86,7 +90,7 @@ def device_identifier(entry_id, device_id):
     return (DOMAIN, f"{entry_id}:{device_id}")
 
 
-def short_device_id(device_id) -> str:
+def short_device_id(device_id: str | None) -> str:
     """A device id shortened for text the user is invited to publish.
 
     The failure it appears in ends with "open an issue at <tracker>", so the
@@ -99,7 +103,12 @@ def short_device_id(device_id) -> str:
     return f"…{text[-2:]}" if len(text) > 2 else text
 
 
-def build_device_info(entry_id, device_id, sw_version=None, model=None):
+def build_device_info(
+    entry_id: str,
+    device_id: str,
+    sw_version: str | None = None,
+    model: str | None = None,
+) -> DeviceInfo:
     """Build the DeviceInfo dict for a WEM Portal sub-device.
 
     Every entity platform (date, number, select, sensor, switch) exposes the same
@@ -109,7 +118,7 @@ def build_device_info(entry_id, device_id, sw_version=None, model=None):
     same dict. `sw_version` is optional (only the sensor platform has an
     API version to report).
     """
-    info = {
+    info: DeviceInfo = {
         "identifiers": {device_identifier(entry_id, device_id)},
         "via_device": (DOMAIN, entry_id),
         "name": str(device_id),
@@ -121,7 +130,7 @@ def build_device_info(entry_id, device_id, sw_version=None, model=None):
     return info
 
 
-def schedule_fetch_still_feeds(row) -> bool:
+def schedule_fetch_still_feeds(row: object) -> bool:
     """Whether a weekly programme is still being refreshed by its own fetch.
 
     Both ageing passes exempt programmes, because the hourly schedule fetch
@@ -149,7 +158,7 @@ def schedule_fetch_still_feeds(row) -> bool:
     )
 
 
-def week_carries_a_programme(days) -> bool:
+def week_carries_a_programme(days: object) -> bool:
     """Whether a week the device reported holds an actual programme.
 
     Asked of the DATA, not of what the sensor makes of it: a day without
@@ -163,7 +172,7 @@ def week_carries_a_programme(days) -> bool:
     return any(isinstance(day, dict) and day.get("CircuitTimes") for day in days)
 
 
-def portal_list(payload, key):
+def portal_list(payload: Mapping[str, Any], key: str) -> list[Any]:
     """The list the portal sent under `key`, empty if it sent none.
 
     `payload.get(key, [])` covers an ABSENT key only. The portal also
@@ -176,10 +185,11 @@ def portal_list(payload, key):
     modules, and the next reader of a portal list is the one who would not
     know to add it.
     """
-    return payload.get(key) or []
+    value = payload.get(key)
+    return value if isinstance(value, list) else []
 
 
-def parse_portal_number(value):
+def parse_portal_number(value: object) -> float | None:
     """The number a portal value carries, or None if it carries none.
 
     The portal spells decimals with a dot in dialog labels and API strings
@@ -199,7 +209,7 @@ def parse_portal_number(value):
         return None
 
 
-def sanitize_value(value_str):
+def sanitize_value(value_str: Any) -> Any:
     """Sanitize typical German/English WEM Portal strings into numeric values.
 
     The single implementation for both readers - the API mapper (mapper.py)
@@ -266,7 +276,7 @@ def sanitize_value(value_str):
     return value_str
 
 
-def serialize_modules(modules: dict) -> dict:
+def serialize_modules(modules: dict[str, Any]) -> dict[str, Any]:
     """Convert the in-memory `modules` dict into a JSON-serializable dict.
 
     `modules` is keyed as `{device_id: {ModuleRef: {...}}}`. Tuple keys are
@@ -286,7 +296,7 @@ def serialize_modules(modules: dict) -> dict:
     return serialized
 
 
-def deserialize_modules(data: dict) -> dict:
+def deserialize_modules(data: dict[str, Any]) -> dict[str, Any]:
     """Convert a persisted modules dict back into the in-memory keyed format.
 
     Inverse of `serialize_modules`; the keys come back as ModuleRef. Returns
@@ -295,7 +305,7 @@ def deserialize_modules(data: dict) -> dict:
     """
     if not data:
         return {}
-    modules: dict = {}
+    modules: dict[str, Any] = {}
     for device_id, device_modules in data.items():
         modules[device_id] = {}
         for key, module_data in device_modules.items():
@@ -303,7 +313,7 @@ def deserialize_modules(data: dict) -> dict:
     return modules
 
 
-def fix_value_and_unit(value, unit):
+def fix_value_and_unit(value: Any, unit: str | None) -> tuple[Any, str | None]:
     """
     Translate WEM specific values and units of measurement to Home Assistant.
 
@@ -358,7 +368,7 @@ def fix_value_and_unit(value, unit):
     return value, unit
 
 
-def _unit_lookup_key(unit) -> str:
+def _unit_lookup_key(unit: object) -> str:
     """How a unit is spelled when a table is asked about it.
 
     BOTH sides need this, and that is the whole point: the keys of those
@@ -374,7 +384,7 @@ def _unit_lookup_key(unit) -> str:
     return str(unit).strip().lower()
 
 
-def unit_to_device_class(unit):
+def unit_to_device_class(unit: str | None) -> SensorDeviceClass | None:
     """Return the device_class of this unit of measurement, if any."""
 
     # see: <https://developers.home-assistant.io/docs/core/entity/sensor/#available-device-classes>
@@ -417,7 +427,7 @@ def unit_to_device_class(unit):
     )
 
 
-def unit_to_icon(unit):
+def unit_to_icon(unit: str | None) -> str | None:
     """Icon for a unit - or None to let Home Assistant decide.
 
     Returning None is the important part: an explicitly set icon ALWAYS
@@ -434,7 +444,7 @@ def unit_to_icon(unit):
     }.get(str(unit).strip().lower() if unit else "", "mdi:flash")
 
 
-def unit_to_state_class(unit):
+def unit_to_state_class(unit: str | None) -> SensorStateClass | None:
     """Return the state class of this unit of measurement, if any."""
 
     # see: <https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes>
@@ -464,17 +474,20 @@ def unit_to_state_class(unit):
     )
 
 
-def device_model(api, device_id):
+def device_model(api: Any, device_id: str) -> str | None:
     """Human-readable model for a device, from its reported DeviceType.
 
     Returns None when the type is unknown or was never reported, so
     build_device_info falls back to the generic name.
     """
     types = getattr(api, "device_types", None) or {}
-    return DEVICE_TYPE_NAMES.get(types.get(str(device_id)))
+    device_type = types.get(str(device_id))
+    return DEVICE_TYPE_NAMES.get(device_type) if device_type is not None else None
 
 
-def latest_statistics_entry(values):
+def latest_statistics_entry(
+    values: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
     """Pick the newest statistics entry that carries a reading.
 
     The API returns one entry per day and the newest happens to be last, so
@@ -506,7 +519,7 @@ def latest_statistics_entry(values):
 _MORE = " (+{} more)"
 
 
-def error_state_and_detail(errors) -> tuple[str, list]:
+def error_state_and_detail(errors: Iterable[Any] | None) -> tuple[str, list[str]]:
     """The fault sensor's state, and the full list for its attribute.
 
     Home Assistant refuses a state longer than it allows, so this has to fit.
@@ -546,7 +559,7 @@ def error_state_and_detail(errors) -> tuple[str, list]:
     return messages[0][:room] + "..." + marker, messages
 
 
-def looks_like_schedule(value) -> bool:
+def looks_like_schedule(value: object) -> bool:
     """Whether a reading is one of the portal's weekly programmes.
 
     The portal types these two ways. Some installations declare DataType 6,
@@ -570,7 +583,9 @@ def looks_like_schedule(value) -> bool:
 UNREACHABLE_CONNECTION_STATES = ("offline", "wrong_secret")
 
 
-def device_is_reachable(coordinator_data, device_id) -> bool:
+def device_is_reachable(
+    coordinator_data: Mapping[str, Any] | None, device_id: str
+) -> bool:
     """Whether this device answered, as far as the portal knows.
 
     The coordinator's `last_update_success` covers the CYCLE, not the single

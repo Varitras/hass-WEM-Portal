@@ -11,6 +11,9 @@ once - each is explained at the function it belongs to.
 
 import logging
 
+from collections.abc import Collection, Mapping
+from typing import Any
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry
@@ -21,13 +24,17 @@ from .models import Reading
 _LOGGER = logging.getLogger(__name__)
 
 
-def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str):
+def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str) -> str:
     """Return unique ID for WEM Portal."""
     return f"{config_entry_id}:{device_id}:{name}"
 
 
 def _migrate_device_unique_ids(
-    registry, config_entry, device_id, data, contested=()
+    registry: entity_registry.EntityRegistry,
+    config_entry: ConfigEntry,
+    device_id: str,
+    data: dict[str, Any],
+    contested: Collection[str] = (),
 ) -> bool:
     """Migrate one device's entities from old unique_id formats to the current
     one. Returns True if any entity was updated. Factored out so migration can
@@ -52,7 +59,9 @@ def _migrate_device_unique_ids(
     return change
 
 
-def _ids_claimed_by_more_than_one_reading(config_entry, per_device) -> set:
+def _ids_claimed_by_more_than_one_reading(
+    config_entry: ConfigEntry, per_device: dict[str, Any]
+) -> set[str]:
     """The id shapes that identify no single reading of this cycle.
 
     The old shapes carry neither device nor parameter - a bare key, a friendly
@@ -68,8 +77,8 @@ def _ids_claimed_by_more_than_one_reading(config_entry, per_device) -> set:
     to identifies neither, and nothing in the registry says whose history it
     is. Leaving it alone is the only outcome that loses nothing.
     """
-    claimed_once: set = set()
-    claimed_twice: set = set()
+    claimed_once: set[str] = set()
+    claimed_twice: set[str] = set()
     for device_id, rows in per_device.items():
         for unique_id, values in (rows or {}).items():
             if not isinstance(values, Reading):
@@ -83,7 +92,9 @@ def _ids_claimed_by_more_than_one_reading(config_entry, per_device) -> set:
     return claimed_twice
 
 
-def _possible_old_unique_ids(config_entry, device_id, unique_id, values) -> list:
+def _possible_old_unique_ids(
+    config_entry: ConfigEntry, device_id: str, unique_id: str, values: Reading
+) -> list[str]:
     """Every unique_id shape a past release may have registered this under.
 
     Three sources - the key itself, the friendly name and the ParameterID -
@@ -115,7 +126,11 @@ def _possible_old_unique_ids(config_entry, device_id, unique_id, values) -> list
 
 
 def _adopt_entity_under_its_old_id(
-    registry, config_entry, platform, old_ids, new_id
+    registry: entity_registry.EntityRegistry,
+    config_entry: ConfigEntry,
+    platform: str,
+    old_ids: list[str],
+    new_id: str,
 ) -> bool:
     """Give the first entity of THIS account found under an old id the
     current one.
@@ -161,8 +176,11 @@ def _adopt_entity_under_its_old_id(
 
 
 def _entities_of_this_entry_on_other_platforms(
-    registry, config_entry, current, unique_ids
-) -> list:
+    registry: entity_registry.EntityRegistry,
+    config_entry: ConfigEntry,
+    current: str,
+    unique_ids: list[str],
+) -> list[str]:
     """This account's registry entries for one parameter, on every platform it
     is not.
 
@@ -191,7 +209,11 @@ def _entities_of_this_entry_on_other_platforms(
 
 
 def _remove_entities_from_a_previous_platform(
-    registry, config_entry, device_id, data, contested=()
+    registry: entity_registry.EntityRegistry,
+    config_entry: ConfigEntry,
+    device_id: str,
+    data: dict[str, Any],
+    contested: Collection[str] = (),
 ) -> None:
     """Drop registry entries this integration no longer provides.
 
@@ -238,7 +260,12 @@ def _remove_entities_from_a_previous_platform(
             registry.async_remove(stale)
 
 
-def _orphaned_by_a_merge(device_id, scraping_mapper, modules, device_data) -> list:
+def _orphaned_by_a_merge(
+    device_id: str,
+    scraping_mapper: Mapping[Any, Any],
+    modules: Mapping[str, Any],
+    device_data: Mapping[str, Any],
+) -> list[str]:
     """The api keys a merge retired: an entity was built for one on an earlier
     cycle and it renders nothing now.
 
@@ -263,7 +290,12 @@ def _orphaned_by_a_merge(device_id, scraping_mapper, modules, device_data) -> li
     return orphans
 
 
-def _remove_orphaned_by_a_merge(registry, config_entry, device_id, orphan_keys) -> None:
+def _remove_orphaned_by_a_merge(
+    registry: entity_registry.EntityRegistry,
+    config_entry: ConfigEntry,
+    device_id: str,
+    orphan_keys: list[str],
+) -> None:
     """Drop the registry entries of api keys a merge retired.
 
     Only this account's, only our own platforms, and only the current id shape,
@@ -288,7 +320,9 @@ def _remove_orphaned_by_a_merge(registry, config_entry, device_id, orphan_keys) 
             registry.async_remove(entity_id)
 
 
-def _take_the_readings_not_migrated_yet(device_id, rows, migrated: dict) -> dict:
+def _take_the_readings_not_migrated_yet(
+    device_id: str, rows: dict[str, Any], migrated: dict[tuple[str, str], str]
+) -> dict[str, Reading]:
     """One device's readings whose platform has changed since last time,
     recorded as handled on the way out.
 
@@ -318,8 +352,8 @@ def _take_the_readings_not_migrated_yet(device_id, rows, migrated: dict) -> dict
 
 
 async def migrate_unique_ids(
-    hass: HomeAssistant, config_entry: ConfigEntry, coordinator
-):
+    hass: HomeAssistant, config_entry: ConfigEntry, coordinator: Any
+) -> None:
     registry = entity_registry.async_get(hass)
     migrated: dict[tuple[str, str], str] = {}
 

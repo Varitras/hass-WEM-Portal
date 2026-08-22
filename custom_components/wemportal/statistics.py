@@ -123,6 +123,8 @@ class WemPortalStatistics:
         # Pick by the Date the entry carries, not by list
         # position - see utils.latest_statistics_entry.
         latest_stat = latest_statistics_entry(values)
+        if latest_stat is None:
+            return
         current_value = latest_stat.get("Value")
         _LOGGER.debug(
             "Statistics group %s: using entry dated %s of %d",

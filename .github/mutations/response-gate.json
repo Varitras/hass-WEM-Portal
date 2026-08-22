@@ -1024,7 +1024,7 @@
   {
     "label": "portal lists: an explicit null read as an absent key again",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    return payload.get(key) or []",
+    "old": "    value = payload.get(key)\n    return value if isinstance(value, list) else []",
     "new": "    return payload.get(key, [])",
     "tests": "a_module_whose_value_list_is_null_costs_only_that_module"
   },
