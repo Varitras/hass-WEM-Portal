@@ -4118,6 +4118,63 @@ async def test_a_refused_unload_leaves_the_entry_writeable(hass, monkeypatch):
     await hass.async_block_till_done()
 
 
+async def test_a_refused_unload_restores_services_a_concurrent_unload_removed(
+    hass, monkeypatch
+):
+    """A refused unload has to put the shared services back, not just the flag.
+
+    `unloading` is set before the slow platform unload. A second entry coming
+    down in that window sees this one as already gone - is_still_serving reads
+    the flag - and releases the shared domain services. If this entry's own
+    unload is then refused, it stays loaded, but the services it needs left
+    with the other entry and never came back: every write and every set_holiday
+    call failed until a restart. The two proofs either side of this each cover
+    one half - a parallel release, and the flag being taken back - but not
+    their composition, which is the only order that leaves a loaded entry
+    without its services.
+    """
+    import custom_components.wemportal as integration
+    from custom_components.wemportal import holiday
+    from custom_components.wemportal.holiday import SERVICE_SET_HOLIDAY
+
+    entry_a = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    entry_b = await _setup(hass, _entry(hass, {CONF_EXPERT_WRITE: True}))
+    data_a = entry_a.runtime_data
+    data_b = entry_b.runtime_data
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY)
+
+    async def release_from_the_other_entry_then_refuse(*_args, **_kwargs):
+        # The other entry, unloading in the window this one has opened, sees it
+        # as already gone and takes the shared services down - and only then is
+        # this entry's own unload refused.
+        integration._async_release_expert_service(hass, entry_a)
+        holiday.async_release_holiday_service(hass, entry_a)
+        assert not hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER)
+        assert not hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY)
+        return False
+
+    monkeypatch.setattr(
+        hass.config_entries,
+        "async_unload_platforms",
+        release_from_the_other_entry_then_refuse,
+    )
+
+    assert await hass.config_entries.async_unload(entry_b.entry_id) is False
+    await hass.async_block_till_done()
+
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_EXPERT_PARAMETER), (
+        "the refused unload left the expert service gone though the entry stays"
+    )
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_HOLIDAY), (
+        "the refused unload left the holiday service gone though the entry stays"
+    )
+
+    await data_a.coordinator.async_shutdown()
+    await data_b.coordinator.async_shutdown()
+    await hass.async_block_till_done()
+
+
 async def test_a_setup_that_fails_after_forwarding_takes_the_platforms_back_down(
     hass, monkeypatch
 ):

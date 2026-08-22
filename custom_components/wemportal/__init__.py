@@ -648,6 +648,16 @@ async def async_unload_entry(
         # until Home Assistant restarted.
         if data is not None:
             data.abort_unload()
+        # `unloading` was set before the slow platform unload, so another entry
+        # coming down in that window saw this one as already gone and released
+        # the shared domain services. This one is staying, so put back the ones
+        # it needs - both registrations are idempotent, a no-op when nothing
+        # took them.
+        from .holiday import async_register_holiday_service
+
+        async_register_holiday_service(hass)
+        if config_entry.options.get(CONF_EXPERT_WRITE, False):
+            await _async_register_expert_service(hass)
         return False
 
     # Not unconditionally: the streak belongs to the ACCOUNT, and a legacy

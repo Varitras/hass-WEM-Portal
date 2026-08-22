@@ -611,8 +611,8 @@
   {
     "label": "unload: a refused unload must give the write gate back",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "        if data is not None:\n            data.abort_unload()\n        return False",
-    "new": "        return False",
+    "old": "            data.abort_unload()",
+    "new": "            pass",
     "tests": "refused_unload_leaves_the_entry_writeable"
   },
   {
@@ -621,6 +621,13 @@
     "old": "        self.unloading = False",
     "new": "        pass",
     "tests": "refused_unload_leaves_the_entry_writeable"
+  },
+  {
+    "label": "unload: a refused unload must restore the shared services",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        async_register_holiday_service(hass)\n        if config_entry.options.get(CONF_EXPERT_WRITE, False):\n            await _async_register_expert_service(hass)",
+    "new": "        pass",
+    "tests": "refused_unload_restores_services_a_concurrent_unload_removed"
   },
   {
     "label": "setup: platforms left up after a failed setup must be noticed",
@@ -1395,8 +1402,8 @@
   {
     "label": "holiday: never registering the service must be noticed",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "        async_register_holiday_service(hass)",
-    "new": "        pass",
+    "old": "        async_register_holiday_service(hass)\n\n        if entry.options.get(CONF_EXPERT_WRITE, False):",
+    "new": "        if entry.options.get(CONF_EXPERT_WRITE, False):",
     "tests": "the_holiday_service_follows_the_loaded_entries"
   },
   {
