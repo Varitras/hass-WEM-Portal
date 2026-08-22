@@ -1766,7 +1766,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 self.api_login()
             if callable(together_with):
                 together_with = together_with()
-            result = self._change_value(
+            self._change_value(
                 device_id,
                 parameter_id,
                 module_index,
@@ -1782,7 +1782,6 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics):
                 module_type,
                 {parameter_id: numeric_value, **(together_with or {})},
             )
-            return result
         finally:
             self._api_lock.release()
 
