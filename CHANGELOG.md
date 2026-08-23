@@ -6,6 +6,31 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.12.0] – 2026-08-23
+
+Same code as prerelease 1.12.0b5; only the version number changed. This
+promotes the 1.12.0 line to stable.
+
+The theme of the line is identity and freshness - which circuit, module and
+spelling a reading belongs to, and how long a value that stopped arriving may
+still be shown as current - together with moving three failures that were
+visible only in the log (a rate-limit block, a web half that stopped
+delivering, an expert parameter that will not read) into Repairs, in your
+language. New alongside: the second heating circuit gets its own entities, and
+a redacted diagnostics download sits in the integration's three-dot menu.
+Underneath, transport, statistics and the data model became their own modules,
+kept honest by structural guards, a mutation run and full type-checking.
+
+The pre-releases 1.12.0b2 through 1.12.0b5 layered fixes on top: both-mode
+scrape freshness, holiday writes, the expert lock and cooldown, a statistics
+retry after a refusal, a DST-safe scrape interval, a malformed portal answer
+surfaced instead of read as empty, the expert entities kept through a transient
+load failure, an unrenderable schedule ageing correctly, and the shared
+services restored after a refused unload.
+
+The 1.12.0b1–b5 sections below carry the full, itemised list of every change
+since 1.11.0.
+
 ## [1.12.0b5] – 2026-08-23
 
 ### Fixed
