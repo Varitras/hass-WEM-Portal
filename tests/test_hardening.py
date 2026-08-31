@@ -3785,6 +3785,44 @@ def test_maintenance_is_not_an_auth_error():
     assert issubclass(exceptions.PortalMaintenanceError, exceptions.WemPortalError)
 
 
+def test_a_maintenance_message_on_the_api_login_is_not_a_wrong_password():
+    """The mobile API login refused during downtime must not read as credentials.
+
+    The API answers a login during planned maintenance with an ordinary 400 and
+    a maintenance MESSAGE - it carries no offlinecontent marker like the web
+    page, so the page-based check misses it. Classified as an AuthError, three
+    such cycles escalated to ConfigEntryAuthFailed and asked for credentials
+    that were correct all along. It is a PortalMaintenanceError, which the
+    coordinator turns into a retry, not a reauth prompt.
+    """
+    api = _api()
+    maintenance = FakeResponse(
+        {
+            "Status": 8000,
+            "Message": (
+                "WEM-Portal wird derzeit gewartet, bitte versuchen Sie es "
+                "später wieder."
+            ),
+        },
+        status_code=400,
+    )
+    with pytest.raises(exceptions.PortalMaintenanceError):
+        api._raise_login_failure(maintenance, real_requests.exceptions.HTTPError())
+
+
+def test_a_wrong_password_on_the_api_login_stays_an_auth_error():
+    """The control: a real credential rejection must still raise AuthError, so
+    the reauth prompt reaches the user. Only a maintenance-worded message is
+    exempted, and a wrong-password message carries none of those words."""
+    api = _api()
+    wrong = FakeResponse(
+        {"Status": 1, "Message": "Invalid username or password."},
+        status_code=400,
+    )
+    with pytest.raises(exceptions.AuthError):
+        api._raise_login_failure(wrong, real_requests.exceptions.HTTPError())
+
+
 class FakeResponse_html:
     """A response carrying HTML rather than JSON."""
 

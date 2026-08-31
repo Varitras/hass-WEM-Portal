@@ -560,6 +560,13 @@
     "tests": "page_without_a_login_form_gets_no_credentials"
   },
   {
+    "label": "login: a maintenance message on the api login read as a wrong password",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    return any(marker in lowered for marker in API_MAINTENANCE_MESSAGE_MARKERS)",
+    "new": "    return False",
+    "tests": "maintenance_message_on_the_api_login_is_not_a_wrong_password"
+  },
+  {
     "label": "migration: adopting under an id two readings claim must be noticed",
     "path": "custom_components/wemportal/migration.py",
     "old": "            if old_id not in contested",
@@ -3600,7 +3607,7 @@
   {
     "label": "boundary: the transport reaching for utils again must be caught",
     "path": "custom_components/wemportal/transport.py",
-    "old": "from .web_protocol import maintenance_notice",
+    "old": "from .web_protocol import maintenance_notice, message_reports_maintenance",
     "new": "from .utils import parse_portal_number",
     "tests": "transport_imports_only_domain_free_siblings"
   }

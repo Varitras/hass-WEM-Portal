@@ -50,6 +50,32 @@ def maintenance_notice(html_text: str) -> str | None:
     return "The portal reports scheduled maintenance."
 
 
+# The mobile API has no structural downtime marker like the web page's
+# offlinecontent class - during maintenance it answers a login with an ordinary
+# error carrying a maintenance MESSAGE. These roots are matched in that message.
+# Text rather than a status code on purpose: the one internal status seen with
+# maintenance so far (8000) is not confirmed to mean only that, whereas a
+# credentials error never carries these words - so matching them cannot hide a
+# real auth failure, and a miss only leaves today's behaviour. DE covers this
+# portal's own wording, EN the localised form.
+API_MAINTENANCE_MESSAGE_MARKERS: Final = ("wartung", "gewartet", "maintenance")
+
+
+def message_reports_maintenance(message: str | None) -> bool:
+    """Whether an API error message announces planned maintenance.
+
+    Unlike the web page (see maintenance_notice), the mobile API gives no
+    structural downtime marker, only an ordinary error carrying a maintenance
+    message. Matched on stable maintenance roots rather than the unconfirmed
+    internal status code. A credentials rejection carries none of them, so a
+    match cannot mask a real authentication failure.
+    """
+    if not message:
+        return False
+    lowered = message.casefold()
+    return any(marker in lowered for marker in API_MAINTENANCE_MESSAGE_MARKERS)
+
+
 def report_unexpected_maintenance_marker(
     notice: str, what: str, reported: set[str]
 ) -> None:

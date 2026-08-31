@@ -48,7 +48,7 @@ from .exceptions import (
 # lists the domain modules, and neither of these is one of them - status_is_success
 # reads a status field, maintenance_notice reads a downtime page.
 from .mobile_protocol import as_answer_dict, status_is_success
-from .web_protocol import maintenance_notice
+from .web_protocol import maintenance_notice, message_reports_maintenance
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -721,6 +721,21 @@ class WemPortalTransport:
             f"Server returned internal status code: {response_status} "
             f"and message: {response_message}"
         )
+
+        if message_reports_maintenance(response_message):
+            # A login refused during planned downtime, not a credential problem.
+            # The API carries no offlinecontent marker like the web page - only
+            # this message - so it is read from the wording. The internal status
+            # is logged (8000 in the one case seen) so a later sighting can tell
+            # whether that code is maintenance-specific and worth keying on
+            # structurally; the message alone drives the decision for now. See
+            # PortalMaintenanceError.
+            _LOGGER.debug(
+                "Login refused during maintenance (internal status %s): %s",
+                response_status,
+                response_message,
+            )
+            raise PortalMaintenanceError(response_message) from exc
 
         if response.status_code == 400:
             raise AuthError(
