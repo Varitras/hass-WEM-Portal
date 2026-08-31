@@ -2352,6 +2352,17 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
         ),
     )
     await hass.async_block_till_done()
+    # The initial poll runs as a background task (async_create_background_task)
+    # doing an executor read, and async_block_till_done does not reliably wait a
+    # BACKGROUND task out on the minimum Home Assistant - which left `scheduled`
+    # empty and a caller's scheduled[-1] raising IndexError intermittently (seen
+    # only on the 2024.12 CI job). Await the task itself: the deterministic
+    # signal that the poll's finally has run and the first reschedule is
+    # recorded, rather than hoping block_till_done covered it.
+    initial_poll = entry.runtime_data.expert._initial_task
+    if initial_poll is not None:
+        await initial_poll
+    await hass.async_block_till_done()
     # Setup fires an initial poll of its own. Reset to a known point so the
     # counts a test asserts are the ones it caused, not one more.
     entry.runtime_data.expert.fail_counts.clear()
