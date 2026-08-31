@@ -6,6 +6,20 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.12.1] – 2026-08-31
+
+### Fixed
+
+- **A portal maintenance window no longer triggers a spurious "check your
+  credentials" reauth prompt.** During planned downtime the mobile API answers
+  a login attempt with an ordinary error carrying a maintenance message, which
+  was read as an authentication failure - so three such cycles escalated to
+  Home Assistant's reauth flow and stopped polling until the (correct)
+  credentials were re-entered by hand. The maintenance message is now
+  recognised and treated as a transient outage, exactly as the web login
+  already did: the cycle retries and recovers on its own once the portal is
+  back. Found by the live installation during a real maintenance window.
+
 ## [1.12.0] – 2026-08-23
 
 Same code as prerelease 1.12.0b5; only the version number changed. This
