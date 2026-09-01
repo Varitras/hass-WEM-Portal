@@ -4,7 +4,8 @@ The comment rule says a comment states a decision or a constraint,
 not what the next line already says - a narrating comment is noise today and
 doc-drift tomorrow (the recurring audit class "comment describes behaviour the
 code no longer has"). A prose rule does not reach the moment of writing; this
-scan does.
+scan does. It covers the shipped package and the test suite alike, so a
+narrating comment in a test is held to the same rule as one in shipped code.
 
 ponytail: heuristic with a known ceiling - it flags only the bluntest form, a
 comment whose every content word already appears in the adjacent code. A
@@ -22,6 +23,7 @@ import tokenize
 PACKAGE = (
     pathlib.Path(__file__).resolve().parents[1] / "custom_components" / "wemportal"
 )
+TESTS = pathlib.Path(__file__).resolve().parent
 
 WORD = re.compile(r"[A-Za-z][A-Za-z0-9]{2,}")
 EXEMPT_PREFIXES = ("ponytail:", "noqa", "type:", "TODO", "FIXME", "!")
@@ -84,7 +86,7 @@ def _suspects(source: str):
 
 def test_no_comment_merely_narrates_the_adjacent_code():
     offenders = []
-    for source_file in sorted(PACKAGE.glob("*.py")):
+    for source_file in sorted(PACKAGE.glob("*.py")) + sorted(TESTS.glob("*.py")):
         for line, text in _suspects(source_file.read_text(encoding="utf-8")):
             if (source_file.name, text) in EXEMPTIONS:
                 continue
