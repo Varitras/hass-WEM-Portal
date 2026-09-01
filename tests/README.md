@@ -52,6 +52,7 @@ exists because the thing it prevents actually happened here.
 | `test_guards.py` | No guard binds itself to one source file; every guard is listed; `check.sh` matches CI |
 | `test_ci_matrix.py` | The CI matrix tests the Home Assistant releases it claims to test |
 | `test_comment_narration.py` | No comment merely restates the code it sits on (heuristic; a genuine why-comment passes) |
+| `test_diagnostics_register.py` | Every config field in the diagnostics download carries a redaction decision (`redacted`, tied to `TO_REDACT`, or `readable: <reason>`) |
 | `test_mutation_harness.py` | The mutation run fails loudly rather than printing "all caught" without having checked |
 | `test_mypy_scope.py` | Every module is in the mypy scope or carries a written reason why not yet |
 | `test_account_state.py` | No mutable module-level state outside the one sanctioned registry |
