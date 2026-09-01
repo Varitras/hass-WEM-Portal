@@ -1,0 +1,26 @@
+name: Secret scan
+
+on:
+  push:
+  pull_request:
+
+# The action reads the repository and, on push and pull_request events, the
+# commit range from the event payload. Read access to contents is all it needs.
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v7"
+        with:
+          # Full history: without it the checkout is a single commit and a leak
+          # buried in an earlier one is never scanned.
+          fetch-depth: 0
+      # Reads .gitleaks.toml from the repository root automatically. No license
+      # key is needed for a personal account's repository.
+      - uses: "gitleaks/gitleaks-action@v3"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

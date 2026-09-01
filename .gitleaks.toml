@@ -1,0 +1,40 @@
+# gitleaks configuration for hass-WEM-Portal.
+#
+# Extends the shipped default rules (generic secrets, tokens, keys) with one
+# project-specific rule. The Weishaupt "expert entityvalue" is an
+# installation-specific hex id (real length ~36; the validator in
+# expert_writer.py accepts hex of length >= MIN_EXPERT_ENTITYVALUE_LENGTH). It
+# is not a generic secret, so no default rule looks for it - yet it must never
+# reach a public commit, which is why the diagnostics dump redacts it. This
+# rule makes a leak fail the scan instead of relying on a human noticing.
+title = "hass-WEM-Portal"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "wemportal-expert-entityvalue"
+description = "Installation-specific expert entityvalue (hex id) must never be committed"
+# A run of >= 36 hex characters. The validator's floor is 16, but a 16-hex run
+# is far too common to key a scan on (an MD5 is 32); real entityvalues are the
+# longer ~36 the tests use, so the scan targets that length and up.
+regex = '''[0-9A-Fa-f]{36,}'''
+# The floor clears the low-entropy lookalikes already in the tree - the single
+# character placeholders (aaaa..., bbbb...) and the mostly-zero service-schema
+# example - without an exception each. A real id sits near 3.7.
+entropy = 3.0
+
+[rules.allowlist]
+regexes = [
+  # The documented placeholder entityvalue, used verbatim in README.md, both
+  # translations and test_security.py. It is high-entropy on purpose (it has
+  # to look real in the docs), so the entropy floor does not clear it - only
+  # this explicit exception does.
+  '''(?i)3A7F91C2E0B48D5619F2A0C7B4E83D105C2A''',
+]
+paths = [
+  # Action pins are 40-char commit SHAs: long, high-entropy hex that is not an
+  # entityvalue. Entityvalues never live in a workflow, so clear the whole path
+  # for this rule rather than chase individual pins.
+  '''\.github/workflows/.*''',
+]
