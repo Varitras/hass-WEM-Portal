@@ -32,6 +32,7 @@ GUARD_FILES = {
     "test_account_state.py": "no mutable module-level state outside the registry",
     "test_budgets.py": "no module or function grows past its frozen budget",
     "test_ci_matrix.py": "the CI matrix tests the Home Assistant releases it claims to",
+    "test_comment_narration.py": "no comment merely restates the code it sits on",
     "test_durations.py": "no test quietly starts taking minutes",
     "test_mutation_harness.py": "the mutation run fails loudly instead of reporting success",
     "test_mypy_scope.py": "every module is type-checked or says why it is not yet",

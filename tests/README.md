@@ -51,6 +51,7 @@ exists because the thing it prevents actually happened here.
 | `test_durations.py` | No single test quietly starts taking minutes (budget in `durations.py`, enforced from `conftest.py`), and a run that stops making progress is cut off rather than only measured |
 | `test_guards.py` | No guard binds itself to one source file; every guard is listed; `check.sh` matches CI |
 | `test_ci_matrix.py` | The CI matrix tests the Home Assistant releases it claims to test |
+| `test_comment_narration.py` | No comment merely restates the code it sits on (heuristic; a genuine why-comment passes) |
 | `test_mutation_harness.py` | The mutation run fails loudly rather than printing "all caught" without having checked |
 | `test_mypy_scope.py` | Every module is in the mypy scope or carries a written reason why not yet |
 | `test_account_state.py` | No mutable module-level state outside the one sanctioned registry |

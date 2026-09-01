@@ -428,7 +428,8 @@ class WemPortalScraper:
                     _LOGGER.debug("Ignoring error while clearing cookies: %s", exc)
 
         # --- Full login sequence ---
-        # 1. GET Login page
+        # 1. GET the login page as its own step, so the maintenance gate below
+        #    runs before any POST.
         try:
             login_page = self.session.get(
                 WEB_LOGIN_URL, timeout=self._request_timeout()
