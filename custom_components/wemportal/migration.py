@@ -424,14 +424,18 @@ async def migrate_unique_ids(
             )
         return change
 
-    change = _migrate_the_readings_not_seen_yet()
     # Registered here rather than after the platforms are forwarded, so this
     # runs BEFORE the listener that builds the entities: an entity added
     # first would be registered under the current unique_id, and the old
-    # entry the migration exists to rename would be the one left over.
+    # entry the migration exists to rename would be the one left over. And
+    # registered BEFORE the first pass runs: setup treats an exception from
+    # that pass as best effort and carries on, so a registration after it let
+    # one registry hiccup at startup switch the migration off for the life of
+    # the entry.
     config_entry.async_on_unload(
         coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)
     )
+    change = _migrate_the_readings_not_seen_yet()
 
     if change:
         # A debounced refresh is enough to update the migrated entities.

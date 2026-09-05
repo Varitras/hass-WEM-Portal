@@ -13,6 +13,8 @@ currently correct.
 
 import types
 
+import pytest
+
 from custom_components.wemportal.migration import (
     _orphaned_by_a_merge,
     _remove_entities_from_a_previous_platform,
@@ -414,6 +416,52 @@ async def test_a_reclassification_after_setup_takes_the_old_entity_down(monkeypa
 
     assert registry.removed == ["switch.holiday_begin"], (
         "the entity of the platform the parameter no longer is stayed behind"
+    )
+
+
+async def test_the_migration_keeps_listening_after_a_failed_first_pass(monkeypatch):
+    """One failure at setup must not switch the per-cycle migration off.
+
+    Setup logs an exception from the first pass and carries on - a migration
+    is best effort. But the listener for later cycles was registered only
+    AFTER that first pass, so a single registry hiccup at startup left the
+    entry without any migration for its whole life: legacy readings that
+    appeared later got fresh entities without their history, and the entity
+    builder went on forgetting merge-retired keys whose entities nothing
+    took down.
+    """
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry(
+        {("switch", _uid("Heat pump-U_Beginn")): "switch.holiday_begin"}
+    )
+    lookups = registry.async_get_entity_id
+    failed_once = []
+
+    def _hiccup_once(*arguments):
+        if not failed_once:
+            failed_once.append(True)
+            raise RuntimeError("registry hiccup during setup")
+        return lookups(*arguments)
+
+    registry.async_get_entity_id = _hiccup_once
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
+    coordinator = FakeCoordinator(
+        data={DEVICE: {"Heat pump-U_Beginn": Reading(platform="switch")}}
+    )
+
+    with pytest.raises(RuntimeError):
+        await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+
+    assert len(coordinator.listeners) == 1, (
+        "the first pass raised and the migration was never registered for the "
+        "cycles that follow"
+    )
+    coordinator.publish({DEVICE: {"Heat pump-U_Beginn": Reading(platform="date")}})
+    assert registry.removed == ["switch.holiday_begin"], (
+        "the later cycle did not migrate either"
     )
 
 

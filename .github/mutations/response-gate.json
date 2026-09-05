@@ -966,6 +966,13 @@
     "tests": "an_api_sensor_comes_back_when_the_merge_that_retired_it_ends"
   },
   {
+    "label": "migration: registering the listener only after a first pass that may raise must be noticed",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )\n    change = _migrate_the_readings_not_seen_yet()",
+    "new": "    change = _migrate_the_readings_not_seen_yet()\n    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )",
+    "tests": "the_migration_keeps_listening_after_a_failed_first_pass"
+  },
+  {
     "label": "docs: a slot count the texts do not mention must be noticed",
     "path": "custom_components/wemportal/const.py",
     "old": "EXPERT_SLOT_COUNT: Final = 10",
