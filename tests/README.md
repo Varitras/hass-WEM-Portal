@@ -22,6 +22,11 @@ That run first checks which Home Assistant the interpreter actually holds
 against what `hacs.json` declares - a hand-pinned local venv ages quietly,
 and "the minimum run passed" says nothing if it ran on the wrong version.
 Without the variable the minimum-version run is skipped **and says so**.
+The current-version run asks the same question of its own interpreter:
+before the suite, `check_current_ha.py` compares the installed Home
+Assistant with the release CI resolves as current (it needs the network for
+that), because a venv that quietly aged one release behind CI once hid three
+failures behind a green local run.
 CI runs the same set; a guard in `tests/test_guards.py` fails if the two
 ever drift apart.
 

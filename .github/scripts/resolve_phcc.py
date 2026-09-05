@@ -70,11 +70,17 @@ def _fetch(url: str):
         return json.load(response)
 
 
-def resolve_from_pypi(candidates: int = 20) -> str:
+def recent_pins(candidates: int = 20) -> dict[str, str | None]:
+    """The newest plugin releases on PyPI and the Home Assistant each pins.
+
+    Separate from the choice below because two callers want the table: the
+    matrix wants the newest stable release, and check_current_ha.py wants to
+    know which Home Assistant that release ships.
+    """
     index = _fetch(f"https://pypi.org/pypi/{PACKAGE}/json")
     published = [version for version, files in index["releases"].items() if files]
     recent = sorted(published, key=sort_key, reverse=True)[:candidates]
-    pins = {
+    return {
         version: home_assistant_pin(
             _fetch(f"https://pypi.org/pypi/{PACKAGE}/{version}/json")["info"].get(
                 "requires_dist"
@@ -82,7 +88,10 @@ def resolve_from_pypi(candidates: int = 20) -> str:
         )
         for version in recent
     }
-    return newest_stable(pins)
+
+
+def resolve_from_pypi(candidates: int = 20) -> str:
+    return newest_stable(recent_pins(candidates))
 
 
 def main(argv: list[str]) -> int:

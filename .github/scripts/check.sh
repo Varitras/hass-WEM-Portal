@@ -26,6 +26,13 @@ echo "== format =="
 echo "== mypy =="
 "$PYTHON" -m mypy
 
+# Which Home Assistant this interpreter holds, against what CI resolves as
+# current. A venv pinned by hand ages quietly: a run on last month's release
+# hid three deprecation failures behind a green result. Needs the network,
+# and cannot-check is a failure - a silent skip is the gap this closes.
+echo "== current Home Assistant version =="
+"$PYTHON" .github/scripts/check_current_ha.py
+
 echo "== pytest (this environment) =="
 "$PYTHON" -m pytest tests/ -q -m ""
 

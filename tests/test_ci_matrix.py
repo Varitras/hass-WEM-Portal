@@ -215,6 +215,47 @@ def test_the_minimum_job_actually_checks_the_version_it_installed():
     )
 
 
+CHECK_CURRENT_HA = REPO / ".github" / "scripts" / "check_current_ha.py"
+CHECK_SH = REPO / ".github" / "scripts" / "check.sh"
+
+
+def _load_current_ha_check():
+    """The pin parser alone, without Home Assistant or the network."""
+    namespace: dict = {"re": re}
+    source = CHECK_CURRENT_HA.read_text(encoding="utf-8")
+    body = source[source.index("def pinned_home_assistant") : source.index("def main")]
+    exec(compile(body, str(CHECK_CURRENT_HA), "exec"), namespace)  # noqa: S102
+    return namespace["pinned_home_assistant"]
+
+
+def test_the_current_version_check_reads_the_resolved_pin():
+    """The plugin pins one exact release; that is the version to compare with.
+
+    Anything looser has to be refused rather than guessed at - a range would
+    hand the comparison nothing definite, and "probably fine" is how the
+    current leg came to run last month's release unnoticed.
+    """
+    pinned_home_assistant = _load_current_ha_check()
+
+    assert pinned_home_assistant("homeassistant==2026.9.0") == "2026.9.0"
+    with pytest.raises(SystemExit):
+        pinned_home_assistant("homeassistant>=2026.9")
+
+
+def test_the_current_leg_checks_the_version_it_runs():
+    """The local twin of the minimum job's check, and it runs BEFORE the suite
+    whose result it qualifies - a check after a green run is a footnote."""
+    script = CHECK_SH.read_text(encoding="utf-8")
+
+    assert "check_current_ha.py" in script, (
+        "check.sh does not compare its current interpreter with what CI "
+        "resolves, so a venv that aged past CI runs green"
+    )
+    assert script.index("check_current_ha.py") < script.index(
+        'pytest tests/ -q -m ""'
+    ), "the version check has to come before the suite it vouches for"
+
+
 def test_the_type_check_runs_the_same_home_assistant_as_the_current_job():
     """A checker that vouches for another release vouches for nothing.
 
