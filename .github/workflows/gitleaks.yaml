@@ -4,8 +4,7 @@ on:
   push:
   pull_request:
 
-# The action reads the repository and, on push and pull_request events, the
-# commit range from the event payload. Read access to contents is all it needs.
+# Read access to the repository contents is all a scan needs.
 permissions:
   contents: read
 
@@ -16,11 +15,28 @@ jobs:
     steps:
       - uses: "actions/checkout@v7"
         with:
-          # Full history: without it the checkout is a single commit and a leak
-          # buried in an earlier one is never scanned.
+          # Every commit. The scan below covers the whole history instead of
+          # a range: the action this replaced derived its pull-request range
+          # from one unpaginated page of commits, so a 31-commit pull request
+          # had its last commit outside the scan.
           fetch-depth: 0
-      # Reads .gitleaks.toml from the repository root automatically. No license
-      # key is needed for a personal account's repository.
-      - uses: "gitleaks/gitleaks-action@v3"
+      - name: Install gitleaks
+        # A pinned release, verified against the digest GitHub publishes for
+        # the asset. A download that does not match is a failed gate, not a
+        # skipped scan. Dependabot only follows `uses:` lines, so this pin is
+        # raised by hand.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+      - name: Scan the full history
+        # `git`, not the deprecated `detect`, and no --log-opts: with no range
+        # there is no range to get wrong. Redacted, so a finding never prints
+        # the secret itself into a public log.
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --config .gitleaks.toml --redact --no-banner .
