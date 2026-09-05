@@ -981,6 +981,85 @@ def test_a_verified_write_ends_the_failure_streak_it_disproves():
     )
 
 
+async def test_a_verified_entity_write_ends_the_failure_streak_too():
+    """The entity route left standing the streak the service route ends.
+
+    number.set_value applied its read-back to the entity and told the
+    controller nothing, so the tally, the `fail_notified` marker and the
+    repair issue outlived a write the portal had just confirmed - and the
+    NEXT run of failures found the id already reported and never emptied the
+    value again. test_a_verified_write_ends_the_failure_streak_it_disproves
+    drives the controller directly and could not see this: it is a wiring
+    defect of the entity, so this one goes through async_set_native_value
+    with nothing but the portal call replaced.
+    """
+    from unittest.mock import patch
+
+    from custom_components.wemportal import expert_number, expert_writer
+    from custom_components.wemportal.const import (
+        CONF_EXPERT_AUTO_POLL,
+        CONF_EXPERT_WRITE,
+    )
+    from custom_components.wemportal.expert_controller import (
+        FAILURES_BEFORE_NOTIFYING,
+    )
+    from custom_components.wemportal.models import WemPortalData
+    from custom_components.wemportal.wemportalapi import WemPortalApi
+
+    async def run_inline(function, *arguments):
+        return function(*arguments)
+
+    entry = types.SimpleNamespace(
+        entry_id="e1",
+        data={},
+        options={CONF_EXPERT_WRITE: True, CONF_EXPERT_AUTO_POLL: True},
+    )
+    entry.runtime_data = WemPortalData(
+        api=WemPortalApi("user@example.invalid", "dummy-password"), coordinator=None
+    )
+    entity = expert_number.WemPortalExpertNumber(entry, "expert_parameter_3", "A" * 36)
+    entity.hass = types.SimpleNamespace(async_add_executor_job=run_inline)
+    entity.async_write_ha_state = lambda: None
+    controller = entry.runtime_data.expert
+    controller.attach_entity(entity)
+    cleared = []
+    controller._report_read_failure = lambda *_args: None
+    controller._clear_read_failure_issue = cleared.append
+    entity.apply_read_state(_read_state(21.0, [20.0, 21.0, 22.0]))
+
+    for _ in range(FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+    assert entity.native_value is None, "the control case never built a streak"
+
+    confirmed = _read_state(30.0, [30.0])
+    with (
+        patch.object(
+            expert_writer.requests,
+            "Session",
+            side_effect=AssertionError("no portal session may be opened"),
+        ),
+        patch.object(
+            expert_writer.WemPortalExpertClient,
+            "write_parameter",
+            return_value=confirmed,
+        ),
+    ):
+        await entity.async_set_native_value(30.0)
+
+    assert entity.native_value == 30.0
+    assert cleared == [entity.entityvalue], "the repair issue was left standing"
+    assert controller.fail_counts.get(entity.entityvalue, 0) == 0
+    assert entity.entityvalue not in controller.fail_notified
+
+    # And the streak can build again: the confirmed value must not be
+    # permanent just because it arrived through the entity.
+    for _ in range(FAILURES_BEFORE_NOTIFYING):
+        controller.apply_read({entity.entityvalue: None})
+    assert entity.native_value is None, (
+        "a value the entity route confirmed was never emptied again"
+    )
+
+
 def test_disabling_an_entity_clears_its_failure_bookkeeping():
     """detach_entity takes the streak, the notification marker AND the repair
     issue down with the entity - left behind, they outlive it and a re-enable
@@ -4921,6 +5000,11 @@ def _write_entity(api, monkeypatch):
     from custom_components.wemportal import expert_writer
 
     entity = _expert_entity(api)
+    # As async_added_to_hass does before any write can arrive: the write's
+    # read-back is applied through the controller, and the controller only
+    # knows the entities attached to it. Left detached, the confirmed value
+    # never reaches the entity - which is the wiring the real path relies on.
+    entity._config_entry.runtime_data.expert.attach_entity(entity)
     built = []
 
     class _Client:

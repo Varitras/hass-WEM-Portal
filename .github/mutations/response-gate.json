@@ -2359,6 +2359,13 @@
     "tests": "a_failed_write_reaches_whoever_asked_for_it"
   },
   {
+    "label": "expert write: the entity route skipping the controller again must be noticed",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        self._config_entry.runtime_data.expert.apply_verified_write(\n            self.entityvalue, state\n        )",
+    "new": "        self._apply_state(state)",
+    "tests": "a_verified_entity_write_ends_the_failure_streak_too"
+  },
+  {
     "label": "expert: an unexpected failure swallowed instead of wrapped",
     "path": "custom_components/wemportal/expert_number.py",
     "old": "            raise HomeAssistantError(\n                f\"Setting {self._attr_name} to {value} failed: {exc}\"\n            ) from exc",

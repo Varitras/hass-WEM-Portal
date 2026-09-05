@@ -517,11 +517,14 @@ class ExpertController:
     def apply_verified_write(self, entityvalue: str, state: Any) -> None:
         """Show what a write read back on the entity holding that id.
 
-        Both routes to the same parameter end in a portal read-back, and the
-        entity route applies its own. The domain service had no way back to
-        the entity and dropped the answer, so the same parameter set the same
+        Both routes to the same parameter end in a portal read-back, and
+        both come through here. The domain service had no way back to the
+        entity and dropped the answer, so the same parameter set the same
         way showed the new value on one route and the old one on the other -
-        until an auto-poll that is off by default, or a restart.
+        until an auto-poll that is off by default, or a restart. The entity
+        route then applied its own read-back and skipped the bookkeeping
+        below, which left a repair issue and a reported streak standing over
+        a parameter that had just worked.
 
         Deliberately NOT routed through apply_read: that one reads an id
         MISSING from the batch as a failed read, so handing it this single

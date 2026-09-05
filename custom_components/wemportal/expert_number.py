@@ -464,10 +464,15 @@ class WemPortalExpertNumber(RestoreNumber):
         finally:
             self._write_in_progress = False
 
-        # Verified value from the portal, plus the real device range.
-        self._apply_state(state)
-        if self._is_in_home_assistant():
-            self.async_write_ha_state()
+        # Through the controller, not applied here: a write the portal read
+        # back is the strongest answer an id can give, and the controller is
+        # what keeps the failure tally, the notified marker and the repair
+        # issue that answer has to take down. Applying the state directly
+        # left all three standing, so the next run of failures found the id
+        # already reported and never emptied the confirmed value again.
+        self._config_entry.runtime_data.expert.apply_verified_write(
+            self.entityvalue, state
+        )
         _LOGGER.info(
             "Expert parameter %s set and verified: %s",
             self._attr_name,
