@@ -3781,8 +3781,16 @@ def _deprecation_reports(records):
         # Both signals, not just our name: the domain appears in every log
         # line that quotes a path through this integration, and asyncio's
         # slow-task warning does exactly that during setup. Asking for the
-        # name alone made this fire on it.
-        if "deprecat" not in message.lower():
+        # name alone made this fire on it. Two spellings of the announcement,
+        # because report_usage does not promise the word "deprecated" -
+        # frame.py appends "This will stop working in Home Assistant" to
+        # every report instead, and several 2026.9 messages carry only that.
+        lowered = message.lower()
+        announces = (
+            "deprecat" in lowered
+            or "this will stop working in home assistant" in lowered
+        )
+        if not announces:
             continue
         if DOMAIN in message:
             hits.append(message)
@@ -3854,6 +3862,21 @@ def test_the_tripwire_watches_the_channel_the_report_arrives_on():
 
     def _record(message):
         return logging.LogRecord("x", logging.WARNING, __file__, 0, message, None, None)
+
+    # report_usage does not promise the word "deprecated" - several of its
+    # 2026.9 messages carry none - but frame.py appends "This will stop
+    # working in Home Assistant <version>" to every one of them. A report
+    # worded like that has to count, or the tripwire watches only the
+    # deprecations that happen to say so.
+    assert _deprecation_reports(
+        [
+            _record(
+                f"Detected that custom integration '{DOMAIN}' passes the id of a "
+                "pre-migration composite device as via_device_id. This will stop "
+                "working in Home Assistant 2026.12, please report it"
+            )
+        ]
+    ), "a report without the word deprecated was not counted"
 
     assert not _deprecation_reports([_record("something else")])
 

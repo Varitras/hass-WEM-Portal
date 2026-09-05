@@ -940,7 +940,7 @@
   {
     "label": "tripwire: firing on any line that names an API must be noticed",
     "path": "tests/test_e2e.py",
-    "old": "        if \"deprecat\" not in message.lower():\n            continue",
+    "old": "        if not announces:\n            continue",
     "new": "        if False:\n            continue",
     "tests": "tripwire_watches_the_channel_the_report_arrives_on"
   },
