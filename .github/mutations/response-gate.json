@@ -945,6 +945,20 @@
     "tests": "tripwire_watches_the_channel_the_report_arrives_on"
   },
   {
+    "label": "hub link: dropping the link by registry id must be noticed",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        info[\"via_device_id\"] = hub_device_id",
+    "new": "        pass",
+    "tests": "child_devices_link_to_the_hub_by_registry_id or hub_link_takes_the_shape_this_home_assistant_understands"
+  },
+  {
+    "label": "hub link: forgetting the hub's id at setup must be noticed",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        entry.runtime_data.hub_device_id = hub.id",
+    "new": "        pass",
+    "tests": "child_devices_link_to_the_hub_by_registry_id"
+  },
+  {
     "label": "docs: a slot count the texts do not mention must be noticed",
     "path": "custom_components/wemportal/const.py",
     "old": "EXPERT_SLOT_COUNT: Final = 10",

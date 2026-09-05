@@ -256,6 +256,12 @@ class WemPortalData:
     # alone cannot answer this.
     unloading: bool = False
 
+    # The hub device's registry id, kept from the moment setup creates it:
+    # child devices link to the hub by that id on current Home Assistant, and
+    # an entity property cannot look it up when it builds its DeviceInfo.
+    # None only for test doubles that never register a hub.
+    hub_device_id: str | None = None
+
     def __post_init__(self) -> None:
         # The controller holds the store, not the entry: an in-flight poll
         # must still find the api it was using AFTER the entry was unloaded,

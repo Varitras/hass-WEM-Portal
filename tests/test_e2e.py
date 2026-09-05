@@ -165,10 +165,39 @@ async def test_setup_creates_entities_and_devices(hass):
 
     dr = device_registry.async_get(hass)
     identifiers = {
-        ident for device in dr.devices.values() for ident in device.identifiers
+        ident
+        for device in device_registry.async_entries_for_config_entry(dr, entry.entry_id)
+        for ident in device.identifiers
     }
     assert (DOMAIN, entry.entry_id) in identifiers, "hub device missing"
     assert (DOMAIN, f"{entry.entry_id}:1234") in identifiers, "child device missing"
+
+
+async def test_child_devices_link_to_the_hub_by_registry_id(hass):
+    """The hub link is a registry id, not a tuple Home Assistant resolves.
+
+    via_device_id replaced the deprecated via_device tuple and wants the hub's
+    registry id at DeviceInfo time. Asserted on the OUTCOME - the child's
+    via_device_id equals the hub's id - because that holds on every supported
+    version: 2024.12 still resolves the tuple, current Home Assistant takes
+    the id, and either way a broken link shows up here as None.
+    """
+    from homeassistant.helpers import device_registry
+
+    from custom_components.wemportal.coordinator import device_by_identifier
+    from custom_components.wemportal.utils import device_identifier
+
+    entry = await _setup(hass, _entry(hass))
+    registry = device_registry.async_get(hass)
+    hub = device_by_identifier(registry, (DOMAIN, entry.entry_id), entry.entry_id)
+    child = device_by_identifier(
+        registry, device_identifier(entry.entry_id, "1234"), entry.entry_id
+    )
+
+    assert hub is not None and child is not None
+    assert child.via_device_id == hub.id
+    # The id setup kept is the real hub's, not a stale or foreign one.
+    assert entry.runtime_data.hub_device_id == hub.id
 
 
 async def test_unload_cleans_up(hass):
@@ -2102,12 +2131,16 @@ async def test_a_disabled_device_is_filtered_out_on_the_first_cycle(hass, monkey
     """
     from homeassistant.helpers import device_registry
 
+    from custom_components.wemportal.coordinator import device_by_identifier
     from custom_components.wemportal.utils import device_identifier
 
     entry = await _setup(hass, _entry(hass))
     registry = device_registry.async_get(hass)
-    device = registry.async_get_device(
-        identifiers={device_identifier(entry.entry_id, "1234")}
+    # Through the integration's own adapter: the plain lookup is deprecated
+    # on current Home Assistant and raises when called from a test, while
+    # the entry-aware replacement does not exist on the 2024.12 minimum.
+    device = device_by_identifier(
+        registry, device_identifier(entry.entry_id, "1234"), entry.entry_id
     )
     assert device is not None, "setup did not register the device to disable"
     registry.async_update_device(
@@ -3727,22 +3760,18 @@ async def test_recovery_resets_the_connection_and_keeps_everything_else(
     assert entry.runtime_data.api is api
 
 
-# What this integration STILL uses of the three that Home Assistant 2026.8
-# announced. DeviceEntry.config_entries and async_get_device() are gone from
-# it now - the registry's own index answers the first on every supported
-# version, and the second goes through coordinator.device_by_identifier,
-# which uses the entry-aware lookup where there is one. Listing an API nobody
-# calls any more only invites a false alarm on somebody else's warning.
-DEPRECATED_DEVICE_REGISTRY_APIS = ("via_device",)
-
-
 def _deprecation_reports(records):
-    """The device-registry deprecations among captured log records.
+    """The deprecations Home Assistant reports against this integration.
 
     Home Assistant announces these through helpers.frame.report_usage, and
     that writes to a LOGGER - `warnings` is not imported in that module at
     all. This test used to watch warnings.catch_warnings(), which meant it
     could not fail: the channel it listened on never carries the message.
+
+    Not keyed to a list of API names any more. That list held the one API
+    still in use, and emptying it when that one went would have left a
+    tripwire that can never fire. report_usage names the integration in
+    every report, so that is the anchor - whichever API it is about.
     """
     import logging
 
@@ -3751,44 +3780,38 @@ def _deprecation_reports(records):
         if record.levelno < logging.WARNING:
             continue
         message = record.getMessage()
-        # Both signals, not just the API name: "config_entries" appears in
-        # every log line that quotes a path through config_entries.py, and
-        # asyncio's slow-task warning does exactly that during setup. Asking
-        # for the name alone made this fire on it.
+        # Both signals, not just our name: the domain appears in every log
+        # line that quotes a path through this integration, and asyncio's
+        # slow-task warning does exactly that during setup. Asking for the
+        # name alone made this fire on it.
         if "deprecat" not in message.lower():
             continue
-        if any(name in message for name in DEPRECATED_DEVICE_REGISTRY_APIS):
+        if DOMAIN in message:
             hits.append(message)
     return hits
 
 
-async def test_the_device_registry_apis_are_not_deprecated_yet(hass, caplog):
-    """A tripwire for the one that is left.
+async def test_home_assistant_reports_no_deprecated_use_during_setup(hass, caplog):
+    """A tripwire for whatever Home Assistant deprecates next.
 
-    Three device-registry APIs were announced as deprecated in Home Assistant
-    2026.8, for removal in 2027.8. Two of them are no longer used here:
-    DeviceEntry.config_entries gave way to the registry's own index, which
-    exists on every supported version, and async_get_device() to the
-    entry-aware lookup where the installed Home Assistant has one - see
-    coordinator.device_by_identifier.
+    It fired for the first time on 2026.9, for DeviceInfo.via_device - the
+    last of the three device-registry APIs announced in 2026.8 that was still
+    in use here. Its replacement wants the hub's registry id, which an entity
+    property cannot look up; setup now keeps that id when it creates the hub,
+    so the property has it. The other two had already gone: the registry
+    index for DeviceEntry.config_entries, coordinator.device_by_identifier
+    for async_get_device().
 
-    DeviceInfo.via_device is still in use. Its replacement, via_device_id,
-    wants the hub's registry id, which build_device_info does not have and
-    cannot look up: it is called from an entity property, synchronously, on
-    every state write. Changing that is a design question rather than a
-    substitution, so it waits - and measured against the installed 2026.8,
-    Home Assistant does not report our use of it yet.
+    Feature detection over a version comparison, since 2024.12 stays
+    supported - that release has neither via_device_id nor the entry-aware
+    lookup, and both adapters fall back there.
 
-    So this fails on the day it does, and points at the call. Guessing a
-    replacement is how the last two wrong claims in this repository were
-    made; feature detection over a version comparison, since 2024.12 stays
-    supported.
-
-    Two things had to be true for it to be able to fail at all, and neither
-    was. It listened on `warnings`, while report_usage writes to a logger.
-    And report_usage remembers what it has already said in a module-level
-    set, so the first test in the session to touch the same API consumes the
-    only report there will be - which is why that set is cleared here.
+    Two things had to be true for this to be able to fail at all, and
+    neither was. It listened on `warnings`, while report_usage writes to a
+    logger. And report_usage remembers what it has already said in a
+    module-level set, so the first test in the session to touch the same API
+    consumes the only report there will be - which is why that set is
+    cleared here.
     """
     import logging
 
@@ -3803,10 +3826,9 @@ async def test_the_device_registry_apis_are_not_deprecated_yet(hass, caplog):
     hits = _deprecation_reports(caplog.records)
 
     assert not hits, (
-        "Home Assistant now deprecates a device-registry API this integration "
-        f"uses: {hits}. Write the feature-detected adapters now - the "
-        "replacement is finally readable, and there is one release cycle "
-        "before removal."
+        "Home Assistant now deprecates something this integration uses: "
+        f"{hits}. Write the feature-detected adapter now - the replacement is "
+        "readable in the message, and there is a release cycle before removal."
     )
     assert entry.state is ConfigEntryState.LOADED
 
@@ -3839,21 +3861,20 @@ def test_the_tripwire_watches_the_channel_the_report_arrives_on():
 
     assert not _deprecation_reports([_record("something else")])
 
-    # Naming a watched API is not enough - the line has to announce a
-    # deprecation as well. The real case that produced this: asyncio's
-    # slow-task warning quotes a code path, and back when config_entries was
-    # on the list, "homeassistant/config_entries.py:951" in that warning fired
-    # the tripwire.
-    #
-    # Driven off the tuple rather than off that one message, because the
-    # message stopped mattering the moment config_entries left the list -
-    # and this assertion silently stopped testing anything. A mutation
-    # removing the deprecation filter went unnoticed until it was written
-    # this way.
-    for api_name in DEPRECATED_DEVICE_REGISTRY_APIS:
-        assert not _deprecation_reports(
-            [_record(f"Executing <Task ... {api_name} ...> took 0.2 seconds")]
-        ), f"a line merely naming {api_name} was reported as a deprecation"
+    # Naming us is not enough - the line has to announce a deprecation as
+    # well. The real case: asyncio's slow-task warning quotes the config
+    # entry setup task during setup, and that task is named after the domain.
+    # A mutation removing the deprecation filter went unnoticed until this
+    # was asserted.
+    assert not _deprecation_reports(
+        [_record(f"Executing <Task name='config entry setup {DOMAIN}'> took 0.2 s")]
+    ), "a line merely naming the integration was reported as a deprecation"
+
+    # And a deprecation reported against somebody else is theirs: it would
+    # otherwise fail this suite for a warning no change here can silence.
+    assert not _deprecation_reports(
+        [_record("Detected that custom integration 'other' calls a deprecated API")]
+    ), "another integration's deprecation was reported as ours"
 
 
 async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatch):

@@ -464,6 +464,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             self._device_id,
             sw_version=sw_version,
             model=device_model(self.coordinator.api, self._device_id),
+            hub_device_id=self._config_entry.runtime_data.hub_device_id,
         )
         return info
 

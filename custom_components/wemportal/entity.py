@@ -266,6 +266,7 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
             self._config_entry.entry_id,
             self._device_id,
             model=device_model(self.coordinator.api, self._device_id),
+            hub_device_id=self._config_entry.runtime_data.hub_device_id,
         )
         return info
 

@@ -1,7 +1,7 @@
 """Utility functions for WEM Portal."""
 
 from collections.abc import Iterable, Mapping
-from typing import Any, Final
+from typing import Any, Final, cast
 import logging
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
@@ -104,30 +104,51 @@ def short_device_id(device_id: str | None) -> str:
     return f"…{text[-2:]}" if len(text) > 2 else text
 
 
+# Whether this Home Assistant links a child device to its hub by registry id.
+# via_device_id is absent from the 2024.12 DeviceInfo and via_device from the
+# 2026.9 one (deprecated there, removed 2027.8), so the key has to follow what
+# the installed TypedDict declares - asked of the type, not of a version
+# number, for the reason coordinator.device_by_identifier gives.
+DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID: Final = (
+    "via_device_id" in DeviceInfo.__annotations__
+)
+
+
 def build_device_info(
     entry_id: str,
     device_id: str,
     sw_version: str | None = None,
     model: str | None = None,
+    hub_device_id: str | None = None,
 ) -> DeviceInfo:
     """Build the DeviceInfo dict for a WEM Portal sub-device.
 
     Every entity platform (date, number, select, sensor, switch) exposes the same
     per-device identity - a child device keyed by "<entry_id>:<device_id>"
-    that links back to the integration hub via via_device. Centralizing it
-    here keeps them in sync; previously each duplicated the
-    same dict. `sw_version` is optional (only the sensor platform has an
-    API version to report).
+    that links back to the integration hub. Centralizing it here keeps them
+    in sync; previously each duplicated the same dict. `sw_version` is
+    optional (only the sensor platform has an API version to report).
+
+    `hub_device_id` is the hub's registry id, which setup keeps when it
+    creates the hub - an entity property cannot look it up. Without one there
+    is no id to link by; only the 2024.12 shape, which names the hub by
+    identifier instead, needs none.
     """
     info: DeviceInfo = {
         "identifiers": {device_identifier(entry_id, device_id)},
-        "via_device": (DOMAIN, entry_id),
         "name": str(device_id),
         "manufacturer": "Weishaupt",
         "model": model or DEFAULT_DEVICE_MODEL,
     }
     if sw_version:
         info["sw_version"] = sw_version
+    if not DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID:
+        # The 2024.12 shape. Not a key of the current TypedDict, hence the
+        # cast: to mypy on current Home Assistant it is an extra key, which
+        # is exactly why it cannot be written unconditionally.
+        cast(dict[str, Any], info)["via_device"] = (DOMAIN, entry_id)
+    elif hub_device_id is not None:
+        info["via_device_id"] = hub_device_id
     return info
 
 

@@ -98,11 +98,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     _backfill_account_unique_id(hass, entry)
 
     registry = device_registry.async_get(hass)
-    # DeviceEntry.config_entries is deprecated in Home Assistant 2026.8 and
-    # goes in 2027.8; the registry's own index answers the same question, has
-    # been there since well before the 2024.12 minimum, and does not scan
-    # every device of every integration to do it.
-    devices = registry.devices.get_devices_for_config_entry_id(entry.entry_id)
+    # The public helper, unchanged from the 2024.12 minimum through 2026.9.
+    # Both shapes it replaces are deprecated now: DeviceEntry.config_entries
+    # (2026.8) and the registry mapping's own lookup (2026.9, gone 2027.9) -
+    # the latter was chosen to escape the former and landed in the next
+    # announcement.
+    devices = device_registry.async_entries_for_config_entry(registry, entry.entry_id)
     device_ids = [device.name for device in devices]
     if not device_ids:
         _LOGGER.warning(
@@ -209,15 +210,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     # store and its two HTTP sessions were leaked - once more on every setup
     # retry, which is exactly when platform setup tends to fail.
     try:
-        # Register the hub device so child devices can reference it via
-        # via_device
-        device_registry.async_get(hass).async_get_or_create(
+        # The hub the child devices link to. Kept by registry id: current
+        # Home Assistant links children through via_device_id, and an entity
+        # property cannot look that id up when it builds its DeviceInfo.
+        hub = device_registry.async_get(hass).async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="Weishaupt",
             name=entry.title or "WEM Portal",
             model="WEM Portal",
         )
+        entry.runtime_data.hub_device_id = hub.id
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         # Deliberately NO update listener. Home Assistant deprecated combining one

@@ -3963,6 +3963,32 @@ def test_device_model_comes_from_the_reported_device_type():
     assert build_device_info("e1", "1234", model="Heat pump")["model"] == "Heat pump"
 
 
+def test_the_hub_link_takes_the_shape_this_home_assistant_understands():
+    """One of two keys, decided by what DeviceInfo declares - never both, and
+    never a version number.
+
+    via_device_id is absent from the 2024.12 TypedDict and via_device from
+    the 2026.9 one, so a build carrying the wrong key is an extra key to mypy
+    and a deprecation report to Home Assistant.
+    """
+    from custom_components.wemportal.const import DOMAIN
+    from custom_components.wemportal.utils import (
+        DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID,
+        build_device_info,
+    )
+
+    info = build_device_info("e1", "1234", hub_device_id="hub-registry-id")
+    if DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID:
+        assert info["via_device_id"] == "hub-registry-id"
+        assert "via_device" not in info
+    else:
+        assert info["via_device"] == (DOMAIN, "e1")
+        assert "via_device_id" not in info
+
+    # Without a hub id there is nothing to link by id.
+    assert "via_device_id" not in build_device_info("e1", "1234")
+
+
 def test_device_type_is_recorded_but_kept_out_of_the_entity_data():
     """The entity platforms iterate the data dict and would try to build an
     entity from a stray value."""
