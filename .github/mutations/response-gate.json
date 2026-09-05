@@ -877,8 +877,8 @@
   {
     "label": "entities: a control must come back after its platform flickers",
     "path": "custom_components/wemportal/entity.py",
-    "old": "                known.discard((device_id, key))",
-    "new": "                pass",
+    "old": "                known.discard((device_id, key))\n                continue",
+    "new": "                pass\n                continue",
     "tests": "a_platform_that_flickers_gets_its_control_entity_back"
   },
   {
@@ -957,6 +957,13 @@
     "old": "        entry.runtime_data.hub_device_id = hub.id",
     "new": "        pass",
     "tests": "child_devices_link_to_the_hub_by_registry_id"
+  },
+  {
+    "label": "merge: the memo keeping a key whose entity a merge took down must be noticed",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        known.difference_update(_keys_a_merge_retired(coordinator))",
+    "new": "        pass",
+    "tests": "an_api_sensor_comes_back_when_the_merge_that_retired_it_ends"
   },
   {
     "label": "docs: a slot count the texts do not mention must be noticed",

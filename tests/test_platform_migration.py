@@ -478,6 +478,68 @@ async def test_a_platform_that_flickers_gets_its_control_entity_back(monkeypatch
     )
 
 
+async def test_an_api_sensor_comes_back_when_the_merge_that_retired_it_ends(
+    monkeypatch,
+):
+    """The builder's memo has to forget what the migration took down.
+
+    In `both` mode an api reading can appear before the matching scrape and
+    get its own entity. A later scrape merges it into the web row and the
+    migration removes the api entity - but the memo still held the key: a row
+    that is merely absent keeps its place, because its entity is normally
+    still registered, and this one no longer was. When the scrape later
+    dropped that web row, the mapping cleared and the api key came back with
+    a fresh value, the memo said "known" to a key that had no entity any more.
+    The reading stayed without an entity until the entry was reloaded.
+
+    Driven through the real migration and the real builder in the order setup
+    wires them, like the flicker test above: the defect lives between the two.
+    """
+    import custom_components.wemportal as wemportal
+    from custom_components.wemportal.entity import async_add_readings_as_they_appear
+
+    registry = FakeRegistry({("sensor", _uid(OWN_KEY)): "sensor.heat_pump_outside"})
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
+    coordinator = FakeCoordinator(
+        data={DEVICE: {OWN_KEY: Reading(value=12.5, platform="sensor")}}
+    )
+    coordinator.api.modules = MODULES
+    entry = _entry_with_a_coordinator(coordinator)
+
+    await wemportal.migrate_unique_ids(None, entry, coordinator)
+    built = []
+    async_add_readings_as_they_appear(
+        entry, built.extend, "sensor", lambda *arguments: arguments
+    )
+    assert [call[3] for call in built] == [OWN_KEY], "the control case built nothing"
+
+    # A successful scrape merges the api value into the web row, and the
+    # migration takes the api entity down - as it should.
+    coordinator.api.scraping_mapper = _merged(SCRAPED)
+    coordinator.publish({DEVICE: {SCRAPED: Reading(value=10.0, platform="sensor")}})
+    assert registry.removed == ["sensor.heat_pump_outside"], "the merge control case"
+    del registry.entries[("sensor", _uid(OWN_KEY))]
+
+    # The scrape drops that row: the mapping clears and the api key returns
+    # with a fresh value.
+    coordinator.api.scraping_mapper = {}
+    coordinator.publish(
+        {
+            DEVICE: {
+                OWN_KEY: Reading(value=12.5, platform="sensor"),
+                SCRAPED: Reading(value=None, platform="sensor"),
+            }
+        }
+    )
+
+    assert [call[3] for call in built].count(OWN_KEY) == 2, (
+        "the api reading came back with a value and got no entity - the memo "
+        "still called it known after the migration had removed its entity"
+    )
+
+
 async def test_an_old_id_two_devices_both_answer_to_is_left_alone(monkeypatch):
     """The old shapes name no device, so two devices can claim the same one.
 

@@ -154,6 +154,10 @@ class _Coordinator:
     def __init__(self, data):
         self.data = data
         self.listeners: list = []
+        # Production coordinators always hold the api, and the builder asks
+        # its scraping_mapper and modules which keys a merge retired. Empty
+        # here: these tests carry no merge, so no key is ever retired.
+        self.api = types.SimpleNamespace(scraping_mapper={}, modules={})
 
     def async_add_listener(self, update):
         self.listeners.append(update)

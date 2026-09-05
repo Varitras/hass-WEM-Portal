@@ -10,7 +10,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .coordinator import API_FAILURES_TOLERATED, WemPortalDataUpdateCoordinator
-from .migration import get_wemportal_unique_id
+from .migration import _orphaned_by_a_merge, get_wemportal_unique_id
 from .models import Reading, raise_if_not_writable
 from .utils import build_device_info, device_is_reachable, device_model
 
@@ -32,6 +32,22 @@ def _readings_of(data):
         for key, reading in rows.items():
             if isinstance(reading, Reading):
                 yield device_id, key, reading
+
+
+def _keys_a_merge_retired(coordinator):
+    """Every (device id, key) whose api row a merge retired this cycle.
+
+    Asked with the migration's own predicate, because the migration is what
+    takes those entities down in the same cycle - the two must not drift
+    apart on what "retired" means.
+    """
+    api = coordinator.api
+    for device_id, rows in (coordinator.data or {}).items():
+        retired = _orphaned_by_a_merge(
+            device_id, api.scraping_mapper, api.modules, rows
+        )
+        for key in retired:
+            yield device_id, key
 
 
 @callback
@@ -66,14 +82,19 @@ def async_add_readings_as_they_appear(
 
     @callback
     def _add_the_ones_without_an_entity() -> None:
+        # The memo's one blind spot: a key a merge retired. Its row is absent
+        # AND the migration took its entity down this same cycle - unlike a
+        # merely absent row, whose entity stays. Forgotten here so that when
+        # the merge ends and the key returns with a value, it is rebuilt.
+        known.difference_update(_keys_a_merge_retired(coordinator))
         fresh = []
         for device_id, key, reading in _readings_of(coordinator.data):
             if reading.platform != platform:
                 # Deliberately NOT the same as "the row is gone". A row that
                 # is merely absent keeps its place, because its entity is
-                # still registered and showing unknown; only a row that has
-                # gone to another platform loses one, because that is the
-                # case where the entity is taken away.
+                # still registered and showing unknown; a row loses its place
+                # only when the entity is actually taken away - gone to
+                # another platform here, retired by a merge above.
                 known.discard((device_id, key))
                 continue
             if (device_id, key) in known:
