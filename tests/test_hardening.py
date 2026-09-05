@@ -1060,6 +1060,38 @@ async def test_a_verified_entity_write_ends_the_failure_streak_too():
     )
 
 
+async def test_a_write_that_outlives_its_entry_is_not_a_failure(monkeypatch):
+    """The entry can unload while the write is on the wire.
+
+    Teardown races the executor, and the abort gate only stops a write that
+    has not reached the portal yet - one already sent runs to the end. Home
+    Assistant drops `runtime_data` when the unload finishes, so applying the
+    read-back through it raised a bare AttributeError over a write that HAD
+    succeeded. To whoever awaited it that reads as a failed write, and the
+    obvious reaction is to write again.
+    """
+    from custom_components.wemportal import expert_writer
+
+    api = _api()
+    entity, built = _write_entity(api, monkeypatch)
+
+    class _UnloadingClient:
+        def __init__(self, *_args, **_kwargs):
+            built.append(True)
+
+        def write_parameter(self, *_args, **_kwargs):
+            # What the unload does at its end, while this write is running.
+            delattr(entity._config_entry, "runtime_data")
+            return expert_writer.ExpertParameterState(21.0, [], {})
+
+    monkeypatch.setattr(expert_writer, "WemPortalExpertClient", _UnloadingClient)
+
+    await entity.async_set_native_value(21.0)
+
+    assert built == [True], "the write never reached the portal client"
+    assert entity._write_in_progress is False
+
+
 def test_disabling_an_entity_clears_its_failure_bookkeeping():
     """detach_entity takes the streak, the notification marker AND the repair
     issue down with the entity - left behind, they outlive it and a re-enable

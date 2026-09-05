@@ -470,9 +470,19 @@ class WemPortalExpertNumber(RestoreNumber):
         # issue that answer has to take down. Applying the state directly
         # left all three standing, so the next run of failures found the id
         # already reported and never emptied the confirmed value again.
-        self._config_entry.runtime_data.expert.apply_verified_write(
-            self.entityvalue, state
-        )
+        data = getattr(self._config_entry, "runtime_data", None)
+        if data is None:
+            # The entry unloaded while the write was on the wire: teardown
+            # races the executor, and the abort gate only stops a write that
+            # has not reached the portal yet. The value IS set; there is just
+            # nothing left to show it on. Not a failure - raising here read
+            # as one and invited a second write.
+            _LOGGER.info(
+                "Expert parameter %s was set, but its entry unloaded meanwhile.",
+                self._attr_name,
+            )
+            return
+        data.expert.apply_verified_write(self.entityvalue, state)
         _LOGGER.info(
             "Expert parameter %s set and verified: %s",
             self._attr_name,

@@ -2368,9 +2368,16 @@
   {
     "label": "expert write: the entity route skipping the controller again must be noticed",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        self._config_entry.runtime_data.expert.apply_verified_write(\n            self.entityvalue, state\n        )",
+    "old": "        data.expert.apply_verified_write(self.entityvalue, state)",
     "new": "        self._apply_state(state)",
     "tests": "a_verified_entity_write_ends_the_failure_streak_too"
+  },
+  {
+    "label": "expert write: a write that outlives its entry read as a failure again must be noticed",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        if data is None:",
+    "new": "        if False:",
+    "tests": "a_write_that_outlives_its_entry_is_not_a_failure"
   },
   {
     "label": "expert: an unexpected failure swallowed instead of wrapped",
