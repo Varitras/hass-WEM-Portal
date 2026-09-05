@@ -6,6 +6,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.13.0] – 2026-09-05
+
+The minimum Home Assistant version moves to 2026.8, which is what lets the
+deprecation warnings Home Assistant 2026.9 shows for this integration go away
+without a fallback. Alongside it, four defects found by an independent audit
+of 1.12.1 and two found by re-auditing those fixes.
+
 ### Changed
 
 - **The minimum supported Home Assistant version is 2026.8.0** (was
@@ -14,6 +21,32 @@ versioning follows [Semantic Versioning](https://semver.org/).
   old floor are gone and the deprecations Home Assistant 2026.9 reports need
   no fallback. Installations on older releases keep the version they have;
   HACS does not offer them this update.
+
+### Fixed
+
+- **Home Assistant 2026.9 no longer warns about deprecated device-registry
+  calls from this integration.** Child devices linked to the hub through
+  `via_device` and the entry's devices were read through the registry
+  mapping; both are deprecated in 2026.9 (removal in 2027.8 and 2027.9).
+  Children now link by the hub's registry id and devices are looked up with
+  the current helpers. Existing device links are unchanged.
+- **An expert parameter written through its number entity no longer keeps a
+  stale read-failure repair open.** With auto-poll enabled, a successful
+  write showed its confirmed value but left the failure count, the
+  notification marker and the repair issue from earlier failed reads in
+  place - so later read failures could never clear a value that was no longer
+  confirmed. The write now goes through the same recovery bookkeeping the
+  `set_expert_parameter` service already used.
+- **In `both` mode, an API sensor comes back after a scrape stops merging
+  it.** When a scrape merged an API reading into a web row, the API entity
+  was removed as intended; when the scrape later dropped that row and the API
+  value returned, it got no entity until the integration was reloaded. It is
+  rebuilt on the next cycle now.
+- **An expert write that finishes while its config entry unloads no longer
+  fails.** The value had reached the portal; the write completes quietly now
+  instead of raising, which read as a failed write and invited a second one.
+- **A migration error during startup no longer switches off the per-cycle
+  unique_id migration** for the life of the entry.
 
 ## [1.12.1] – 2026-08-31
 
