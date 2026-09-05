@@ -26,7 +26,9 @@ The current-version run asks the same question of its own interpreter:
 before the suite, `check_current_ha.py` compares the installed Home
 Assistant with the release CI resolves as current (it needs the network for
 that), because a venv that quietly aged one release behind CI once hid three
-failures behind a green local run.
+failures behind a green local run. Right after it, `check_gitleaks_pin.py`
+asks GitHub whether the gitleaks release the secret-scan workflow pins is
+still the latest - Dependabot cannot see a version pinned in a run step.
 CI runs the same set; a guard in `tests/test_guards.py` fails if the two
 ever drift apart.
 

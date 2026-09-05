@@ -256,6 +256,44 @@ def test_the_current_leg_checks_the_version_it_runs():
     ), "the version check has to come before the suite it vouches for"
 
 
+CHECK_GITLEAKS_PIN = REPO / ".github" / "scripts" / "check_gitleaks_pin.py"
+
+
+def _load_gitleaks_pin_check():
+    """The workflow parser alone, without the network."""
+    namespace: dict = {"re": re}
+    source = CHECK_GITLEAKS_PIN.read_text(encoding="utf-8")
+    body = source[
+        source.index("def pinned_version") : source.index("def latest_release")
+    ]
+    exec(compile(body, str(CHECK_GITLEAKS_PIN), "exec"), namespace)  # noqa: S102
+    return namespace["pinned_version"]
+
+
+def test_the_gitleaks_pin_check_reads_the_workflow_pin():
+    """Dependabot never sees a version pinned in a run step, so this check is
+    the only thing watching it - and a workflow without the pin has to be
+    refused, not read as "nothing to compare"."""
+    pinned_version = _load_gitleaks_pin_check()
+
+    assert (
+        pinned_version('        env:\n          GITLEAKS_VERSION: "8.30.1"\n')
+        == "8.30.1"
+    )
+    with pytest.raises(SystemExit):
+        pinned_version("        run: gitleaks git .\n")
+
+
+def test_the_gitleaks_pin_is_checked_by_the_local_gate():
+    """The gate dependencies.md asks for where Dependabot cannot reach."""
+    script = CHECK_SH.read_text(encoding="utf-8")
+
+    assert "check_gitleaks_pin.py" in script, (
+        "check.sh does not compare the pinned gitleaks release with the latest, "
+        "so the pin ages until somebody remembers"
+    )
+
+
 def test_the_type_check_runs_the_same_home_assistant_as_the_current_job():
     """A checker that vouches for another release vouches for nothing.
 

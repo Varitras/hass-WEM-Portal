@@ -33,6 +33,12 @@ echo "== mypy =="
 echo "== current Home Assistant version =="
 "$PYTHON" .github/scripts/check_current_ha.py
 
+# The gitleaks release the secret-scan workflow installs is pinned in a run
+# step, which Dependabot never sees. Asked of GitHub here, so the pin cannot
+# age unnoticed; behind is a failure, and so is not being able to ask.
+echo "== gitleaks pin =="
+"$PYTHON" .github/scripts/check_gitleaks_pin.py
+
 echo "== pytest (this environment) =="
 "$PYTHON" -m pytest tests/ -q -m ""
 
