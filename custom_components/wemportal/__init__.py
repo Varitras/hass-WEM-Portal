@@ -226,8 +226,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # Deliberately NO update listener. Home Assistant deprecated combining one
         # with a reloading flow method in 2026.6 and rejects it from 2026.12, and
         # its check is literally `if entry.update_listeners`. Of the sanctioned
-        # ways out, this is the one that holds in every case: the flows reload
-        # explicitly.
+        # ways out, this is the one that holds in every case: the reauth flow
+        # reloads explicitly, and the options flow is an OptionsFlowWithReload,
+        # which the manager reloads after writing - and which refuses to
+        # coexist with a listener.
         #
         # Relying on the listener instead looked equivalent and was not. It only
         # fires when the entry actually CHANGED, so re-authenticating with the

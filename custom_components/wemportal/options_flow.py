@@ -19,7 +19,7 @@ import re
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.config_entries import (
-    OptionsFlow,
+    OptionsFlowWithReload,
 )
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.data_entry_flow import AbortFlow
@@ -75,7 +75,7 @@ from .config_flow import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class WemportalOptionsFlow(OptionsFlow):
+class WemportalOptionsFlow(OptionsFlowWithReload):
     """Handle options."""
 
     # Error key from the last discovery run, shown on the configure form.
@@ -304,14 +304,12 @@ class WemportalOptionsFlow(OptionsFlow):
         return errors
 
     def _save_configure(self, user_input):
-        """Persist the validated options and reload the entry."""
-        # No-op guard: writing a new options entry always triggers a
-        # full integration reload (and a fresh portal login). If the
-        # normalized input is identical to the stored options -
-        # e.g. the user opened the dialog and saved without changes,
-        # or only typed whitespace into an already-empty ID field -
-        # skip the write so we don't reload for nothing. Reloading
-        # needlessly also risks the portal's 403 rate limit.
+        """Hand the validated options to the flow manager, which writes them
+        and reloads the entry (OptionsFlowWithReload)."""
+        # No-op guard, kept although the manager reloads only on an actual
+        # change: it turns "saved without changes" into a visible reason
+        # instead of a silent success, and a stray whitespace edit in an
+        # empty ID field must not count as a change either.
         current = dict(self.config_entry.options)
         merged = {**current, **user_input}
         # A module list fetched during this flow is persisted here -
@@ -327,26 +325,16 @@ class WemportalOptionsFlow(OptionsFlow):
         # list - so each save cost another portal login on the next
         # discovery. It also makes the no-op comparison above and the
         # value actually written agree on the same dict.
-        # Options only take effect on a reload: scan intervals, mode
-        # and expert access are all read during setup. With no update
-        # listener doing that implicitly, the flow has to.
         #
-        # The options are written HERE, before the reload is
-        # scheduled, and only then handed to the flow manager. Order
-        # matters and is easy to get wrong: the manager writes them
-        # after this step returns, so scheduling a reload from here
-        # without writing first queued a reload that read the OLD
-        # values - the form saved and nothing changed until the next
-        # restart. The manager's own write below then finds them
-        # already in place and is a no-op.
-        #
-        # Home Assistant offers OptionsFlowWithReload for exactly
-        # this (since 2025.8, so within the 2026.8 floor now). Kept as
-        # the explicit write-then-reload: changing the flow's base
-        # class is its own change, not a side effect of raising the
-        # floor.
-        self.hass.config_entries.async_update_entry(self.config_entry, options=merged)
-        self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+        # Options only take effect on a reload - scan intervals, mode and
+        # expert access are all read during setup - and the flow manager
+        # does that: after this step returns it writes the options and, for
+        # OptionsFlowWithReload, schedules the reload, in that order. This
+        # used to be done by hand here because the manager's write comes
+        # AFTER the step and a reload scheduled from inside it read the OLD
+        # values; the base class exists for exactly that ordering, and it
+        # refuses to coexist with an update listener, which this integration
+        # deliberately has none of.
         return self.async_create_entry(title="", data=merged)
 
     def _configure_schema(self, prefill, id_options):

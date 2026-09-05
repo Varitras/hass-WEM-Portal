@@ -973,6 +973,13 @@
     "tests": "the_migration_keeps_listening_after_a_failed_first_pass"
   },
   {
+    "label": "options: the manager no longer reloading after a save must be noticed",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "class WemportalOptionsFlow(OptionsFlowWithReload):",
+    "new": "class WemportalOptionsFlow(OptionsFlowWithReload):\n    automatic_reload = False",
+    "tests": "saving_options_reloads_the_entry"
+  },
+  {
     "label": "docs: a slot count the texts do not mention must be noticed",
     "path": "custom_components/wemportal/const.py",
     "old": "EXPERT_SLOT_COUNT: Final = 10",
