@@ -94,7 +94,7 @@ portal's own granularity, and asking more often only spends requests.
 
 ## Installation
 
-Requires **Home Assistant 2024.12.0** or newer.
+Requires **Home Assistant 2026.8.0** or newer.
 
 ### HACS (custom repository)
 

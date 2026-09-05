@@ -2331,7 +2331,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             read_data = data
             try:
                 refresh_payload = refresh_response.json()
-            except (ValueError, AttributeError):
+            except ValueError, AttributeError:
                 # Unreadable is not the same as "no status given". Falling
                 # through left the read without a JobID, which makes the
                 # server return the most recent job - the PREVIOUS

@@ -98,7 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     _backfill_account_unique_id(hass, entry)
 
     registry = device_registry.async_get(hass)
-    # The public helper, unchanged from the 2024.12 minimum through 2026.9.
+    # The public helper, unchanged from the 2026.8 minimum through 2026.9.
     # Both shapes it replaces are deprecated now: DeviceEntry.config_entries
     # (2026.8) and the registry mapping's own lookup (2026.9, gone 2027.9) -
     # the latter was chosen to escape the former and landed in the next
@@ -292,7 +292,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # its refresh timer is armed. It would keep polling the portal on its
         # interval for an entry the user sees as failed, against an account
         # that is blocked for 12 hours past 10,000 requests. Available since
-        # well before the 2024.12 floor (checked in both).
+        # well before the 2026.8 floor (checked in both).
         await coordinator.async_shutdown()
         # The service is registered one line before the auto-poll setup, so a
         # failure between the two left a domain service behind with no loaded

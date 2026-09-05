@@ -38,7 +38,7 @@ def get_min_max(
     try:
         if min_value is not None and max_value is not None:
             return float(min_value), float(max_value)  # type: ignore[arg-type]
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         pass
 
     if data_type == WemDataType.SWITCH:
@@ -136,7 +136,7 @@ def _declares_bounds(parameter: dict) -> bool:
             return False
         try:
             float(raw)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return False
     return True
 
@@ -696,7 +696,7 @@ def _clear_unanswered(
             # and this pass runs LAST, so it took the ageing of every module
             # of this device with it.
             device_module = modules_dict.get(device_id, {}).get(module_key)
-        except (KeyError, TypeError):
+        except KeyError, TypeError:
             continue
         if not device_module or not device_module.get("parameters"):
             continue

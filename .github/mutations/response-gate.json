@@ -912,7 +912,7 @@
   {
     "label": "expert login: logging in again after a portal answer must be noticed",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "        except (ForbiddenError, PortalMaintenanceError, ServerError):",
+    "old": "        except ForbiddenError, PortalMaintenanceError, ServerError:",
     "new": "        except ForbiddenError:",
     "tests": "portal_answer_does_not_trigger_a_full_login"
   },
@@ -949,7 +949,7 @@
     "path": "custom_components/wemportal/utils.py",
     "old": "        info[\"via_device_id\"] = hub_device_id",
     "new": "        pass",
-    "tests": "child_devices_link_to_the_hub_by_registry_id or hub_link_takes_the_shape_this_home_assistant_understands"
+    "tests": "child_devices_link_to_the_hub_by_registry_id or hub_link_is_the_registry_id_and_never_the_deprecated_tuple"
   },
   {
     "label": "hub link: forgetting the hub's id at setup must be noticed",
@@ -1332,8 +1332,8 @@
   {
     "label": "pair: inventing a value for an unreadable companion must be noticed",
     "path": "custom_components/wemportal/models.py",
-    "old": "            companions[row.parameter_id or key] = float(row.value)\n        except (TypeError, ValueError):",
-    "new": "            companions[row.parameter_id or key] = float(row.value or 0)\n        except (TypeError, ValueError):",
+    "old": "            companions[row.parameter_id or key] = float(row.value)\n        except TypeError, ValueError:",
+    "new": "            companions[row.parameter_id or key] = float(row.value or 0)\n        except TypeError, ValueError:",
     "tests": "a_companion_without_a_readable_value_is_left_out"
   },
   {
@@ -2060,14 +2060,14 @@
   {
     "label": "scrape: an unparseable page raising past the reuse fallback",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        except (LxmlError, ValueError):",
+    "old": "        except LxmlError, ValueError:",
     "new": "        except ZeroDivisionError:",
     "tests": "a_page_that_does_not_parse_leaves_the_reuse_path_its_fallback"
   },
   {
     "label": "scrape: catching only the lxml half of \"this is not a page\"",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        except (LxmlError, ValueError):",
+    "old": "        except LxmlError, ValueError:",
     "new": "        except LxmlError:",
     "tests": "an_answer_that_declares_itself_xml_is_treated_like_any_other_non_page"
   },
@@ -2455,20 +2455,6 @@
     "old": "    try:\n        shutil.rmtree(holding)\n    except OSError as exc:",
     "new": "    try:\n        shutil.rmtree(holding, ignore_errors=True)\n    except OSError as exc:",
     "tests": "a_worktree_that_will_not_go_away_is_reported"
-  },
-  {
-    "label": "registry: the entry-aware lookup never used, even where it exists",
-    "path": "custom_components/wemportal/coordinator.py",
-    "old": "    unambiguous_lookup = getattr(registry, \"async_get_device_by_identifier\", None)",
-    "new": "    unambiguous_lookup = None",
-    "tests": "a_device_is_looked_up_by_entry_where_that_is_possible"
-  },
-  {
-    "label": "registry: the minimum supported version left without a lookup",
-    "path": "custom_components/wemportal/coordinator.py",
-    "old": "    return registry.async_get_device(identifiers={identifier})",
-    "new": "    return None",
-    "tests": "a_device_is_still_found_on_the_minimum_supported_version"
   },
   {
     "label": "coordinator: a 403 falling past the clause that was left to cover it",
@@ -2859,7 +2845,7 @@
     "label": "service: a typed comma refused by the write again",
     "path": "custom_components/wemportal/expert_writer.py",
     "old": "        value_number = parse_portal_number(value)\n        if value_number is None:",
-    "new": "        try:\n            value_number = float(value)\n        except (TypeError, ValueError):\n            value_number = None\n        if value_number is None:",
+    "new": "        try:\n            value_number = float(value)\n        except TypeError, ValueError:\n            value_number = None\n        if value_number is None:",
     "tests": "a_german_decimal_reaches_the_write_as_the_number_it_means"
   },
   {
@@ -3341,8 +3327,8 @@
   {
     "label": "ci: the minimum job must name what hacs.json declares",
     "path": "hacs.json",
-    "old": "\"homeassistant\": \"2024.12.0\"",
-    "new": "\"homeassistant\": \"2025.6.0\"",
+    "old": "\"homeassistant\": \"2026.8.0\"",
+    "new": "\"homeassistant\": \"2026.9.0\"",
     "tests": "the_minimum_job_names_the_version_hacs_declares"
   },
   {

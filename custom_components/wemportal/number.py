@@ -166,7 +166,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
             # numeric, and a numeric string like "42.5" should not leak
             # through as a str just because it parses.
             return float(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             _LOGGER.warning(
                 'Invalid numeric number value for "%s": %r -> set to None',
                 self._attr_name,

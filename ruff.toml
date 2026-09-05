@@ -2,9 +2,9 @@
 # decide otherwise and reflow the whole tree unasked.
 
 # The floor the integration supports, not the newest it runs on: hacs.json
-# declares Home Assistant 2024.12, which requires Python 3.12. Without this,
+# declares Home Assistant 2026.8, which requires Python 3.14. Without this,
 # Ruff assumes 3.10 and analyses against a language version nobody here runs.
-target-version = "py312"
+target-version = "py314"
 
 # Ruff's own default, written down because the formatting in the tree depends
 # on it.

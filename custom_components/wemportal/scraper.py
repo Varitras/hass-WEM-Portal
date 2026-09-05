@@ -377,7 +377,7 @@ class WemPortalScraper:
                 try:
                     reused_html = self._load_expert_page()
                 # skipcq: PYL-W0706 - shields the catch-all, not redundant
-                except (ForbiddenError, PortalMaintenanceError, ServerError):
+                except ForbiddenError, PortalMaintenanceError, ServerError:
                     # All three are answers, not reuse failures. Falling
                     # through to the full login would fire two MORE requests
                     # right after the server said "rate limited", "we are
@@ -647,7 +647,7 @@ class WemPortalScraper:
         for row in rows:
             try:
                 reading = self._row_sensor(heading, panel_key, row)
-            except (IndexError, ValueError):
+            except IndexError, ValueError:
                 continue
             if reading is None:
                 continue
@@ -672,7 +672,7 @@ class WemPortalScraper:
         output: dict[str, Any] = {}
         try:
             panels = html.fromstring(html_content).xpath(PANEL_XPATH)
-        except (LxmlError, ValueError):
+        except LxmlError, ValueError:
             # Inside the promise `required` makes, not above it: an answer
             # that is not HTML at all raised straight out of here, past the
             # reuse path's own handling one frame up - so the full login that

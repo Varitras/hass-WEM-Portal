@@ -7,7 +7,7 @@ import logging
 import asyncio
 from datetime import timedelta
 from time import monotonic
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_USERNAME
@@ -120,33 +120,6 @@ def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store[Any]:
     return Store(
         hass, SCRAPER_DEVICE_STORAGE_VERSION, f"{DOMAIN}_{entry_id}_scraper_device"
     )
-
-
-def device_by_identifier(
-    registry: device_registry.DeviceRegistry,
-    identifier: tuple[str, str],
-    config_entry_id: str,
-) -> device_registry.DeviceEntry | None:
-    """One registered device, looked up the way this Home Assistant allows.
-
-    `async_get_device(identifiers=...)` matches on the identifier alone, so
-    two integrations that register the same one are indistinguishable - which
-    is why Home Assistant deprecated it in 2026.8 (removal in 2027.8) in
-    favour of a lookup that takes the config entry as well.
-
-    That replacement arrived after 2024.12, the minimum this integration
-    supports, so both shapes have to work. Detected by asking the registry
-    what it can do rather than by comparing version numbers: a version says
-    which release this is, not which methods the object in hand has - and a
-    backport or a patched install would make the comparison wrong.
-    """
-    unambiguous_lookup = getattr(registry, "async_get_device_by_identifier", None)
-    if unambiguous_lookup is not None:
-        return cast(
-            "device_registry.DeviceEntry | None",
-            unambiguous_lookup(identifier, config_entry_id),
-        )
-    return registry.async_get_device(identifiers={identifier})
 
 
 class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
@@ -372,9 +345,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             # Look the device up under the SAME identifier the entity
             # platforms register (utils.device_identifier); previously this
             # used a bare (DOMAIN, device_id), which never matched, so a
-            # disabled device kept being polled.
-            device_entry = device_by_identifier(
-                registry,
+            # disabled device kept being polled. Entry-aware, because the
+            # identifier alone is ambiguous across integrations - which is
+            # why the plain lookup is deprecated.
+            device_entry = registry.async_get_device_by_identifier(
                 device_identifier(self.config_entry.entry_id, str(device_id)),
                 self.config_entry.entry_id,
             )

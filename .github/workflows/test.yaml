@@ -74,10 +74,12 @@ jobs:
     # Two ends of the supported range, because they catch opposite mistakes.
     #
     # "minimum" catches using an API that does not exist yet on the version
-    # hacs.json declares. That is not hypothetical: the options flow relies on
-    # OptionsFlow.config_entry, which only appeared in 2024.12 - while the
-    # manifest still claimed 2024.11 support. A single current-version job
-    # cannot see that class of bug at all.
+    # hacs.json declares. That is not hypothetical: the options flow relied on
+    # OptionsFlow.config_entry, which only appeared in 2024.12, while the
+    # manifest still claimed 2024.11 support. The floor is 2026.8 now - the
+    # first release with both via_device_id and the entry-aware device lookup,
+    # so no adapter is needed - and the job keeps asking the same question of
+    # it. A single current-version job cannot see that class of bug at all.
     #
     # "current" catches the opposite: an API that has since been REMOVED.
     # Its plugin version is resolved at run time to the newest release that
@@ -90,15 +92,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: "minimum HA 2024.12"
-            python-version: "3.12"
+          - name: "minimum HA 2026.8"
+            python-version: "3.14"
             # This job is the one with a version it MUST be running; the
             # current job has no fixed expectation to check against.
             check-declared-minimum: true
             # Pinned to the plugin release that ships exactly the Home
             # Assistant version hacs.json declares as the minimum. Raise both
             # together, never one alone.
-            phcc: "pytest-homeassistant-custom-component==0.13.190"
+            phcc: "pytest-homeassistant-custom-component==0.13.357"
           - name: "current HA"
             python-version: "3.14"
             # Resolved by the step below, not a literal requirement.

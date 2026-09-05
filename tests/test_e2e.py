@@ -178,20 +178,20 @@ async def test_child_devices_link_to_the_hub_by_registry_id(hass):
 
     via_device_id replaced the deprecated via_device tuple and wants the hub's
     registry id at DeviceInfo time. Asserted on the OUTCOME - the child's
-    via_device_id equals the hub's id - because that holds on every supported
-    version: 2024.12 still resolves the tuple, current Home Assistant takes
-    the id, and either way a broken link shows up here as None.
+    via_device_id equals the hub's id - so that a broken link, whatever broke
+    it, shows up here as None.
     """
     from homeassistant.helpers import device_registry
 
-    from custom_components.wemportal.coordinator import device_by_identifier
     from custom_components.wemportal.utils import device_identifier
 
     entry = await _setup(hass, _entry(hass))
     registry = device_registry.async_get(hass)
-    hub = device_by_identifier(registry, (DOMAIN, entry.entry_id), entry.entry_id)
-    child = device_by_identifier(
-        registry, device_identifier(entry.entry_id, "1234"), entry.entry_id
+    hub = registry.async_get_device_by_identifier(
+        (DOMAIN, entry.entry_id), entry.entry_id
+    )
+    child = registry.async_get_device_by_identifier(
+        device_identifier(entry.entry_id, "1234"), entry.entry_id
     )
 
     assert hub is not None and child is not None
@@ -2131,16 +2131,14 @@ async def test_a_disabled_device_is_filtered_out_on_the_first_cycle(hass, monkey
     """
     from homeassistant.helpers import device_registry
 
-    from custom_components.wemportal.coordinator import device_by_identifier
     from custom_components.wemportal.utils import device_identifier
 
     entry = await _setup(hass, _entry(hass))
     registry = device_registry.async_get(hass)
-    # Through the integration's own adapter: the plain lookup is deprecated
-    # on current Home Assistant and raises when called from a test, while
-    # the entry-aware replacement does not exist on the 2024.12 minimum.
-    device = device_by_identifier(
-        registry, device_identifier(entry.entry_id, "1234"), entry.entry_id
+    # The entry-aware lookup: the plain async_get_device is deprecated and
+    # raises when called from a test.
+    device = registry.async_get_device_by_identifier(
+        device_identifier(entry.entry_id, "1234"), entry.entry_id
     )
     assert device is not None, "setup did not register the device to disable"
     registry.async_update_device(
@@ -2389,7 +2387,7 @@ async def _auto_poll_entry(hass, monkeypatch, read_many, entityvalues=None):
     # doing an executor read, and async_block_till_done does not reliably wait a
     # BACKGROUND task out on the minimum Home Assistant - which left `scheduled`
     # empty and a caller's scheduled[-1] raising IndexError intermittently (seen
-    # only on the 2024.12 CI job). Await the task itself: the deterministic
+    # on the 2024.12 job, the minimum at the time). Await the task itself: the
     # signal that the poll's finally has run and the first reschedule is
     # recorded, rather than hoping block_till_done covered it.
     initial_poll = entry.runtime_data.expert._initial_task
@@ -3799,12 +3797,10 @@ async def test_home_assistant_reports_no_deprecated_use_during_setup(hass, caplo
     in use here. Its replacement wants the hub's registry id, which an entity
     property cannot look up; setup now keeps that id when it creates the hub,
     so the property has it. The other two had already gone: the registry
-    index for DeviceEntry.config_entries, coordinator.device_by_identifier
-    for async_get_device().
-
-    Feature detection over a version comparison, since 2024.12 stays
-    supported - that release has neither via_device_id nor the entry-aware
-    lookup, and both adapters fall back there.
+    index for DeviceEntry.config_entries, the entry-aware lookup for
+    async_get_device(). Nothing is feature-detected any more - the floor is
+    2026.8, the first release with every replacement, and the adapters that
+    served 2024.12 went with it.
 
     Two things had to be true for this to be able to fail at all, and
     neither was. It listened on `warnings`, while report_usage writes to a
@@ -3930,13 +3926,12 @@ async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatc
     # the user sees as failed, against an account blocked for 12 hours past
     # 10,000 requests.
     #
-    # This assertion is load-bearing on the MINIMUM supported version only:
-    # HA 2024.12 leaves the timer running (its harness reported it as a
-    # lingering timer, which is how this was found), while 2026.7.2 already
-    # tears it down itself. That is also why there is no mutation for it -
-    # the mutation harness runs one version, and this one would survive
-    # there while failing the version that needs it. The CI matrix is what
-    # covers it.
+    # Found on HA 2024.12, which left the timer running (its harness reported
+    # it as lingering); releases from 2026.7 tear it down themselves, so with
+    # the 2026.8 floor this assertion is a statement of the contract rather
+    # than the thing that catches it - kept, because the shutdown call it
+    # vouches for is still ours to make. No mutation for it: one would survive
+    # on every version the harness runs.
     assert coordinator._unsub_refresh is None, (
         "the coordinator of a failed entry is still scheduled to poll"
     )

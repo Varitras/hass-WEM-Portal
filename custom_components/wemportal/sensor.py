@@ -114,7 +114,7 @@ def _parse_schedule(raw):
     """
     try:
         parsed = json.loads(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if not isinstance(parsed, dict):
         return None
@@ -160,7 +160,7 @@ def _day_labels(raw):
     """
     try:
         parsed = json.loads(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if not isinstance(parsed, dict):
         return None
@@ -389,7 +389,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         if is_numeric_sensor:
             try:
                 float(value)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 _report_unreadable_value(
                     self._attr_name,
                     value,

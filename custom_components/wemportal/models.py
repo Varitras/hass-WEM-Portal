@@ -229,7 +229,7 @@ def date_companions(
             continue
         try:
             companions[row.parameter_id or key] = float(row.value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             # No readable value to repeat; a guess would set a date nobody
             # asked for.
             continue

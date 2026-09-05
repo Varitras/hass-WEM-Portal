@@ -3143,63 +3143,6 @@ def test_a_main_page_without_its_state_after_a_login_is_not_a_wrong_password(
         scraper.scrape()
 
 
-class _NewRegistry:
-    """A device registry of the generation that has the unambiguous lookup."""
-
-    def __init__(self, answer=None):
-        self.answer = answer
-        self.asked = []
-
-    def async_get_device_by_identifier(self, identifier, config_entry_id):
-        self.asked.append((identifier, config_entry_id))
-        return self.answer
-
-    def async_get_device(self, identifiers=None):
-        raise AssertionError(
-            "the deprecated lookup was used on a registry that offers the replacement"
-        )
-
-
-class _OldRegistry:
-    """A 2024.12 registry, which has only the ambiguous one."""
-
-    def __init__(self, answer=None):
-        self.answer = answer
-        self.asked = []
-
-    def async_get_device(self, identifiers=None):
-        self.asked.append(identifiers)
-        return self.answer
-
-
-def test_a_device_is_looked_up_by_entry_where_that_is_possible():
-    """async_get_device matches on the identifier alone, so two integrations
-    registering the same one are indistinguishable - which is why Home
-    Assistant deprecates it. The replacement takes the config entry too."""
-    from custom_components.wemportal.coordinator import device_by_identifier
-
-    registry = _NewRegistry(answer="the device")
-
-    found = device_by_identifier(registry, ("wemportal", "e1:1234"), "e1")
-
-    assert found == "the device"
-    assert registry.asked == [(("wemportal", "e1:1234"), "e1")]
-
-
-def test_a_device_is_still_found_on_the_minimum_supported_version():
-    """2024.12 has no such method, and the minimum stays supported. Detected
-    by asking the registry rather than by comparing versions - a version
-    number says what release this is, not what this object can do."""
-    from custom_components.wemportal.coordinator import device_by_identifier
-
-    registry = _OldRegistry(answer="the device")
-
-    found = device_by_identifier(registry, ("wemportal", "e1:1234"), "e1")
-
-    assert found == "the device"
-    assert registry.asked == [{("wemportal", "e1:1234")}]
-
-
 def test_a_forbidden_error_is_a_wemportal_error():
     """What the coordinator's single WemPortalError clause rests on.
 
@@ -4042,29 +3985,17 @@ def test_device_model_comes_from_the_reported_device_type():
     assert build_device_info("e1", "1234", model="Heat pump")["model"] == "Heat pump"
 
 
-def test_the_hub_link_takes_the_shape_this_home_assistant_understands():
-    """One of two keys, decided by what DeviceInfo declares - never both, and
-    never a version number.
-
-    via_device_id is absent from the 2024.12 TypedDict and via_device from
-    the 2026.9 one, so a build carrying the wrong key is an extra key to mypy
-    and a deprecation report to Home Assistant.
-    """
-    from custom_components.wemportal.const import DOMAIN
-    from custom_components.wemportal.utils import (
-        DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID,
-        build_device_info,
-    )
+def test_the_hub_link_is_the_registry_id_and_never_the_deprecated_tuple():
+    """via_device is what Home Assistant 2026.9 reports as deprecated; the
+    link is the hub's registry id or nothing."""
+    from custom_components.wemportal.utils import build_device_info
 
     info = build_device_info("e1", "1234", hub_device_id="hub-registry-id")
-    if DEVICE_INFO_SUPPORTS_VIA_DEVICE_ID:
-        assert info["via_device_id"] == "hub-registry-id"
-        assert "via_device" not in info
-    else:
-        assert info["via_device"] == (DOMAIN, "e1")
-        assert "via_device_id" not in info
 
-    # Without a hub id there is nothing to link by id.
+    assert info["via_device_id"] == "hub-registry-id"
+    assert "via_device" not in info
+
+    # Without a hub id there is nothing to link by.
     assert "via_device_id" not in build_device_info("e1", "1234")
 
 

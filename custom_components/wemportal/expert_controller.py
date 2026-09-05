@@ -77,7 +77,7 @@ def poll_interval_minutes(entry: ConfigEntry) -> int:
     )
     try:
         return max(int(interval_min), MIN_EXPERT_POLL_INTERVAL_MINUTES)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
 
 

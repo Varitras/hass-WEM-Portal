@@ -37,11 +37,11 @@ def epoch_to_date(value) -> date | None:
     """
     try:
         seconds = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     try:
         return datetime.fromtimestamp(seconds, tz=UTC).date()
-    except (OverflowError, OSError, ValueError):
+    except OverflowError, OSError, ValueError:
         # Out of range for the platform's clock - report nothing rather than
         # a wrong date.
         return None

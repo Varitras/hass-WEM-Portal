@@ -6,6 +6,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The minimum supported Home Assistant version is 2026.8.0** (was
+  2024.12.0). It is the first release with both `via_device_id` and the
+  entry-aware device lookup, so the two adapters that existed only for the
+  old floor are gone and the deprecations Home Assistant 2026.9 reports need
+  no fallback. Installations on older releases keep the version they have;
+  HACS does not offer them this update.
+
 ## [1.12.1] – 2026-08-31
 
 ### Fixed

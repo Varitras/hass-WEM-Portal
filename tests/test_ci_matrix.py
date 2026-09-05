@@ -157,7 +157,7 @@ def test_the_minimum_job_names_the_version_hacs_declares():
     declared = json.loads(
         (Path(__file__).resolve().parents[1] / "hacs.json").read_text(encoding="utf-8")
     )["homeassistant"]
-    # "2024.12.0" -> "2024.12"; the label names the release, not the patch.
+    # "2026.8.0" -> "2026.8"; the label names the release, not the patch.
     release = ".".join(declared.split(".")[:2])
 
     assert release in _minimum_job_label(), (
@@ -189,8 +189,8 @@ def test_a_patch_release_still_counts_as_the_declared_minimum():
     being right."""
     feature_release = _load_min_ha_check()
 
-    assert feature_release("2024.12.3") == feature_release("2024.12.0")
-    assert feature_release("2025.1.0") != feature_release("2024.12.0")
+    assert feature_release("2026.8.3") == feature_release("2026.8.0")
+    assert feature_release("2026.9.0") != feature_release("2026.8.0")
 
 
 def test_the_minimum_job_actually_checks_the_version_it_installed():

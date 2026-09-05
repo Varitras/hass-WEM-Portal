@@ -341,10 +341,10 @@ class WemportalOptionsFlow(OptionsFlow):
         # already in place and is a no-op.
         #
         # Home Assistant offers OptionsFlowWithReload for exactly
-        # this, but only from 2025.8 - later than the 2024.12 this
-        # integration supports, and it is selected by isinstance, not
-        # by an attribute, so it cannot be adopted conditionally
-        # without a second code path.
+        # this (since 2025.8, so within the 2026.8 floor now). Kept as
+        # the explicit write-then-reload: changing the flow's base
+        # class is its own change, not a side effect of raising the
+        # floor.
         self.hass.config_entries.async_update_entry(self.config_entry, options=merged)
         self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
         return self.async_create_entry(title="", data=merged)

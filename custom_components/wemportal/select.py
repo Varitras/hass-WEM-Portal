@@ -97,7 +97,7 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
             return self._options_names[self._options.index(value)]
         try:
             return self._options_names[self._options.index(int(value))]
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
 
         synonym_match = self._match_boolean_synonym(value)
@@ -130,7 +130,7 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
 
         try:
             self._attr_current_option = self._resolve_option(entity_data.value)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             self._attr_current_option = None
             _LOGGER.warning(
                 "Value %s not found in options %s (names: %s) for select %s",
@@ -211,7 +211,7 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
         value = row.value
         try:
             self._attr_current_option = self._resolve_option(value)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             self._attr_current_option = None
             _LOGGER.warning(
                 "Value %s not found in options %s (names: %s) for select %s",

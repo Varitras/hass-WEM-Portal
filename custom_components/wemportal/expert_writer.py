@@ -854,7 +854,7 @@ class WemPortalExpertClient:
         try:
             self._establish_context()
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
-        except (ForbiddenError, PortalMaintenanceError, ServerError):
+        except ForbiddenError, PortalMaintenanceError, ServerError:
             # All three are ANSWERS, not signs that the cached session went
             # stale, so none of them is a reason to log in again. Falling
             # through would send the two requests of a full login handshake
