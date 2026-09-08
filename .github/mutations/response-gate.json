@@ -3673,5 +3673,12 @@
     "old": "    return not (device_entry.identifiers & live)",
     "new": "    return True",
     "tests": "a_device_the_portal_still_reports_is_not_deletable"
+  },
+  {
+    "label": "quality scale: an exemption that stops saying why",
+    "path": "custom_components/wemportal/quality_scale.yaml",
+    "old": "    status: exempt\n    comment: >-\n      A custom integration has no entry in the home-assistant/brands\n      repository, and no way to get one while it stays outside core.",
+    "new": "    status: exempt\n    comment: \"\"",
+    "tests": "no_rule_is_excused_without_saying_why"
   }
 ]

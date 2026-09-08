@@ -43,6 +43,7 @@ GUARD_FILES = {
     "test_reading_boundary.py": "readings are read as attributes, never as dict keys",
     "test_reading_invariants.py": "every mapped reading carries the fields other paths read",
     "test_repairs.py": "every repair issue is translated and entry-prefixed",
+    "test_quality_scale.py": "no quality scale rule is excused without a reason",
     "test_requirements.py": "the manifest and the runtime file name the same dependencies",
     "test_security.py": "no module reaches past the redaction, and the expert client stays behind its own import",
     "test_transport_boundary.py": "transport imports no domain module",

@@ -75,6 +75,7 @@ exists because the thing it prevents actually happened here.
 | `test_portal_values.py` | Decimal-comma normalisation lives in exactly one place |
 | `test_reading_boundary.py` | Readings are read as attributes, never as dict keys |
 | `test_reading_invariants.py` | Every reading the mapper writes carries the fields another path reads |
+| `test_quality_scale.py` | Every quality scale rule carries a status Home Assistant defines, and no `exempt` or `todo` stands without a reason |
 | `test_repairs.py` | Every repair issue is translated in every language and prefixed with the entry id |
 | `test_security.py` | No module reaches past the diagnostics redaction, and the expert client stays behind its own import |
 | `test_requirements.py` | `manifest.json` and `requirements_runtime.txt` name the same dependencies |
