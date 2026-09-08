@@ -49,7 +49,7 @@ from .models import (
     forget_account_state,
     is_still_serving,
 )
-from .utils import clamped_scan_interval, deserialize_modules
+from .utils import clamped_scan_interval, device_identifier, deserialize_modules
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -710,6 +710,36 @@ def _async_delete_entry_issues(hass: HomeAssistant, entry_id: str) -> None:
     ]
     for issue_id in stale:
         issue_registry.async_delete_issue(hass, DOMAIN, issue_id)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    config_entry: WemPortalConfigEntry,
+    device_entry: device_registry.DeviceEntry,
+) -> bool:
+    """Whether the user may delete this device from the registry by hand.
+
+    Without this the delete button does not exist at all, so a device the
+    installation lost - a module taken out, a controller replaced - stayed in
+    the list forever with entities that would never update again.
+
+    Two devices are refused. The hub is not a portal device: it stands for
+    the entry, and the expert numbers hang off it, so deleting it would take
+    entities the portal still serves. And an entry whose coordinator has no
+    data yet knows of no device at all, which is indistinguishable from an
+    installation that lost every one of them - answering then would offer up
+    the whole device list while the integration is still starting.
+    """
+    if (DOMAIN, config_entry.entry_id) in device_entry.identifiers:
+        return False
+
+    data = getattr(config_entry, "runtime_data", None)
+    reported = data.coordinator.data if data is not None else None
+    if not reported:
+        return False
+
+    live = {device_identifier(config_entry.entry_id, str(one)) for one in reported}
+    return not (device_entry.identifiers & live)
 
 
 async def async_remove_entry(

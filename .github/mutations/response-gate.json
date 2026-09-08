@@ -3652,5 +3652,26 @@
     "old": "PARALLEL_UPDATES = 0",
     "new": "PARALLEL_UPDATES = 1",
     "tests": "every_platform_says_how_many_calls_it_allows_at_once"
+  },
+  {
+    "label": "device removal: the hub offered up for deletion with the rest",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    if (DOMAIN, config_entry.entry_id) in device_entry.identifiers:\n        return False",
+    "new": "    if False:\n        return False",
+    "tests": "the_hub_is_not_a_device_the_user_may_delete"
+  },
+  {
+    "label": "device removal: a coordinator without data declaring everything stale",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    if not reported:\n        return False",
+    "new": "    reported = reported or {}",
+    "tests": "an_entry_that_has_not_polled_yet_declares_nothing_stale"
+  },
+  {
+    "label": "device removal: a live device deletable anyway",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    return not (device_entry.identifiers & live)",
+    "new": "    return True",
+    "tests": "a_device_the_portal_still_reports_is_not_deletable"
   }
 ]
