@@ -6,6 +6,20 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.13.1] – 2026-09-08
+
+A small release with one user-visible change: devices the installation no
+longer has can be deleted.
+
+### Added
+
+- **A device the portal stopped reporting can now be removed by hand.** Home
+  Assistant only offers the delete button to an integration that says it can
+  decide, and this one never did - so a module taken out of the installation
+  kept its device and its entities for good. Devices the portal still reports
+  stay refused, as does the hub itself: it stands for the config entry and
+  carries the expert number entities.
+
 ## [1.13.0] – 2026-09-05
 
 The minimum Home Assistant version moves to 2026.8, which is what lets the
