@@ -14,6 +14,10 @@ from .utils import fix_value_and_unit
 
 _LOGGER = logging.getLogger(__name__)
 
+# Zero is unlimited, and that is what a coordinator platform already does:
+# the readings come from one shared refresh, so no entity fetches on its own.
+PARALLEL_UPDATES = 0
+
 # Recognized "on" values, covering both the numeric form (API path) and the
 # German/English text forms a value may arrive in (e.g. depending on the
 # configured portal language, or whether it came via web scraping vs. the

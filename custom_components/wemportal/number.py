@@ -16,6 +16,10 @@ from .utils import fix_value_and_unit, unit_to_device_class
 
 _LOGGER = logging.getLogger(__name__)
 
+# Zero is unlimited, and that is what a coordinator platform already does:
+# the readings come from one shared refresh, so no entity fetches on its own.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

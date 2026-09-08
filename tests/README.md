@@ -32,6 +32,13 @@ still the latest - Dependabot cannot see a version pinned in a run step.
 CI runs the same set; a guard in `tests/test_guards.py` fails if the two
 ever drift apart.
 
+One gate is local-only and **untracked**: `.git/hooks/pre-push` scans the
+push range against a blocklist kept outside the repository (it holds the very
+words it keeps out) and then runs gitleaks with `.gitleaks.toml`. A fresh
+clone has no hook - copy it back from the local project notes (outside the
+repository, next to the blocklist) before the first push. The always-on twin
+is `.github/workflows/gitleaks.yaml`.
+
 ## Why a mutation run
 
 A passing test proves nothing on its own - every worthless test in this
@@ -63,7 +70,7 @@ exists because the thing it prevents actually happened here.
 | `test_mutation_harness.py` | The mutation run fails loudly rather than printing "all caught" without having checked |
 | `test_mypy_scope.py` | Every module is in the mypy scope or carries a written reason why not yet |
 | `test_account_state.py` | No mutable module-level state outside the one sanctioned registry |
-| `test_platform_entities.py` | Every platform creates entities through the shared helper, so a reading that arrives on a later cycle still gets one - and reads its row through the shared lookup, so a reclassified row is not published by the entity it no longer belongs to |
+| `test_platform_entities.py` | Every platform creates entities through the shared helper, so a reading that arrives on a later cycle still gets one - and reads its row through the shared lookup, so a reclassified row is not published by the entity it no longer belongs to; every platform declares `PARALLEL_UPDATES` rather than landing on a default |
 | `test_portal_boundaries.py` | Every `.json()` read and HTML parse sits in a declared boundary function |
 | `test_portal_values.py` | Decimal-comma normalisation lives in exactly one place |
 | `test_reading_boundary.py` | Readings are read as attributes, never as dict keys |

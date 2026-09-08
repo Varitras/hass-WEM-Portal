@@ -219,3 +219,57 @@ def test_the_scan_would_notice_the_shape_it_exists_for():
 
     assert THE_OLD_WAY in one_shot and THE_SHARED_WAY not in one_shot
     assert THE_OLD_WAY not in shared and THE_SHARED_WAY in shared
+
+
+# Home Assistant reads this name off the platform module itself, so a
+# platform that does not set it is not "at the default" - it is undeclared,
+# and the default it lands on depends on whether the entity happens to have
+# a synchronous update method. Nothing in a coordinator platform makes that
+# visible.
+THE_DECLARATION = "PARALLEL_UPDATES"
+# Zero means unlimited, which is what a coordinator platform already does:
+# the data arrives from one shared refresh, and no entity polls on its own.
+# Writing it down changes no behaviour - it removes the guess.
+THE_COORDINATOR_ANSWER = 0
+
+
+def _declared_parallel_updates(source: str):
+    """The module-level value, or None when the module does not declare one."""
+    import ast
+
+    for node in ast.parse(source).body:
+        targets = node.targets if isinstance(node, ast.Assign) else []
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id == THE_DECLARATION:
+                return ast.literal_eval(node.value)
+    return None
+
+
+def test_the_declaration_scan_reads_the_module_and_not_a_mention():
+    """Proof that the check can fail: a module that only talks about the name
+    in a comment or sets it on something else has not declared it."""
+    assert _declared_parallel_updates(f"# {THE_DECLARATION} is 0 here\n") is None
+    assert _declared_parallel_updates(f"entity.{THE_DECLARATION} = 0\n") is None
+    assert _declared_parallel_updates(f"{THE_DECLARATION} = 0\n") == 0
+
+
+def test_every_platform_says_how_many_calls_it_allows_at_once():
+    """Undeclared is not the same as decided.
+
+    Home Assistant's own quality scale asks for this name on every platform
+    module, and the reason is that its absence reads two ways: the platform
+    is fine with unlimited calls, or nobody thought about it. Only the first
+    is true here, and only the declaration says so.
+    """
+    undeclared = [
+        name
+        for name, source in _platform_sources().items()
+        if _declared_parallel_updates(source) != THE_COORDINATOR_ANSWER
+    ]
+
+    assert not undeclared, (
+        f"{undeclared} do(es) not declare {THE_DECLARATION} = "
+        f"{THE_COORDINATOR_ANSWER}. The entities take their data from the "
+        "shared coordinator refresh, so nothing here needs throttling - say "
+        "it in the module instead of leaving it to the default."
+    )

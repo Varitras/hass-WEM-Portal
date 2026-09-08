@@ -3645,5 +3645,12 @@
     "old": "from .web_protocol import maintenance_notice, message_reports_maintenance",
     "new": "from .utils import parse_portal_number",
     "tests": "transport_imports_only_domain_free_siblings"
+  },
+  {
+    "label": "quality: a platform that leaves its parallel calls undeclared",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "PARALLEL_UPDATES = 0",
+    "new": "PARALLEL_UPDATES = 1",
+    "tests": "every_platform_says_how_many_calls_it_allows_at_once"
   }
 ]
