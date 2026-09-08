@@ -149,4 +149,7 @@ parser, `test_value_freshness.py` covers ageing, and so on. Two files are
 deliberately large and cross-cutting - `test_hardening.py` (regression
 tests, each named after the failure it prevents) and `test_e2e.py` (a real
 Home Assistant instance; marked `e2e` and deselected in the everyday run,
-which is why CI passes `-m ""`).
+which is why CI passes `-m ""`). `test_config_flow.py` covers the config,
+reauth and options flows and is `e2e` for the same reason; it imports the
+mock entry, the finished setup and the two autouse fixtures from
+`test_e2e.py` rather than keeping a second copy of them.
