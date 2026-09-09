@@ -19,7 +19,12 @@ import requests
 from .exceptions import AuthError, ForbiddenError, WemPortalError
 from .models import Reading
 from .translations import translate
-from .utils import latest_statistics_entry, portal_list
+from .utils import (
+    failure_is_new,
+    failure_is_over,
+    latest_statistics_entry,
+    portal_list,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +51,15 @@ STATISTICS_RETRY_INTERVAL_SECONDS: Final = 900  # 15 minutes
 # this code. It's an expected, harmless per-group condition - skipped
 # quietly rather than logged as a warning on every startup.
 WEM_INVALID_PARAMETER_STATUS: Final = 3001
+# The portal's answer for an installation that is currently off the net.
+# A state, not a fault: the heat pump is unreachable and the portal says
+# so cleanly. Reported as a failure it filled a user's error log all day.
+WEM_INSTALLATION_OFFLINE_STATUS: Final = 5001
+
+
+def _statistics_key(device_id: str) -> str:
+    """The bookkeeping key for one device's statistics failures."""
+    return f"statistics:{device_id}"
 
 
 class WemPortalStatistics:
@@ -66,6 +80,9 @@ class WemPortalStatistics:
         # gate below reads explicitly. Declared as a plain float, the one
         # thing this declaration exists to make visible was wrong.
         last_statistics_fetch: float | None
+        # Which failures have already been announced, so a portal that
+        # keeps timing out is said once rather than once per cycle.
+        _reported_failures: dict[str, str]
 
         # The host's transport half; the full signature so the three mixins
         # agree on it when merged into the one WemPortalApi.
@@ -78,6 +95,33 @@ class WemPortalStatistics:
             delay: int = 5,
             retry_transport: bool = False,
         ) -> requests.Response: ...
+
+    def _note_statistics_failure(self, device_id: str, exc: Exception) -> None:
+        """Say a statistics failure at the volume it deserves.
+
+        Two things are not worth a warning. An installation the portal
+        reports as offline is a state, handled here the same way status 3001
+        is a few lines up. And a failure that is still the same one as last
+        cycle has already been said - repeating it is what turns a slow
+        afternoon into a full error log.
+        """
+        if str(getattr(exc, "server_status", None)) == str(
+            WEM_INSTALLATION_OFFLINE_STATUS
+        ):
+            _LOGGER.debug(
+                "Device %s is offline right now, so it has no statistics to read "
+                "(status %s).",
+                device_id,
+                WEM_INSTALLATION_OFFLINE_STATUS,
+            )
+            return
+        key = _statistics_key(device_id)
+        if failure_is_new(self._reported_failures, key, str(exc)):
+            _LOGGER.info("Statistics for device %s cannot be read: %s", device_id, exc)
+        else:
+            _LOGGER.debug(
+                "Statistics for device %s still cannot be read: %s", device_id, exc
+            )
 
     def _statistics_devices(self, enabled_devices=None) -> list[str]:
         """The devices this cycle should ask the portal about."""
@@ -326,6 +370,12 @@ class WemPortalStatistics:
                 try:
                     self._fetch_device_statistics(device_id)
                     succeeded += 1
+                    if failure_is_over(
+                        self._reported_failures, _statistics_key(device_id)
+                    ):
+                        _LOGGER.info(
+                            "Statistics for device %s are being read again.", device_id
+                        )
                 # skipcq: PYL-W0706 - shields the catch-all, not redundant
                 except AuthError:
                     # An account is one login, so a refused one says nothing
@@ -346,7 +396,7 @@ class WemPortalStatistics:
                     # Broad: one device's statistics failing must not stop
                     # the others. `succeeded` stays unincremented, which is
                     # what the retry back-dating below reads.
-                    _LOGGER.warning("Error processing Statistics: %s", exc)
+                    self._note_statistics_failure(device_id, exc)
         finally:
             # Every attempted device failed: back-date the timestamp so the
             # next cycle retries after the shorter retry interval rather than

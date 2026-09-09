@@ -1304,7 +1304,7 @@
   {
     "label": "cycle: losing the real reason behind a constant must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            _LOGGER.warning(\"Failed to fetch parameter data... %s\", exc)\n            return str(exc)",
+    "old": "            _LOGGER.debug(\"Failed to fetch parameter data... %s\", exc)\n            return str(exc)",
     "new": "            _LOGGER.warning(\"Failed to fetch parameter data... %s\", exc)\n            return \"the fetch failed\"",
     "tests": "a_failed_cycle_says_why_it_failed"
   },
@@ -3680,5 +3680,33 @@
     "old": "    status: exempt\n    comment: >-\n      A custom integration has no entry in the home-assistant/brands\n      repository, and no way to get one while it stays outside core.",
     "new": "    status: exempt\n    comment: \"\"",
     "tests": "no_rule_is_excused_without_saying_why"
+  },
+  {
+    "label": "log volume: the same outage announced on every cycle again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    previous = reported.get(key)\n    reported[key] = reason\n    return previous != reason",
+    "new": "    reported[key] = reason\n    return True",
+    "tests": "announced_once or announced_once_and_healed"
+  },
+  {
+    "label": "log volume: an outage that never reports it ended",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return reported.pop(key, None) is not None",
+    "new": "    reported.pop(key, None)\n    return False",
+    "tests": "coming_back_is_said_once or announced_once_and_healed"
+  },
+  {
+    "label": "log volume: an offline installation counted as a failure again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        if str(getattr(exc, \"server_status\", None)) == str(\n            WEM_INSTALLATION_OFFLINE_STATUS\n        ):",
+    "new": "        if False:",
+    "tests": "installation_the_portal_reports_as_offline_is_not_an_error"
+  },
+  {
+    "label": "log volume: the cycle's own reason printed a second time",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            _LOGGER.debug(\"Failed to fetch parameter data... %s\", exc)",
+    "new": "            _LOGGER.warning(\"Failed to fetch parameter data... %s\", exc)",
+    "tests": "parameter_failure_the_cycle_already_reports_is_not_warned_twice"
   }
 ]

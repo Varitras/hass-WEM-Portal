@@ -56,6 +56,8 @@ from .translations import translate
 from .utils import (
     clamped_scan_interval,
     error_state_and_detail,
+    failure_is_new,
+    failure_is_over,
     looks_like_schedule,
     portal_list,
     schedule_fetch_still_feeds,
@@ -413,6 +415,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # Last connection status per device, so the offline log line is
         # edge-triggered rather than repeated every cycle.
         self._last_connection_status: dict[str, Any] = {}
+        # The same idea for failures that carry a reason rather than a state:
+        # what has already been announced, so a portal that keeps timing out
+        # is reported once and once when it answers again (see utils).
+        self._reported_failures: dict[str, str] = {}
         self.scraping_mapper = {}
         # The two hourly gates. Here rather than on the account state, so
         # they are forgotten by the same reload that forgets the readings
@@ -2130,6 +2136,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 )
             )
 
+            if failure_is_over(self._reported_failures, f"device-status:{device_id}"):
+                _LOGGER.info("The status of device %s is readable again.", device_id)
+
             previous = self._last_connection_status.get(device_id)
             self._last_connection_status[device_id] = conn_status
 
@@ -2153,7 +2162,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # Broad: an unreadable status must not stop the poll. The
             # caller treats "unknown" as reachable, which is the safe
             # side - see device_is_reachable.
-            _LOGGER.warning("Failed to fetch Device Status: %s", exc)
+            key = f"device-status:{device_id}"
+            if failure_is_new(self._reported_failures, key, str(exc)):
+                _LOGGER.info("Cannot read the status of device %s: %s", device_id, exc)
+            else:
+                _LOGGER.debug(
+                    "Still cannot read the status of device %s: %s", device_id, exc
+                )
             self._forget_device_status(device_id)
         return True
 
@@ -2442,10 +2457,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             raise
         except Exception as exc:  # noqa: BLE001
             # Broad: one device's parameter read failing must not take
-            # the other devices' readings with it. The reason goes to the
-            # caller as well as into this warning - it is what Home Assistant
-            # ends up showing the user when the whole cycle fails.
-            _LOGGER.warning("Failed to fetch parameter data... %s", exc)
+            # the other devices' readings with it. Debug, not warning: the
+            # reason is RETURNED, and the caller puts it in the message Home
+            # Assistant shows when the cycle fails - which its coordinator
+            # logs. Warning here as well printed one outage twice.
+            _LOGGER.debug("Failed to fetch parameter data... %s", exc)
             return str(exc)
 
     def _values_stale_after_seconds(self) -> float:
