@@ -501,13 +501,17 @@ def test_a_statistics_refresh_that_lists_no_groups_as_null_is_not_an_error(caplo
         {"GroupTypeDescriptions": None}
     )
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         api.get_statistics(enabled_devices=["1234"])
 
+    # On the LEVEL rather than on the wording. This asserted on a message
+    # that has since been reworded, which left it green whatever the code
+    # did - the mutation run is what noticed. Anything a failing device
+    # produces reaches info; a device with nothing to report produces none.
     complaints = [
         record.getMessage()
         for record in caplog.records
-        if "Error processing Statistics" in record.getMessage()
+        if record.levelno >= logging.INFO
     ]
     assert not complaints, f"a device with nothing to report was an error: {complaints}"
 
@@ -4840,7 +4844,10 @@ def test_a_status_answer_without_a_status_is_a_failed_read(caplog):
     api.modules = {"1234": {}}
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse({})
 
-    with caplog.at_level(logging.WARNING):
+    # info, not warning: an unreadable status is the device becoming
+    # unavailable, which Home Assistant's rule puts at info level - said once
+    # here and once when it can be read again.
+    with caplog.at_level(logging.INFO):
         assert api._fetch_device_status("1234") is True, (
             "a payload with no status ended the device's cycle, so the "
             "parameters were never read"
@@ -4855,7 +4862,7 @@ def test_a_status_answer_without_a_status_is_a_failed_read(caplog):
         f"{sorted(still_claimed)} were published from an answer that carried "
         "no status at all"
     )
-    assert "Failed to fetch Device Status" in caplog.text
+    assert "Cannot read the status of device" in caplog.text
 
 
 # --- what counts as a successful API answer ---------------------------
@@ -6043,6 +6050,11 @@ PRESERVED_FIELDS = frozenset(
         "device_types",
         "_previous_scraper_keys",
         "_last_connection_status",
+        # What the user has already been told is failing. A transport
+        # recovery is not news to them: dropping this would re-announce
+        # the same outage every time the connection is rebuilt, which is
+        # precisely the repetition the record exists to prevent.
+        "_reported_failures",
         "scraping_mapper",
         "last_statistics_fetch",
         "_last_circuit_times_fetch",
@@ -8433,3 +8445,175 @@ def test_a_non_list_portal_answer_is_surfaced_not_read_as_an_empty_list():
         portal_list({"Errors": "E12"}, "Errors")
     with pytest.raises(ServerError):
         portal_list({"Errors": {"code": "E12"}}, "Errors")
+
+
+def _offline_installation_error():
+    """The portal's own "the installation is offline right now" answer.
+
+    Not a failure of this integration and not of the portal: a heat pump that
+    is off the net answers exactly like this, and the portal says so cleanly.
+    """
+    error = exceptions.WemPortalError("Anlage ist gerade offline")
+    error.server_status = statistics.WEM_INSTALLATION_OFFLINE_STATUS
+    return error
+
+
+def test_an_installation_the_portal_reports_as_offline_is_not_an_error(caplog):
+    """It was logged once per device per cycle, at warning level, so a heat
+    pump that is simply off the net filled the error log all day - ten times
+    in two hours on a real installation. The portal answering "offline" is
+    the system working, not failing."""
+    import logging
+
+    api = _statistics_api_with_groups([1], lambda _group: None)
+
+    def offline(_device_id):
+        raise _offline_installation_error()
+
+    api._fetch_device_statistics = offline
+
+    with caplog.at_level(logging.DEBUG):
+        api.get_statistics(enabled_devices=["1234"])
+
+    # >= INFO, not >= WARNING: after the rework a real outage is announced at
+    # info, so a check for warnings alone passes whether or not "offline" is
+    # told apart from a fault. The mutation run caught exactly that.
+    assert not [
+        record for record in caplog.records if record.levelno >= logging.INFO
+    ], "an offline installation was reported as a failure"
+    assert [record for record in caplog.records if "offline" in record.getMessage()], (
+        "it must still be visible in debug - silence is not the goal"
+    )
+
+
+def test_the_same_statistics_outage_is_only_announced_once(caplog):
+    """A read timeout repeats every cycle for as long as the portal is slow.
+    Announcing it each time is what buries the log; the rule is once when it
+    starts and once when it ends."""
+    import logging
+
+    api = _statistics_api_with_groups([1], lambda _group: None)
+
+    def times_out(_device_id):
+        raise exceptions.WemPortalError("Read timed out")
+
+    api._fetch_device_statistics = times_out
+
+    announced = []
+    for _cycle in range(3):
+        caplog.clear()
+        api.last_statistics_fetch = None
+        with caplog.at_level(logging.DEBUG):
+            api.get_statistics(enabled_devices=["1234"])
+        announced.append(
+            [record for record in caplog.records if record.levelno >= logging.INFO]
+        )
+
+    assert len(announced[0]) == 1, "the first outage must be announced"
+    assert not announced[1] and not announced[2], (
+        f"the same outage was announced again: {announced[1:]}"
+    )
+
+
+def test_statistics_coming_back_is_said_once(caplog):
+    """Without this the user can see when it broke and never when it healed,
+    which is the half that tells them whether to act."""
+    import logging
+
+    stats = {"Values": [{"Date": "2026-08-06", "Value": 12.0}], "Unit": "kWh"}
+    api = _statistics_api_with_groups([1], lambda _group: FakeResponse(stats))
+
+    failing = True
+
+    def sometimes(_device_id):
+        if failing:
+            raise exceptions.WemPortalError("Read timed out")
+
+    api._fetch_device_statistics = sometimes
+
+    api.get_statistics(enabled_devices=["1234"])
+    failing = False
+
+    caplog.clear()
+    api.last_statistics_fetch = None
+    with caplog.at_level(logging.INFO):
+        api.get_statistics(enabled_devices=["1234"])
+
+    back = [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.INFO and "again" in record.getMessage()
+    ]
+    assert len(back) == 1, f"recovery was not announced exactly once: {back}"
+
+
+def test_a_parameter_failure_the_cycle_already_reports_is_not_warned_twice(caplog):
+    """The reason is returned to the caller, which puts it in the message Home
+    Assistant shows when the cycle fails - and Home Assistant's coordinator
+    logs that. Warning here as well printed one outage twice."""
+    import logging
+
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
+
+    def refuses(*_args, **_kwargs):
+        raise exceptions.WemPortalError("Read timed out")
+
+    api.make_api_call = refuses
+
+    with caplog.at_level(logging.DEBUG):
+        reason = api._fetch_parameter_values("1234")
+
+    assert reason and "Read timed out" in str(reason), (
+        "the caller must still learn the reason - that is what replaces the warning"
+    )
+    assert not [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.WARNING
+        and "Failed to fetch parameter data" in record.getMessage()
+    ], "the same failure was warned about here and reported to the caller"
+
+
+def test_an_unreadable_device_status_is_announced_once_and_healed_once(caplog):
+    """The other half of the same rule, on the other path.
+
+    A portal that keeps timing out was reported once per device per cycle,
+    which is what a user actually saw: four log entries for one short outage,
+    every day. Once when it starts, once when it ends.
+    """
+    import logging
+
+    api = _api_with_a_read_status()
+
+    def refuse(*_args, **_kwargs):
+        raise exceptions.WemPortalError("Read timed out")
+
+    api.make_api_call = refuse
+
+    announced = []
+    for _cycle in range(3):
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            api._fetch_device_status("1234")
+        announced.append(
+            [record for record in caplog.records if record.levelno >= logging.INFO]
+        )
+
+    assert len(announced[0]) == 1, "the outage must be announced when it starts"
+    assert not announced[1] and not announced[2], (
+        f"the same outage was announced again: {announced[1:]}"
+    )
+
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {"ConnectionStatus": 0, "Errors": [], "GroupTypeDescriptions": []}
+    )
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        api._fetch_device_status("1234")
+
+    healed = [
+        record for record in caplog.records if "readable again" in record.getMessage()
+    ]
+    assert len(healed) == 1, f"the recovery was not announced exactly once: {healed}"

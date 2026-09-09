@@ -39,7 +39,7 @@ from .exceptions import (
     WemPortalError,
 )
 from .models import account_state
-from .utils import device_identifier, serialize_modules
+from .utils import device_identifier, failure_is_new, serialize_modules
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -151,6 +151,11 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         self.api = api
         self.last_try: float | None = None
         self.num_failed = 0
+        # Which lasting outages have already been announced. A
+        # maintenance window runs for hours and the poll every few
+        # minutes, so without this each cycle says the same thing
+        # again - the flood the api paths were carrying too.
+        self._reported_failures: dict[str, str] = {}
         # Consecutive AuthError counter, separate from num_failed: only
         # after AUTH_ERROR_ESCALATION_THRESHOLD auth failures IN A ROW do we
         # escalate to ConfigEntryAuthFailed (reauth). Reset on any success.
@@ -457,6 +462,24 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         self.num_auth_failed = 0
         self._account_state.auth_failures = 0
 
+    def _announce_once(self, key: str, what: str, exc: BaseException) -> None:
+        """Say a lasting outage when it starts, then stay quiet about it.
+
+        Info rather than warning, and only on the first cycle that sees it:
+        both of these outlive a single cycle by a wide margin, so repeating
+        them is how one event becomes a page of log. The reason still reaches
+        the user on every cycle through UpdateFailed, which is what Home
+        Assistant shows on the entry.
+
+        BaseException, not Exception: PollDeadlineExceeded is deliberately
+        outside the Exception tree so a broad handler cannot swallow the
+        cycle's own stop signal, and it is one of the two callers.
+        """
+        if failure_is_new(self._reported_failures, key, str(exc)):
+            _LOGGER.info("%s: %s", what, exc)
+        else:
+            _LOGGER.debug("%s (still): %s", what, exc)
+
     def _note_failed_cycle(self) -> None:
         """Count this failed cycle, and publish the moment the count leaves
         the tolerance behind.
@@ -495,6 +518,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 )
                 self.num_failed = 0
                 self._reset_auth_failures()
+                # Home Assistant's own coordinator announces the recovery, so
+                # this only has to forget what it said - the next outage is
+                # news again.
+                self._reported_failures.clear()
                 return fetched
             except PortalMaintenanceError as exc:
                 # Announced downtime, not a credential problem. Counted as a
@@ -505,7 +532,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # were correct all along.
                 self._note_failed_cycle()
                 self._reset_auth_failures()
-                _LOGGER.warning("WEM Portal is in maintenance: %s", exc)
+                self._announce_once("maintenance", "WEM Portal is in maintenance", exc)
                 raise UpdateFailed(f"WEM Portal maintenance: {exc}") from exc
             except AuthError as exc:
                 self._note_failed_cycle()
@@ -546,7 +573,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # Not an auth failure: the credentials were never in doubt.
                 self._note_failed_cycle()
                 self._reset_auth_failures()
-                _LOGGER.warning("Poll cycle stopped on its own deadline: %s", exc)
+                self._announce_once(
+                    "deadline", "Poll cycle stopped on its own deadline", exc
+                )
                 raise UpdateFailed(str(exc)) from exc
             except ApiBusyError as exc:
                 # NOT a corrupted session: a previous poll is still running.

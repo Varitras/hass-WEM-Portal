@@ -647,3 +647,30 @@ def device_is_reachable(
     if not isinstance(status, Reading):
         return True
     return status.value not in UNREACHABLE_CONNECTION_STATES
+
+
+def failure_is_new(reported: dict[str, str], key: str, reason: str) -> bool:
+    """Whether `key` is not already known to be failing for this reason.
+
+    The one place that decides how loud a repeating portal failure is. Home
+    Assistant's rule is once when something becomes unavailable and once when
+    it returns; a read timeout that lasts an afternoon otherwise writes one
+    warning per cycle, which is what buried a real user's log - ten entries in
+    two hours for a heat pump that was simply off the net.
+
+    Keyed on the reason, not merely on "is failing": when the portal starts
+    refusing for a different cause, that is news and gets said.
+    """
+    previous = reported.get(key)
+    reported[key] = reason
+    return previous != reason
+
+
+def failure_is_over(reported: dict[str, str], key: str) -> bool:
+    """Whether `key` was failing and has just answered again.
+
+    The other half of the rule above, and the half that is easy to leave out:
+    without it the log says when something broke and never when it healed, so
+    the user cannot tell a current outage from one that ended hours ago.
+    """
+    return reported.pop(key, None) is not None

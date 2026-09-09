@@ -3600,3 +3600,106 @@ async def test_an_unreadable_scraper_device_id_stops_setup_instead_of_re_decidin
     assert entry.state is ConfigEntryState.SETUP_RETRY, (
         "setup carried on without the stored id, which re-decides it"
     )
+
+
+@pytest.mark.parametrize(
+    ("failure_name", "said"),
+    [
+        ("PortalMaintenanceError", "maintenance"),
+        ("PollDeadlineExceeded", "deadline"),
+    ],
+)
+async def test_a_lasting_outage_is_announced_once_not_every_cycle(
+    hass, caplog, monkeypatch, failure_name, said
+):
+    """Both of these last far longer than one cycle.
+
+    A maintenance window runs for hours while the poll runs every few
+    minutes, and a portal too slow to answer stays too slow. Each cycle wrote
+    its own warning, which is the same flood the API paths were carrying -
+    and a real maintenance window in August produced exactly that.
+    """
+    import logging
+
+    from custom_components.wemportal import exceptions
+
+    failure = getattr(exceptions, failure_name)("the portal is not answering")
+    entry = await _setup(hass, _entry(hass))
+
+    def fails(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(entry.runtime_data.api, "fetch_data", fails)
+
+    announced = []
+    for _cycle in range(3):
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            await entry.runtime_data.coordinator.async_refresh()
+        announced.append(
+            [
+                record
+                for record in caplog.records
+                # Ours only, told apart by the FILE. Home Assistant's own
+                # coordinator logs the same failure through the logger it was
+                # handed - ours - so the name cannot separate them, which is
+                # also why its lines reach the user as "from a custom
+                # integration". Its once-per-outage line is the behaviour
+                # being copied here, not the one under test.
+                if record.filename == "coordinator.py"
+                and record.levelno >= logging.INFO
+                and said in record.getMessage().lower()
+            ]
+        )
+
+    assert len(announced[0]) == 1, f"the start of the outage must be said: {announced}"
+    assert not announced[1] and not announced[2], (
+        f"the same outage was announced again: {announced[1:]}"
+    )
+
+
+async def test_an_outage_after_a_good_cycle_is_announced_again(
+    hass, caplog, monkeypatch
+):
+    """The record must be forgotten when the portal answers, or it only ever
+    grows and the second maintenance window of the week passes in silence.
+
+    One failed cycle, not three: past the tolerated number of failures the
+    coordinator resets the transport before the next attempt, so the "good"
+    cycle in the middle would not be one.
+    """
+    import logging
+
+    from custom_components.wemportal.exceptions import PortalMaintenanceError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    readings = dict(coordinator.data)
+
+    def fails(*_args, **_kwargs):
+        raise PortalMaintenanceError("down until 18:00")
+
+    def works(*_args, **_kwargs):
+        return readings
+
+    monkeypatch.setattr(entry.runtime_data.api, "fetch_data", fails)
+    await coordinator.async_refresh()
+
+    monkeypatch.setattr(entry.runtime_data.api, "fetch_data", works)
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success, (
+        "the cycle in between has to actually succeed, or this proves nothing"
+    )
+
+    monkeypatch.setattr(entry.runtime_data.api, "fetch_data", fails)
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        await coordinator.async_refresh()
+
+    assert [
+        record
+        for record in caplog.records
+        if record.filename == "coordinator.py"
+        and record.levelno >= logging.INFO
+        and "maintenance" in record.getMessage().lower()
+    ], "an outage after a good cycle was not announced"
