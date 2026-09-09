@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.13.2b1] – 2026-09-09
+
+A beta with one change, and it is one you see in the log rather than in Home
+Assistant: a portal that is briefly unreachable stops filling the error log.
+
+### Changed
+
+- **A repeating portal outage is now reported once, not once per cycle.** A
+  read timeout wrote up to four entries every polling cycle for as long as it
+  lasted, and an installation the portal reports as offline - a state, not a
+  fault - was among them. Home Assistant's own rule is one line when
+  something becomes unavailable and one when it returns, which is what the
+  statistics, device-status, maintenance and deadline paths now do. A lasting
+  outage stays visible; it is no longer repeated. Nothing about the polling
+  itself changed.
+
 ## [1.13.1] – 2026-09-08
 
 A small release with one user-visible change: devices the installation no
