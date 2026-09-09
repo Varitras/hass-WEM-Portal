@@ -501,13 +501,17 @@ def test_a_statistics_refresh_that_lists_no_groups_as_null_is_not_an_error(caplo
         {"GroupTypeDescriptions": None}
     )
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         api.get_statistics(enabled_devices=["1234"])
 
+    # On the LEVEL rather than on the wording. This asserted on a message
+    # that has since been reworded, which left it green whatever the code
+    # did - the mutation run is what noticed. Anything a failing device
+    # produces reaches info; a device with nothing to report produces none.
     complaints = [
         record.getMessage()
         for record in caplog.records
-        if "Error processing Statistics" in record.getMessage()
+        if record.levelno >= logging.INFO
     ]
     assert not complaints, f"a device with nothing to report was an error: {complaints}"
 

@@ -2249,7 +2249,7 @@
   {
     "label": "deadline: a cycle that delivered nothing not counted as failed",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "                self._note_failed_cycle()\n                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
+    "old": "                self._note_failed_cycle()\n                self._reset_auth_failures()\n                self._announce_once(\n                    \"deadline\", \"Poll cycle stopped on its own deadline\", exc\n                )",
     "new": "                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
     "tests": "a_cycle_that_ran_out_of_time_still_counts_as_a_failure"
   },
@@ -2263,7 +2263,7 @@
   {
     "label": "deadline: a slow portal left marching towards a reauth prompt",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "                self._reset_auth_failures()\n                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
+    "old": "                self._reset_auth_failures()\n                self._announce_once(\n                    \"deadline\", \"Poll cycle stopped on its own deadline\", exc\n                )",
     "new": "                _LOGGER.warning(\"Poll cycle stopped on its own deadline: %s\", exc)",
     "tests": "a_cycle_that_ran_out_of_time_still_counts_as_a_failure"
   },
@@ -3686,14 +3686,14 @@
     "path": "custom_components/wemportal/utils.py",
     "old": "    previous = reported.get(key)\n    reported[key] = reason\n    return previous != reason",
     "new": "    reported[key] = reason\n    return True",
-    "tests": "announced_once or announced_once_and_healed"
+    "tests": "the_same_statistics_outage_is_only_announced_once or an_unreadable_device_status_is_announced_once_and_healed_once"
   },
   {
     "label": "log volume: an outage that never reports it ended",
     "path": "custom_components/wemportal/utils.py",
     "old": "    return reported.pop(key, None) is not None",
     "new": "    reported.pop(key, None)\n    return False",
-    "tests": "coming_back_is_said_once or announced_once_and_healed"
+    "tests": "test_statistics_coming_back_is_said_once or an_unreadable_device_status_is_announced_once_and_healed_once"
   },
   {
     "label": "log volume: an offline installation counted as a failure again",
@@ -3708,5 +3708,19 @@
     "old": "            _LOGGER.debug(\"Failed to fetch parameter data... %s\", exc)",
     "new": "            _LOGGER.warning(\"Failed to fetch parameter data... %s\", exc)",
     "tests": "parameter_failure_the_cycle_already_reports_is_not_warned_twice"
+  },
+  {
+    "label": "log volume: a maintenance window announced on every cycle again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if failure_is_new(self._reported_failures, key, str(exc)):\n            _LOGGER.info(\"%s: %s\", what, exc)",
+    "new": "        if True:\n            _LOGGER.info(\"%s: %s\", what, exc)",
+    "tests": "lasting_outage_is_announced_once_not_every_cycle"
+  },
+  {
+    "label": "log volume: an ended outage that never becomes news again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                self._reported_failures.clear()",
+    "new": "                pass",
+    "tests": "an_outage_after_a_good_cycle_is_announced_again"
   }
 ]
