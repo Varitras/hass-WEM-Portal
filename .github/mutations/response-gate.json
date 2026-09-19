@@ -1862,10 +1862,10 @@
     "tests": "the_relabel_warning_names_the_language_setting"
   },
   {
-    "label": "relabel: the message promises entities that cannot exist yet",
+    "label": "relabel: the message promising a restart again",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                \"affected sensors have no reading this cycle and show as \"\n                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, the next Home Assistant restart creates NEW entities \"\n                \"from them and the history stays with the old ones.\",",
-    "new": "                \"affected sensors become NEW entities and their history stays \"\n                \"with the old ones.\",",
+    "old": "                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, NEW entities are created from them on a later cycle \"\n                \"and the history stays with the old ones.\",",
+    "new": "                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, the next Home Assistant restart creates NEW entities \"\n                \"from them and the history stays with the old ones.\",",
     "tests": "the_relabel_warning_does_not_promise_entities_that_appear_now"
   },
   {

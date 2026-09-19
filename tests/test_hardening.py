@@ -4641,10 +4641,15 @@ def test_the_relabel_warning_names_the_language_setting(caplog):
 
 
 def test_the_relabel_warning_does_not_promise_entities_that_appear_now(caplog):
-    """Entities are created once, during setup. The message claimed the new
-    labels "become NEW entities", so the reader went looking for entities that
-    cannot exist yet - what actually happens is that the existing sensors lose
-    their row and go unknown until a restart builds the new ones."""
+    """The message has been wrong twice about WHEN the new entities come.
+
+    First it claimed the new labels "become NEW entities", so the reader went
+    looking for entities that could not exist yet. Then it said "the next
+    restart" - true when entities were built once at setup, and stale since
+    the builder started making them as readings appear. This test pinned the
+    second wording, which kept it alive. What holds: the existing sensors go
+    unknown now, and the new ones come on a later cycle, not at a restart.
+    """
     import logging
 
     api = _api()
@@ -4654,7 +4659,8 @@ def test_the_relabel_warning_does_not_promise_entities_that_appear_now(caplog):
         api._merge_webscraping_data("0000", _scraped("pump-vorlauf"))
 
     assert "unknown" in caplog.text
-    assert "restart" in caplog.text
+    assert "later cycle" in caplog.text
+    assert "restart" not in caplog.text, "the pre-builder timing is back"
 
 
 def test_a_stable_scrape_says_nothing(caplog):
