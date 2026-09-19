@@ -6,6 +6,38 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.13.3] – 2026-09-20
+
+Five defects found by an independent audit of 1.13.2, two of which turned
+out to exist twice, plus one that re-auditing those fixes caught.
+
+### Fixed
+
+- **An expert parameter's `portal_value` attribute no longer outlives the
+  value it spells.** When expert polling could no longer confirm a value,
+  the number went unknown but the portal's wording stayed - for a special
+  value such as "Aus" the only readable display, so expiry was invisible
+  exactly there.
+- **A dead statistics group is announced once, not on every retry.** The
+  fifteen-minute retry after a failed statistics cycle repeated the same
+  warning four times an hour per group. The hourly expert poll's "all
+  configured parameters failed" warning had the same shape and is damped the
+  same way.
+- **The web-relabel warning no longer says the new entities come "at the
+  next restart".** They are created on a later polling cycle; the message
+  dated from before that was the case.
+- **A migration or entity build that failed is retried.** Both were recorded
+  as done before the work ran: one registry error left an old entity with
+  its history in place until the next reload, and one entity constructor
+  error left a reading without an entity for as long as the entry stayed
+  loaded.
+- **A scraped row the portal page dropped can no longer be revived by an
+  API reading.** After a relabel the first matching API reading merged into
+  the vanished row, producing two live sensors for one quantity. Only rows
+  the last successful scrape listed are merge targets now - the inventory,
+  deliberately not the scrape's health, so a parameter first delivered
+  during a scrape outage still merges once the scrape is back.
+
 ## [1.13.2] – 2026-09-13
 
 The 1.13.2b1 beta as a stable release, unchanged. One change, and it is one
