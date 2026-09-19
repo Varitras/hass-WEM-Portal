@@ -584,15 +584,15 @@ def test_a_refusal_stops_the_group_loop_instead_of_repeating_itself(caplog):
 
     api = _statistics_api_with_groups([1, 2, 3], refuses)
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         with pytest.raises(exceptions.ForbiddenError):
             api._fetch_device_statistics("1234")
 
     assert seen == [1], f"the loop kept asking after a refusal: {seen}"
+    # Any level, and on the group rather than on a wording: this once matched
+    # a message that was later reworded, which left it asserting on nothing.
     assert not [
-        record
-        for record in caplog.records
-        if "Failed to fetch Statistics" in record.getMessage()
+        record for record in caplog.records if "group" in record.getMessage()
     ], "a refusal was reported as a per-group failure"
 
 
@@ -4641,10 +4641,15 @@ def test_the_relabel_warning_names_the_language_setting(caplog):
 
 
 def test_the_relabel_warning_does_not_promise_entities_that_appear_now(caplog):
-    """Entities are created once, during setup. The message claimed the new
-    labels "become NEW entities", so the reader went looking for entities that
-    cannot exist yet - what actually happens is that the existing sensors lose
-    their row and go unknown until a restart builds the new ones."""
+    """The message has been wrong twice about WHEN the new entities come.
+
+    First it claimed the new labels "become NEW entities", so the reader went
+    looking for entities that could not exist yet. Then it said "the next
+    restart" - true when entities were built once at setup, and stale since
+    the builder started making them as readings appear. This test pinned the
+    second wording, which kept it alive. What holds: the existing sensors go
+    unknown now, and the new ones come on a later cycle, not at a restart.
+    """
     import logging
 
     api = _api()
@@ -4654,7 +4659,8 @@ def test_the_relabel_warning_does_not_promise_entities_that_appear_now(caplog):
         api._merge_webscraping_data("0000", _scraped("pump-vorlauf"))
 
     assert "unknown" in caplog.text
-    assert "restart" in caplog.text
+    assert "later cycle" in caplog.text
+    assert "restart" not in caplog.text, "the pre-builder timing is back"
 
 
 def test_a_stable_scrape_says_nothing(caplog):
@@ -8617,3 +8623,120 @@ def test_an_unreadable_device_status_is_announced_once_and_healed_once(caplog):
         record for record in caplog.records if "readable again" in record.getMessage()
     ]
     assert len(healed) == 1, f"the recovery was not announced exactly once: {healed}"
+
+
+def test_an_expired_expert_value_takes_its_portal_wording_with_it():
+    """`portal_value` IS the value, as the dialog spells it.
+
+    Expiry cleared the number and left the text, so a numeric parameter
+    showed `unknown` beside the wording it had just stopped vouching for.
+    Worse for a special value: "Aus" has no number, the text is the whole
+    display, and expiry changed nothing anyone could see. The factory
+    default stays - it is a property of the parameter, not a reading.
+    """
+    from custom_components.wemportal import expert_controller, expert_writer
+
+    controller = expert_controller.ExpertController()
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+    entity.apply_read_state(
+        expert_writer.ExpertParameterState(
+            None, [0.0, 1.0], {}, portal_text="Aus", factory_default="Ein"
+        )
+    )
+    controller.entities = [entity]
+    assert entity.extra_state_attributes["portal_value"] == "Aus"
+
+    dead_batch = {entity.entityvalue: None, "b" * 36: None}
+    controller.apply_read(dead_batch)
+    controller.apply_read(dead_batch)
+
+    attributes = entity.extra_state_attributes or {}
+    assert "portal_value" not in attributes, (
+        "the wording of a selection no read confirms is still on display"
+    )
+    assert attributes.get("factory_default") == "Ein", (
+        "the factory default is not a reading and must survive expiry"
+    )
+
+
+def test_a_statistics_group_that_keeps_failing_is_announced_once(caplog):
+    """The retry for a failed statistics cycle is fifteen minutes, so two
+    dead groups meant eight identical warnings an hour - the same flood the
+    1.13.2 damping quieted one level up, still coming from the group loop
+    beneath it. Once when it starts, once when it reads again."""
+    import logging
+
+    stats = {"Values": [{"Date": "2026-08-06", "Value": 12.0}], "Unit": "kWh"}
+    broken = {1}
+
+    def some_fail(group_id):
+        if group_id in broken:
+            raise exceptions.WemPortalError("Read timed out")
+        return FakeResponse(stats)
+
+    api = _statistics_api_with_groups([1, 2], some_fail)
+
+    announced = []
+    for _cycle in range(2):
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            api._fetch_device_statistics("1234")
+        announced.append(
+            [
+                record
+                for record in caplog.records
+                if record.levelno >= logging.INFO and "group 1" in record.getMessage()
+            ]
+        )
+
+    assert len(announced[0]) == 1, f"the first failure must be said: {announced[0]}"
+    assert not announced[1], f"the same group failure was said again: {announced[1]}"
+
+    broken.clear()
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        api._fetch_device_statistics("1234")
+
+    healed = [
+        record
+        for record in caplog.records
+        if "group 1" in record.getMessage() and "again" in record.getMessage()
+    ]
+    assert len(healed) == 1, f"the recovery was not announced exactly once: {healed}"
+
+
+def test_a_dead_expert_batch_is_announced_once_per_outage(caplog):
+    """The sibling of the statistics damping, on the hourly expert poll: a
+    web login that stays broken produced the same "all N failed" warning
+    every hour, twenty-four times a day. The batch streak already knows
+    whether this is the first failed cycle; it just never told the log."""
+    import logging
+
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+    entity.apply_read_state(_read_state(21.0, [20.0, 21.0, 22.0]))
+    controller.entities = [entity]
+    dead_batch = {entity.entityvalue: None, "b" * 36: None}
+
+    announced = []
+    for _cycle in range(3):
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            controller.apply_read(dead_batch)
+        announced.append(
+            [
+                record
+                for record in caplog.records
+                if record.levelno >= logging.INFO
+                and "failed batch" in record.getMessage()
+            ]
+        )
+
+    assert len(announced[0]) == 1, f"the first dead batch must be said: {announced}"
+    assert not announced[1] and not announced[2], (
+        f"the same outage was announced again: {announced[1:]}"
+    )

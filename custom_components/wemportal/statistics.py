@@ -62,6 +62,11 @@ def _statistics_key(device_id: str) -> str:
     return f"statistics:{device_id}"
 
 
+def _statistics_group_key(device_id: str, group_id: Any) -> str:
+    """The bookkeeping key for one statistics group's failures."""
+    return f"statistics:{device_id}:group:{group_id}"
+
+
 class WemPortalStatistics:
     """The energy statistics path - throttle, traffic and rows.
 
@@ -95,6 +100,21 @@ class WemPortalStatistics:
             delay: int = 5,
             retry_transport: bool = False,
         ) -> requests.Response: ...
+
+    def _note_group_failure(
+        self, device_id: str, group_id: Any, exc: Exception
+    ) -> None:
+        """Same damping as the device level, one loop further in.
+
+        The whole-device retry is fifteen minutes, so an undamped group
+        warning repeated four times an hour per dead group - the flood the
+        1.13.2 change quieted above this loop, still coming from beneath it.
+        """
+        key = _statistics_group_key(device_id, group_id)
+        if failure_is_new(self._reported_failures, key, str(exc)):
+            _LOGGER.info("Statistics group %s cannot be read: %s", group_id, exc)
+        else:
+            _LOGGER.debug("Statistics group %s still cannot be read: %s", group_id, exc)
 
     def _note_statistics_failure(self, device_id: str, exc: Exception) -> None:
         """Say a statistics failure at the volume it deserves.
@@ -278,6 +298,10 @@ class WemPortalStatistics:
                     do_retry=True,
                 ).json()
 
+                if failure_is_over(
+                    self._reported_failures, _statistics_group_key(device_id, group_id)
+                ):
+                    _LOGGER.info("Statistics group %s is being read again.", group_id)
                 self._store_statistics_group(
                     device_id, group_id, group_name, stats_resp
                 )
@@ -322,9 +346,7 @@ class WemPortalStatistics:
                     )
                 else:
                     failed += 1
-                    _LOGGER.warning(
-                        "Failed to fetch Statistics for group %s: %s", group_id, exc
-                    )
+                    self._note_group_failure(device_id, group_id, exc)
 
         if failed and not read:
             raise WemPortalError(

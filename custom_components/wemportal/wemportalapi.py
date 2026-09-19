@@ -1046,11 +1046,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         one.
 
         What happens NEXT is deliberately split in two, because the two are
-        not the same and the message used to claim only the second. Entities
-        are created once, during setup, so nothing new appears right now: the
-        existing sensors simply lose their row and go unknown. Only a restart
-        builds entities from the new keys, and that is when the history stays
-        behind with the old ones.
+        not the same and the message used to claim only the second. The
+        existing sensors lose their row and go unknown; the builder then makes
+        entities from the new keys on a later cycle, and that is when the
+        history stays behind with the old ones. It used to say "the next
+        restart" here, from before entities were built as readings appear.
 
         Returns the keys that are no longer scraped, which the caller needs
         for a second reason: whatever they were showing is not current any
@@ -1079,8 +1079,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 "the other. Scraped sensors are keyed by those labels, so the "
                 "affected sensors have no reading this cycle and show as "
                 "unknown. They come back if the labels do. If the new labels "
-                "stay, the next Home Assistant restart creates NEW entities "
-                "from them and the history stays with the old ones.",
+                "stay, NEW entities are created from them on a later cycle "
+                "and the history stays with the old ones.",
                 ", ".join(sorted(gone)),
                 ", ".join(sorted(added)),
             )
@@ -2439,6 +2439,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 # this cycle even when the API omits its counterpart - only the
                 # api instance knows which rows the scrape still feeds.
                 scrape_still_feeds=self._kept_fresh_by_the_scrape,
+                # The last good scrape's inventory, for choosing NEW merge
+                # targets: a row the page dropped keeps its key, and must not
+                # be revived by the api reading that arrives after the relabel.
+                scraped_rows=self._previous_scraper_keys,
             )
             # Freshness lives on the MODULE, not only on the device: a
             # successful answer naming module A refreshes the device-level

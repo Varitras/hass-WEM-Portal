@@ -323,8 +323,7 @@ def _remove_orphaned_by_a_merge(
 def _take_the_readings_not_migrated_yet(
     device_id: str, rows: dict[str, Any], migrated: dict[tuple[str, str], str]
 ) -> dict[str, Reading]:
-    """One device's readings whose platform has changed since last time,
-    recorded as handled on the way out.
+    """One device's readings whose platform has changed since last time.
 
     `migrated` holds the platform each reading was LAST handled as, not every
     platform it has ever had. The re-discovery can reclassify a parameter
@@ -335,9 +334,12 @@ def _take_the_readings_not_migrated_yet(
     held before and come back to, which is exactly the round trip a value
     that decides the platform produces (see mapper._writeable_entity).
 
-    Recording here rather than at the call site because the two belong
-    together: a reading handed out twice is migrated twice, and the registry
-    lookup behind it costs up to eight queries.
+    Only selects; `_record_as_migrated` writes the memo AFTER the registry
+    work. It used to be written here, on the way out, and a registry error
+    in that work then left the reading recorded as done: setup swallowed the
+    error, the listener stayed on, and every later cycle skipped the reading
+    as handled - the old entity kept the history under its old id until the
+    next reload.
     """
     fresh = {}
     for key, row in rows.items():
@@ -346,9 +348,16 @@ def _take_the_readings_not_migrated_yet(
         handled_as = migrated.get((device_id, key))
         if handled_as == row.platform:
             continue
-        migrated[(device_id, key)] = row.platform
         fresh[key] = row
     return fresh
+
+
+def _record_as_migrated(
+    device_id: str, fresh: dict[str, Reading], migrated: dict[tuple[str, str], str]
+) -> None:
+    """The memo's other half: what the registry work just completed."""
+    for key, row in fresh.items():
+        migrated[(device_id, key)] = row.platform
 
 
 async def migrate_unique_ids(
@@ -404,6 +413,7 @@ async def migrate_unique_ids(
             _remove_entities_from_a_previous_platform(
                 registry, config_entry, device_id, fresh, contested
             )
+            _record_as_migrated(device_id, fresh, migrated)
         # Entities an in-session merge retired: the value read drops the api
         # row under its own key, and the add-only builder never takes the
         # entity it already made down, so it shows unknown for good. From

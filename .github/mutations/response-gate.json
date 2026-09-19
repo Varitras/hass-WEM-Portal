@@ -1862,10 +1862,10 @@
     "tests": "the_relabel_warning_names_the_language_setting"
   },
   {
-    "label": "relabel: the message promises entities that cannot exist yet",
+    "label": "relabel: the message promising a restart again",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                \"affected sensors have no reading this cycle and show as \"\n                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, the next Home Assistant restart creates NEW entities \"\n                \"from them and the history stays with the old ones.\",",
-    "new": "                \"affected sensors become NEW entities and their history stays \"\n                \"with the old ones.\",",
+    "old": "                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, NEW entities are created from them on a later cycle \"\n                \"and the history stays with the old ones.\",",
+    "new": "                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, the next Home Assistant restart creates NEW entities \"\n                \"from them and the history stays with the old ones.\",",
     "tests": "the_relabel_warning_does_not_promise_entities_that_appear_now"
   },
   {
@@ -1899,7 +1899,7 @@
   {
     "label": "statistics: a group that does not apply counted as a failure",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "                else:\n                    failed += 1\n                    _LOGGER.warning(\n                        \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                    )",
+    "old": "                else:\n                    failed += 1\n                    self._note_group_failure(device_id, group_id, exc)",
     "new": "                failed += 1\n                _LOGGER.warning(\n                    \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                )",
     "tests": "groups_that_do_not_apply_are_not_failures"
   },
@@ -3722,5 +3722,54 @@
     "old": "                self._reported_failures.clear()",
     "new": "                pass",
     "tests": "an_outage_after_a_good_cycle_is_announced_again"
+  },
+  {
+    "label": "expert expiry: the portal wording outliving the value it spells",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        self._attr_native_value = None\n        self._portal_text = None\n        self.async_write_ha_state()",
+    "new": "        self._attr_native_value = None\n        self.async_write_ha_state()",
+    "tests": "an_expired_expert_value_takes_its_portal_wording_with_it"
+  },
+  {
+    "label": "log volume: a dead statistics group announced on every retry again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        if failure_is_new(self._reported_failures, key, str(exc)):\n            _LOGGER.info(\"Statistics group %s cannot be read: %s\", group_id, exc)",
+    "new": "        if True:\n            _LOGGER.info(\"Statistics group %s cannot be read: %s\", group_id, exc)",
+    "tests": "a_statistics_group_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "log volume: a dead expert batch announced every hour again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            first_of_the_outage = self._batch_failures == 1",
+    "new": "            first_of_the_outage = True",
+    "tests": "a_dead_expert_batch_is_announced_once_per_outage"
+  },
+  {
+    "label": "migration memo: a reading recorded as done before the registry work again",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "        if handled_as == row.platform:\n            continue\n        fresh[key] = row\n    return fresh",
+    "new": "        if handled_as == row.platform:\n            continue\n        migrated[(device_id, key)] = row.platform\n        fresh[key] = row\n    return fresh",
+    "tests": "a_registry_hiccup_does_not_consume_the_migration"
+  },
+  {
+    "label": "builder memo: a key remembered before its entity exists again",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "            fresh.append(build(coordinator, config_entry, device_id, key, reading))\n            arriving.append((device_id, key))",
+    "new": "            known.add((device_id, key))\n            fresh.append(build(coordinator, config_entry, device_id, key, reading))",
+    "tests": "a_reading_whose_entity_failed_to_build_gets_another_chance"
+  },
+  {
+    "label": "merge: a row the page dropped accepted as a merge target again",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if match not in claimed and (scraped_rows is None or match in scraped_rows)",
+    "new": "            if match not in claimed",
+    "tests": "a_scraped_row_the_page_dropped_is_not_a_new_merge_target"
+  },
+  {
+    "label": "merge: no listed row accepted as a target any more",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if match not in claimed and (scraped_rows is None or match in scraped_rows)",
+    "new": "            if match not in claimed and scraped_rows is None",
+    "tests": "a_row_still_on_the_page_is_merged_even_while_the_scrape_is_failing"
   }
 ]

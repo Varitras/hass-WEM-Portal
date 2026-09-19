@@ -286,11 +286,15 @@ class WemPortalExpertNumber(RestoreNumber):
         coordinator row, so no ageing pass elsewhere reaches it: once
         the auto-poll stops answering, the dashboard keeps the last
         number that worked with nothing behind it. Only the value goes,
-        the rule the api and scrape paths follow.
+        the rule the api and scrape paths follow - and the portal's wording
+        of it IS the value, just spelled out: for "Aus" it is the whole
+        display, so leaving it made expiry invisible exactly there. The
+        factory default stays; it describes the parameter, not a reading.
         """
         if not self._is_in_home_assistant():
             return
         self._attr_native_value = None
+        self._portal_text = None
         self.async_write_ha_state()
 
     def _is_in_home_assistant(self) -> bool:

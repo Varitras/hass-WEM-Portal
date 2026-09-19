@@ -88,6 +88,7 @@ def async_add_readings_as_they_appear(
         # the merge ends and the key returns with a value, it is rebuilt.
         known.difference_update(_keys_a_merge_retired(coordinator))
         fresh = []
+        arriving = []
         for device_id, key, reading in _readings_of(coordinator.data):
             if reading.platform != platform:
                 # Deliberately NOT the same as "the row is gone". A row that
@@ -99,10 +100,14 @@ def async_add_readings_as_they_appear(
                 continue
             if (device_id, key) in known:
                 continue
-            known.add((device_id, key))
             fresh.append(build(coordinator, config_entry, device_id, key, reading))
+            arriving.append((device_id, key))
         if fresh:
             async_add_entities(fresh)
+        # Remembered AFTER the build and the hand-over, not before: a
+        # constructor that raised once used to leave its key recorded with
+        # no entity behind it, for as long as the entry stayed loaded.
+        known.update(arriving)
 
     _add_the_ones_without_an_entity()
     # Removed on unload with everything else: a listener that outlives its

@@ -718,3 +718,44 @@ def test_the_migration_leaves_another_accounts_entity_alone():
     )
     assert registry.removed == []
     assert changed is False
+
+
+async def test_a_registry_hiccup_does_not_consume_the_migration(monkeypatch):
+    """The test above changes the platform between the attempts, which is
+    exactly what bypasses the memo - so it never saw this.
+
+    A reading was recorded as handled BEFORE the registry work for it ran.
+    When that work raised once, setup swallowed the error and the listener
+    stayed on, but the next cycle looked up the same reading and platform,
+    found it recorded, and skipped it: the old entity kept the history under
+    its old id for as long as the entry stayed loaded. Recording belongs after
+    the work, not before it.
+    """
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry(
+        {("switch", _uid("Heat pump-U_Beginn")): "switch.holiday_begin"}
+    )
+    lookups = registry.async_get_entity_id
+    failed_once = []
+
+    def _hiccup_once(*arguments):
+        if not failed_once:
+            failed_once.append(True)
+            raise RuntimeError("registry hiccup during setup")
+        return lookups(*arguments)
+
+    registry.async_get_entity_id = _hiccup_once
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
+    unchanged = {DEVICE: {"Heat pump-U_Beginn": Reading(platform="date")}}
+    coordinator = FakeCoordinator(data=unchanged)
+
+    with pytest.raises(RuntimeError):
+        await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+
+    coordinator.publish(unchanged)
+    assert registry.removed == ["switch.holiday_begin"], (
+        "an unchanged reading whose migration failed was treated as done"
+    )
