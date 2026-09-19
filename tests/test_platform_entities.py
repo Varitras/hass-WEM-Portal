@@ -20,6 +20,8 @@ added later is covered without anyone remembering to come back.
 import pathlib
 import types
 
+import pytest
+
 from custom_components.wemportal.const import PLATFORMS
 from custom_components.wemportal.entity import async_add_readings_as_they_appear
 from custom_components.wemportal.models import Reading
@@ -272,4 +274,42 @@ def test_every_platform_says_how_many_calls_it_allows_at_once():
         f"{THE_COORDINATOR_ANSWER}. The entities take their data from the "
         "shared coordinator refresh, so nothing here needs throttling - say "
         "it in the module instead of leaving it to the default."
+    )
+
+
+def test_a_reading_whose_entity_failed_to_build_gets_another_chance():
+    """The memo remembered a key BEFORE its entity was built, so one raise
+    from the builder left the reading marked as done with no entity behind
+    it - for as long as the entry stayed loaded. The same shape the
+    migration memo had; recording belongs after the work, not before.
+
+    The raise happens on a LATER cycle on purpose: at setup it would fail the
+    platform outright, which Home Assistant reports. On a coordinator update
+    it is logged and the cycle moves on - and that is where a remembered key
+    with no entity went unnoticed.
+    """
+    built = []
+    coordinator = _Coordinator({"1234": {}})
+    entry = _Entry(coordinator)
+    failures = [RuntimeError("the entity constructor raised once")]
+
+    def build_once_failing(*arguments):
+        if failures:
+            raise failures.pop()
+        return object()
+
+    async_add_readings_as_they_appear(entry, built.extend, "sensor", build_once_failing)
+    coordinator.data = {"1234": {"Heat pump-P1": Reading(value=1.0, platform="sensor")}}
+
+    with pytest.raises(RuntimeError):
+        for update in list(coordinator.listeners):
+            update()
+    assert not built, "the control case: the first attempt raised"
+
+    for update in list(coordinator.listeners):
+        update()
+
+    assert len(built) == 1, (
+        "a reading whose first build raised was remembered as done and never "
+        "got its entity"
     )

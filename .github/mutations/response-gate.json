@@ -3743,5 +3743,19 @@
     "old": "            first_of_the_outage = self._batch_failures == 1",
     "new": "            first_of_the_outage = True",
     "tests": "a_dead_expert_batch_is_announced_once_per_outage"
+  },
+  {
+    "label": "migration memo: a reading recorded as done before the registry work again",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "        if handled_as == row.platform:\n            continue\n        fresh[key] = row\n    return fresh",
+    "new": "        if handled_as == row.platform:\n            continue\n        migrated[(device_id, key)] = row.platform\n        fresh[key] = row\n    return fresh",
+    "tests": "a_registry_hiccup_does_not_consume_the_migration"
+  },
+  {
+    "label": "builder memo: a key remembered before its entity exists again",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "            fresh.append(build(coordinator, config_entry, device_id, key, reading))\n            arriving.append((device_id, key))",
+    "new": "            known.add((device_id, key))\n            fresh.append(build(coordinator, config_entry, device_id, key, reading))",
+    "tests": "a_reading_whose_entity_failed_to_build_gets_another_chance"
   }
 ]
