@@ -422,7 +422,7 @@ def _scraped_entities_naming_the_same_thing(
 
 
 def _merge_into_scraped(
-    device_id, key, sensor, language, scraping_mapper, api_data
+    device_id, key, sensor, language, scraping_mapper, api_data, scrape_still_feeds
 ) -> None:
     """Feed an API reading into the scraped entity that shows the same value,
     so both sources keep one entity instead of two that drift apart."""
@@ -458,12 +458,19 @@ def _merge_into_scraped(
         # line is the rule. It has no mutation of its own for the same
         # reason: nothing can make it fail while the other one holds.
         claimed = {target for targets in scraping_mapper.values() for target in targets}
+        # And only rows the scrape still feeds. A row whose label left the
+        # page keeps its key with no value so its entity survives - and the
+        # first api reading to arrive after such a relabel used to merge into
+        # that dead row and revive it: two live sensors for one quantity. The
+        # api instance owns that question; None means nobody asked (no scrape
+        # at all), which is the modes where this merge does not run anyway.
         matches = [
             match
             for match in _scraped_entities_naming_the_same_thing(
                 device_id, sensor, language, api_data
             )
             if match not in claimed
+            and (scrape_still_feeds is None or scrape_still_feeds(match))
         ]
         # Falls back to the reading's own key: no scraped entity showing this
         # value means there is nothing to merge into, and the entity is its
@@ -769,7 +776,13 @@ class WemPortalDataMapper:
             # drift apart because they refresh on different schedules.
             if mode == "both" and device_id == scraper_device_id:
                 _merge_into_scraped(
-                    device_id, key, sensor, language, scraping_mapper, api_data
+                    device_id,
+                    key,
+                    sensor,
+                    language,
+                    scraping_mapper,
+                    api_data,
+                    scrape_still_feeds,
                 )
             else:
                 _emit_plain_sensor(device_id, key, sensor, api_data)

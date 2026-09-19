@@ -3757,5 +3757,12 @@
     "old": "            fresh.append(build(coordinator, config_entry, device_id, key, reading))\n            arriving.append((device_id, key))",
     "new": "            known.add((device_id, key))\n            fresh.append(build(coordinator, config_entry, device_id, key, reading))",
     "tests": "a_reading_whose_entity_failed_to_build_gets_another_chance"
+  },
+  {
+    "label": "merge: a row the page dropped accepted as a merge target again",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if match not in claimed\n            and (scrape_still_feeds is None or scrape_still_feeds(match))",
+    "new": "            if match not in claimed",
+    "tests": "a_scraped_row_the_page_dropped_is_not_a_new_merge_target"
   }
 ]

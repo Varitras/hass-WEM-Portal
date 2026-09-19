@@ -1348,3 +1348,30 @@ def test_a_holiday_date_stops_being_current_once_the_portal_drops_it():
     )
 
     assert data["Heat pump-U_Beginn"].value is None
+
+
+def test_a_scraped_row_the_page_dropped_is_not_a_new_merge_target():
+    """A row whose label left the page keeps its key with a None value, so the
+    entity survives and shows unknown. The candidate search never asked
+    whether the scrape still feeds a row, so the first API reading to arrive
+    after such a relabel merged into the dead row and revived it - two live
+    sensors for one quantity, one of them under a label the portal no longer
+    uses. The api instance already knows which rows the scrape still feeds;
+    the search just has to ask it.
+    """
+    dropped = _scraped("heat_pump-outside", "Heat pump - Outside", value=None)
+    current = _scraped("heat_pump-exterior", "Heat pump - Exterior", value=12.0)
+
+    after = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=12.5, unit="°C")),
+        mode="both",
+        existing={**dropped, **current},
+        scraping_mapper={},
+        scrape_still_feeds=lambda key: key == "heat_pump-exterior",
+    )
+
+    assert after["heat_pump-outside"].value is None, (
+        "the API reading revived a row the page no longer shows"
+    )
+    assert after["heat_pump-exterior"].value == 12.0, "the live web row was touched"
