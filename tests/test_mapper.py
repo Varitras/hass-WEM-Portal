@@ -80,6 +80,7 @@ def _process(
     scraping_mapper=None,
     scraper_device_id=DEVICE,
     scrape_still_feeds=None,
+    scraped_rows=None,
 ):
     api_data = {DEVICE: dict(existing or {})}
     WemPortalDataMapper.process_api_values(
@@ -92,6 +93,7 @@ def _process(
         api_data,
         scraper_device_id,
         scrape_still_feeds,
+        scraped_rows,
     )
     return api_data[DEVICE]
 
@@ -1368,10 +1370,39 @@ def test_a_scraped_row_the_page_dropped_is_not_a_new_merge_target():
         mode="both",
         existing={**dropped, **current},
         scraping_mapper={},
-        scrape_still_feeds=lambda key: key == "heat_pump-exterior",
+        scraped_rows={"heat_pump-exterior"},
     )
 
     assert after["heat_pump-outside"].value is None, (
         "the API reading revived a row the page no longer shows"
     )
     assert after["heat_pump-exterior"].value == 12.0, "the live web row was touched"
+
+
+def test_a_row_still_on_the_page_is_merged_even_while_the_scrape_is_failing():
+    """The counter-test to the one above, and the re-audit's own finding.
+
+    "Does the scrape still feed this row" answers two questions at once: is
+    the row on the page, and is the scrape healthy right now. Only the first
+    decides a merge target. Gating on both meant a parameter the API first
+    delivered DURING a scrape outage went under its own key, the cache kept
+    that answer, and the scrape coming back - same inventory, so no cache
+    reset - never merged the two again: a permanent duplicate born from a
+    temporary failure.
+    """
+    live = _scraped("heat_pump-outside", "Heat pump - Outside", value=12.0)
+
+    after = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=12.5, unit="°C")),
+        mode="both",
+        existing=live,
+        scraping_mapper={},
+        scrape_still_feeds=lambda key: False,
+        scraped_rows={"heat_pump-outside"},
+    )
+
+    assert after["heat_pump-outside"].value == 12.5, (
+        "a row the page still shows was refused as a merge target because "
+        "the scrape happened to be failing"
+    )

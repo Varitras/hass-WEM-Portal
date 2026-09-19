@@ -3761,8 +3761,15 @@
   {
     "label": "merge: a row the page dropped accepted as a merge target again",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if match not in claimed\n            and (scrape_still_feeds is None or scrape_still_feeds(match))",
+    "old": "            if match not in claimed and (scraped_rows is None or match in scraped_rows)",
     "new": "            if match not in claimed",
     "tests": "a_scraped_row_the_page_dropped_is_not_a_new_merge_target"
+  },
+  {
+    "label": "merge: no listed row accepted as a target any more",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if match not in claimed and (scraped_rows is None or match in scraped_rows)",
+    "new": "            if match not in claimed and scraped_rows is None",
+    "tests": "a_row_still_on_the_page_is_merged_even_while_the_scrape_is_failing"
   }
 ]

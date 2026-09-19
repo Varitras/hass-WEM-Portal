@@ -2439,6 +2439,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 # this cycle even when the API omits its counterpart - only the
                 # api instance knows which rows the scrape still feeds.
                 scrape_still_feeds=self._kept_fresh_by_the_scrape,
+                # The last good scrape's inventory, for choosing NEW merge
+                # targets: a row the page dropped keeps its key, and must not
+                # be revived by the api reading that arrives after the relabel.
+                scraped_rows=self._previous_scraper_keys,
             )
             # Freshness lives on the MODULE, not only on the device: a
             # successful answer naming module A refreshes the device-level
