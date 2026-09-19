@@ -3722,5 +3722,12 @@
     "old": "                self._reported_failures.clear()",
     "new": "                pass",
     "tests": "an_outage_after_a_good_cycle_is_announced_again"
+  },
+  {
+    "label": "expert expiry: the portal wording outliving the value it spells",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        self._attr_native_value = None\n        self._portal_text = None\n        self.async_write_ha_state()",
+    "new": "        self._attr_native_value = None\n        self.async_write_ha_state()",
+    "tests": "an_expired_expert_value_takes_its_portal_wording_with_it"
   }
 ]

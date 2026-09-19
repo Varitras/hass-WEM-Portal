@@ -8617,3 +8617,38 @@ def test_an_unreadable_device_status_is_announced_once_and_healed_once(caplog):
         record for record in caplog.records if "readable again" in record.getMessage()
     ]
     assert len(healed) == 1, f"the recovery was not announced exactly once: {healed}"
+
+
+def test_an_expired_expert_value_takes_its_portal_wording_with_it():
+    """`portal_value` IS the value, as the dialog spells it.
+
+    Expiry cleared the number and left the text, so a numeric parameter
+    showed `unknown` beside the wording it had just stopped vouching for.
+    Worse for a special value: "Aus" has no number, the text is the whole
+    display, and expiry changed nothing anyone could see. The factory
+    default stays - it is a property of the parameter, not a reading.
+    """
+    from custom_components.wemportal import expert_controller, expert_writer
+
+    controller = expert_controller.ExpertController()
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+    entity.apply_read_state(
+        expert_writer.ExpertParameterState(
+            None, [0.0, 1.0], {}, portal_text="Aus", factory_default="Ein"
+        )
+    )
+    controller.entities = [entity]
+    assert entity.extra_state_attributes["portal_value"] == "Aus"
+
+    dead_batch = {entity.entityvalue: None, "b" * 36: None}
+    controller.apply_read(dead_batch)
+    controller.apply_read(dead_batch)
+
+    attributes = entity.extra_state_attributes or {}
+    assert "portal_value" not in attributes, (
+        "the wording of a selection no read confirms is still on display"
+    )
+    assert attributes.get("factory_default") == "Ein", (
+        "the factory default is not a reading and must survive expiry"
+    )
