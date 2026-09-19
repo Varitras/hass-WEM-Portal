@@ -8740,3 +8740,66 @@ def test_a_dead_expert_batch_is_announced_once_per_outage(caplog):
     assert not announced[1] and not announced[2], (
         f"the same outage was announced again: {announced[1:]}"
     )
+
+
+# --- upstream #146: a word in a cell that otherwise carries a unit --------
+
+
+def _power_row(value, unit):
+    return Reading(
+        value=value, unit=unit, friendly_name="Heat pump - Power", parameter_id="Power"
+    )
+
+
+def test_a_cell_that_reads_off_keeps_the_unit_its_number_had():
+    """ "11,1 kW" one cycle, "Aus" the next. The word becomes 0.0, but the
+    scraper cannot read a unit out of a word, so the reading arrives without
+    one - and a unit that flips between kW and nothing makes the recorder
+    stop the entity's long-term statistics.
+
+    Three layers already hold the unit: the web merge carries the previous
+    cycle's over, the entity keeps the last one a number carried, and
+    RestoreSensor brings it back after a restart. None of that was pinned at
+    the entity, and reading the helpers on their own says the opposite -
+    which is how this was reported as open once more.
+    """
+    row = _power_row(11.1, "kW")
+    sensor = _sensor_from_row("Power", row)
+    sensor.hass = None
+    sensor.async_write_ha_state = lambda: None
+    sensor._handle_coordinator_update()
+    assert sensor.native_unit_of_measurement == "kW", "the control case"
+
+    row.value, row.unit = 0.0, None
+    sensor._handle_coordinator_update()
+
+    assert sensor.native_value == 0.0
+    assert sensor.native_unit_of_measurement == "kW", (
+        "the unit went with the word, and the recorder will now refuse the "
+        "entity's statistics"
+    )
+
+
+async def test_the_unit_survives_a_restart_that_begins_with_the_pump_off(monkeypatch):
+    """The same, across a restart: the first cycle after boot reads "Aus",
+    and there is no previous cycle in memory. RestoreSensor holds the unit
+    the entity last reported; the entity has to ask for it."""
+    from homeassistant.components.sensor import SensorExtraStoredData
+    from homeassistant.helpers.restore_state import RestoreEntity
+
+    sensor = _sensor_from_row("Power", _power_row(0.0, None))
+    sensor.hass = None
+
+    async def last_sensor_data():
+        return SensorExtraStoredData(native_value=11.1, native_unit_of_measurement="kW")
+
+    async def no_home_assistant(_self):
+        return None
+
+    sensor.async_get_last_sensor_data = last_sensor_data
+    monkeypatch.setattr(RestoreEntity, "async_added_to_hass", no_home_assistant)
+    await sensor.async_added_to_hass()
+
+    assert sensor.native_unit_of_measurement == "kW", (
+        "a restart into the off state left the entity without its unit"
+    )

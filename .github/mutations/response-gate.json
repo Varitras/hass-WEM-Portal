@@ -3771,5 +3771,19 @@
     "old": "            if match not in claimed and (scraped_rows is None or match in scraped_rows)",
     "new": "            if match not in claimed and scraped_rows is None",
     "tests": "a_row_still_on_the_page_is_merged_even_while_the_scrape_is_failing"
+  },
+  {
+    "label": "unit: a word in the cell taking the unit with it again",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit",
+    "new": "        self._attr_native_unit_of_measurement = unit",
+    "tests": "a_cell_that_reads_off_keeps_the_unit_its_number_had"
+  },
+  {
+    "label": "unit: a restart into the off state forgetting the unit again",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if self._attr_native_unit_of_measurement in (None, \"\"):\n            last_sensor_data = await self.async_get_last_sensor_data()",
+    "new": "        if False:\n            last_sensor_data = await self.async_get_last_sensor_data()",
+    "tests": "the_unit_survives_a_restart_that_begins_with_the_pump_off"
   }
 ]
