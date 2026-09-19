@@ -584,15 +584,15 @@ def test_a_refusal_stops_the_group_loop_instead_of_repeating_itself(caplog):
 
     api = _statistics_api_with_groups([1, 2, 3], refuses)
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         with pytest.raises(exceptions.ForbiddenError):
             api._fetch_device_statistics("1234")
 
     assert seen == [1], f"the loop kept asking after a refusal: {seen}"
+    # Any level, and on the group rather than on a wording: this once matched
+    # a message that was later reworded, which left it asserting on nothing.
     assert not [
-        record
-        for record in caplog.records
-        if "Failed to fetch Statistics" in record.getMessage()
+        record for record in caplog.records if "group" in record.getMessage()
     ], "a refusal was reported as a per-group failure"
 
 
@@ -8651,4 +8651,86 @@ def test_an_expired_expert_value_takes_its_portal_wording_with_it():
     )
     assert attributes.get("factory_default") == "Ein", (
         "the factory default is not a reading and must survive expiry"
+    )
+
+
+def test_a_statistics_group_that_keeps_failing_is_announced_once(caplog):
+    """The retry for a failed statistics cycle is fifteen minutes, so two
+    dead groups meant eight identical warnings an hour - the same flood the
+    1.13.2 damping quieted one level up, still coming from the group loop
+    beneath it. Once when it starts, once when it reads again."""
+    import logging
+
+    stats = {"Values": [{"Date": "2026-08-06", "Value": 12.0}], "Unit": "kWh"}
+    broken = {1}
+
+    def some_fail(group_id):
+        if group_id in broken:
+            raise exceptions.WemPortalError("Read timed out")
+        return FakeResponse(stats)
+
+    api = _statistics_api_with_groups([1, 2], some_fail)
+
+    announced = []
+    for _cycle in range(2):
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            api._fetch_device_statistics("1234")
+        announced.append(
+            [
+                record
+                for record in caplog.records
+                if record.levelno >= logging.INFO and "group 1" in record.getMessage()
+            ]
+        )
+
+    assert len(announced[0]) == 1, f"the first failure must be said: {announced[0]}"
+    assert not announced[1], f"the same group failure was said again: {announced[1]}"
+
+    broken.clear()
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        api._fetch_device_statistics("1234")
+
+    healed = [
+        record
+        for record in caplog.records
+        if "group 1" in record.getMessage() and "again" in record.getMessage()
+    ]
+    assert len(healed) == 1, f"the recovery was not announced exactly once: {healed}"
+
+
+def test_a_dead_expert_batch_is_announced_once_per_outage(caplog):
+    """The sibling of the statistics damping, on the hourly expert poll: a
+    web login that stays broken produced the same "all N failed" warning
+    every hour, twenty-four times a day. The batch streak already knows
+    whether this is the first failed cycle; it just never told the log."""
+    import logging
+
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = _expert_entity(_api())
+    entity.async_write_ha_state = lambda: None
+    entity.apply_read_state(_read_state(21.0, [20.0, 21.0, 22.0]))
+    controller.entities = [entity]
+    dead_batch = {entity.entityvalue: None, "b" * 36: None}
+
+    announced = []
+    for _cycle in range(3):
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            controller.apply_read(dead_batch)
+        announced.append(
+            [
+                record
+                for record in caplog.records
+                if record.levelno >= logging.INFO
+                and "failed batch" in record.getMessage()
+            ]
+        )
+
+    assert len(announced[0]) == 1, f"the first dead batch must be said: {announced}"
+    assert not announced[1] and not announced[2], (
+        f"the same outage was announced again: {announced[1:]}"
     )

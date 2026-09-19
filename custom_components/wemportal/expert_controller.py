@@ -451,7 +451,13 @@ class ExpertController:
         whole_batch_failed = len(results) >= 2 and len(failed) == len(results)
         self._note_batch_outcome(results, whole_batch_failed)
         if whole_batch_failed:
-            _LOGGER.warning(
+            # Once per outage, not once per hour: the streak the outcome
+            # bookkeeping just advanced says whether this is the first cycle
+            # of it. A web login that stays broken used to say this daily,
+            # twenty-four times.
+            first_of_the_outage = self._batch_failures == 1
+            log = _LOGGER.info if first_of_the_outage else _LOGGER.debug
+            log(
                 "Expert auto-poll: all %d configured parameter(s) failed to "
                 "read this cycle. Treating that as one failed batch rather "
                 "than %d bad ids; not counting it against them.",

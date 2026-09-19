@@ -1899,7 +1899,7 @@
   {
     "label": "statistics: a group that does not apply counted as a failure",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "                else:\n                    failed += 1\n                    _LOGGER.warning(\n                        \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                    )",
+    "old": "                else:\n                    failed += 1\n                    self._note_group_failure(device_id, group_id, exc)",
     "new": "                failed += 1\n                _LOGGER.warning(\n                    \"Failed to fetch Statistics for group %s: %s\", group_id, exc\n                )",
     "tests": "groups_that_do_not_apply_are_not_failures"
   },
@@ -3729,5 +3729,19 @@
     "old": "        self._attr_native_value = None\n        self._portal_text = None\n        self.async_write_ha_state()",
     "new": "        self._attr_native_value = None\n        self.async_write_ha_state()",
     "tests": "an_expired_expert_value_takes_its_portal_wording_with_it"
+  },
+  {
+    "label": "log volume: a dead statistics group announced on every retry again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        if failure_is_new(self._reported_failures, key, str(exc)):\n            _LOGGER.info(\"Statistics group %s cannot be read: %s\", group_id, exc)",
+    "new": "        if True:\n            _LOGGER.info(\"Statistics group %s cannot be read: %s\", group_id, exc)",
+    "tests": "a_statistics_group_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "log volume: a dead expert batch announced every hour again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            first_of_the_outage = self._batch_failures == 1",
+    "new": "            first_of_the_outage = True",
+    "tests": "a_dead_expert_batch_is_announced_once_per_outage"
   }
 ]
