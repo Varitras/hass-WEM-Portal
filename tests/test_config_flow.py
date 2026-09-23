@@ -1242,3 +1242,56 @@ async def test_reconfigure_sees_an_older_entry_that_has_no_unique_id_yet(hass):
 
     assert result["reason"] == "already_configured"
     assert entry.data[CONF_USERNAME] == USER
+
+
+async def test_moving_to_another_login_forgets_what_was_cached_for_the_old_one(
+    hass, hass_storage
+):
+    """Two things are kept on disk per entry: the discovered module list and
+    the device id the scraped readings are filed under. Both belong to the
+    installation behind the OLD login. Kept across a move, a different
+    installation started on the old one's modules, and in web mode its
+    scraped readings went to the old installation's device."""
+    entry = _entry(hass)
+    scraper_key = f"{DOMAIN}_{entry.entry_id}_scraper_device"
+    modules_key = f"{DOMAIN}_{entry.entry_id}_modules"
+    hass_storage[scraper_key] = {"version": 1, "key": scraper_key, "data": "9999"}
+    await _setup(hass, entry)
+    # Written by the setup cycle, so it holds what the old login discovered.
+    hass_storage[modules_key] = {
+        "version": 1,
+        "key": modules_key,
+        "data": {"old-installation": {}},
+    }
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "new@example.org", CONF_PASSWORD: "pw"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert hass_storage.get(scraper_key, {}).get("data") != "9999", (
+        "the old installation's device id survived the move"
+    )
+    assert "old-installation" not in str(hass_storage.get(modules_key, {})), (
+        "the old installation's module list survived the move"
+    )
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_a_new_password_for_the_same_login_keeps_the_cache(hass, hass_storage):
+    """The counter-case: same account, same installation, and rediscovering
+    its modules would only cost the portal requests the cache exists to save."""
+    entry = _entry(hass)
+    scraper_key = f"{DOMAIN}_{entry.entry_id}_scraper_device"
+    hass_storage[scraper_key] = {"version": 1, "key": scraper_key, "data": "9999"}
+    await _setup(hass, entry)
+
+    result = await entry.start_reconfigure_flow(hass)
+    await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "new-secret"}
+    )
+    await hass.async_block_till_done()
+
+    assert hass_storage[scraper_key]["data"] == "9999"

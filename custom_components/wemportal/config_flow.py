@@ -32,7 +32,11 @@ from .const import (
     DOMAIN,
 )
 from .exceptions import AuthError, ForbiddenError
-from .coordinator import forget_auth_failures
+from .coordinator import (
+    forget_auth_failures,
+    get_modules_store,
+    get_scraper_device_store,
+)
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -308,6 +312,23 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def _forget_the_old_installation(self, entry) -> None:
+        """Drop what the entry kept on disk for the login it is leaving.
+
+        The module list and the scraped readings' device id are per entry, but
+        they describe the installation behind the old login. After a move to
+        another installation, the new one would start on the old one's
+        modules and, in web mode, file its scraped readings under the old
+        one's device.
+
+        Unloaded first: the unload waits for a store write in flight, so
+        nothing can put the old data back between here and the fresh setup
+        that follows.
+        """
+        await self.hass.config_entries.async_unload(entry.entry_id)
+        await get_modules_store(self.hass, entry.entry_id).async_remove()
+        await get_scraper_device_store(self.hass, entry.entry_id).async_remove()
+
     async def async_step_reconfigure(self, user_input=None):
         """Change the login of an existing entry, the account included.
 
@@ -342,6 +363,8 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 # Same reason as after a reauth: the portal just accepted
                 # this login, so the failures counted before are answered.
                 forget_auth_failures(entry)
+                if moves_to_another_login:
+                    await self._forget_the_old_installation(entry)
                 return self.async_update_reload_and_abort(
                     entry, unique_id=account, title=title, data=new_data
                 )

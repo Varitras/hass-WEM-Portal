@@ -3967,5 +3967,33 @@
     "old": "main_page, \"main page\", check_maintenance=not on_login_page",
     "new": "main_page, \"main page\", check_maintenance=True",
     "tests": "an_expired_expert_session_during_an_announcement_logs_in_again"
+  },
+  {
+    "label": "reconfigure: a move keeping the old installation's cache",
+    "old": "                if moves_to_another_login:\n                    await self._forget_the_old_installation(entry)\n",
+    "new": "",
+    "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the old installation's device id kept after a move",
+    "old": "        await get_scraper_device_store(self.hass, entry.entry_id).async_remove()\n",
+    "new": "",
+    "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the old installation's module list kept after a move",
+    "old": "        await get_modules_store(self.hass, entry.entry_id).async_remove()\n",
+    "new": "",
+    "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a new password throwing away a valid cache",
+    "old": "                if moves_to_another_login:\n                    await self._forget_the_old_installation(entry)\n",
+    "new": "                await self._forget_the_old_installation(entry)\n",
+    "tests": "a_new_password_for_the_same_login_keeps_the_cache",
+    "path": "custom_components/wemportal/config_flow.py"
   }
 ]
