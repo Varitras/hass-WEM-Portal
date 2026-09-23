@@ -25,6 +25,8 @@ from __future__ import annotations
 import json
 import re
 import sys
+import time
+import urllib.error
 import urllib.request
 
 PACKAGE = "pytest-homeassistant-custom-component"
@@ -65,9 +67,45 @@ def newest_stable(pins: dict[str, str | None]) -> str:
     )
 
 
-def _fetch(url: str):
+# One network blip on PyPI's side turned a tag build red on 2026-09-10, while
+# the same commit had passed seconds earlier. A few tries absorb that; after
+# the last one the error goes through and the run stops - this script never
+# falls back to a version it could not look up.
+FETCH_ATTEMPTS = 3
+FETCH_RETRY_SECONDS = 5
+
+
+def _worth_another_try(error: OSError) -> bool:
+    """Whether the failure says something about the network, not the request.
+
+    HTTPError is a URLError, so it has to be told apart first: a 404 is PyPI
+    answering that the thing does not exist, and asking again only hides that
+    the matrix names something wrong. A 5xx is the server having a moment.
+    """
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code >= 500
+    return True
+
+
+def _read(url: str):
     with urllib.request.urlopen(url, timeout=30) as response:
         return json.load(response)
+
+
+def _fetch(url: str):
+    for _ in range(FETCH_ATTEMPTS - 1):
+        try:
+            return _read(url)
+        except OSError as error:
+            if not _worth_another_try(error):
+                raise
+            print(
+                f"PyPI did not answer ({error}); trying again "
+                f"in {FETCH_RETRY_SECONDS} s.",
+                file=sys.stderr,
+            )
+            time.sleep(FETCH_RETRY_SECONDS)
+    return _read(url)
 
 
 def recent_pins(candidates: int = 20) -> dict[str, str | None]:

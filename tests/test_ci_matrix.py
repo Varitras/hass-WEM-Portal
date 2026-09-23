@@ -11,7 +11,9 @@ fast unit test rather than a network-dependent one.
 """
 
 import importlib.util
+import io
 import re
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -321,3 +323,69 @@ def test_the_type_check_runs_the_same_home_assistant_as_the_current_job():
         "the unpinned requirements file is back, so this job can install a "
         "Home Assistant beta the tests never run against"
     )
+
+
+class _Answer:
+    """What urlopen hands back: a context manager with a readable body."""
+
+    def __enter__(self):
+        return io.BytesIO(b'{"ok": true}')
+
+    def __exit__(self, *_exc):
+        return False
+
+
+def _portal_answering(monkeypatch, *outcomes):
+    """urlopen yielding `outcomes` in order - an exception is raised, anything
+    else answers. Sleeps are recorded, never waited out."""
+    calls = []
+    waits = []
+    queue = list(outcomes)
+
+    def urlopen(url, timeout):
+        calls.append(url)
+        outcome = queue.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return _Answer()
+
+    monkeypatch.setattr(resolve_phcc.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(resolve_phcc.time, "sleep", waits.append)
+    return calls, waits
+
+
+def test_one_dropped_connection_does_not_fail_the_whole_run(monkeypatch):
+    """A tag build went red on 2026-09-10 because one of ~21 PyPI requests did
+    not get through; the same commit had passed four seconds earlier. A
+    network blip on somebody else's server is not a reason to fail CI."""
+    calls, waits = _portal_answering(
+        monkeypatch, urllib.error.URLError("connection reset"), "ok"
+    )
+
+    assert resolve_phcc._fetch("https://pypi.org/x") == {"ok": True}
+    assert len(calls) == 2, "the failed request was not tried again"
+    assert waits, "tried again without giving the network a moment"
+
+
+def test_a_pypi_that_stays_down_still_refuses_to_guess(monkeypatch):
+    """The retry is not a fallback. After the last attempt the error goes
+    through, and the run stops rather than testing an unknown version."""
+    down = urllib.error.URLError("unreachable")
+    calls, _waits = _portal_answering(monkeypatch, *([down] * 10))
+
+    with pytest.raises(urllib.error.URLError):
+        resolve_phcc._fetch("https://pypi.org/x")
+
+    assert len(calls) == resolve_phcc.FETCH_ATTEMPTS
+
+
+def test_an_answer_that_is_an_answer_is_not_retried(monkeypatch):
+    """A 404 is PyPI saying the thing does not exist. Asking again changes
+    nothing and only hides that the matrix names something wrong."""
+    missing = urllib.error.HTTPError("https://pypi.org/x", 404, "Not Found", {}, None)
+    calls, _waits = _portal_answering(monkeypatch, missing, "ok")
+
+    with pytest.raises(urllib.error.HTTPError):
+        resolve_phcc._fetch("https://pypi.org/x")
+
+    assert len(calls) == 1
