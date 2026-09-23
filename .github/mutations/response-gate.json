@@ -1437,7 +1437,7 @@
   {
     "label": "holiday: skipping the unload gate must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "    data = raise_if_not_writable(entry, f\"Setting the holiday of {entity_id}\")",
+    "old": "    data = raise_if_not_writable(entry, entity_id)",
     "new": "    data = entry.runtime_data",
     "tests": "a_write_into_an_unloading_entry_is_refused"
   },
@@ -2676,8 +2676,8 @@
   {
     "label": "expert: an entity that keeps the range its write was refused by",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            if exc.state is not None:\n                self._apply_state(exc.state)\n                self.async_write_ha_state()\n            placeholders = {",
-    "new": "            placeholders = {",
+    "old": "            if exc.state is not None:\n                self._apply_state(exc.state)\n                self.async_write_ha_state()\n            if isinstance(exc, ValueNotOffered):",
+    "new": "            if isinstance(exc, ValueNotOffered):",
     "tests": "a_refusal_corrects_the_range_that_caused_it"
   },
   {
@@ -3995,5 +3995,12 @@
     "new": "                await self._forget_the_old_installation(entry)\n",
     "tests": "a_new_password_for_the_same_login_keeps_the_cache",
     "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "action errors: the unload refusal worded with English inside again",
+    "path": "custom_components/wemportal/models.py",
+    "old": "            translation_key=\"account_unloading\",\n            translation_placeholders={\"parameter\": what},",
+    "new": "            translation_key=\"account_unloading\",\n            translation_placeholders={\"parameter\": what, \"reason\": \"unloaded\"},",
+    "tests": "every_key_has_a_message_in_every_catalogue or placeholders_in_the_code_and_the_messages_agree"
   }
 ]

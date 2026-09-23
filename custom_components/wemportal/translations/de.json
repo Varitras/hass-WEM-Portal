@@ -169,11 +169,11 @@
     }
   },
   "exceptions": {
-    "account_not_current": {
-      "message": "{action}: {reason}; der Wert wurde nicht geändert."
-    },
     "account_not_loaded": {
-      "message": "{action}: Dieses WEM-Portal-Konto ist nicht geladen."
+      "message": "{parameter}: Dieses WEM-Portal-Konto ist nicht geladen, daher wurde nichts geschrieben."
+    },
+    "account_unloading": {
+      "message": "{parameter}: Die WEM-Portal-Integration wird gerade entladen, daher wurde nichts geschrieben."
     },
     "expert_account_ambiguous": {
       "message": "Es ist nicht eindeutig, auf welches Konto geschrieben werden soll. Aktiviere den Expertenzugriff für genau einen WEM-Portal-Eintrag."

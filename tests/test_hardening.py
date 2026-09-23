@@ -6294,8 +6294,7 @@ def test_the_expert_entity_does_not_start_a_write_while_unloading():
     with pytest.raises(HomeAssistantError) as excinfo:
         _run(entity.async_set_native_value, 21.0)
 
-    assert excinfo.value.translation_key == "account_not_current"
-    assert "unload" in excinfo.value.translation_placeholders["reason"]
+    assert excinfo.value.translation_key == "account_unloading"
     assert entity._write_in_progress is False, "the entity was left marked as busy"
 
 

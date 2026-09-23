@@ -466,21 +466,24 @@ class WemPortalExpertNumber(RestoreNumber):
             if exc.state is not None:
                 self._apply_state(exc.state)
                 self.async_write_ha_state()
-            placeholders = {
-                "parameter": str(self._attr_name),
-                "value": str(value),
-                "error": str(exc),
-            }
             if isinstance(exc, ValueNotOffered):
                 raise ServiceValidationError(
                     translation_domain=DOMAIN,
                     translation_key="expert_value_not_offered",
-                    translation_placeholders=placeholders,
+                    translation_placeholders={
+                        "parameter": str(self._attr_name),
+                        "value": str(value),
+                        "error": str(exc),
+                    },
                 ) from exc
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="expert_write_failed",
-                translation_placeholders=placeholders,
+                translation_placeholders={
+                    "parameter": str(self._attr_name),
+                    "value": str(value),
+                    "error": str(exc),
+                },
             ) from exc
         except WemPortalError as exc:
             # Before the clause below, which would let it through as it came:

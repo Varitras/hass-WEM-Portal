@@ -51,6 +51,9 @@ def _user_facing_raises(source: str, name: str):
         key_node = _keyword(node.exc, "translation_key")
         key = key_node.value if isinstance(key_node, ast.Constant) else None
         placeholders_node = _keyword(node.exc, "translation_placeholders")
+        # None marks "not readable here": a variable, a call, anything but a
+        # literal. The check below refuses it rather than skipping it, so a
+        # placeholder set can never go unchecked by being built elsewhere.
         placeholders = None
         if isinstance(placeholders_node, ast.Dict):
             placeholders = {k.value for k in placeholders_node.keys if k is not None}
@@ -77,8 +80,14 @@ def test_the_scan_finds_the_shape_it_exists_for():
         ")\n"
     )
 
+    built_elsewhere = (
+        'raise ServiceValidationError(translation_domain=DOMAIN, translation_key="x",'
+        " translation_placeholders=placeholders)\n"
+    )
+
     assert _user_facing_raises(literal, "m") == [("m:1", None, set())]
     assert _user_facing_raises(keyed, "m") == [("m:1", "x", {"name"})]
+    assert _user_facing_raises(built_elsewhere, "m") == [("m:1", "x", None)]
 
 
 def test_every_user_facing_error_carries_a_translation_key():
@@ -103,6 +112,23 @@ def test_every_key_has_a_message_in_every_catalogue():
 
     assert not missing, (
         f"{missing}: Home Assistant shows the bare key where the message is missing."
+    )
+
+
+def test_placeholders_are_written_where_they_are_raised():
+    """The comparison below can only read a dict written into the raise.
+    Passed as a variable, the placeholder set went unchecked - so it is not
+    allowed, rather than trusted."""
+    unreadable = [
+        where
+        for where, key, passed in _all_raises()
+        if key is not None and passed is None
+    ]
+
+    assert not unreadable, (
+        f"{unreadable} pass translation_placeholders as something other than a "
+        "dict literal, which the catalogue check cannot read. Write the dict "
+        "into the raise."
     )
 
 

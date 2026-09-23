@@ -348,13 +348,15 @@ def raise_if_not_writable(config_entry: ConfigEntry, what: str) -> WemPortalData
         raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="account_not_loaded",
-            translation_placeholders={"action": what},
+            translation_placeholders={"parameter": what},
         )
-    reason = data.why_not_current(config_entry)
-    if reason is not None:
+    if data.why_not_current(config_entry) is not None:
+        # Only the unload can be the reason here: `data` was read from this
+        # entry a line above, so it cannot be a state a reload replaced. A
+        # fixed key rather than the reason's own words, which are English.
         raise HomeAssistantError(
             translation_domain=DOMAIN,
-            translation_key="account_not_current",
-            translation_placeholders={"action": what, "reason": reason},
+            translation_key="account_unloading",
+            translation_placeholders={"parameter": what},
         )
     return data

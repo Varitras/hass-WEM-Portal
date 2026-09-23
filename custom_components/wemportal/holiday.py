@@ -105,7 +105,7 @@ def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
         )
     # Also the unload gate: a write must not start into an entry that is on
     # its way out, and this is the one place that knows how to say so.
-    data = raise_if_not_writable(entry, f"Setting the holiday of {entity_id}")
+    data = raise_if_not_writable(entry, entity_id)
 
     row = (data.coordinator.data or {}).get(device_id, {}).get(data_key)
     if not isinstance(row, Reading):

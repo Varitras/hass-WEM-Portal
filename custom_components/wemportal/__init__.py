@@ -447,7 +447,7 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="account_not_loaded",
-                translation_placeholders={"action": "Expert write"},
+                translation_placeholders={"parameter": short_entityvalue(entityvalue)},
             )
         lock = data.expert.lock
         ev_short = short_entityvalue(entityvalue)

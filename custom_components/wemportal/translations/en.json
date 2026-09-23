@@ -169,11 +169,11 @@
     }
   },
   "exceptions": {
-    "account_not_current": {
-      "message": "{action}: {reason}; the value was not changed."
-    },
     "account_not_loaded": {
-      "message": "{action}: this WEM Portal account is not loaded."
+      "message": "{parameter}: this WEM Portal account is not loaded, so nothing was written."
+    },
+    "account_unloading": {
+      "message": "{parameter}: the WEM Portal integration is being unloaded, so nothing was written."
     },
     "expert_account_ambiguous": {
       "message": "Could not tell which account to write to. Enable expert write on exactly one WEM Portal entry."
