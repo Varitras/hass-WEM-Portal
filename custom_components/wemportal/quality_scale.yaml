@@ -160,12 +160,7 @@ rules:
       cannot be met ahead of entity-translations. The one icon set in code
       belongs to the expert numbers; the rest are left to the device class on
       purpose, because an explicit icon always beats it.
-  reconfiguration-flow:
-    status: todo
-    comment: >-
-      Settings are changed through the options flow and a new password through
-      reauth, so nothing is unreachable - but there is no async_step_reconfigure
-      for changing the account itself without removing the entry.
+  reconfiguration-flow: done
   repair-issues: done
   stale-devices: done
 

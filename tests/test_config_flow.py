@@ -26,6 +26,7 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wemportal.const import (
     CONF_EXPERT_SLOT_ID_TEMPLATE,
@@ -1136,3 +1137,108 @@ async def test_a_reauth_for_an_entry_that_is_gone_ends_cleanly(hass):
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "unknown"
+
+
+# --- reconfigure: change the account without removing the entry ------------
+#
+# Reauth is for a password that stopped working and refuses another username
+# on purpose. Reconfigure is the other case: the portal account's e-mail
+# changed, or the user wants to update the login before anything fails.
+
+
+async def test_reconfigure_takes_a_new_password_and_reloads(hass):
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "new-secret"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_PASSWORD] == "new-secret"
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_reconfigure_can_move_the_entry_to_a_new_login(hass):
+    """The one thing reauth will not do: the e-mail of the portal account
+    changed, and the entry follows it - identity, title and all."""
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "New@Example.org", CONF_PASSWORD: "pw"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_USERNAME] == "New@Example.org"
+    assert entry.unique_id == "new@example.org"
+    assert entry.title == "New@Example.org"
+
+
+async def test_reconfigure_will_not_merge_two_entries_into_one_account(hass):
+    """An account another entry already holds would leave two entries polling
+    one installation under one identity."""
+    other = MockConfigEntry(
+        domain=DOMAIN,
+        title="other@example.org",
+        unique_id="other@example.org",
+        data={CONF_USERNAME: "other@example.org", CONF_PASSWORD: "x"},
+    )
+    other.add_to_hass(hass)
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "Other@Example.org", CONF_PASSWORD: "pw"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_USERNAME] == USER, "the entry was changed anyway"
+
+
+async def test_reconfigure_keeps_the_entry_when_the_login_fails(hass, monkeypatch):
+    entry = await _setup(hass, _entry(hass))
+    monkeypatch.setattr(WemPortalApi, "api_login", _login_refused)
+    monkeypatch.setattr(WemPortalApi, "web_login", _login_refused)
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "wrong"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}
+    assert entry.data[CONF_PASSWORD] != "wrong"
+
+
+async def test_reconfigure_sees_an_older_entry_that_has_no_unique_id_yet(hass):
+    """An entry from before unique_ids only gets one when it is set up, so a
+    disabled one is invisible to the unique_id check. The login it holds is
+    taken all the same.
+
+    Disabled on purpose: an enabled one is set up together with the entry
+    below and gets its unique_id on the way, which tests the other check.
+    """
+    from homeassistant.config_entries import ConfigEntryDisabler
+
+    legacy = MockConfigEntry(
+        domain=DOMAIN,
+        title="other@example.org",
+        data={CONF_USERNAME: "other@example.org", CONF_PASSWORD: "x"},
+        disabled_by=ConfigEntryDisabler.USER,
+    )
+    legacy.add_to_hass(hass)
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "other@example.org", CONF_PASSWORD: "pw"}
+    )
+
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_USERNAME] == USER

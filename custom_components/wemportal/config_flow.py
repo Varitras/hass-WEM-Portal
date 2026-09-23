@@ -307,3 +307,56 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
+
+    async def async_step_reconfigure(self, user_input=None):
+        """Change the login of an existing entry, the account included.
+
+        Reauth re-authenticates the SAME account and refuses another username
+        on purpose. This is the other case: the portal account's e-mail
+        address changed, or the password is being updated before anything
+        fails. A different login is allowed - that is what this step is for -
+        but not one another entry already holds, which would leave two
+        entries polling one installation under one identity.
+        """
+        entry = self._get_reconfigure_entry()
+        current = account_unique_id(entry.data.get(CONF_USERNAME))
+        errors = {}
+        if user_input is not None:
+            account = account_unique_id(user_input[CONF_USERNAME])
+            moves_to_another_login = account != current
+            # One check, not the user step's two: an entry's unique_id is its
+            # normalised username, so comparing usernames finds every entry a
+            # unique_id lookup would - and the ones from before unique_ids too.
+            if moves_to_another_login and self._account_already_has_an_entry(account):
+                return self.async_abort(reason="already_configured")
+            new_data = {
+                **entry.data,
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+            }
+            title = entry.title
+            if moves_to_another_login:
+                title = user_input[CONF_USERNAME]
+            failure = await self._credential_error(entry, new_data)
+            if failure is None:
+                # Same reason as after a reauth: the portal just accepted
+                # this login, so the failures counted before are answered.
+                forget_auth_failures(entry)
+                return self.async_update_reload_and_abort(
+                    entry, unique_id=account, title=title, data=new_data
+                )
+            errors["base"] = failure
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USERNAME,
+                        default=entry.data.get(CONF_USERNAME, ""),
+                    ): str,
+                    vol.Required(CONF_PASSWORD): PASSWORD_SELECTOR,
+                }
+            ),
+            errors=errors,
+        )

@@ -3925,5 +3925,33 @@
     "new": "        if entry is None:\n            pass",
     "tests": "a_reauth_for_an_entry_that_is_gone_ends_cleanly",
     "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a login another entry holds taken over",
+    "old": "            if moves_to_another_login and self._account_already_has_an_entry(account):\n                return self.async_abort(reason=\"already_configured\")",
+    "new": "            if False:\n                return self.async_abort(reason=\"already_configured\")",
+    "tests": "reconfigure_will_not_merge_two_entries_into_one_account or reconfigure_sees_an_older_entry_that_has_no_unique_id_yet",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the entry keeping its old identity after a move",
+    "old": "                    entry, unique_id=account, title=title, data=new_data",
+    "new": "                    entry, title=title, data=new_data",
+    "tests": "reconfigure_can_move_the_entry_to_a_new_login",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the new password not taken",
+    "old": "                CONF_PASSWORD: user_input[CONF_PASSWORD],\n            }\n            title = entry.title",
+    "new": "            }\n            title = entry.title",
+    "tests": "reconfigure_takes_a_new_password_and_reloads",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a login that failed written to the entry anyway",
+    "old": "            if failure is None:\n                # Same reason as after a reauth",
+    "new": "            if True:\n                # Same reason as after a reauth",
+    "tests": "reconfigure_keeps_the_entry_when_the_login_fails",
+    "path": "custom_components/wemportal/config_flow.py"
   }
 ]

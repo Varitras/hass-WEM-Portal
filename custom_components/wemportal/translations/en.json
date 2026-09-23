@@ -16,6 +16,14 @@
           "username": "Username (email)",
           "password": "Password"
         }
+      },
+      "reconfigure": {
+        "title": "Change the WEM Portal login",
+        "description": "Update the username or password of this account. A different username moves this entry to that login; if it belongs to another installation, its devices appear as new ones and the old ones can be removed by hand.",
+        "data": {
+          "username": "Username (email)",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -29,7 +37,8 @@
       "already_configured": "Account is already configured",
       "already_in_progress": "Setup for this account is already in progress",
       "reauth_successful": "Re-authentication was successful",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "reconfigure_successful": "The login was changed."
     }
   },
   "options": {
