@@ -3594,10 +3594,16 @@ def test_a_normal_login_page_is_not_mistaken_for_maintenance():
     assert maintenance_notice(None) is None
 
 
-def test_web_login_reports_maintenance_without_sending_credentials(monkeypatch):
-    """Bailing out before the POST matters twice: the credentials are not
-    sent to a page that cannot process them, and the failure is not
-    misreported as "invalid username or password"."""
+def test_a_real_window_is_still_maintenance_and_not_a_wrong_password(monkeypatch):
+    """What the check before the POST used to protect, now decided after it.
+
+    That check kept the credentials away from the maintenance page and the
+    failure away from "invalid username or password" - and it could not tell
+    an announcement from a window, so it reported four hours of a working
+    portal as down. The credentials now go out in both cases. In a real
+    window the answer is not a session and carries the notice, and that is
+    maintenance, not a password to ask the user for again.
+    """
     posted = []
 
     class _Session:
@@ -3608,7 +3614,7 @@ def test_web_login_reports_maintenance_without_sending_credentials(monkeypatch):
 
         def post(self, *_args, **_kwargs):
             posted.append(True)
-            return FakeResponse_html("")
+            return FakeResponse_html(MAINTENANCE_PAGE)
 
     monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
     api = _api()
@@ -3616,7 +3622,7 @@ def test_web_login_reports_maintenance_without_sending_credentials(monkeypatch):
     with pytest.raises(exceptions.PortalMaintenanceError):
         api.web_login()
 
-    assert posted == [], "credentials were sent to the maintenance page"
+    assert posted, "the login is where maintenance is decided now"
 
 
 def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
@@ -5885,47 +5891,26 @@ class _Page:
         self.url = "https://www.wemportal.com/Web/Default.aspx"
 
 
-def test_a_marker_where_it_is_not_acted_on_is_reported(caplog):
-    """The open question is whether the marker can appear on a HEALTHY page.
-
-    Enabling the check everywhere on the assumption that it cannot would
-    trade a known gap for an unknown false positive - the portal reported as
-    down while it is serving fine. So the assumption is measured: this fires
-    only if the marker turns up somewhere it is not acted on.
-    """
+def test_an_announcement_is_passed_on_once_and_not_as_a_warning(caplog):
+    """The question the old probe measured - can the marker appear on a
+    healthy page? - was answered live: yes, hours before every window. So it
+    is news for the user, once per announcement, and not a fault."""
     import logging
 
     scraper = _gate_probe()
+    announced = _Page(
+        MAINTENANCE_HTML.replace("<body>", "<body><a id='ctl00_btnLogout'></a>")
+    )
 
-    with caplog.at_level(logging.WARNING):
-        scraper._check_response(_Page(MAINTENANCE_HTML), "module page")
-
-    assert "maintenance marker appeared" in caplog.text
-    assert "module page" in caplog.text
-
-
-def test_the_report_does_not_turn_into_a_failure():
-    """It is an observation, not a verdict: the request must carry on."""
-    scraper = _gate_probe()
-
-    scraper._check_response(_Page(MAINTENANCE_HTML), "module page")
-
-
-def test_the_report_is_made_once_per_request_label(caplog):
-    """If the marker IS on every page, an unbounded report would bury the
-    log it is meant to inform."""
-    import logging
-
-    scraper = _gate_probe()
-
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         for _ in range(5):
-            scraper._check_response(_Page(MAINTENANCE_HTML), "module page")
+            scraper._check_response(announced, "main page", check_maintenance=True)
 
-    warnings = [
-        record for record in caplog.records if record.levelno >= logging.WARNING
+    said = [
+        record for record in caplog.records if "announces maintenance" in record.message
     ]
-    assert len(warnings) == 1, f"{len(warnings)} reports for one request site"
+    assert len(said) == 1, f"{len(said)} lines for one announcement"
+    assert said[0].levelno == logging.INFO, "an announcement is not a fault"
 
 
 def test_where_the_check_is_enabled_it_still_raises():
@@ -8803,3 +8788,112 @@ async def test_the_unit_survives_a_restart_that_begins_with_the_pump_off(monkeyp
     assert sensor.native_unit_of_measurement == "kW", (
         "a restart into the off state left the entity without its unit"
     )
+
+
+# --- an announced maintenance window is not a maintenance window -----------
+#
+# Measured on a live portal on 2026-09-23: the notice for a 17:00-20:00 window
+# was on the login page and the main page from 13:05, while the portal served
+# everything normally. The login page carries the same notice in the same
+# words before and during a window (compare MAINTENANCE_PAGE, captured during
+# one), so it cannot tell the two apart. Only the answer to the login can:
+# during an announcement it is a logged-in page with the banner on it.
+
+ANNOUNCED_PAGE_LOGGED_IN = """<html><body>
+  <div class="offlinecontent">
+    Sehr geehrter Kunde, aufgrund von Wartungsarbeiten ist der Server zwischen
+    23.09.2026 17:00 Uhr und 23.09.2026 20:00 Uhr nicht erreichbar.
+  </div>
+  <a id="ctl00_btnLogout" href="#">Abmelden</a>
+  <div>expert data</div>
+</body></html>"""
+
+
+def test_an_announcement_on_the_login_page_does_not_stop_the_web_login(monkeypatch):
+    """Four hours of scrape failures on a working portal, and a failure count
+    of ten that then kept the scrape away for fifty minutes after the real
+    window closed."""
+    api = _web_login_answering(
+        FakeResponse_html(ANNOUNCED_PAGE_LOGGED_IN),
+        get_answer=FakeResponse_html(MAINTENANCE_PAGE),
+        monkeypatch=monkeypatch,
+    )
+
+    api.web_login()
+
+
+def test_an_announcement_does_not_stop_the_scraper_login(monkeypatch):
+    """The same, in the scraper's own login: page with the notice, login
+    accepted, banner on the page that follows."""
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    class _Response:
+        status_code = 200
+
+        def __init__(self, text, url):
+            self.text = text
+            self.url = url
+
+    class _Session:
+        cookies = types.SimpleNamespace(clear=lambda: None)
+
+        def get(self, *_args, **_kwargs):
+            return _Response(
+                MAINTENANCE_PAGE, "https://www.wemportal.com/Web/Login.aspx"
+            )
+
+        def post(self, *_args, **_kwargs):
+            return _Response(
+                ANNOUNCED_PAGE_LOGGED_IN, "https://www.wemportal.com/Web/Default.aspx"
+            )
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _Session()
+    monkeypatch.setattr(
+        "custom_components.wemportal.scraper.time.sleep", lambda _seconds: None
+    )
+    # The expert page has its own test beside the reuse path; this one is
+    # about the two login requests in front of it.
+    monkeypatch.setattr(scraper, "_load_expert_page", lambda: "<html></html>")
+    monkeypatch.setattr(scraper, "parse_expert_page", lambda *_a, **_k: [])
+
+    scraper.scrape()
+
+
+def test_an_announcement_does_not_stop_the_expert_login(monkeypatch):
+    """And in the expert client, which checked the main page after the login
+    as well - the page an announcement puts its banner on."""
+    from custom_components.wemportal import expert_writer
+
+    class _Response:
+        status_code = 200
+
+        def __init__(self, text, url):
+            self.text = text
+            self.url = url
+
+    class _Session:
+        def get(self, url, *_args, **_kwargs):
+            if "Login" in url:
+                return _Response(MAINTENANCE_PAGE, url)
+            return _Response(ANNOUNCED_PAGE_LOGGED_IN, url)
+
+        def post(self, *_args, **_kwargs):
+            return _Response(
+                ANNOUNCED_PAGE_LOGGED_IN, "https://www.wemportal.com/Web/Default.aspx"
+            )
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_k: _Session())
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    monkeypatch.setattr(
+        client,
+        "_establish_context",
+        lambda: client._check_response(
+            client.session.get(expert_writer.WEB_MAIN_URL),
+            "main page",
+            check_maintenance=True,
+        ),
+    )
+    monkeypatch.setattr(client, "_save_session", lambda: None)
+
+    client._full_login()

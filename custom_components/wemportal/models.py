@@ -74,7 +74,7 @@ class AccountState:
     # objects doing the warning.
     duplicate_rows_reported: set[str] = field(default_factory=set)
     unreadable_values_reported: set[tuple[str, str]] = field(default_factory=set)
-    maintenance_markers_reported: set[str] = field(default_factory=set)
+    maintenance_announcements_reported: set[str] = field(default_factory=set)
     missing_job_ids_reported: set[str] = field(default_factory=set)
     # Only one expert portal operation per ACCOUNT at a time - the poll, an
     # entity write and the domain service all drive the same Fachmann

@@ -34,7 +34,11 @@ from .utils import (
     sanitize_value,
     unit_to_icon,
 )
-from .web_protocol import maintenance_notice, report_unexpected_maintenance_marker
+from .web_protocol import (
+    maintenance_blocking,
+    maintenance_notice,
+    note_maintenance_announcement,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -245,9 +249,9 @@ class WemPortalScraper:
         next unguarded request.
 
         403 first, because it is a rate-limit signal and must reach the
-        caller's cooldown handling as its own type. `check_maintenance` is
-        opt-in: whether the marker can appear on a healthy page has not been
-        established, so it stays where a real maintenance page was observed.
+        caller's cooldown handling as its own type. `check_maintenance` raises
+        only where the notice explains a page that is not a session - see
+        web_protocol.maintenance_blocking; an announcement is passed on once.
         """
         status = getattr(response, "status_code", 200)
         if status == 403:
@@ -262,14 +266,14 @@ class WemPortalScraper:
             # viewstate - and one step later as an authentication error,
             # which is a wrong and very misleading diagnosis.
             raise ServerError(f"WEM Portal returned {status} for the {what}.")
-        notice = maintenance_notice(getattr(response, "text", "") or "")
-        if notice:
-            if check_maintenance:
-                raise PortalMaintenanceError(notice)
-            # Not acted on here - but worth knowing about, because it is the
-            # open question that keeps the check from being universal.
-            report_unexpected_maintenance_marker(
-                notice, what, self._account_state.maintenance_markers_reported
+        text = getattr(response, "text", "") or ""
+        blocking = maintenance_blocking(text)
+        if check_maintenance and blocking:
+            raise PortalMaintenanceError(blocking)
+        announced = maintenance_notice(text)
+        if announced:
+            note_maintenance_announcement(
+                announced, self._account_state.maintenance_announcements_reported
             )
 
     def _load_expert_page(self) -> str | None:
@@ -447,11 +451,10 @@ class WemPortalScraper:
         # the broad network-error handler above and re-wrapped (which
         # would, among other things, hide the 403 from the caller's
         # cooldown handling).
-        # Maintenance is checked HERE, before the POST, so the password is
-        # never sent to a page that cannot process it: during planned
-        # downtime the login form is fully present and submittable, and
-        # posting would simply fail as "invalid credentials".
-        self._check_response(login_page, "login page", check_maintenance=True)
+        # No maintenance decision on this page: it looks the same before and
+        # during a window, so deciding here turned every announcement into an
+        # outage. The answer to the POST below decides it.
+        self._check_response(login_page, "login page")
 
         tree = html.fromstring(login_page.text)
         viewstate_elem = tree.xpath("//*[@id='__VIEWSTATE']/@value")
@@ -492,14 +495,11 @@ class WemPortalScraper:
             )
         except Exception as exc:
             raise self._transport_failure(exc, "send the WEM Portal login") from exc
-        # check_maintenance, like the GET above and the main page below. What
-        # comes back here is one of those two pages, and both are checked for
-        # the notice everywhere else - this was the only place it was not.
-        # The cost of leaving it out is specific: the response arrives on the
-        # login URL, which is also the test for "the portal rejected these
-        # credentials", so announced downtime read as a wrong password and
-        # fed the re-authentication counter. Three cycles inside one
-        # maintenance window ask the user for a password that is correct.
+        # The place the maintenance question is answered. A refused login
+        # comes back on the login URL, which is also the test for "the portal
+        # rejected these credentials" - so without this, a real window read as
+        # a wrong password and fed the re-authentication counter. A login that
+        # got through is not refused by a banner announcing a window.
         self._check_response(login_response, "login POST", check_maintenance=True)
 
         # Three outcomes, not two - the classification web_login has used all

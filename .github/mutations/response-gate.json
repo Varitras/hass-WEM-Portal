@@ -21,11 +21,11 @@
     "tests": "broken_main_page or error_page_is_not_accepted"
   },
   {
-    "label": "marker probe: reporting more than once per site must be noticed",
+    "label": "announcement: passed on again with every page",
     "path": "custom_components/wemportal/web_protocol.py",
-    "old": "    if what in reported:\n        _LOGGER.debug(\"Maintenance marker seen again on the %s.\", what)\n        return\n    reported.add(what)",
-    "new": "    reported.add(what)",
-    "tests": "once_per_request_label"
+    "old": "    if notice in reported:\n        return\n    reported.add(notice)",
+    "new": "    reported.add(notice)",
+    "tests": "announcement_is_passed_on_once_and_not_as_a_warning"
   },
   {
     "label": "write: accepting anything but an explicit success must be noticed",
@@ -1808,7 +1808,7 @@
   {
     "label": "login: maintenance checked only before the credentials go out",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            notice = maintenance_notice(response.text)\n            if notice:\n                raise PortalMaintenanceError(notice)\n            if WEB_LOGIN_FORM_MARKER in response.text:",
+    "old": "            notice = maintenance_blocking(response.text)\n            if notice:\n                raise PortalMaintenanceError(notice)\n            if WEB_LOGIN_FORM_MARKER in response.text:",
     "new": "            if WEB_LOGIN_FORM_MARKER in response.text:",
     "tests": "maintenance_starting_between_the_two_requests_is_recognised"
   },
@@ -3642,7 +3642,7 @@
   {
     "label": "boundary: the transport reaching for utils again must be caught",
     "path": "custom_components/wemportal/transport.py",
-    "old": "from .web_protocol import maintenance_notice, message_reports_maintenance",
+    "old": "from .web_protocol import maintenance_blocking, message_reports_maintenance",
     "new": "from .utils import parse_portal_number",
     "tests": "transport_imports_only_domain_free_siblings"
   },
@@ -3785,5 +3785,33 @@
     "old": "        if self._attr_native_unit_of_measurement in (None, \"\"):\n            last_sensor_data = await self.async_get_last_sensor_data()",
     "new": "        if False:\n            last_sensor_data = await self.async_get_last_sensor_data()",
     "tests": "the_unit_survives_a_restart_that_begins_with_the_pump_off"
+  },
+  {
+    "label": "announcement: a logged-in page with the banner read as downtime again",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    if WEB_LOGGED_IN_MARKER in (html_text or \"\"):\n        return None\n    return maintenance_notice(html_text)",
+    "new": "    return maintenance_notice(html_text)",
+    "tests": "an_announcement_on_the_login_page_does_not_stop_the_web_login or an_announcement_does_not_stop_the_expert_login or an_expert_page_carrying_an_announcement_still_comes_back"
+  },
+  {
+    "label": "announcement: the scraper deciding maintenance on the login page again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        self._check_response(login_page, \"login page\")",
+    "new": "        self._check_response(login_page, \"login page\", check_maintenance=True)",
+    "tests": "an_announcement_does_not_stop_the_scraper_login"
+  },
+  {
+    "label": "announcement: the expert client deciding maintenance on the login page again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self._check_response(login_page, \"login page\")",
+    "new": "        self._check_response(login_page, \"login page\", check_maintenance=True)",
+    "tests": "an_announcement_does_not_stop_the_expert_login"
+  },
+  {
+    "label": "announcement: web_login bailing out before the POST again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        # a logged-in page means the portal is working.\n",
+    "new": "        # a logged-in page means the portal is working.\n        if maintenance_blocking(initial_response.text):\n            raise PortalMaintenanceError(\"announced\")\n",
+    "tests": "an_announcement_on_the_login_page_does_not_stop_the_web_login"
   }
 ]

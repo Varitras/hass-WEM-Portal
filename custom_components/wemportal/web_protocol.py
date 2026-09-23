@@ -12,14 +12,18 @@ that the transport reaches for this rather than utils.
 from typing import Final
 import logging
 
+from .const import WEB_LOGGED_IN_MARKER
+
 _LOGGER = logging.getLogger(__name__)
 
-# The portal announces planned downtime by rendering this container on the
-# login page. Matched on the CSS class, NOT on its text: the wording changes
-# per announcement and is localised, while the class is purpose-built and
-# language-independent. Note the login form stays fully present and
-# submittable during maintenance - only the backend behind it is down - so
-# "is there a form?" cannot tell the two apart.
+# The portal announces planned downtime by rendering this container - on the
+# login page and on the logged-in pages, and hours BEFORE the window opens as
+# well as during it (measured 2026-09-23: on every page from 13:05 for a
+# 17:00-20:00 window, the portal working normally throughout). Matched on the
+# CSS class, NOT on its text: the wording changes per announcement and is
+# localised, while the class is purpose-built and language-independent. So the
+# marker says "downtime is announced", not "the portal is down" - see
+# maintenance_blocking for when it means the latter.
 WEB_MAINTENANCE_MARKER: Final = "offlinecontent"
 
 
@@ -76,37 +80,33 @@ def message_reports_maintenance(message: str | None) -> bool:
     return any(marker in lowered for marker in API_MAINTENANCE_MESSAGE_MARKERS)
 
 
-def report_unexpected_maintenance_marker(
-    notice: str, what: str, reported: set[str]
-) -> None:
-    """Note a maintenance marker on a response that is not treated as downtime.
+def maintenance_blocking(html_text: str) -> str | None:
+    """The maintenance notice, if it is why this page is not a session.
 
-    The marker check is currently enabled only where a real maintenance page
-    was observed. Whether it is safe everywhere depends on one question that
-    cannot be answered by reading the code: can the marker also appear on a
-    HEALTHY portal page? Enabling it everywhere on the assumption that it
-    cannot would trade a known gap for an unknown false positive - one that
-    would report the portal as down while it is serving fine.
+    The one rule for what the marker means, for all three logins. It explains
+    a failure and never overrides a success: a logged-in page with the notice
+    on it is an announcement - the portal is working - while a page that is
+    not logged in and carries it is the portal refusing because of downtime.
 
-    So the question is measured instead. This fires only if the marker turns
-    up somewhere it is not acted on, which under the current assumption should
-    be never. Silence over a few days is the evidence that the check can be
-    applied to every request; a hit names the exact request that would have
-    produced a false alarm.
-
-    Warning level, because the user has to see it without enabling debug
-    logging - and once per request label, so a marker that IS on every page
-    cannot flood the log.
+    Nothing before the login can make this call. The login page looks the
+    same before and during a window, form and notice alike, so a check there
+    reported every announcement as an outage: four hours of it on 2026-09-23,
+    and a failure count of ten that then held the scrape back for fifty
+    minutes after the real window had closed.
     """
-    if what in reported:
-        _LOGGER.debug("Maintenance marker seen again on the %s.", what)
+    if WEB_LOGGED_IN_MARKER in (html_text or ""):
+        return None
+    return maintenance_notice(html_text)
+
+
+def note_maintenance_announcement(notice: str, reported: set[str]) -> None:
+    """Pass an announced window on to the user, once per announcement.
+
+    Info, not warning: nothing is wrong yet, and the integration keeps working
+    until the window actually opens. Keyed on the text, which carries the
+    window's dates, so the next announcement is news again.
+    """
+    if notice in reported:
         return
-    reported.add(what)
-    _LOGGER.warning(
-        "The WEM Portal maintenance marker appeared in the response to the "
-        "%s, which is NOT treated as downtime. If the portal was working "
-        "normally, please report this - it decides whether the maintenance "
-        "check can be applied to every request. Notice text: %s",
-        what,
-        notice,
-    )
+    reported.add(notice)
+    _LOGGER.info("The WEM Portal announces maintenance: %s", notice)

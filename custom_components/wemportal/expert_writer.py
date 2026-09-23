@@ -40,7 +40,11 @@ from .exceptions import (
 )
 from .models import account_state
 from .utils import parse_portal_number
-from .web_protocol import maintenance_notice, report_unexpected_maintenance_marker
+from .web_protocol import (
+    maintenance_blocking,
+    maintenance_notice,
+    note_maintenance_announcement,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -757,12 +761,10 @@ class WemPortalExpertClient:
         rounds each found the next unguarded request. A per-site decision is
         a per-site chance to forget; one gate cannot be forgotten.
 
-        `check_maintenance` is option-in rather than universal on purpose. The
-        marker is a container class in the page, and whether it can appear on
-        a HEALTHY portal page has not been established - enabling it
-        everywhere would trade a known gap for an unknown false positive. It
-        is therefore switched on only where a real maintenance page was
-        observed and is covered by tests.
+        `check_maintenance` raises only where the notice explains a page that
+        is not a session - see web_protocol.maintenance_blocking. The marker
+        also appears on healthy pages hours before a window opens, so on its
+        own it proves nothing; an announcement is passed on once instead.
         """
         self._raise_if_forbidden(response)
         status = getattr(response, "status_code", 200)
@@ -774,14 +776,14 @@ class WemPortalExpertClient:
             # viewstate - and one step later as an authentication error,
             # which is a wrong and very misleading diagnosis.
             raise ServerError(f"WEM Portal returned {status} for the {what}.")
-        notice = maintenance_notice(getattr(response, "text", "") or "")
-        if notice:
-            if check_maintenance:
-                raise PortalMaintenanceError(notice)
-            # Not acted on here - but worth knowing about, because it is the
-            # open question that keeps the check from being universal.
-            report_unexpected_maintenance_marker(
-                notice, what, self._account_state.maintenance_markers_reported
+        text = getattr(response, "text", "") or ""
+        blocking = maintenance_blocking(text)
+        if check_maintenance and blocking:
+            raise PortalMaintenanceError(blocking)
+        announced = maintenance_notice(text)
+        if announced:
+            note_maintenance_announcement(
+                announced, self._account_state.maintenance_announcements_reported
             )
 
     def _raise_if_forbidden(self, response):
@@ -900,7 +902,9 @@ class WemPortalExpertClient:
         login_page = self.session.get(
             WEB_LOGIN_URL, timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS
         )
-        self._check_response(login_page, "login page", check_maintenance=True)
+        # No maintenance decision here - the page is the same before and
+        # during a window. The answer to the login POST decides it.
+        self._check_response(login_page, "login page")
         tree = html.fromstring(login_page.text)
         viewstate = tree.xpath("//*[@id='__VIEWSTATE']/@value")
         eventval = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
@@ -935,11 +939,9 @@ class WemPortalExpertClient:
             allow_redirects=True,
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
         )
-        # check_maintenance, as on the GET above: what comes back is the login
-        # page or the main page, and both carry the notice. Without it,
-        # announced downtime arrives on the login URL - which is exactly the
-        # test for "these credentials were rejected" just below - and was
-        # reported as a wrong password. Same gap the scraper had.
+        # Where maintenance is decided: a refused login arrives on the login
+        # URL - exactly the test for "these credentials were rejected" just
+        # below - so a real window would read as a wrong password without it.
         self._check_response(login_response, "login POST", check_maintenance=True)
         # Three outcomes, not two, same as the scraper and web_login: staying
         # on the login URL was the whole test, and a portal error or

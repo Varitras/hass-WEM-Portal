@@ -46,9 +46,9 @@ from .exceptions import (
 # Protocol, not domain: how a portal answer is READ, with no idea what a
 # device or a reading is. The import guard in tests/test_transport_boundary
 # lists the domain modules, and neither of these is one of them - status_is_success
-# reads a status field, maintenance_notice reads a downtime page.
+# reads a status field, maintenance_blocking reads a downtime page.
 from .mobile_protocol import as_answer_dict, status_is_success
-from .web_protocol import maintenance_notice, message_reports_maintenance
+from .web_protocol import maintenance_blocking, message_reports_maintenance
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -802,14 +802,11 @@ class WemPortalTransport:
                 ) from exc
             raise UnknownAuthError(f"Failed to load the login page: {exc}") from exc
 
-        # Planned downtime: bail out BEFORE posting the credentials. The form
-        # is fully present during maintenance, so submitting would just fail
-        # as "invalid username or password" and, after three cycles, ask the
-        # user to re-enter working credentials. It also avoids sending the
-        # password to a page that cannot process it.
-        notice = maintenance_notice(initial_response.text)
-        if notice:
-            raise PortalMaintenanceError(notice)
+        # No maintenance decision on this page. It carries the notice from
+        # the moment a window is ANNOUNCED - hours before it opens - and looks
+        # the same during it, so bailing out here turned every announcement
+        # into an outage. The answer to the POST below tells the two apart:
+        # a logged-in page means the portal is working.
 
         # Step 2: Parse the login page and extract hidden form fields.
         #
@@ -871,10 +868,11 @@ class WemPortalTransport:
             if WEB_LOGGED_IN_MARKER in response.text:
                 _LOGGER.debug("WEB login successful.")
                 return
-            # Maintenance is checked on this answer too, not only on the page
-            # fetched above: the window can open between the two requests, and
-            # the portal serves the notice with HTTP 200 either way.
-            notice = maintenance_notice(response.text)
+            # Maintenance is decided here, after the success test above: a
+            # login that got through is not refused by a banner announcing a
+            # window, and one that did not, with the notice on it, is downtime
+            # rather than a wrong password.
+            notice = maintenance_blocking(response.text)
             if notice:
                 raise PortalMaintenanceError(notice)
             if WEB_LOGIN_FORM_MARKER in response.text:

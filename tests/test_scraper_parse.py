@@ -589,6 +589,21 @@ def test_maintenance_is_recognised_on_the_reuse_path_too():
         scraper._load_expert_page()
 
 
+def test_an_expert_page_carrying_an_announcement_still_comes_back():
+    """The marker is on every page from the moment a window is announced,
+    hours before it opens. A logged-in expert page with that banner on it is
+    the portal working - refusing it is what took the scrape down for four
+    hours on 2026-09-23."""
+    page = (
+        "<html><body><div class='offlinecontent'>Wartungsarbeiten zwischen "
+        "17:00 und 20:00 Uhr</div><a id='ctl00_btnLogout'></a>expert data"
+        "</body></html>"
+    )
+    scraper = _reuse_scraper(_ReuseResponse(page))
+
+    assert "expert data" in scraper._load_expert_page()
+
+
 def test_a_healthy_expert_page_still_comes_back():
     """The guards must not swallow the normal case."""
     scraper = _reuse_scraper(_ReuseResponse("<html><body>expert data</body></html>"))
