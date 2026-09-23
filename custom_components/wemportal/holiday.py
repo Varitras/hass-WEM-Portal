@@ -31,7 +31,7 @@ import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.service import async_register_admin_service
 
@@ -39,6 +39,7 @@ from .const import (
     DOMAIN,
 )
 from .date import date_to_epoch
+from .exceptions import WemPortalError
 from .models import Reading, WemPortalData, is_still_serving, raise_if_not_writable
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,12 +71,18 @@ def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
     loaded, a reading that has not arrived yet.
     """
     if entity_id.split(".")[0] != "date":
-        raise HomeAssistantError(
-            f"{entity_id} is not a date entity, so it cannot carry a holiday date."
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="holiday_not_a_date_entity",
+            translation_placeholders={"entity_id": entity_id},
         )
     registry_entry = entity_registry.async_get(hass).async_get(entity_id)
     if registry_entry is None or registry_entry.platform != DOMAIN:
-        raise HomeAssistantError(f"{entity_id} is not a WEM Portal entity.")
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="holiday_not_a_wemportal_entity",
+            translation_placeholders={"entity_id": entity_id},
+        )
 
     # The format get_wemportal_unique_id builds: "<entry id>:<device>:<row>".
     # maxsplit=2 because only the first two parts are known not to contain a
@@ -83,23 +90,29 @@ def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
     parts = (registry_entry.unique_id or "").split(":", 2)
     if len(parts) != 3:
         raise HomeAssistantError(
-            f"{entity_id} does not carry a WEM Portal identity this version "
-            "understands. Reload the integration."
+            translation_domain=DOMAIN,
+            translation_key="holiday_identity_not_understood",
+            translation_placeholders={"entity_id": entity_id},
         )
     _entry_id, device_id, data_key = parts
 
     entry = hass.config_entries.async_get_entry(registry_entry.config_entry_id or "")
     if entry is None:
-        raise HomeAssistantError(f"The account behind {entity_id} no longer exists.")
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="holiday_account_gone",
+            translation_placeholders={"entity_id": entity_id},
+        )
     # Also the unload gate: a write must not start into an entry that is on
     # its way out, and this is the one place that knows how to say so.
-    data = raise_if_not_writable(entry, f"Setting the holiday of {entity_id}")
+    data = raise_if_not_writable(entry, entity_id)
 
     row = (data.coordinator.data or {}).get(device_id, {}).get(data_key)
     if not isinstance(row, Reading):
         raise HomeAssistantError(
-            f"{entity_id} has no reading yet, so there is nothing to write "
-            "against. Wait for the next update."
+            translation_domain=DOMAIN,
+            translation_key="holiday_no_reading_yet",
+            translation_placeholders={"entity_id": entity_id},
         )
     # The entity_id above says how Home Assistant files the entity; the row
     # says what the portal currently calls the parameter, and the daily
@@ -108,9 +121,12 @@ def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
     # could still send an epoch to a parameter that has become a switch.
     if row.platform != "date":
         raise HomeAssistantError(
-            f"{entity_id} is filed as a date, but the portal now describes "
-            f"that parameter as a {row.platform}. Reload the integration to "
-            "pick up the change; nothing was written."
+            translation_domain=DOMAIN,
+            translation_key="holiday_reclassified",
+            translation_placeholders={
+                "entity_id": entity_id,
+                "platform": str(row.platform),
+            },
         )
     return DateTarget(entity_id, entry, data, device_id, data_key, row)
 
@@ -118,20 +134,22 @@ def resolve_date_target(hass: HomeAssistant, entity_id: str) -> DateTarget:
 def _check_pair(begin: DateTarget, end: DateTarget) -> None:
     """Refuse a pair the portal cannot be asked to store as one range."""
     if begin.entity_id == end.entity_id:
-        raise HomeAssistantError(
-            f"Begin and end name the same entity ({begin.entity_id}). "
-            "A holiday needs two."
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="holiday_same_entity",
+            translation_placeholders={"entity_id": begin.entity_id},
         )
     if begin.entry.entry_id != end.entry.entry_id:
-        raise HomeAssistantError(
-            f"{begin.entity_id} and {end.entity_id} belong to different "
-            "accounts, so they cannot be written in one request."
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="holiday_different_accounts",
+            translation_placeholders={"begin": begin.entity_id, "end": end.entity_id},
         )
     if begin.device_id != end.device_id or begin.address != end.address:
-        raise HomeAssistantError(
-            f"{begin.entity_id} and {end.entity_id} belong to different "
-            "modules. The portal addresses parameters per module, so a "
-            "holiday has to be two dates of the same one."
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="holiday_different_modules",
+            translation_placeholders={"begin": begin.entity_id, "end": end.entity_id},
         )
 
 
@@ -144,9 +162,10 @@ async def _write_holiday(hass: HomeAssistant, call: ServiceCall) -> None:
         # is not a holiday. The portal answers such a pair with Status 0 and
         # stores nothing, so letting it through would report success for a
         # setting that never happened.
-        raise HomeAssistantError(
-            f"A holiday from {begin_day} to {end_day} would end before it "
-            "starts. Nothing was written."
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="holiday_ends_before_it_starts",
+            translation_placeholders={"begin": str(begin_day), "end": str(end_day)},
         )
 
     begin = resolve_date_target(hass, call.data["begin_entity"])
@@ -157,17 +176,26 @@ async def _write_holiday(hass: HomeAssistant, call: ServiceCall) -> None:
     end_epoch = date_to_epoch(end_day)
     module_index, module_type = begin.address
 
-    await hass.async_add_executor_job(
-        partial(
-            begin.data.api.change_value,
-            begin.device_id,
-            begin.row.parameter_id or begin.data_key,
-            module_index,
-            module_type,
-            begin_epoch,
-            together_with={(end.row.parameter_id or end.data_key): end_epoch},
+    try:
+        await hass.async_add_executor_job(
+            partial(
+                begin.data.api.change_value,
+                begin.device_id,
+                begin.row.parameter_id or begin.data_key,
+                module_index,
+                module_type,
+                begin_epoch,
+                together_with={(end.row.parameter_id or end.data_key): end_epoch},
+            )
         )
-    )
+    except WemPortalError as exc:
+        # The portal's refusal is detail for the message, not the message:
+        # raised as it was, it reached the user in English only.
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="holiday_write_failed",
+            translation_placeholders={"error": str(exc)},
+        ) from exc
 
     # Ask what was kept rather than publishing what was asked for. Returning
     # without raising means the portal ACCEPTED the request: measured on this

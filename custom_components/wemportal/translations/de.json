@@ -16,6 +16,14 @@
           "username": "Benutzername (E-Mail)",
           "password": "Passwort"
         }
+      },
+      "reconfigure": {
+        "title": "WEM-Portal-Anmeldung ändern",
+        "description": "Ändere Benutzername oder Passwort dieses Kontos. Ein anderer Benutzername zieht diesen Eintrag auf diese Anmeldung um; gehört sie zu einer anderen Anlage, erscheinen deren Geräte neu und die alten lassen sich von Hand entfernen.",
+        "data": {
+          "username": "Benutzername (E-Mail)",
+          "password": "Passwort"
+        }
       }
     },
     "error": {
@@ -29,7 +37,8 @@
       "already_configured": "Konto ist bereits konfiguriert",
       "already_in_progress": "Die Einrichtung für dieses Konto läuft bereits",
       "reauth_successful": "Neuanmeldung erfolgreich",
-      "unknown": "Unerwarteter Fehler"
+      "unknown": "Unerwarteter Fehler",
+      "reconfigure_successful": "Die Anmeldung wurde geändert."
     }
   },
   "options": {
@@ -157,6 +166,77 @@
           "description": "Letzter Urlaubstag. Darf nicht vor dem Beginn liegen."
         }
       }
+    }
+  },
+  "exceptions": {
+    "account_not_loaded": {
+      "message": "{parameter}: Dieses WEM-Portal-Konto ist nicht geladen, daher wurde nichts geschrieben."
+    },
+    "account_unloading": {
+      "message": "{parameter}: Die WEM-Portal-Integration wird gerade entladen, daher wurde nichts geschrieben."
+    },
+    "expert_account_ambiguous": {
+      "message": "Es ist nicht eindeutig, auf welches Konto geschrieben werden soll. Aktiviere den Expertenzugriff für genau einen WEM-Portal-Eintrag."
+    },
+    "expert_operation_in_progress": {
+      "message": "Für dieses Konto läuft bereits ein anderer Expertenvorgang; bitte gleich noch einmal versuchen."
+    },
+    "expert_parameter_not_configured": {
+      "message": "{entityvalue} ist keiner der in den Optionen dieser Integration eingerichteten Parameter. Lege ihn zuerst in einem Slot an."
+    },
+    "expert_value_not_offered": {
+      "message": "{value} ist kein zulässiger Wert für {parameter}: {error}"
+    },
+    "expert_write_failed": {
+      "message": "{parameter} konnte nicht auf {value} gesetzt werden: {error}"
+    },
+    "expert_write_in_progress": {
+      "message": "{parameter}: Es läuft bereits ein Schreibvorgang, bitte warten."
+    },
+    "expert_write_stopped": {
+      "message": "Das Schreiben von {parameter} wurde abgebrochen: {error}"
+    },
+    "holiday_account_gone": {
+      "message": "Das Konto hinter {entity_id} existiert nicht mehr."
+    },
+    "holiday_different_accounts": {
+      "message": "{begin} und {end} gehören zu verschiedenen Konten und können nicht in einer Anfrage geschrieben werden."
+    },
+    "holiday_different_modules": {
+      "message": "{begin} und {end} gehören zu verschiedenen Modulen. Das Portal adressiert Parameter je Modul, ein Urlaub braucht deshalb zwei Daten desselben Moduls."
+    },
+    "holiday_ends_before_it_starts": {
+      "message": "Ein Urlaub von {begin} bis {end} würde enden, bevor er beginnt. Es wurde nichts geschrieben."
+    },
+    "holiday_identity_not_understood": {
+      "message": "{entity_id} trägt keine WEM-Portal-Kennung, die diese Version versteht. Lade die Integration neu."
+    },
+    "holiday_no_reading_yet": {
+      "message": "{entity_id} hat noch keinen Wert, gegen den geschrieben werden könnte. Warte auf die nächste Aktualisierung."
+    },
+    "holiday_not_a_date_entity": {
+      "message": "{entity_id} ist keine Datums-Entität und kann daher kein Urlaubsdatum tragen."
+    },
+    "holiday_not_a_wemportal_entity": {
+      "message": "{entity_id} ist keine WEM-Portal-Entität."
+    },
+    "holiday_reclassified": {
+      "message": "{entity_id} ist als Datum angelegt, das Portal beschreibt diesen Parameter inzwischen aber als {platform}. Lade die Integration neu, damit die Änderung übernommen wird; es wurde nichts geschrieben."
+    },
+    "holiday_same_entity": {
+      "message": "Beginn und Ende nennen dieselbe Entität ({entity_id}). Ein Urlaub braucht zwei."
+    },
+    "holiday_write_failed": {
+      "message": "Das Portal hat den Urlaub nicht übernommen: {error}"
+    },
+    "option_ambiguous": {
+      "message": "{parameter} kann nicht auf {option} gesetzt werden: Das Portal bietet unter diesem Namen {count} Werte an, welcher gemeint ist, lässt sich nicht entscheiden. Es wurde nichts geschrieben."
+    },
+    "parameter_no_longer_answered": {
+      "message": "{parameter}: Das Portal liefert diesen Parameter nicht mehr, daher wurde nichts geschrieben. Die Entität funktioniert von selbst wieder, sobald der Parameter zurück ist."
+    },
+    "write_failed": {
+      "message": "Das Schreiben von {parameter} ist fehlgeschlagen: {error}"
     }
   }
 }

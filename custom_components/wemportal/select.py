@@ -10,10 +10,10 @@ from typing import Any
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS
+from .const import BOOLEAN_OFF_STRINGS, BOOLEAN_ON_STRINGS, DOMAIN
 from .entity import async_add_readings_as_they_appear, WemPortalEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -173,10 +173,14 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
             if name == option
         }
         if len(candidates) != 1:
-            raise HomeAssistantError(
-                f'Cannot set "{self._attr_name}" to "{option}": the portal '
-                f"offers {len(candidates)} values under that name, so which "
-                "one was meant is not decidable. Nothing was written."
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="option_ambiguous",
+                translation_placeholders={
+                    "parameter": str(self._attr_name),
+                    "option": option,
+                    "count": str(len(candidates)),
+                },
             )
         return candidates.pop()
 

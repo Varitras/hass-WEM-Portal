@@ -16,6 +16,7 @@ Home Assistant instance; the everyday run deselects them (see pytest.ini),
 CI runs them with `-m ""`.
 """
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -26,8 +27,11 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wemportal.const import (
+    CONF_EXPERT_MODULE_ARG,
+    CONF_EXPERT_MODULE_LIST,
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
     CONF_EXPERT_WRITE,
@@ -47,6 +51,7 @@ from custom_components.wemportal.wemportalapi import WemPortalApi
 # fixture is how pytest registers it in a second module - which is why they
 # look unused to a linter and are not.
 from .test_e2e import (  # noqa: F401
+    BASE_OPTIONS,
     EV_A,
     EV_B,
     USER,
@@ -1025,3 +1030,394 @@ async def test_the_rescan_option_marks_the_cached_lists_as_due(hass):
     )
     # A module with no discovered list needs no marking - it is read anyway.
     assert "parameters_fetched_at" not in api.modules["1234"][(0, 7)]
+
+
+# --- every way the flows can be answered ----------------------------------
+#
+# The quality scale asks for the config flow to be covered in full, and the
+# point is not the number: each of these is a message the user reads instead
+# of the error that caused it, and a reordered pair of except clauses turns
+# one into another without anything else noticing.
+
+_USER_INPUT = {
+    CONF_USERNAME: USER,
+    CONF_PASSWORD: "secret",
+    CONF_LANGUAGE: "en",
+    CONF_MODE: "api",
+}
+
+
+def _login_refused(self, *_args, **_kwargs):
+    raise AuthError("Login failed")
+
+
+def _no_route(self, *_args, **_kwargs):
+    raise OSError("no route to host")
+
+
+async def test_a_wrong_password_on_setup_says_so(hass, monkeypatch):
+    monkeypatch.setattr(WemPortalApi, "api_login", _login_refused)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _USER_INPUT
+    )
+
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_something_unforeseen_on_setup_is_a_message_not_a_crash(
+    hass, monkeypatch
+):
+    """validate_input turns anything it does not know into cannot_connect, so
+    this is the flow's own safety net: whatever breaks outside it must still
+    end on the form, not as a server error in the browser."""
+    from custom_components.wemportal import config_flow
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("something nobody planned for")
+
+    monkeypatch.setattr(config_flow, "validate_input", broken)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _USER_INPUT
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "unknown"}
+
+
+@pytest.mark.parametrize(
+    ("login", "error"),
+    [(_no_route, "cannot_connect"), (_login_refused, "invalid_auth")],
+)
+async def test_reauth_names_what_went_wrong(hass, monkeypatch, login, error):
+    entry = await _setup(hass, _entry(hass))
+    monkeypatch.setattr(WemPortalApi, "api_login", login)
+    monkeypatch.setattr(WemPortalApi, "web_login", login)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "secret"}
+    )
+
+    assert result["errors"] == {"base": error}
+
+
+async def test_something_unforeseen_during_reauth_is_a_message_not_a_crash(
+    hass, monkeypatch
+):
+    from custom_components.wemportal import config_flow
+
+    entry = await _setup(hass, _entry(hass))
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("something nobody planned for")
+
+    monkeypatch.setattr(config_flow, "validate_input", broken)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "secret"}
+    )
+
+    assert result["errors"] == {"base": "unknown"}
+
+
+async def test_a_reauth_for_an_entry_that_is_gone_ends_cleanly(hass):
+    """The entry can be removed while its reauth dialog is still open, and the
+    dialog is then answered for something that no longer exists."""
+    from custom_components.wemportal.config_flow import WemPortalConfigFlow
+
+    flow = WemPortalConfigFlow()
+    flow.hass = hass
+
+    result = await flow.async_step_reauth_confirm()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "unknown"
+
+
+# --- reconfigure: change the account without removing the entry ------------
+#
+# Reauth is for a password that stopped working and refuses another username
+# on purpose. Reconfigure is the other case: the portal account's e-mail
+# changed, or the user wants to update the login before anything fails.
+
+
+async def test_reconfigure_takes_a_new_password_and_reloads(hass):
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "new-secret"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_PASSWORD] == "new-secret"
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_reconfigure_can_move_the_entry_to_a_new_login(hass):
+    """The one thing reauth will not do: the e-mail of the portal account
+    changed, and the entry follows it - identity, title and all."""
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "New@Example.org", CONF_PASSWORD: "pw"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_USERNAME] == "New@Example.org"
+    assert entry.unique_id == "new@example.org"
+    assert entry.title == "New@Example.org"
+
+
+async def test_reconfigure_will_not_merge_two_entries_into_one_account(hass):
+    """An account another entry already holds would leave two entries polling
+    one installation under one identity."""
+    other = MockConfigEntry(
+        domain=DOMAIN,
+        title="other@example.org",
+        unique_id="other@example.org",
+        data={CONF_USERNAME: "other@example.org", CONF_PASSWORD: "x"},
+    )
+    other.add_to_hass(hass)
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "Other@Example.org", CONF_PASSWORD: "pw"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_USERNAME] == USER, "the entry was changed anyway"
+
+
+async def test_reconfigure_keeps_the_entry_when_the_login_fails(hass, monkeypatch):
+    entry = await _setup(hass, _entry(hass))
+    monkeypatch.setattr(WemPortalApi, "api_login", _login_refused)
+    monkeypatch.setattr(WemPortalApi, "web_login", _login_refused)
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "wrong"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}
+    assert entry.data[CONF_PASSWORD] != "wrong"
+
+
+async def test_reconfigure_sees_an_older_entry_that_has_no_unique_id_yet(hass):
+    """An entry from before unique_ids only gets one when it is set up, so a
+    disabled one is invisible to the unique_id check. The login it holds is
+    taken all the same.
+
+    Disabled on purpose: an enabled one is set up together with the entry
+    below and gets its unique_id on the way, which tests the other check.
+    """
+    from homeassistant.config_entries import ConfigEntryDisabler
+
+    legacy = MockConfigEntry(
+        domain=DOMAIN,
+        title="other@example.org",
+        data={CONF_USERNAME: "other@example.org", CONF_PASSWORD: "x"},
+        disabled_by=ConfigEntryDisabler.USER,
+    )
+    legacy.add_to_hass(hass)
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "other@example.org", CONF_PASSWORD: "pw"}
+    )
+
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_USERNAME] == USER
+
+
+async def test_moving_to_another_login_forgets_what_was_cached_for_the_old_one(
+    hass, hass_storage
+):
+    """Two things are kept on disk per entry: the discovered module list and
+    the device id the scraped readings are filed under. Both belong to the
+    installation behind the OLD login. Kept across a move, a different
+    installation started on the old one's modules, and in web mode its
+    scraped readings went to the old installation's device."""
+    entry = _entry(hass)
+    scraper_key = f"{DOMAIN}_{entry.entry_id}_scraper_device"
+    modules_key = f"{DOMAIN}_{entry.entry_id}_modules"
+    hass_storage[scraper_key] = {"version": 1, "key": scraper_key, "data": "9999"}
+    await _setup(hass, entry)
+    # Written by the setup cycle, so it holds what the old login discovered.
+    hass_storage[modules_key] = {
+        "version": 1,
+        "key": modules_key,
+        "data": {"old-installation": {}},
+    }
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "new@example.org", CONF_PASSWORD: "pw"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert hass_storage.get(scraper_key, {}).get("data") != "9999", (
+        "the old installation's device id survived the move"
+    )
+    assert "old-installation" not in str(hass_storage.get(modules_key, {})), (
+        "the old installation's module list survived the move"
+    )
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_a_new_password_for_the_same_login_keeps_the_cache(hass, hass_storage):
+    """The counter-case: same account, same installation, and rediscovering
+    its modules would only cost the portal requests the cache exists to save."""
+    entry = _entry(hass)
+    scraper_key = f"{DOMAIN}_{entry.entry_id}_scraper_device"
+    hass_storage[scraper_key] = {"version": 1, "key": scraper_key, "data": "9999"}
+    await _setup(hass, entry)
+
+    result = await entry.start_reconfigure_flow(hass)
+    await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "new-secret"}
+    )
+    await hass.async_block_till_done()
+
+    assert hass_storage[scraper_key]["data"] == "9999"
+
+
+_OLD_INSTALLATION_EXPERT_OPTIONS = {
+    CONF_EXPERT_WRITE: True,
+    CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
+    CONF_EXPERT_SLOT_NAME_TEMPLATE % 1: "hot_water",
+    CONF_EXPERT_MODULE_ARG: "old-module",
+    CONF_EXPERT_MODULE_LIST: [{"index": 0, "value": "old-module", "label": "Old"}],
+}
+
+
+async def _reconfigure(hass, entry, username, password="pw"):
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: username, CONF_PASSWORD: password}
+    )
+    await hass.async_block_till_done()
+    return result
+
+
+async def test_moving_to_another_login_drops_the_old_installations_expert_slots(
+    hass,
+):
+    """The slots name parameters of the installation behind the OLD login and
+    are the write action's allowlist. Kept across a move, a parameter chosen
+    for one heating system stayed writable through the login of another."""
+    entry = await _setup(hass, _entry(hass, options=_OLD_INSTALLATION_EXPERT_OPTIONS))
+
+    result = await _reconfigure(hass, entry, "new@example.org")
+
+    assert result["reason"] == "reconfigure_successful"
+    kept = {
+        key
+        for key in _OLD_INSTALLATION_EXPERT_OPTIONS
+        if key != CONF_EXPERT_WRITE and key in entry.options
+    }
+    assert not kept, f"{sorted(kept)} of the old installation survived the move"
+    assert entry.options[CONF_EXPERT_WRITE] is True, "a preference was dropped too"
+    assert entry.options[CONF_LANGUAGE] == BASE_OPTIONS[CONF_LANGUAGE]
+
+
+async def test_a_new_password_for_the_same_login_keeps_the_expert_slots(hass):
+    entry = await _setup(hass, _entry(hass, options=_OLD_INSTALLATION_EXPERT_OPTIONS))
+
+    await _reconfigure(hass, entry, USER, "new-secret")
+
+    assert entry.options[CONF_EXPERT_SLOT_ID_TEMPLATE % 1] == EV_A
+
+
+async def test_moving_to_another_login_forgets_the_old_accounts_memory(hass):
+    """The old account's cooldown and warning markers live beside the entry,
+    keyed by the account. Once no entry holds that account they described
+    nothing - and re-adding it later inherited a cooldown and swallowed an
+    announcement as already reported."""
+    from custom_components.wemportal.models import account_state
+
+    entry = await _setup(hass, _entry(hass))
+    account_state(USER).expert_blocked_until = 1e12
+    account_state(USER).maintenance_announcements_reported.add("notice")
+
+    await _reconfigure(hass, entry, "new@example.org")
+
+    assert account_state(USER).expert_blocked_until == 0.0
+    assert not account_state(USER).maintenance_announcements_reported
+
+
+async def test_a_new_password_for_the_same_login_keeps_the_accounts_memory(hass):
+    from custom_components.wemportal.models import account_state
+
+    entry = await _setup(hass, _entry(hass))
+    account_state(USER).maintenance_announcements_reported.add("notice")
+
+    await _reconfigure(hass, entry, USER, "new-secret")
+
+    assert account_state(USER).maintenance_announcements_reported == {"notice"}
+
+
+async def test_two_entries_cannot_both_move_to_one_login_at_once(hass, monkeypatch):
+    """The check that the login is free runs before the portal is asked, the
+    move after. Two dialogs moving two entries to the same login both passed
+    the check while both waited for the portal, and both moved."""
+    from custom_components.wemportal.config_flow import WemPortalConfigFlow
+
+    other = MockConfigEntry(
+        domain=DOMAIN,
+        title="other@example.org",
+        unique_id="other@example.org",
+        data={CONF_USERNAME: "other@example.org", CONF_PASSWORD: "x"},
+        options=BASE_OPTIONS,
+    )
+    other.add_to_hass(hass)
+    entry = await _setup(hass, _entry(hass))
+    await hass.async_block_till_done()
+
+    portal_answers = asyncio.Event()
+    waiting = []
+
+    async def _slow_portal(self, _entry, _data):
+        waiting.append(self.flow_id)
+        await portal_answers.wait()
+        return None
+
+    monkeypatch.setattr(WemPortalConfigFlow, "_credential_error", _slow_portal)
+    flows = [await e.start_reconfigure_flow(hass) for e in (entry, other)]
+    moves = [
+        asyncio.ensure_future(
+            hass.config_entries.flow.async_configure(
+                flow["flow_id"],
+                {CONF_USERNAME: "shared@example.org", CONF_PASSWORD: "pw"},
+            )
+        )
+        for flow in flows
+    ]
+    for _ in range(10):
+        await asyncio.sleep(0)
+    portal_answers.set()
+    results = await asyncio.gather(*moves)
+    await hass.async_block_till_done()
+
+    reasons = sorted(result["reason"] for result in results)
+    assert reasons == ["already_in_progress", "reconfigure_successful"], reasons
+    assert entry.unique_id != other.unique_id

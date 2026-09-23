@@ -12,7 +12,7 @@ import types
 from dataclasses import replace
 
 import pytest
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.wemportal.entity import WemPortalEntity
 from custom_components.wemportal.models import Reading
@@ -141,6 +141,32 @@ def test_a_control_writes_while_its_reading_is_there():
     _run(entity.async_write_parameter, 21.0)
 
     assert len(reached_the_portal) == 1
+
+
+def test_a_portal_refusal_reaches_the_user_translated_and_as_a_failure():
+    """The shared write path of all four platforms passed a portal error on as
+    it came - a HomeAssistantError, but in English only, and indistinguishable
+    from a wrong request. It is the system failing, and says so in the
+    catalogue's words."""
+    from custom_components.wemportal.exceptions import ParameterChangeError
+
+    entity, _reached = _entity_that_can_actually_write(WemPortalNumber)
+
+    def _refuse(*_args, **_kwargs):
+        raise ParameterChangeError("the portal answered status 3001")
+
+    async def _run_it(call):
+        return call()
+
+    entity.coordinator.api.change_value = _refuse
+    entity.hass = types.SimpleNamespace(async_add_executor_job=_run_it)
+
+    with pytest.raises(HomeAssistantError) as excinfo:
+        _run(entity.async_write_parameter, 21.0)
+
+    assert not isinstance(excinfo.value, ServiceValidationError)
+    assert excinfo.value.translation_key == "write_failed"
+    assert "3001" in excinfo.value.translation_placeholders["error"]
 
 
 def test_a_control_whose_reading_is_gone_does_not_write():
@@ -277,9 +303,10 @@ def test_two_options_with_one_name_do_not_write_a_guessed_value():
         options=["0", "1"], options_names=["Automatik", "Automatik"]
     )
 
-    with pytest.raises(HomeAssistantError):
+    with pytest.raises(ServiceValidationError) as excinfo:
         _run(entity.async_select_option, "Automatik")
 
+    assert excinfo.value.translation_key == "option_ambiguous"
     assert written == [], "a value was written for a name that names two of them"
 
 

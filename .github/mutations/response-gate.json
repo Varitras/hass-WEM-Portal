@@ -1409,8 +1409,8 @@
   {
     "label": "holiday: recording a range the portal refused must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "    await hass.async_add_executor_job(\n        partial(",
-    "new": "    begin.row[\"value\"] = begin_epoch\n    end.row[\"value\"] = end_epoch\n    await hass.async_add_executor_job(\n        partial(",
+    "old": "    try:\n        await hass.async_add_executor_job(\n            partial(",
+    "new": "    begin.row[\"value\"] = begin_epoch\n    end.row[\"value\"] = end_epoch\n    try:\n        await hass.async_add_executor_job(\n            partial(",
     "tests": "a_refused_write_changes_nothing"
   },
   {
@@ -1437,7 +1437,7 @@
   {
     "label": "holiday: skipping the unload gate must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "    data = raise_if_not_writable(entry, f\"Setting the holiday of {entity_id}\")",
+    "old": "    data = raise_if_not_writable(entry, entity_id)",
     "new": "    data = entry.runtime_data",
     "tests": "a_write_into_an_unloading_entry_is_refused"
   },
@@ -2396,8 +2396,8 @@
   {
     "label": "expert: an unexpected failure swallowed instead of wrapped",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            raise HomeAssistantError(\n                f\"Setting {self._attr_name} to {value} failed: {exc}\"\n            ) from exc",
-    "new": "            return",
+    "old": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._attr_name, exc)\n            raise HomeAssistantError(",
+    "new": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._attr_name, exc)\n            return\n            raise HomeAssistantError(",
     "tests": "a_write_that_fails_with_a_plain_error_still_reaches_the_caller"
   },
   {
@@ -2676,8 +2676,8 @@
   {
     "label": "expert: an entity that keeps the range its write was refused by",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            if exc.state is not None:\n                self._apply_state(exc.state)\n                self.async_write_ha_state()\n            raise",
-    "new": "            raise",
+    "old": "            if exc.state is not None:\n                self._apply_state(exc.state)\n                self.async_write_ha_state()\n            if isinstance(exc, ValueNotOffered):",
+    "new": "            if isinstance(exc, ValueNotOffered):",
     "tests": "a_refusal_corrects_the_range_that_caused_it"
   },
   {
@@ -3841,5 +3841,194 @@
     "old": "            time.sleep(FETCH_RETRY_SECONDS)\n    return _read(url)\n",
     "new": "            time.sleep(FETCH_RETRY_SECONDS)\n    return {}\n",
     "tests": "a_pypi_that_stays_down_still_refuses_to_guess"
+  },
+  {
+    "label": "action errors: a backwards holiday reported as a system fault again",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "        raise ServiceValidationError(\n            translation_domain=DOMAIN,\n            translation_key=\"holiday_ends_before_it_starts\",",
+    "new": "        raise HomeAssistantError(\n            translation_domain=DOMAIN,\n            translation_key=\"holiday_ends_before_it_starts\",",
+    "tests": "a_range_that_ends_before_it_starts_is_refused"
+  },
+  {
+    "label": "action errors: the service calling an unoffered value a system fault again",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            raise ServiceValidationError(\n                translation_domain=DOMAIN,\n                translation_key=\"expert_value_not_offered\",",
+    "new": "            raise HomeAssistantError(\n                translation_domain=DOMAIN,\n                translation_key=\"expert_value_not_offered\",",
+    "tests": "service_calls_a_value_the_device_does_not_offer_a_wrong_request"
+  },
+  {
+    "label": "action errors: a portal refusal passed on untranslated by the shared write path",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        except WemPortalError as exc:",
+    "new": "        except KeyError as exc:",
+    "tests": "a_portal_refusal_reaches_the_user_translated_and_as_a_failure"
+  },
+  {
+    "label": "action errors: the expert entity calling an unoffered value a system fault",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "            if isinstance(exc, ValueNotOffered):",
+    "new": "            if False:",
+    "tests": "a_value_the_device_does_not_offer_is_a_wrong_request"
+  },
+  {
+    "label": "action errors: a portal error let through the expert entity in English",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        except WemPortalError as exc:",
+    "new": "        except KeyError as exc:",
+    "tests": "a_portal_error_during_an_expert_write_reaches_the_user_translated"
+  },
+  {
+    "label": "action errors: the client no longer telling an unoffered value apart",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            raise ValueNotOffered(\n                f\"Value {value} not allowed; device accepts ",
+    "new": "            raise ParameterWriteError(\n                f\"Value {value} not allowed; device accepts ",
+    "tests": "a_refused_value_carries_the_range_that_refused_it"
+  },
+  {
+    "label": "action errors: an ambiguous option pointing at a message that does not exist",
+    "path": "custom_components/wemportal/select.py",
+    "old": "            raise ServiceValidationError(\n                translation_domain=DOMAIN,\n                translation_key=\"option_ambiguous\",",
+    "new": "            raise ServiceValidationError(\n                translation_domain=DOMAIN,\n                translation_key=\"option_ambiguous_wrong\",",
+    "tests": "two_options_with_one_name_do_not_write_a_guessed_value"
+  },
+  {
+    "label": "flow: a wrong password on setup reported as a connection problem",
+    "old": "                errors[\"base\"] = \"invalid_auth\"",
+    "new": "                errors[\"base\"] = \"cannot_connect\"",
+    "tests": "a_wrong_password_on_setup_says_so",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "flow: an unforeseen error on setup escaping as a crash",
+    "old": "                _LOGGER.exception(\"Unexpected exception\")\n                errors[\"base\"] = \"unknown\"",
+    "new": "                raise",
+    "tests": "something_unforeseen_on_setup_is_a_message_not_a_crash",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "flow: reauth calling a connection problem a wrong password",
+    "old": "            return \"cannot_connect\"",
+    "new": "            return \"invalid_auth\"",
+    "tests": "reauth_names_what_went_wrong",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "flow: an unforeseen error during reauth escaping as a crash",
+    "old": "            _LOGGER.exception(\"Unexpected exception during reauth\")\n            return \"unknown\"",
+    "new": "            raise",
+    "tests": "something_unforeseen_during_reauth_is_a_message_not_a_crash",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "flow: a reauth for a vanished entry carrying on regardless",
+    "old": "        if entry is None:\n            return self.async_abort(reason=\"unknown\")",
+    "new": "        if entry is None:\n            pass",
+    "tests": "a_reauth_for_an_entry_that_is_gone_ends_cleanly",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a login another entry holds taken over",
+    "old": "            if moves_to_another_login and self._account_already_has_an_entry(account):\n                return self.async_abort(reason=\"already_configured\")",
+    "new": "            if False:\n                return self.async_abort(reason=\"already_configured\")",
+    "tests": "reconfigure_will_not_merge_two_entries_into_one_account or reconfigure_sees_an_older_entry_that_has_no_unique_id_yet",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the entry keeping its old identity after a move",
+    "old": "                    unique_id=account,\n",
+    "new": "",
+    "tests": "reconfigure_can_move_the_entry_to_a_new_login",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the new password not taken",
+    "old": "                CONF_PASSWORD: user_input[CONF_PASSWORD],\n            }\n            title = entry.title",
+    "new": "            }\n            title = entry.title",
+    "tests": "reconfigure_takes_a_new_password_and_reloads",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a login that failed written to the entry anyway",
+    "old": "            if failure is None:\n                # Same reason as after a reauth",
+    "new": "            if True:\n                # Same reason as after a reauth",
+    "tests": "reconfigure_keeps_the_entry_when_the_login_fails",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "announcement: an expired scrape session read as maintenance again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "r_expert, \"expert page\", check_maintenance=not on_login_page",
+    "new": "r_expert, \"expert page\", check_maintenance=True",
+    "tests": "an_expired_session_during_an_announcement_falls_back_to_a_login"
+  },
+  {
+    "label": "announcement: an expired expert session read as maintenance again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "main_page, \"main page\", check_maintenance=not on_login_page",
+    "new": "main_page, \"main page\", check_maintenance=True",
+    "tests": "an_expired_expert_session_during_an_announcement_logs_in_again"
+  },
+  {
+    "label": "reconfigure: a move keeping the old installation's cache",
+    "old": "                if moves_to_another_login:\n                    await self._forget_the_old_installation(entry)\n",
+    "new": "",
+    "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the old installation's device id kept after a move",
+    "old": "        await get_scraper_device_store(self.hass, entry.entry_id).async_remove()\n",
+    "new": "",
+    "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the old installation's module list kept after a move",
+    "old": "        await get_modules_store(self.hass, entry.entry_id).async_remove()\n",
+    "new": "",
+    "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a new password throwing away a valid cache",
+    "old": "                if moves_to_another_login:\n                    await self._forget_the_old_installation(entry)\n",
+    "new": "                await self._forget_the_old_installation(entry)\n",
+    "tests": "a_new_password_for_the_same_login_keeps_the_cache",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "action errors: the unload refusal worded with English inside again",
+    "path": "custom_components/wemportal/models.py",
+    "old": "            translation_key=\"account_unloading\",\n            translation_placeholders={\"parameter\": what},",
+    "new": "            translation_key=\"account_unloading\",\n            translation_placeholders={\"parameter\": what, \"reason\": \"unloaded\"},",
+    "tests": "every_key_has_a_message_in_every_catalogue or placeholders_in_the_code_and_the_messages_agree"
+  },
+  {
+    "label": "reconfigure: the old installation's expert slots kept after a move",
+    "old": "                options = _without_the_installation(options)\n",
+    "new": "",
+    "tests": "drops_the_old_installations_expert_slots",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a new password throwing away the expert slots",
+    "old": "            options: Mapping[str, Any] = entry.options\n",
+    "new": "            options: Mapping[str, Any] = _without_the_installation(entry.options)\n",
+    "tests": "keeps_the_expert_slots",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the old account's memory kept after a move",
+    "old": "        forget_account_state(entry.data.get(CONF_USERNAME))\n",
+    "new": "",
+    "tests": "forgets_the_old_accounts_memory",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: two dialogs moving to one login both succeed",
+    "old": "                await self.async_set_unique_id(account)\n                title = user_input[CONF_USERNAME]\n",
+    "new": "                title = user_input[CONF_USERNAME]\n",
+    "tests": "cannot_both_move_to_one_login_at_once",
+    "path": "custom_components/wemportal/config_flow.py"
   }
 ]

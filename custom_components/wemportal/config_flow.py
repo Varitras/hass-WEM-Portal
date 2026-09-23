@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Final
+from collections.abc import Mapping
+from typing import Any, Final
 import logging
 
 import voluptuous as vol
@@ -20,8 +21,12 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .models import account_unique_id
+from .models import account_unique_id, forget_account_state
 from .const import (
+    CONF_EXPERT_MODULE_ARG,
+    CONF_EXPERT_MODULE_LIST,
+    CONF_EXPERT_SLOT_ID_TEMPLATE,
+    CONF_EXPERT_SLOT_NAME_TEMPLATE,
     CONF_LANGUAGE,
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
@@ -30,9 +35,14 @@ from .const import (
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
     DEFAULT_MODE,
     DOMAIN,
+    EXPERT_SLOT_COUNT,
 )
 from .exceptions import AuthError, ForbiddenError
-from .coordinator import forget_auth_failures
+from .coordinator import (
+    forget_auth_failures,
+    get_modules_store,
+    get_scraper_device_store,
+)
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -117,6 +127,22 @@ class CannotConnect(exceptions.HomeAssistantError):
 
 class InvalidAuth(exceptions.HomeAssistantError):
     """Error to indicate there is invalid auth."""
+
+
+def _without_the_installation(options: Mapping[str, Any]) -> dict[str, Any]:
+    """The options minus what names parts of one particular installation.
+
+    The expert slots are the write action's allowlist: kept across a move to
+    another login, a parameter chosen for one heating system stayed writable
+    through the account of another. Preferences stay.
+    """
+    installation_bound = {CONF_EXPERT_MODULE_ARG, CONF_EXPERT_MODULE_LIST}
+    for slot in range(1, EXPERT_SLOT_COUNT + 1):
+        installation_bound.add(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)
+        installation_bound.add(CONF_EXPERT_SLOT_NAME_TEMPLATE % slot)
+    return {
+        key: value for key, value in options.items() if key not in installation_bound
+    }
 
 
 class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -296,6 +322,91 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USERNAME,
+                        default=entry.data.get(CONF_USERNAME, ""),
+                    ): str,
+                    vol.Required(CONF_PASSWORD): PASSWORD_SELECTOR,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def _forget_the_old_installation(self, entry) -> None:
+        """Drop what the entry kept on disk for the login it is leaving.
+
+        The module list and the scraped readings' device id are per entry, but
+        they describe the installation behind the old login. After a move to
+        another installation, the new one would start on the old one's
+        modules and, in web mode, file its scraped readings under the old
+        one's device.
+
+        Unloaded first: the unload waits for a store write in flight, so
+        nothing can put the old data back between here and the fresh setup
+        that follows.
+        """
+        await self.hass.config_entries.async_unload(entry.entry_id)
+        await get_modules_store(self.hass, entry.entry_id).async_remove()
+        await get_scraper_device_store(self.hass, entry.entry_id).async_remove()
+        # Keyed by the account, not the entry. The move is what leaves that
+        # account without an entry - no other one may hold it.
+        forget_account_state(entry.data.get(CONF_USERNAME))
+
+    async def async_step_reconfigure(self, user_input=None):
+        """Change the login of an existing entry, the account included.
+
+        Reauth re-authenticates the SAME account and refuses another username
+        on purpose. This is the other case: the portal account's e-mail
+        address changed, or the password is being updated before anything
+        fails. A different login is allowed - that is what this step is for -
+        but not one another entry already holds, which would leave two
+        entries polling one installation under one identity.
+        """
+        entry = self._get_reconfigure_entry()
+        current = account_unique_id(entry.data.get(CONF_USERNAME))
+        errors = {}
+        if user_input is not None:
+            account = account_unique_id(user_input[CONF_USERNAME])
+            moves_to_another_login = account != current
+            # One check, not the user step's two: an entry's unique_id is its
+            # normalised username, so comparing usernames finds every entry a
+            # unique_id lookup would - and the ones from before unique_ids too.
+            if moves_to_another_login and self._account_already_has_an_entry(account):
+                return self.async_abort(reason="already_configured")
+            new_data = {
+                **entry.data,
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+            }
+            title = entry.title
+            options: Mapping[str, Any] = entry.options
+            if moves_to_another_login:
+                # Claims the login for this flow before the portal is asked:
+                # the scan above sees entries, not another dialog moving an
+                # entry to the same login right now.
+                await self.async_set_unique_id(account)
+                title = user_input[CONF_USERNAME]
+                options = _without_the_installation(options)
+            failure = await self._credential_error(entry, new_data)
+            if failure is None:
+                # Same reason as after a reauth: the portal just accepted
+                # this login, so the failures counted before are answered.
+                forget_auth_failures(entry)
+                if moves_to_another_login:
+                    await self._forget_the_old_installation(entry)
+                return self.async_update_reload_and_abort(
+                    entry,
+                    unique_id=account,
+                    title=title,
+                    data=new_data,
+                    options=options,
+                )
+            errors["base"] = failure
+
+        return self.async_show_form(
+            step_id="reconfigure",
             data_schema=vol.Schema(
                 {
                     vol.Required(

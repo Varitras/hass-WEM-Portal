@@ -102,6 +102,17 @@ class ParameterWriteError(WemPortalError):
         self.state = state
 
 
+class ValueNotOffered(ParameterWriteError):
+    """The value asked for is not one this parameter offers.
+
+    A ParameterWriteError for everything that already catches one - the range
+    it carries is taken on board the same way. Its own type because the two
+    halves mean different things to the person who asked: a value the device
+    does not offer is a wrong request, a write the portal did not confirm is a
+    failure of the system, and Home Assistant reports those two differently.
+    """
+
+
 class ApiBusyError(WemPortalError):
     """A previous poll is still running and holds the shared API lock.
 

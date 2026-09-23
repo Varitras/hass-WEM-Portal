@@ -16,6 +16,14 @@
           "username": "Username (email)",
           "password": "Password"
         }
+      },
+      "reconfigure": {
+        "title": "Change the WEM Portal login",
+        "description": "Update the username or password of this account. A different username moves this entry to that login; if it belongs to another installation, its devices appear as new ones and the old ones can be removed by hand.",
+        "data": {
+          "username": "Username (email)",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -29,7 +37,8 @@
       "already_configured": "Account is already configured",
       "already_in_progress": "Setup for this account is already in progress",
       "reauth_successful": "Re-authentication was successful",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "reconfigure_successful": "The login was changed."
     }
   },
   "options": {
@@ -157,6 +166,77 @@
           "description": "Last day of the holiday. Must not be before the begin."
         }
       }
+    }
+  },
+  "exceptions": {
+    "account_not_loaded": {
+      "message": "{parameter}: this WEM Portal account is not loaded, so nothing was written."
+    },
+    "account_unloading": {
+      "message": "{parameter}: the WEM Portal integration is being unloaded, so nothing was written."
+    },
+    "expert_account_ambiguous": {
+      "message": "Could not tell which account to write to. Enable expert write on exactly one WEM Portal entry."
+    },
+    "expert_operation_in_progress": {
+      "message": "Another expert operation is in progress for this account; try again shortly."
+    },
+    "expert_parameter_not_configured": {
+      "message": "{entityvalue} is not one of the parameters configured in this integration's options. Add it to a slot first."
+    },
+    "expert_value_not_offered": {
+      "message": "{value} is not a value {parameter} takes: {error}"
+    },
+    "expert_write_failed": {
+      "message": "Setting {parameter} to {value} failed: {error}"
+    },
+    "expert_write_in_progress": {
+      "message": "{parameter}: a write is already in progress, please wait."
+    },
+    "expert_write_stopped": {
+      "message": "Writing {parameter} was stopped: {error}"
+    },
+    "holiday_account_gone": {
+      "message": "The account behind {entity_id} no longer exists."
+    },
+    "holiday_different_accounts": {
+      "message": "{begin} and {end} belong to different accounts, so they cannot be written in one request."
+    },
+    "holiday_different_modules": {
+      "message": "{begin} and {end} belong to different modules. The portal addresses parameters per module, so a holiday has to be two dates of the same one."
+    },
+    "holiday_ends_before_it_starts": {
+      "message": "A holiday from {begin} to {end} would end before it starts. Nothing was written."
+    },
+    "holiday_identity_not_understood": {
+      "message": "{entity_id} does not carry a WEM Portal identity this version understands. Reload the integration."
+    },
+    "holiday_no_reading_yet": {
+      "message": "{entity_id} has no reading yet, so there is nothing to write against. Wait for the next update."
+    },
+    "holiday_not_a_date_entity": {
+      "message": "{entity_id} is not a date entity, so it cannot carry a holiday date."
+    },
+    "holiday_not_a_wemportal_entity": {
+      "message": "{entity_id} is not a WEM Portal entity."
+    },
+    "holiday_reclassified": {
+      "message": "{entity_id} is filed as a date, but the portal now describes that parameter as a {platform}. Reload the integration to pick up the change; nothing was written."
+    },
+    "holiday_same_entity": {
+      "message": "Begin and end name the same entity ({entity_id}). A holiday needs two."
+    },
+    "holiday_write_failed": {
+      "message": "The portal did not take the holiday: {error}"
+    },
+    "option_ambiguous": {
+      "message": "Cannot set {parameter} to {option}: the portal offers {count} values under that name, so which one was meant cannot be decided. Nothing was written."
+    },
+    "parameter_no_longer_answered": {
+      "message": "{parameter}: the portal no longer answers for this parameter, so nothing was written. The entity starts working again by itself once the parameter is back."
+    },
+    "write_failed": {
+      "message": "Writing {parameter} failed: {error}"
     }
   }
 }

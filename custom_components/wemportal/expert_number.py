@@ -16,7 +16,7 @@ import logging
 from homeassistant.components.number import NumberMode, RestoreNumber
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import (
@@ -27,7 +27,12 @@ from .const import (
     DOMAIN,
     EXPERT_SLOT_COUNT,
 )
-from .exceptions import ExpertOperationAborted, ParameterWriteError
+from .exceptions import (
+    ExpertOperationAborted,
+    ParameterWriteError,
+    ValueNotOffered,
+    WemPortalError,
+)
 from .expert_options import entityvalue_digest
 
 _LOGGER = logging.getLogger(__name__)
@@ -338,7 +343,9 @@ class WemPortalExpertNumber(RestoreNumber):
         )
         if self._write_in_progress:
             raise HomeAssistantError(
-                f"{self._attr_name}: a write is already in progress, please wait."
+                translation_domain=DOMAIN,
+                translation_key="expert_write_in_progress",
+                translation_placeholders={"parameter": str(self._attr_name)},
             )
         self._write_in_progress = True
         await self._async_write(value)
@@ -402,8 +409,8 @@ class WemPortalExpertNumber(RestoreNumber):
             lock = self._expert_lock()
             if lock is not None and not lock.acquire(blocking=False):
                 raise HomeAssistantError(
-                    "Another expert operation is in progress for this "
-                    "account; try again shortly."
+                    translation_domain=DOMAIN,
+                    translation_key="expert_operation_in_progress",
                 )
             try:
                 client = WemPortalExpertClient(
@@ -431,7 +438,12 @@ class WemPortalExpertNumber(RestoreNumber):
             # happen, not a reason to say it did.
             _LOGGER.debug("Expert write for %s stopped: %s", self._attr_name, exc)
             raise HomeAssistantError(
-                f"Setting {self._attr_name} was stopped: {exc}"
+                translation_domain=DOMAIN,
+                translation_key="expert_write_stopped",
+                translation_placeholders={
+                    "parameter": str(self._attr_name),
+                    "error": str(exc),
+                },
             ) from exc
         # skipcq: PYL-W0706 - takes the range on board, then re-raises
         except ParameterWriteError as exc:
@@ -454,7 +466,37 @@ class WemPortalExpertNumber(RestoreNumber):
             if exc.state is not None:
                 self._apply_state(exc.state)
                 self.async_write_ha_state()
-            raise
+            if isinstance(exc, ValueNotOffered):
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="expert_value_not_offered",
+                    translation_placeholders={
+                        "parameter": str(self._attr_name),
+                        "value": str(value),
+                        "error": str(exc),
+                    },
+                ) from exc
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="expert_write_failed",
+                translation_placeholders={
+                    "parameter": str(self._attr_name),
+                    "value": str(value),
+                    "error": str(exc),
+                },
+            ) from exc
+        except WemPortalError as exc:
+            # Before the clause below, which would let it through as it came:
+            # a portal error is a HomeAssistantError, and in English only.
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="expert_write_failed",
+                translation_placeholders={
+                    "parameter": str(self._attr_name),
+                    "value": str(value),
+                    "error": str(exc),
+                },
+            ) from exc
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
         except HomeAssistantError:
             # Already the right kind and already worded for the user -
@@ -463,7 +505,13 @@ class WemPortalExpertNumber(RestoreNumber):
         except Exception as exc:
             _LOGGER.error("Expert write failed for %s: %s", self._attr_name, exc)
             raise HomeAssistantError(
-                f"Setting {self._attr_name} to {value} failed: {exc}"
+                translation_domain=DOMAIN,
+                translation_key="expert_write_failed",
+                translation_placeholders={
+                    "parameter": str(self._attr_name),
+                    "value": str(value),
+                    "error": str(exc),
+                },
             ) from exc
         finally:
             self._write_in_progress = False

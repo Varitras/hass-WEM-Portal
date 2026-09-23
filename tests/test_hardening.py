@@ -1747,8 +1747,12 @@ def test_a_word_write_not_taken_by_the_portal_is_reported_as_refused(monkeypatch
     ]
     client, _sent = _recording_write_client(monkeypatch, [still_on_ein, still_on_ein])
 
-    with pytest.raises(exceptions.ParameterWriteError, match="not confirmed"):
+    with pytest.raises(
+        exceptions.ParameterWriteError, match="not confirmed"
+    ) as excinfo:
         client.write_parameter("A" * 36, "Aus")
+    # The portal kept the old value: its failure, not a wrong request.
+    assert not isinstance(excinfo.value, exceptions.ValueNotOffered)
 
 
 def test_a_german_decimal_reaches_the_write_as_the_number_it_means(monkeypatch):
@@ -1818,6 +1822,9 @@ def test_a_refused_value_carries_the_range_that_refused_it(monkeypatch):
     with pytest.raises(ParameterWriteError) as excinfo:
         client.write_parameter("A" * 36, 50.0)
 
+    assert isinstance(excinfo.value, exceptions.ValueNotOffered), (
+        "a value the form does not offer is the request's fault, not the portal's"
+    )
     assert excinfo.value.state is not None, "the refusal threw the form away"
     assert excinfo.value.state.max_value == 1.5
 
@@ -6287,7 +6294,7 @@ def test_the_expert_entity_does_not_start_a_write_while_unloading():
     with pytest.raises(HomeAssistantError) as excinfo:
         _run(entity.async_set_native_value, 21.0)
 
-    assert "unload" in str(excinfo.value).lower()
+    assert excinfo.value.translation_key == "account_unloading"
     assert entity._write_in_progress is False, "the entity was left marked as busy"
 
 
@@ -8897,3 +8904,102 @@ def test_an_announcement_does_not_stop_the_expert_login(monkeypatch):
     monkeypatch.setattr(client, "_save_session", lambda: None)
 
     client._full_login()
+
+
+# --- which kind of error an action raises ------------------------------------
+#
+# ServiceValidationError is "the call was wrong" and stays out of the error
+# log; HomeAssistantError is "the system failed" and goes into it. A value the
+# device does not offer is the first; a write the portal did not confirm, or a
+# portal that refused outright, is the second. They used to be one kind.
+
+
+def _expert_entity_whose_write_raises(api, monkeypatch, error):
+    from custom_components.wemportal import expert_writer
+
+    entity, _built = _write_entity(api, monkeypatch)
+
+    class _Refusing:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def write_parameter(self, *_args, **_kwargs):
+            raise error
+
+    monkeypatch.setattr(expert_writer, "WemPortalExpertClient", _Refusing)
+    return entity
+
+
+def test_a_value_the_device_does_not_offer_is_a_wrong_request(monkeypatch):
+    from homeassistant.exceptions import ServiceValidationError
+
+    entity = _expert_entity_whose_write_raises(
+        _api(), monkeypatch, exceptions.ValueNotOffered("Value 50 not allowed")
+    )
+
+    with pytest.raises(ServiceValidationError) as excinfo:
+        _run(entity.async_set_native_value, 50.0)
+
+    assert excinfo.value.translation_key == "expert_value_not_offered"
+
+
+def test_a_write_the_portal_did_not_confirm_is_a_failure_not_a_wrong_request(
+    monkeypatch,
+):
+    from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+
+    entity = _expert_entity_whose_write_raises(
+        _api(), monkeypatch, exceptions.ParameterWriteError("Write not confirmed")
+    )
+
+    with pytest.raises(HomeAssistantError) as excinfo:
+        _run(entity.async_set_native_value, 21.0)
+
+    assert not isinstance(excinfo.value, ServiceValidationError)
+    assert excinfo.value.translation_key == "expert_write_failed"
+
+
+def test_a_portal_error_during_an_expert_write_reaches_the_user_translated(
+    monkeypatch,
+):
+    """A WemPortalError is a HomeAssistantError, so the clause that lets those
+    through as they came used to pass this one on in English only."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    entity = _expert_entity_whose_write_raises(
+        _api(), monkeypatch, exceptions.ServerError("portal answered 500")
+    )
+
+    with pytest.raises(HomeAssistantError) as excinfo:
+        _run(entity.async_set_native_value, 21.0)
+
+    assert excinfo.value.translation_key == "expert_write_failed"
+    assert "500" in excinfo.value.translation_placeholders["error"]
+
+
+def test_the_client_tells_a_value_it_does_not_offer_from_an_unconfirmed_write():
+    """Where the two kinds are born. Refusing a value against the form is
+    the request's fault; the form still showing the old value after the
+    write is the portal's."""
+    assert issubclass(exceptions.ValueNotOffered, exceptions.ParameterWriteError), (
+        "every existing handler of a refusal must still catch it"
+    )
+
+
+def test_an_expired_expert_session_during_an_announcement_logs_in_again(monkeypatch):
+    """The expert client's cached session has the same shape: the main page
+    of an expired session is the login page, with the banner on it during an
+    announcement. Read as maintenance, the cached path gave up instead of
+    logging in fresh."""
+    from custom_components.wemportal import expert_writer
+
+    class _Response:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Login.aspx"
+        text = MAINTENANCE_PAGE
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client.session = types.SimpleNamespace(get=lambda *_a, **_k: _Response())
+
+    with pytest.raises(exceptions.AuthError):
+        client._establish_context()

@@ -24,7 +24,7 @@ from custom_components.wemportal.models import Reading, WemPortalData
 
 pytest.importorskip("homeassistant")
 
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 BEGIN_ROW = Reading(
     friendly_name="Holiday begin",
@@ -238,7 +238,10 @@ async def test_a_range_that_ends_before_it_starts_is_refused(monkeypatch):
     with pytest.raises(HomeAssistantError) as excinfo:
         await holiday._write_holiday(hass, backwards)
 
-    assert "before it starts" in str(excinfo.value)
+    assert isinstance(excinfo.value, ServiceValidationError), (
+        "a wrong call, not a fault"
+    )
+    assert excinfo.value.translation_key == "holiday_ends_before_it_starts"
     assert api.calls == [], "a backwards range was put on the wire anyway"
 
 
@@ -266,7 +269,10 @@ async def test_two_dates_of_different_modules_are_refused(monkeypatch):
     with pytest.raises(HomeAssistantError) as excinfo:
         await holiday._write_holiday(hass, across_modules)
 
-    assert "different" in str(excinfo.value)
+    assert isinstance(excinfo.value, ServiceValidationError), (
+        "a wrong call, not a fault"
+    )
+    assert excinfo.value.translation_key == "holiday_different_modules"
     assert api.calls == []
 
 
@@ -274,9 +280,10 @@ async def test_the_same_entity_twice_is_refused(monkeypatch):
     hass, api, _rows = _world(monkeypatch)
     same_entity_twice = _call(end_entity="date.holiday_begin")
 
-    with pytest.raises(HomeAssistantError):
+    with pytest.raises(ServiceValidationError) as excinfo:
         await holiday._write_holiday(hass, same_entity_twice)
 
+    assert excinfo.value.translation_key == "holiday_same_entity"
     assert api.calls == []
 
 
@@ -286,7 +293,10 @@ def test_an_entity_of_another_integration_is_refused(monkeypatch):
     with pytest.raises(HomeAssistantError) as excinfo:
         holiday.resolve_date_target(hass, "date.not_ours")
 
-    assert "not a WEM Portal entity" in str(excinfo.value)
+    assert isinstance(excinfo.value, ServiceValidationError), (
+        "a wrong call, not a fault"
+    )
+    assert excinfo.value.translation_key == "holiday_not_a_wemportal_entity"
 
 
 def test_an_entity_that_is_not_a_date_is_refused(monkeypatch):
@@ -297,7 +307,10 @@ def test_an_entity_that_is_not_a_date_is_refused(monkeypatch):
     with pytest.raises(HomeAssistantError) as excinfo:
         holiday.resolve_date_target(hass, "number.some_setpoint")
 
-    assert "not a date entity" in str(excinfo.value)
+    assert isinstance(excinfo.value, ServiceValidationError), (
+        "a wrong call, not a fault"
+    )
+    assert excinfo.value.translation_key == "holiday_not_a_date_entity"
 
 
 async def test_a_row_the_portal_no_longer_calls_a_date_is_refused(monkeypatch):
@@ -318,9 +331,12 @@ async def test_a_row_the_portal_no_longer_calls_a_date_is_refused(monkeypatch):
     }
     hass, api, _rows = _world(monkeypatch, rows=rows)
 
-    with pytest.raises(HomeAssistantError):
+    with pytest.raises(HomeAssistantError) as excinfo:
         await holiday._write_holiday(hass, _call())
 
+    # The portal changed underneath a loaded entity - not the caller's doing.
+    assert not isinstance(excinfo.value, ServiceValidationError)
+    assert excinfo.value.translation_key == "holiday_reclassified"
     assert api.calls == [], "an epoch was written to a row that is not a date"
 
 

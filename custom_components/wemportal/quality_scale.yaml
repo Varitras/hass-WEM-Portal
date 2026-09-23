@@ -34,13 +34,7 @@ rules:
       A custom integration has no entry in the home-assistant/brands
       repository, and no way to get one while it stays outside core.
   common-modules: done
-  config-flow-test-coverage:
-    status: todo
-    comment: >-
-      The rule asks for full coverage of config_flow.py. tests/test_config_flow.py
-      drives every step through the real flow manager, but measured line
-      coverage of that module is 88% - the error paths that need a portal
-      failing in a particular way are the part still missing.
+  config-flow-test-coverage: done
   config-flow: done
   dependency-transparency: done
   docs-actions: done
@@ -49,12 +43,7 @@ rules:
     comment: This integration provides no conditions.
   docs-high-level-description: done
   docs-installation-instructions: done
-  docs-removal-instructions:
-    status: todo
-    comment: >-
-      README.md does not say what removing the entry leaves behind. It leaves
-      nothing - async_remove_entry deletes both stores, the repair issues and
-      the account state - but that is only visible in the code.
+  docs-removal-instructions: done
   docs-triggers:
     status: exempt
     comment: This integration provides no triggers.
@@ -67,14 +56,7 @@ rules:
   unique-config-entry: done
 
   # Silver
-  action-exceptions:
-    status: todo
-    comment: >-
-      Failures raise HomeAssistantError, which is right for a portal that
-      refused. What is missing is the distinction the rule asks for: a call
-      with a malformed entityvalue or a value the parameter does not offer is
-      wrong usage and should be a ServiceValidationError, which is not used
-      anywhere yet.
+  action-exceptions: done
   config-entry-unloading: done
   docs-configuration-parameters: done
   docs-installation-parameters: done
@@ -86,11 +68,12 @@ rules:
   test-coverage:
     status: todo
     comment: >-
-      The rule asks for above 95% over the integration; measured is 91% across
-      4503 statements. Almost all of the gap is expert_writer.py at 69%, the
-      web-scraping client for expert parameters - its error branches need
-      portal HTML nobody has captured yet. Every other module is at 85% or
-      better, most above 94%.
+      The rule asks for above 95% over the integration; measured is 90% of
+      4609 statements with branch coverage. The largest gap is expert_writer.py
+      at 68%, the web-scraping client for expert parameters - its error
+      branches need portal HTML nobody has captured yet. number.py and
+      select.py are at 82%, web_protocol.py at 84%; most other modules are
+      above 90%.
 
   # Gold
   devices: done
@@ -105,31 +88,12 @@ rules:
       is nothing on the network to find, and no local device to announce
       itself.
   docs-data-update: done
-  docs-examples:
-    status: todo
-    comment: >-
-      README.md documents both actions with their fields, but shows no worked
-      automation or dashboard using them.
-  docs-known-limitations:
-    status: todo
-    comment: >-
-      The limitations are real and known - the rate limit, expert write access
-      being web-only, holiday dates only writable as a pair - but they are
-      spread across the sections they belong to rather than stated as such in
-      one place.
-  docs-supported-devices:
-    status: todo
-    comment: >-
-      README.md says entities depend on what the installation reports, which is
-      true, but names no concrete heat pump or controller generation that is
-      known to work.
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
   docs-supported-functions: done
   docs-troubleshooting: done
-  docs-use-cases:
-    status: todo
-    comment: >-
-      What the integration exposes is documented; what it is FOR - the cases
-      somebody would install it for - is not written down anywhere.
+  docs-use-cases: done
   dynamic-devices: done
   entity-category: done
   entity-device-class: done
@@ -152,13 +116,7 @@ rules:
       with a scraped one, and the migration rebuilds old unique ids from it.
       Moving to translation keys is therefore a rework of two invariants and a
       visible rename for every user, not a presentation change.
-  exception-translations:
-    status: todo
-    comment: >-
-      The repair issues are translated. The messages raised at the user - a
-      refused write, a parameter the portal stopped describing - are literal
-      English strings, deliberately detailed, and would each need a catalogue
-      entry with placeholders.
+  exception-translations: done
   icon-translations:
     status: todo
     comment: >-
@@ -166,12 +124,7 @@ rules:
       cannot be met ahead of entity-translations. The one icon set in code
       belongs to the expert numbers; the rest are left to the device class on
       purpose, because an explicit icon always beats it.
-  reconfiguration-flow:
-    status: todo
-    comment: >-
-      Settings are changed through the options flow and a new password through
-      reauth, so nothing is unreachable - but there is no async_step_reconfigure
-      for changing the account itself without removing the entry.
+  reconfiguration-flow: done
   repair-issues: done
   stale-devices: done
 
@@ -188,4 +141,9 @@ rules:
     status: exempt
     comment: >-
       No aiohttp or httpx session exists to inject - see async-dependency.
-  strict-typing: done
+  strict-typing:
+    status: todo
+    comment: >-
+      mypy runs in strict mode, but the entity platforms, the protocol modules
+      and both flows still allow untyped definitions and calls (see mypy.ini).
+      The rule asks for no such exceptions.

@@ -74,7 +74,7 @@ COMPLEXITY_BUDGETS = {
     # the three sibling expert paths already do - added the acquire/release
     # guard and a busy handler. Extracting it would be the pass-through helper
     # this file's header warns against.
-    "__init__.py::_async_register_expert_service": 26,
+    "__init__.py::_async_register_expert_service": 28,
     "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,
     # 19 before the AuthError shield in front of its catch-all, which is

@@ -9,7 +9,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .const import DOMAIN
 from .coordinator import API_FAILURES_TOLERATED, WemPortalDataUpdateCoordinator
+from .exceptions import WemPortalError
 from .migration import _orphaned_by_a_merge, get_wemportal_unique_id
 from .models import Reading, raise_if_not_writable
 from .utils import build_device_info, device_is_reachable, device_model
@@ -197,22 +199,31 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         raise_if_not_writable(self._config_entry, what)
         if self._coordinator_row() is None:
             raise HomeAssistantError(
-                f"{what}: the portal no longer answers for this parameter, so "
-                "the address this entity would write to may not mean anything "
-                "any more. Nothing was written; the entity starts working "
-                "again by itself once the parameter is back."
+                translation_domain=DOMAIN,
+                translation_key="parameter_no_longer_answered",
+                translation_placeholders={"parameter": what},
             )
-        await self.hass.async_add_executor_job(
-            partial(
-                self.coordinator.api.change_value,
-                self._device_id,
-                self._parameter_id,
-                self._module_index,
-                self._module_type,
-                value,
-                together_with=together_with,
+        try:
+            await self.hass.async_add_executor_job(
+                partial(
+                    self.coordinator.api.change_value,
+                    self._device_id,
+                    self._parameter_id,
+                    self._module_index,
+                    self._module_type,
+                    value,
+                    together_with=together_with,
+                )
             )
-        )
+        except WemPortalError as exc:
+            # The one write path all four platforms share, so the one place
+            # a portal refusal becomes something the user can read in their
+            # own language. Raised as it came, it arrived in English only.
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="write_failed",
+                translation_placeholders={"parameter": what, "error": str(exc)},
+            ) from exc
 
     def _forget_written_value(self) -> None:
         """Take back a value nobody could confirm was kept.

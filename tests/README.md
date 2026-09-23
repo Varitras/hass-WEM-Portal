@@ -61,6 +61,7 @@ exists because the thing it prevents actually happened here.
 
 | Guard | Holds |
 |---|---|
+| `test_action_errors.py` | Every `HomeAssistantError` / `ServiceValidationError` an action raises carries a translation key, with a message and the same placeholders in every catalogue - and no catalogue entry outlives its raise |
 | `test_budgets.py` | No module or function grows past its frozen budget |
 | `test_durations.py` | No single test quietly starts taking minutes (budget in `durations.py`, enforced from `conftest.py`), and a run that stops making progress is cut off rather than only measured |
 | `test_guards.py` | No guard binds itself to one source file; every guard is listed; `check.sh` matches CI |

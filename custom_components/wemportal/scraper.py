@@ -339,8 +339,15 @@ class WemPortalScraper:
             raise self._transport_failure(
                 exc, "open the WEM Portal expert view"
             ) from exc
-        self._check_response(r_expert, "expert page", check_maintenance=True)
-        if WEB_LOGIN_URL.lower() in r_expert.url.lower():
+        # A session that ran out lands on the login page, and that page decides
+        # nothing about maintenance - it looks the same before and during a
+        # window. Asked first, an announcement on it re-raised as maintenance
+        # here, and the reuse path passes that on instead of logging in fresh.
+        on_login_page = WEB_LOGIN_URL.lower() in r_expert.url.lower()
+        self._check_response(
+            r_expert, "expert page", check_maintenance=not on_login_page
+        )
+        if on_login_page:
             return None
 
         # A non-200 body is an error page, not the expert view. Returned
