@@ -8985,3 +8985,22 @@ def test_the_client_tells_a_value_it_does_not_offer_from_an_unconfirmed_write():
     assert issubclass(exceptions.ValueNotOffered, exceptions.ParameterWriteError), (
         "every existing handler of a refusal must still catch it"
     )
+
+
+def test_an_expired_expert_session_during_an_announcement_logs_in_again(monkeypatch):
+    """The expert client's cached session has the same shape: the main page
+    of an expired session is the login page, with the banner on it during an
+    announcement. Read as maintenance, the cached path gave up instead of
+    logging in fresh."""
+    from custom_components.wemportal import expert_writer
+
+    class _Response:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Login.aspx"
+        text = MAINTENANCE_PAGE
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client.session = types.SimpleNamespace(get=lambda *_a, **_k: _Response())
+
+    with pytest.raises(exceptions.AuthError):
+        client._establish_context()

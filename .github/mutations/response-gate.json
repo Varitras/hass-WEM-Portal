@@ -3953,5 +3953,19 @@
     "new": "            if True:\n                # Same reason as after a reauth",
     "tests": "reconfigure_keeps_the_entry_when_the_login_fails",
     "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "announcement: an expired scrape session read as maintenance again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "r_expert, \"expert page\", check_maintenance=not on_login_page",
+    "new": "r_expert, \"expert page\", check_maintenance=True",
+    "tests": "an_expired_session_during_an_announcement_falls_back_to_a_login"
+  },
+  {
+    "label": "announcement: an expired expert session read as maintenance again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "main_page, \"main page\", check_maintenance=not on_login_page",
+    "new": "main_page, \"main page\", check_maintenance=True",
+    "tests": "an_expired_expert_session_during_an_announcement_logs_in_again"
   }
 ]

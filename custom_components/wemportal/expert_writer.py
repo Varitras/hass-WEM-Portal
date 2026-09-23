@@ -994,8 +994,14 @@ class WemPortalExpertClient:
             timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
             headers={"Accept": WEB_ACCEPT_NAV, "Accept-Language": WEB_ACCEPT_LANGUAGE},
         )
-        self._check_response(main_page, "main page", check_maintenance=True)
-        if WEB_LOGIN_URL.lower() in main_page.url.lower():
+        # The login page first, for the reason the scraper's reuse path has:
+        # it decides nothing about maintenance, and a cached session that ran
+        # out lands there - which is a reason to log in fresh, not an outage.
+        on_login_page = WEB_LOGIN_URL.lower() in main_page.url.lower()
+        self._check_response(
+            main_page, "main page", check_maintenance=not on_login_page
+        )
+        if on_login_page:
             raise AuthError("Expert client: session not accepted by portal main page.")
         current_html = main_page.text
         _LOGGER.debug(
