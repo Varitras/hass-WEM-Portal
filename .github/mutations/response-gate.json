@@ -3890,5 +3890,40 @@
     "old": "            raise ServiceValidationError(\n                translation_domain=DOMAIN,\n                translation_key=\"option_ambiguous\",",
     "new": "            raise ServiceValidationError(\n                translation_domain=DOMAIN,\n                translation_key=\"option_ambiguous_wrong\",",
     "tests": "two_options_with_one_name_do_not_write_a_guessed_value"
+  },
+  {
+    "label": "flow: a wrong password on setup reported as a connection problem",
+    "old": "                errors[\"base\"] = \"invalid_auth\"",
+    "new": "                errors[\"base\"] = \"cannot_connect\"",
+    "tests": "a_wrong_password_on_setup_says_so",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "flow: an unforeseen error on setup escaping as a crash",
+    "old": "                _LOGGER.exception(\"Unexpected exception\")\n                errors[\"base\"] = \"unknown\"",
+    "new": "                raise",
+    "tests": "something_unforeseen_on_setup_is_a_message_not_a_crash",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "flow: reauth calling a connection problem a wrong password",
+    "old": "            return \"cannot_connect\"",
+    "new": "            return \"invalid_auth\"",
+    "tests": "reauth_names_what_went_wrong",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "flow: an unforeseen error during reauth escaping as a crash",
+    "old": "            _LOGGER.exception(\"Unexpected exception during reauth\")\n            return \"unknown\"",
+    "new": "            raise",
+    "tests": "something_unforeseen_during_reauth_is_a_message_not_a_crash",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "flow: a reauth for a vanished entry carrying on regardless",
+    "old": "        if entry is None:\n            return self.async_abort(reason=\"unknown\")",
+    "new": "        if entry is None:\n            pass",
+    "tests": "a_reauth_for_an_entry_that_is_gone_ends_cleanly",
+    "path": "custom_components/wemportal/config_flow.py"
   }
 ]

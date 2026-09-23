@@ -34,13 +34,7 @@ rules:
       A custom integration has no entry in the home-assistant/brands
       repository, and no way to get one while it stays outside core.
   common-modules: done
-  config-flow-test-coverage:
-    status: todo
-    comment: >-
-      The rule asks for full coverage of config_flow.py. tests/test_config_flow.py
-      drives every step through the real flow manager, but measured line
-      coverage of that module is 88% - the error paths that need a portal
-      failing in a particular way are the part still missing.
+  config-flow-test-coverage: done
   config-flow: done
   dependency-transparency: done
   docs-actions: done

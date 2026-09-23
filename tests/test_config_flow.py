@@ -1025,3 +1025,114 @@ async def test_the_rescan_option_marks_the_cached_lists_as_due(hass):
     )
     # A module with no discovered list needs no marking - it is read anyway.
     assert "parameters_fetched_at" not in api.modules["1234"][(0, 7)]
+
+
+# --- every way the flows can be answered ----------------------------------
+#
+# The quality scale asks for the config flow to be covered in full, and the
+# point is not the number: each of these is a message the user reads instead
+# of the error that caused it, and a reordered pair of except clauses turns
+# one into another without anything else noticing.
+
+_USER_INPUT = {
+    CONF_USERNAME: USER,
+    CONF_PASSWORD: "secret",
+    CONF_LANGUAGE: "en",
+    CONF_MODE: "api",
+}
+
+
+def _login_refused(self, *_args, **_kwargs):
+    raise AuthError("Login failed")
+
+
+def _no_route(self, *_args, **_kwargs):
+    raise OSError("no route to host")
+
+
+async def test_a_wrong_password_on_setup_says_so(hass, monkeypatch):
+    monkeypatch.setattr(WemPortalApi, "api_login", _login_refused)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _USER_INPUT
+    )
+
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_something_unforeseen_on_setup_is_a_message_not_a_crash(
+    hass, monkeypatch
+):
+    """validate_input turns anything it does not know into cannot_connect, so
+    this is the flow's own safety net: whatever breaks outside it must still
+    end on the form, not as a server error in the browser."""
+    from custom_components.wemportal import config_flow
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("something nobody planned for")
+
+    monkeypatch.setattr(config_flow, "validate_input", broken)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _USER_INPUT
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "unknown"}
+
+
+@pytest.mark.parametrize(
+    ("login", "error"),
+    [(_no_route, "cannot_connect"), (_login_refused, "invalid_auth")],
+)
+async def test_reauth_names_what_went_wrong(hass, monkeypatch, login, error):
+    entry = await _setup(hass, _entry(hass))
+    monkeypatch.setattr(WemPortalApi, "api_login", login)
+    monkeypatch.setattr(WemPortalApi, "web_login", login)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "secret"}
+    )
+
+    assert result["errors"] == {"base": error}
+
+
+async def test_something_unforeseen_during_reauth_is_a_message_not_a_crash(
+    hass, monkeypatch
+):
+    from custom_components.wemportal import config_flow
+
+    entry = await _setup(hass, _entry(hass))
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("something nobody planned for")
+
+    monkeypatch.setattr(config_flow, "validate_input", broken)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "secret"}
+    )
+
+    assert result["errors"] == {"base": "unknown"}
+
+
+async def test_a_reauth_for_an_entry_that_is_gone_ends_cleanly(hass):
+    """The entry can be removed while its reauth dialog is still open, and the
+    dialog is then answered for something that no longer exists."""
+    from custom_components.wemportal.config_flow import WemPortalConfigFlow
+
+    flow = WemPortalConfigFlow()
+    flow.hass = hass
+
+    result = await flow.async_step_reauth_confirm()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "unknown"
