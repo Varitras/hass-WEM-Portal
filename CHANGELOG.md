@@ -6,6 +6,44 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.14.0b1] – 2026-09-24
+
+A beta: the login can be changed without removing the integration, errors
+from its actions arrive in your language, and a maintenance announcement no
+longer takes the integration down hours early.
+
+### Added
+
+- **Change the login without removing the integration.** Settings > Devices &
+  Services > WEM Portal > Reconfigure takes a new password, and also a
+  different username for when the e-mail address of the portal account
+  changed. The new login is checked before anything is saved; one another
+  entry already uses is refused. A different username is treated as a
+  different installation: the cached module list, the device scraped readings
+  are filed under, the expert parameter slots and what was remembered about
+  the old account are dropped - enter the expert slots again if you use them.
+  A password-only change keeps everything.
+- **README:** supported devices (tested end to end with a Weishaupt Biblock
+  WBB 12), what the integration is for, examples, known limitations and what
+  removing it leaves behind.
+
+### Changed
+
+- **Action errors tell a wrong request from a failure, in your language.** A
+  mistake in the call - an unknown parameter, a value the device does not
+  offer, dates in the wrong order - is a validation error and stays out of
+  the error log. A failure of the portal or the integration is an error and
+  goes into it. Every message is translated (English, German).
+
+### Fixed
+
+- **A maintenance announcement no longer reads as maintenance.** The portal
+  shows its notice hours before a window as well as during it. The login
+  page carried it, so a working portal was reported as down and polling
+  stopped for hours. Now only a login the portal refuses with the notice
+  counts, and the same holds when an expired session is renewed. The
+  announcement itself is logged once at info level.
+
 ## [1.13.3] – 2026-09-20
 
 Five defects found by an independent audit of 1.13.2, two of which turned
