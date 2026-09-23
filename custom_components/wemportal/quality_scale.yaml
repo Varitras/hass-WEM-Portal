@@ -89,12 +89,7 @@ rules:
   docs-data-update: done
   docs-examples: done
   docs-known-limitations: done
-  docs-supported-devices:
-    status: todo
-    comment: >-
-      README.md says entities depend on what the installation reports, which is
-      true, but names no concrete heat pump or controller generation that is
-      known to work.
+  docs-supported-devices: done
   docs-supported-functions: done
   docs-troubleshooting: done
   docs-use-cases: done

@@ -48,7 +48,17 @@ This is a fork of
 Entities are created from whatever your installation actually reports, so the
 exact list depends on your heat pump, its modules and the mode you choose.
 
-What people use it for:
+### Supported devices
+
+Anything registered in the WEM Portal: the integration reads what the portal
+shows for an installation rather than a list of known models, so heat pumps and
+heating systems that appear there are covered as far as the portal exposes
+them.
+
+Tested end to end with a **Weishaupt Biblock heat pump (WBB 12)**. Reports from
+other models are welcome - especially if something is missing or looks wrong.
+
+### What it is for
 
 - **Seeing the heat pump next to everything else** - temperatures, operating
   states and faults on the same dashboards and in the same history as the rest
