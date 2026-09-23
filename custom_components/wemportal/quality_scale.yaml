@@ -43,12 +43,7 @@ rules:
     comment: This integration provides no conditions.
   docs-high-level-description: done
   docs-installation-instructions: done
-  docs-removal-instructions:
-    status: todo
-    comment: >-
-      README.md does not say what removing the entry leaves behind. It leaves
-      nothing - async_remove_entry deletes both stores, the repair issues and
-      the account state - but that is only visible in the code.
+  docs-removal-instructions: done
   docs-triggers:
     status: exempt
     comment: This integration provides no triggers.
@@ -61,14 +56,7 @@ rules:
   unique-config-entry: done
 
   # Silver
-  action-exceptions:
-    status: todo
-    comment: >-
-      Failures raise HomeAssistantError, which is right for a portal that
-      refused. What is missing is the distinction the rule asks for: a call
-      with a malformed entityvalue or a value the parameter does not offer is
-      wrong usage and should be a ServiceValidationError, which is not used
-      anywhere yet.
+  action-exceptions: done
   config-entry-unloading: done
   docs-configuration-parameters: done
   docs-installation-parameters: done
@@ -99,18 +87,8 @@ rules:
       is nothing on the network to find, and no local device to announce
       itself.
   docs-data-update: done
-  docs-examples:
-    status: todo
-    comment: >-
-      README.md documents both actions with their fields, but shows no worked
-      automation or dashboard using them.
-  docs-known-limitations:
-    status: todo
-    comment: >-
-      The limitations are real and known - the rate limit, expert write access
-      being web-only, holiday dates only writable as a pair - but they are
-      spread across the sections they belong to rather than stated as such in
-      one place.
+  docs-examples: done
+  docs-known-limitations: done
   docs-supported-devices:
     status: todo
     comment: >-
@@ -119,11 +97,7 @@ rules:
       known to work.
   docs-supported-functions: done
   docs-troubleshooting: done
-  docs-use-cases:
-    status: todo
-    comment: >-
-      What the integration exposes is documented; what it is FOR - the cases
-      somebody would install it for - is not written down anywhere.
+  docs-use-cases: done
   dynamic-devices: done
   entity-category: done
   entity-device-class: done
@@ -146,13 +120,7 @@ rules:
       with a scraped one, and the migration rebuilds old unique ids from it.
       Moving to translation keys is therefore a rework of two invariants and a
       visible rename for every user, not a presentation change.
-  exception-translations:
-    status: todo
-    comment: >-
-      The repair issues are translated. The messages raised at the user - a
-      refused write, a parameter the portal stopped describing - are literal
-      English strings, deliberately detailed, and would each need a catalogue
-      entry with placeholders.
+  exception-translations: done
   icon-translations:
     status: todo
     comment: >-

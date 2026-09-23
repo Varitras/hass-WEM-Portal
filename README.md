@@ -35,8 +35,11 @@ This is a fork of
 - [Polling and the portal's rate limit](#polling-and-the-portals-rate-limit)
 - [Options reference](#options-reference)
 - [Services](#services)
+- [Examples](#examples)
 - [Expert write access (web)](#expert-write-access-web)
+- [Known limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
+- [Removing the integration](#removing-the-integration)
 
 ---
 
@@ -44,6 +47,18 @@ This is a fork of
 
 Entities are created from whatever your installation actually reports, so the
 exact list depends on your heat pump, its modules and the mode you choose.
+
+What people use it for:
+
+- **Seeing the heat pump next to everything else** - temperatures, operating
+  states and faults on the same dashboards and in the same history as the rest
+  of the house.
+- **Being told about a fault** - the *Has Errors* and *Error Messages*
+  sensors below are made for a notification automation.
+- **Energy Dashboard** - consumption and heat output as energy totals.
+- **Acting on the house** - setpoints as number entities, so an automation can
+  raise the hot-water temperature while there is solar surplus, or a holiday
+  period can be set from a presence or calendar automation.
 
 | Entity type | What it is |
 |---|---|
@@ -138,6 +153,21 @@ later, so a mode that cannot log in is refused instead of silently failing on
 every update afterwards.
 
 Everything else is under `CONFIGURE` once the integration is added.
+
+### Changing the login later
+
+`Settings > Devices & Services`, WEM Portal, the three dots on the entry,
+**Reconfigure**. It takes a new password, and also a **different username** -
+for when the e-mail address of your portal account changed - so you do not have
+to delete and re-add the integration. The new login is checked before anything
+is saved, and a login another WEM Portal entry already uses is refused.
+
+If the new login belongs to a different installation, its devices appear as
+new ones. The old ones can then be deleted from their device pages.
+
+This is not the same as the **re-authentication** Home Assistant asks for when
+a login stops working: that one only accepts a new password for the same
+account.
 
 ---
 
@@ -274,6 +304,47 @@ data:
 Administrator only. Runs synchronously and **raises on failure**, so an
 automation can tell whether the write succeeded. It takes a few seconds for the
 portal navigation.
+
+---
+
+## Examples
+
+Entity ids below are placeholders - take the real ones from your device pages.
+
+Get told about a fault:
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: sensor.your_heat_pump_has_errors
+    to: "Yes"
+actions:
+  - action: notify.notify
+    data:
+      title: Heat pump
+      message: "{{ states('sensor.your_heat_pump_error_messages') }}"
+```
+
+Heat the water a little more while there is solar surplus, and let it go back
+afterwards:
+
+```yaml
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.your_grid_export_power
+    above: 2000
+    for: "00:10:00"
+actions:
+  - action: number.set_value
+    target:
+      entity_id: number.your_hot_water_normal_temperature
+    data:
+      value: 55
+```
+
+Keep in mind that every write is a request against the portal's limit - an
+automation that fires every few minutes adds up. See
+[Polling and the portal's rate limit](#polling-and-the-portals-rate-limit).
 
 ---
 
@@ -509,6 +580,29 @@ every model.
 
 ---
 
+## Known limitations
+
+- **Cloud only.** Everything goes through Weishaupt's WEM Portal; there is no
+  local connection, and no data while the portal or your internet is down.
+- **A request limit per IP address.** The portal blocks an IP that sends too
+  many requests in 12 hours; see
+  [Polling and the portal's rate limit](#polling-and-the-portals-rate-limit).
+- **Values are as fresh as the portal has them.** A shorter scan interval does
+  not make the heat pump report more often, it only spends requests.
+- **Maintenance windows.** During announced portal maintenance there are no
+  new values; the integration recognises it and does not ask for your
+  password.
+- **Expert write access is web-only** and needs the installation's Fachmann
+  access in the portal.
+- **Holiday dates are only kept as a pair** - see
+  [`set_holiday`](#wemportalset_holiday).
+- **Weekly programmes are read-only.**
+- **Web-mode entities are keyed by the portal's labels.** Changing the language
+  of your portal account, or the portal rewording a row, creates new entities;
+  the old ones keep their history.
+
+---
+
 ## Troubleshooting
 
 **Enable debug logging first:** `Settings > Devices & Services`, find WEM
@@ -525,6 +619,18 @@ Portal, click the three dots on the card, choose `Enable debug logging`.
 
 When opening an issue, please include the debug log — **with your
 `entityvalue` IDs and email address removed**.
+
+---
+
+## Removing the integration
+
+1. `Settings > Devices & Services`, WEM Portal, the three dots on the entry,
+   **Delete**. This removes the entry with its devices and entities, and also
+   what the integration kept for it on disk: the cached module list, the stored
+   web device id, and its repair issues. Nothing is left behind in Home
+   Assistant, and nothing is changed in the WEM Portal.
+2. If it was installed through HACS, remove it there as well, then restart
+   Home Assistant.
 
 ---
 
