@@ -172,8 +172,12 @@ for when the e-mail address of your portal account changed - so you do not have
 to delete and re-add the integration. The new login is checked before anything
 is saved, and a login another WEM Portal entry already uses is refused.
 
-If the new login belongs to a different installation, its devices appear as
-new ones. The old ones can then be deleted from their device pages.
+A different username is treated as a different installation, even when it is
+only the e-mail address that changed: what the integration remembered about the
+old one is dropped, the **expert parameter slots** included, since their IDs
+belong to the old heating system. Enter them again in the options if you use
+them. If the new login really is a different installation, its devices appear
+as new ones; the old ones can then be deleted from their device pages.
 
 This is not the same as the **re-authentication** Home Assistant asks for when
 a login stops working: that one only accepts a new password for the same

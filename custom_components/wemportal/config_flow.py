@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Final
+from collections.abc import Mapping
+from typing import Any, Final
 import logging
 
 import voluptuous as vol
@@ -20,8 +21,12 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .models import account_unique_id
+from .models import account_unique_id, forget_account_state
 from .const import (
+    CONF_EXPERT_MODULE_ARG,
+    CONF_EXPERT_MODULE_LIST,
+    CONF_EXPERT_SLOT_ID_TEMPLATE,
+    CONF_EXPERT_SLOT_NAME_TEMPLATE,
     CONF_LANGUAGE,
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
@@ -30,6 +35,7 @@ from .const import (
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
     DEFAULT_MODE,
     DOMAIN,
+    EXPERT_SLOT_COUNT,
 )
 from .exceptions import AuthError, ForbiddenError
 from .coordinator import (
@@ -121,6 +127,22 @@ class CannotConnect(exceptions.HomeAssistantError):
 
 class InvalidAuth(exceptions.HomeAssistantError):
     """Error to indicate there is invalid auth."""
+
+
+def _without_the_installation(options: Mapping[str, Any]) -> dict[str, Any]:
+    """The options minus what names parts of one particular installation.
+
+    The expert slots are the write action's allowlist: kept across a move to
+    another login, a parameter chosen for one heating system stayed writable
+    through the account of another. Preferences stay.
+    """
+    installation_bound = {CONF_EXPERT_MODULE_ARG, CONF_EXPERT_MODULE_LIST}
+    for slot in range(1, EXPERT_SLOT_COUNT + 1):
+        installation_bound.add(CONF_EXPERT_SLOT_ID_TEMPLATE % slot)
+        installation_bound.add(CONF_EXPERT_SLOT_NAME_TEMPLATE % slot)
+    return {
+        key: value for key, value in options.items() if key not in installation_bound
+    }
 
 
 class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -328,6 +350,9 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         await self.hass.config_entries.async_unload(entry.entry_id)
         await get_modules_store(self.hass, entry.entry_id).async_remove()
         await get_scraper_device_store(self.hass, entry.entry_id).async_remove()
+        # Keyed by the account, not the entry. The move is what leaves that
+        # account without an entry - no other one may hold it.
+        forget_account_state(entry.data.get(CONF_USERNAME))
 
     async def async_step_reconfigure(self, user_input=None):
         """Change the login of an existing entry, the account included.
@@ -356,8 +381,14 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_PASSWORD: user_input[CONF_PASSWORD],
             }
             title = entry.title
+            options: Mapping[str, Any] = entry.options
             if moves_to_another_login:
+                # Claims the login for this flow before the portal is asked:
+                # the scan above sees entries, not another dialog moving an
+                # entry to the same login right now.
+                await self.async_set_unique_id(account)
                 title = user_input[CONF_USERNAME]
+                options = _without_the_installation(options)
             failure = await self._credential_error(entry, new_data)
             if failure is None:
                 # Same reason as after a reauth: the portal just accepted
@@ -366,7 +397,11 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 if moves_to_another_login:
                     await self._forget_the_old_installation(entry)
                 return self.async_update_reload_and_abort(
-                    entry, unique_id=account, title=title, data=new_data
+                    entry,
+                    unique_id=account,
+                    title=title,
+                    data=new_data,
+                    options=options,
                 )
             errors["base"] = failure
 
