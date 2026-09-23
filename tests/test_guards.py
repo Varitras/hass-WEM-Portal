@@ -29,6 +29,7 @@ PACKAGE = TESTS.parents[0] / "custom_components" / "wemportal"
 # This list is the answer to "what stops the old problems coming back",
 # for whoever asks that question in six months.
 GUARD_FILES = {
+    "test_action_errors.py": "every error an action raises carries a translation key with a message in every catalogue",
     "test_account_state.py": "no mutable module-level state outside the registry",
     "test_budgets.py": "no module or function grows past its frozen budget",
     "test_ci_matrix.py": "the CI matrix tests the Home Assistant releases it claims to",

@@ -16,7 +16,11 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.exceptions import (
+    ConfigEntryNotReady,
+    HomeAssistantError,
+    ServiceValidationError,
+)
 from homeassistant.helpers import device_registry, issue_registry
 from homeassistant.helpers.service import async_register_admin_service
 
@@ -40,7 +44,7 @@ from .coordinator import (
     get_modules_store,
     get_scraper_device_store,
 )
-from .exceptions import ExpertOperationAborted
+from .exceptions import ExpertOperationAborted, ValueNotOffered
 from .migration import migrate_unique_ids
 from .models import (
     account_unique_id,
@@ -406,10 +410,9 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
 
         resolved = _resolve_expert_entry(hass)
         if resolved is None:
-            raise HomeAssistantError(
-                "WEM Portal expert write: could not determine the target account. "
-                "Enable expert write on exactly one config entry (multiple "
-                "expert-enabled entries are not yet supported for the service)."
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="expert_account_ambiguous",
             )
         target_entry, target_api = resolved
 
@@ -423,10 +426,12 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
 
         configured = _configured_expert_ids(target_entry)
         if canonical_entityvalue(entityvalue) not in configured:
-            raise HomeAssistantError(
-                f"WEM Portal expert write: {short_entityvalue(entityvalue)} is not one of "
-                "the parameters configured in this integration's options. Add it "
-                "to a slot first."
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="expert_parameter_not_configured",
+                translation_placeholders={
+                    "entityvalue": short_entityvalue(entityvalue)
+                },
             )
         # From here on the CONFIGURED spelling, not the one that was typed.
         # The comparison above is case-insensitive because hex ids mean the
@@ -439,8 +444,10 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
 
         data = getattr(target_entry, "runtime_data", None)
         if data is None:
-            raise HomeAssistantError(
-                "WEM Portal expert write: the integration is not loaded."
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="account_not_loaded",
+                translation_placeholders={"action": "Expert write"},
             )
         lock = data.expert.lock
         ev_short = short_entityvalue(entityvalue)
@@ -517,7 +524,10 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
             # The worker refused because another expert operation holds the
             # account lock. Surface the same user-facing error the event loop
             # used to raise, not the generic "failed" of the catch-all below.
-            raise HomeAssistantError(f"WEM Portal expert write: {exc}") from exc
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="expert_operation_in_progress",
+            ) from exc
         except ExpertOperationAborted as exc:
             # The configuration went away mid-write. Nothing reached the
             # portal - and the caller is still waiting on this call, so it
@@ -527,12 +537,32 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
             # signal it needs saying explicitly, which is clearer anyway.
             _LOGGER.debug("Expert write for %s stopped: %s", ev_short, exc)
             raise HomeAssistantError(
-                f"WEM Portal expert write for {ev_short} was stopped: {exc}"
+                translation_domain=DOMAIN,
+                translation_key="expert_write_stopped",
+                translation_placeholders={"parameter": ev_short, "error": str(exc)},
+            ) from exc
+        except ValueNotOffered as exc:
+            # The caller asked for something the device does not offer - a
+            # wrong request, which Home Assistant keeps out of the error log.
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="expert_value_not_offered",
+                translation_placeholders={
+                    "parameter": ev_short,
+                    "value": str(value),
+                    "error": str(exc),
+                },
             ) from exc
         except Exception as exc:
             _LOGGER.error("Expert write failed for %s: %s", ev_short, exc)
             raise HomeAssistantError(
-                f"WEM Portal expert write for {ev_short} to {value} failed: {exc}"
+                translation_domain=DOMAIN,
+                translation_key="expert_write_failed",
+                translation_placeholders={
+                    "parameter": ev_short,
+                    "value": str(value),
+                    "error": str(exc),
+                },
             ) from exc
         # The write verified itself against the portal; that answer is exactly
         # what the entity for this id should be showing.

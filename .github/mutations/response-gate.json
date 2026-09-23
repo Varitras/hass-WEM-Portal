@@ -1409,8 +1409,8 @@
   {
     "label": "holiday: recording a range the portal refused must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "    await hass.async_add_executor_job(\n        partial(",
-    "new": "    begin.row[\"value\"] = begin_epoch\n    end.row[\"value\"] = end_epoch\n    await hass.async_add_executor_job(\n        partial(",
+    "old": "    try:\n        await hass.async_add_executor_job(\n            partial(",
+    "new": "    begin.row[\"value\"] = begin_epoch\n    end.row[\"value\"] = end_epoch\n    try:\n        await hass.async_add_executor_job(\n            partial(",
     "tests": "a_refused_write_changes_nothing"
   },
   {
@@ -2396,8 +2396,8 @@
   {
     "label": "expert: an unexpected failure swallowed instead of wrapped",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            raise HomeAssistantError(\n                f\"Setting {self._attr_name} to {value} failed: {exc}\"\n            ) from exc",
-    "new": "            return",
+    "old": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._attr_name, exc)\n            raise HomeAssistantError(",
+    "new": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._attr_name, exc)\n            return\n            raise HomeAssistantError(",
     "tests": "a_write_that_fails_with_a_plain_error_still_reaches_the_caller"
   },
   {
@@ -2676,8 +2676,8 @@
   {
     "label": "expert: an entity that keeps the range its write was refused by",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            if exc.state is not None:\n                self._apply_state(exc.state)\n                self.async_write_ha_state()\n            raise",
-    "new": "            raise",
+    "old": "            if exc.state is not None:\n                self._apply_state(exc.state)\n                self.async_write_ha_state()\n            placeholders = {",
+    "new": "            placeholders = {",
     "tests": "a_refusal_corrects_the_range_that_caused_it"
   },
   {
@@ -3841,5 +3841,54 @@
     "old": "            time.sleep(FETCH_RETRY_SECONDS)\n    return _read(url)\n",
     "new": "            time.sleep(FETCH_RETRY_SECONDS)\n    return {}\n",
     "tests": "a_pypi_that_stays_down_still_refuses_to_guess"
+  },
+  {
+    "label": "action errors: a backwards holiday reported as a system fault again",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "        raise ServiceValidationError(\n            translation_domain=DOMAIN,\n            translation_key=\"holiday_ends_before_it_starts\",",
+    "new": "        raise HomeAssistantError(\n            translation_domain=DOMAIN,\n            translation_key=\"holiday_ends_before_it_starts\",",
+    "tests": "a_range_that_ends_before_it_starts_is_refused"
+  },
+  {
+    "label": "action errors: the service calling an unoffered value a system fault again",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            raise ServiceValidationError(\n                translation_domain=DOMAIN,\n                translation_key=\"expert_value_not_offered\",",
+    "new": "            raise HomeAssistantError(\n                translation_domain=DOMAIN,\n                translation_key=\"expert_value_not_offered\",",
+    "tests": "service_calls_a_value_the_device_does_not_offer_a_wrong_request"
+  },
+  {
+    "label": "action errors: a portal refusal passed on untranslated by the shared write path",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        except WemPortalError as exc:",
+    "new": "        except KeyError as exc:",
+    "tests": "a_portal_refusal_reaches_the_user_translated_and_as_a_failure"
+  },
+  {
+    "label": "action errors: the expert entity calling an unoffered value a system fault",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "            if isinstance(exc, ValueNotOffered):",
+    "new": "            if False:",
+    "tests": "a_value_the_device_does_not_offer_is_a_wrong_request"
+  },
+  {
+    "label": "action errors: a portal error let through the expert entity in English",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        except WemPortalError as exc:",
+    "new": "        except KeyError as exc:",
+    "tests": "a_portal_error_during_an_expert_write_reaches_the_user_translated"
+  },
+  {
+    "label": "action errors: the client no longer telling an unoffered value apart",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            raise ValueNotOffered(\n                f\"Value {value} not allowed; device accepts ",
+    "new": "            raise ParameterWriteError(\n                f\"Value {value} not allowed; device accepts ",
+    "tests": "a_refused_value_carries_the_range_that_refused_it"
+  },
+  {
+    "label": "action errors: an ambiguous option pointing at a message that does not exist",
+    "path": "custom_components/wemportal/select.py",
+    "old": "            raise ServiceValidationError(\n                translation_domain=DOMAIN,\n                translation_key=\"option_ambiguous\",",
+    "new": "            raise ServiceValidationError(\n                translation_domain=DOMAIN,\n                translation_key=\"option_ambiguous_wrong\",",
+    "tests": "two_options_with_one_name_do_not_write_a_guessed_value"
   }
 ]

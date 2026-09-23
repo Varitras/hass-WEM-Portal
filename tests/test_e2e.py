@@ -23,7 +23,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
 )
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -1396,7 +1396,7 @@ async def test_expert_service_refuses_while_another_operation_runs(hass):
     lock: threading.Lock = entry.runtime_data.expert.lock
     assert lock.acquire(blocking=False)
     try:
-        with pytest.raises(HomeAssistantError, match="in progress"):
+        with pytest.raises(HomeAssistantError) as excinfo:
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_SET_EXPERT_PARAMETER,
@@ -1405,6 +1405,10 @@ async def test_expert_service_refuses_while_another_operation_runs(hass):
             )
     finally:
         lock.release()
+
+    # Busy is the system, not the caller: trying again later is the answer.
+    assert not isinstance(excinfo.value, ServiceValidationError)
+    assert excinfo.value.translation_key == "expert_operation_in_progress"
 
 
 # --- config flow ------------------------------------------------------
@@ -2456,13 +2460,41 @@ async def test_expert_service_refuses_an_unconfigured_parameter(hass):
     not access control."""
     await _setup(hass, _entry(hass, _expert_options()))
 
-    with pytest.raises(HomeAssistantError, match="not one of"):
+    with pytest.raises(ServiceValidationError) as excinfo:
         await hass.services.async_call(
             DOMAIN,
             SERVICE_SET_EXPERT_PARAMETER,
             {"entityvalue": EV_B, "value": 30},
             blocking=True,
         )
+
+    assert excinfo.value.translation_key == "expert_parameter_not_configured"
+
+
+async def test_the_service_calls_a_value_the_device_does_not_offer_a_wrong_request(
+    hass, monkeypatch
+):
+    """Not a failure of the system: the caller asked for something the
+    parameter does not take. Home Assistant keeps that out of the error log,
+    but only if it is raised as what it is."""
+    from custom_components.wemportal.exceptions import ValueNotOffered
+
+    await _setup(hass, _entry(hass, _expert_options()))
+
+    def refuse(self, *_args, **_kwargs):
+        raise ValueNotOffered("Value 99 not allowed; device accepts 10..50")
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", refuse)
+
+    with pytest.raises(ServiceValidationError) as excinfo:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A, "value": 99},
+            blocking=True,
+        )
+
+    assert excinfo.value.translation_key == "expert_value_not_offered"
 
 
 async def test_expert_service_refuses_a_non_admin(hass, hass_read_only_user):
@@ -3137,7 +3169,8 @@ async def test_a_write_is_abandoned_when_its_entry_is_reloaded(hass, monkeypatch
             blocking=True,
         )
 
-    assert "reloaded" in str(excinfo.value)
+    assert excinfo.value.translation_key == "expert_write_stopped"
+    assert "reloaded" in excinfo.value.translation_placeholders["error"]
 
 
 async def test_a_write_is_abandoned_while_the_entry_is_unloading(hass, monkeypatch):
@@ -3170,7 +3203,8 @@ async def test_a_write_is_abandoned_while_the_entry_is_unloading(hass, monkeypat
             blocking=True,
         )
 
-    assert "unloaded" in str(excinfo.value)
+    assert excinfo.value.translation_key == "expert_write_stopped"
+    assert "unloaded" in excinfo.value.translation_placeholders["error"]
 
 
 async def test_unloading_is_flagged_before_the_platforms_come_down(hass, monkeypatch):

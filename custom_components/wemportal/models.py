@@ -339,12 +339,22 @@ def raise_if_not_writable(config_entry: ConfigEntry, what: str) -> WemPortalData
 
     Returns the runtime data so the caller does not look it up twice.
     """
-    from homeassistant.exceptions import HomeAssistantError
+    from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+
+    from .const import DOMAIN
 
     data: WemPortalData | None = getattr(config_entry, "runtime_data", None)
     if data is None:
-        raise HomeAssistantError(f"{what}: this WEM Portal account is not loaded.")
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="account_not_loaded",
+            translation_placeholders={"action": what},
+        )
     reason = data.why_not_current(config_entry)
     if reason is not None:
-        raise HomeAssistantError(f"{what}: {reason}; the value was not changed.")
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="account_not_current",
+            translation_placeholders={"action": what, "reason": reason},
+        )
     return data

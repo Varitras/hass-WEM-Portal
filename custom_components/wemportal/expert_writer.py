@@ -37,6 +37,7 @@ from .exceptions import (
     ParameterWriteError,
     PortalMaintenanceError,
     ServerError,
+    ValueNotOffered,
 )
 from .models import account_state
 from .utils import parse_portal_number
@@ -1776,7 +1777,7 @@ class WemPortalExpertClient:
         value_number = parse_portal_number(value)
         if value_number is None:
             offers = ", ".join(state.special_values) or "no non-numeric option"
-            raise ParameterWriteError(
+            raise ValueNotOffered(
                 f"{word!r} is not a value this parameter takes. It accepts "
                 f"{state.min_value}..{state.max_value} and {offers}.",
                 state=state,
@@ -1786,7 +1787,7 @@ class WemPortalExpertClient:
         if offered is None:
             # Carries the state: a caller whose idea of the range is out
             # of date is precisely the caller that lands here.
-            raise ParameterWriteError(
+            raise ValueNotOffered(
                 f"Value {value} not allowed; device accepts "
                 f"{state.min_value}..{state.max_value} "
                 f"({len(state.options)} discrete options).",
