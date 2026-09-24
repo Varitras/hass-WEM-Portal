@@ -302,3 +302,68 @@ def test_an_object_error_body_is_still_read():
     )
 
     assert details == (3, "Rate limited")
+
+
+# --- an answer without a status or message says so ------------------------
+
+
+@pytest.mark.parametrize("http_status", [403, 500])
+def test_an_answer_without_details_is_not_quoted_as_empty_fields(http_status):
+    """A 403 from a firewall page carries no JSON, and the error still read
+    "Server returned status code:  and message: " - as if the portal had
+    answered and said nothing."""
+    session = FlakySession(
+        failures=0, final=FakeResponse({}, status_code=http_status, content=b"<html>")
+    )
+
+    with pytest.raises(exceptions.WemPortalError) as excinfo:
+        _api(session).make_api_call(
+            "https://example.invalid/read", data={"x": 1}, do_retry=False
+        )
+
+    message = str(excinfo.value)
+    assert "status code:  and" not in message, message
+    assert f"HTTP {http_status}" in message, message
+
+
+def test_a_login_refused_without_details_says_what_came_back(monkeypatch):
+    from .test_hardening import RecordingSession
+
+    class RefusingSession(RecordingSession):
+        def post(self, url, **kwargs):
+            return FakeResponse({}, status_code=403, content=b"<html>")
+
+    monkeypatch.setattr(wemportalapi.requests, "Session", RefusingSession)
+
+    with pytest.raises(exceptions.ForbiddenError) as excinfo:
+        WemPortalApi("user@example.org", "secret").api_login()
+
+    message = str(excinfo.value)
+    assert "status code:  and" not in message, message
+    assert "HTTP 403" in message, message
+
+
+@pytest.mark.parametrize(
+    ("status", "message", "quoted"),
+    [
+        (0, "", "status code: 0"),
+        ("", "Unbekannter Fehler", "message: Unbekannter Fehler"),
+        (None, "", "HTTP 500, no status"),
+    ],
+)
+def test_a_status_of_zero_is_a_status(status, message, quoted):
+    """0 is falsy and a real portal status; only a missing one is missing."""
+    from custom_components.wemportal.mobile_protocol import what_the_server_said
+
+    assert quoted in what_the_server_said(500, status, message)
+
+
+@pytest.mark.parametrize(("status", "message"), [(5, None), ("", "Unbekannter Fehler")])
+def test_half_an_answer_quotes_only_the_half_it_has(status, message):
+    """Status without message, or the other way round: the missing half was
+    quoted as "None" or as an empty field."""
+    from custom_components.wemportal.mobile_protocol import what_the_server_said
+
+    said = what_the_server_said(500, status, message)
+
+    assert "None" not in said and "code:  " not in said, said

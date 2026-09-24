@@ -38,7 +38,10 @@
       "already_in_progress": "Die Einrichtung für dieses Konto läuft bereits",
       "reauth_successful": "Neuanmeldung erfolgreich",
       "unknown": "Unerwarteter Fehler",
-      "reconfigure_successful": "Die Anmeldung wurde geändert."
+      "reconfigure_successful": "Die Anmeldung wurde geändert.",
+      "reconfigure_unload_failed": "Die Integration ließ sich zum Wechseln der Anmeldung nicht anhalten, daher wurde nichts geändert. Home Assistant neu starten und erneut versuchen.",
+      "reconfigure_entry_changed": "Der Eintrag wurde geändert oder entfernt, während dieser Dialog die Anmeldung geprüft hat, daher wurde hier nichts geändert. Den Dialog bei Bedarf erneut öffnen.",
+      "reauth_entry_changed": "Der Eintrag wurde geändert oder entfernt, während dieser Dialog die Anmeldung geprüft hat, daher wurde hier nichts geändert."
     }
   },
   "options": {
@@ -109,7 +112,8 @@
     },
     "abort": {
       "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen.",
-      "discovery_aborted": "Das WEM-Portal-Konto, für das gesucht wurde, wurde neu geladen oder entfernt, deshalb wurde die Suche abgebrochen. Es wurde nichts geändert. Öffne die Optionen erneut, sobald die Integration fertig geladen ist."
+      "discovery_aborted": "Das WEM-Portal-Konto, für das gesucht wurde, wurde neu geladen oder entfernt, deshalb wurde die Suche abgebrochen. Es wurde nichts geändert. Öffne die Optionen erneut, sobald die Integration fertig geladen ist.",
+      "options_entry_changed": "Die Anmeldung dieses Eintrags wurde geändert, während die Optionen offen waren, daher wurde nichts gespeichert. Die Optionen bitte erneut öffnen."
     }
   },
   "issues": {

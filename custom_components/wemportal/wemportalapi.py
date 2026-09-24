@@ -181,6 +181,8 @@ SCRAPER_FALLBACK_DEVICE_ID: Final = "0000"
 # alone; nothing was asked, so nothing was refused.
 SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE: Final = 3
 
+_SCRAPE_FAILURE_KEY: Final = "web-scrape"
+
 
 # The three rows a device status read owns. Named once because they are
 # written in one place and forgotten in another when the read fails: a
@@ -949,6 +951,21 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         webscraping_data = self.fetch_webscraping_data()
         self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
 
+    def _note_scrape_failure(self, exc: Exception) -> None:
+        """Say a failing scrape once, not on every retry of its backoff.
+
+        Without the wrapper's sentence, written for the entry's error display,
+        but not by the chained cause either: for an empty scrape that is an
+        IndexError, an internal detail in place of the reason.
+        """
+        reason = str(exc).removeprefix(DATA_GATHERING_ERROR).strip(" ()") or str(exc)
+        if failure_is_new(self._reported_failures, _SCRAPE_FAILURE_KEY, reason):
+            _LOGGER.info(
+                "Web scraper failed, using the API only until it works: %s", reason
+            )
+        else:
+            _LOGGER.debug("Web scraper still failing: %s", reason)
+
     def _collect_both(self, enabled_devices: list[str] | None) -> None:
         """`both` mode: scrape when due, then read the API either way."""
         if self._scrape_is_due(enabled_devices):
@@ -958,10 +975,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 # Broad: the scrape is the optional half of `both` mode. No
                 # scraper failure may cost the API readings that follow, so
                 # this deliberately does not re-raise.
-                _LOGGER.warning(
-                    "Web scraper failed this cycle. Falling back to API only. Error: %s",
-                    exc,
-                )
+                self._note_scrape_failure(exc)
+            else:
+                if failure_is_over(self._reported_failures, _SCRAPE_FAILURE_KEY):
+                    _LOGGER.info("The web scraper works again.")
         else:
             self._count_down_scrape_backoff()
 

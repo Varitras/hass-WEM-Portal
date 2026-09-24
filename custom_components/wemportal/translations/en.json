@@ -38,7 +38,10 @@
       "already_in_progress": "Setup for this account is already in progress",
       "reauth_successful": "Re-authentication was successful",
       "unknown": "Unexpected error",
-      "reconfigure_successful": "The login was changed."
+      "reconfigure_successful": "The login was changed.",
+      "reconfigure_unload_failed": "The integration could not be stopped to change the login, so nothing was changed. Restart Home Assistant and try again.",
+      "reconfigure_entry_changed": "The entry was changed or removed while this dialog was checking the login, so nothing was changed here. Open the dialog again if it is still needed.",
+      "reauth_entry_changed": "The entry was changed or removed while this dialog was checking the login, so nothing was changed here."
     }
   },
   "options": {
@@ -109,7 +112,8 @@
     },
     "abort": {
       "no_changes": "No changes to save - the integration was not reloaded.",
-      "discovery_aborted": "The WEM Portal account this was searching was reloaded or removed, so the search stopped. Nothing was changed. Open the options again once the integration has finished loading."
+      "discovery_aborted": "The WEM Portal account this was searching was reloaded or removed, so the search stopped. Nothing was changed. Open the options again once the integration has finished loading.",
+      "options_entry_changed": "The login of this entry was changed while the options were open, so nothing was saved. Open the options again."
     }
   },
   "issues": {

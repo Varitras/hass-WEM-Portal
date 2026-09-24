@@ -2555,7 +2555,7 @@ async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
     assert raised is not None, (
         "the reauth threshold was never reached across setup retries"
     )
-    coord_mod.forget_auth_failures(entry)
+    coord_mod.forget_auth_failures(entry.data[CONF_USERNAME])
 
 
 async def test_a_successful_cycle_clears_the_auth_failure_count(hass):
@@ -3737,3 +3737,116 @@ async def test_an_outage_after_a_good_cycle_is_announced_again(
         and record.levelno >= logging.INFO
         and "maintenance" in record.getMessage().lower()
     ], "an outage after a good cycle was not announced"
+
+
+async def test_a_failed_cycle_is_not_introduced_twice(hass, monkeypatch):
+    """Home Assistant logs a failed refresh as "Error fetching <name> data:"
+    followed by the reason. Our reason began with "Error fetching data from
+    wemportal:" as well, so every such line said it twice."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+
+    def fails(self, *_args, **_kwargs):
+        raise WemPortalError("the portal said no")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", fails)
+
+    with pytest.raises(UpdateFailed) as excinfo:
+        await coordinator._async_update_data()
+
+    assert str(excinfo.value) == "the portal said no"
+
+
+async def test_an_unexpected_failure_is_not_introduced_twice(hass, monkeypatch):
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+
+    def breaks(self, *_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", breaks)
+
+    with pytest.raises(UpdateFailed) as excinfo:
+        await coordinator._async_update_data()
+
+    assert str(excinfo.value) == "Unexpected error: boom"
+
+
+def _coordinator_lines(caplog, at_least):
+    return [
+        record
+        for record in caplog.records
+        if record.name.endswith("wemportal.coordinator") and record.levelno >= at_least
+    ]
+
+
+async def test_a_portal_that_keeps_timing_out_is_announced_once(
+    hass, monkeypatch, caplog
+):
+    """A cycle that runs out of time wrote a warning every cycle, beside the
+    error Home Assistant writes once - a hanging portal filled the log."""
+    import asyncio as _asyncio
+    import logging
+
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal import coordinator as coord_mod
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    monkeypatch.setattr(coord_mod, "DEFAULT_TIMEOUT", 0.05)
+    answering = hass.async_add_executor_job
+
+    async def never_returns(*_args, **_kwargs):
+        await _asyncio.sleep(5)
+
+    async def time_out_once():
+        coordinator.num_failed = 0  # past the backoff gate, which is not tested here
+        monkeypatch.setattr(hass, "async_add_executor_job", never_returns)
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG), pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+        return _coordinator_lines(caplog, logging.INFO)
+
+    said = [await time_out_once() for _cycle in range(3)]
+    assert len(said[0]) == 1, "the first timeout must be announced"
+    assert not said[1] and not said[2], f"announced again: {said[1:]}"
+
+    monkeypatch.setattr(hass, "async_add_executor_job", answering)
+    await coordinator._async_update_data()
+    assert len(await time_out_once()) == 1, "a new outage after a good cycle is news"
+
+
+async def test_an_unexpected_failure_is_warned_once_with_its_traceback(
+    hass, monkeypatch, caplog
+):
+    """A bug, so a warning and the traceback that makes it findable - once,
+    not on every cycle it keeps happening."""
+    import logging
+
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+
+    def breaks(self, *_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", breaks)
+    said = []
+    for _cycle in range(3):
+        coordinator.num_failed = 0
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG), pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+        said.append(_coordinator_lines(caplog, logging.INFO))
+
+    (first,) = said[0]
+    assert first.levelno == logging.WARNING and first.exc_info, first
+    assert not said[1] and not said[2], f"warned again: {said[1:]}"

@@ -40,6 +40,8 @@ from .const import (
 )
 from .coordinator import (
     WemPortalDataUpdateCoordinator,
+    another_entry_shares_this_account,
+    forget_account_state_if_last_entry,
     forget_auth_failures,
     get_modules_store,
     get_scraper_device_store,
@@ -50,7 +52,6 @@ from .models import (
     account_unique_id,
     WemPortalConfigEntry,
     WemPortalData,
-    forget_account_state,
     is_still_serving,
 )
 from .utils import clamped_scan_interval, device_identifier, deserialize_modules
@@ -700,8 +701,8 @@ async def async_unload_entry(
     # here took the count out from under the entry that stays - and the
     # removal logic that protects the rest of the account state runs later, so
     # by the time it decides to keep it, it is already zero.
-    if not _another_entry_shares_this_account(hass, config_entry):
-        forget_auth_failures(config_entry)
+    if not another_entry_shares_this_account(hass, config_entry):
+        forget_auth_failures(config_entry.data.get(CONF_USERNAME))
     # An unloaded entry cannot re-check what its issues report, so they come
     # down with it; whatever still holds after a reload is re-raised within
     # a few cycles by the code that watches it.
@@ -786,43 +787,4 @@ async def async_remove_entry(
     await get_modules_store(hass, config_entry.entry_id).async_remove()
     await get_scraper_device_store(hass, config_entry.entry_id).async_remove()
     _async_delete_entry_issues(hass, config_entry.entry_id)
-    _forget_account_state_if_last_entry(hass, config_entry)
-
-
-def _another_entry_shares_this_account(
-    hass: HomeAssistant, config_entry: ConfigEntry
-) -> bool:
-    """Whether a second entry of the same WEM account is configured.
-
-    Asked by both halves of the teardown, which is why it is a function: the
-    account state and the auth-failure streak live under the ACCOUNT, so
-    neither of them belongs to the entry that is going away when a legacy
-    duplicate of it is still there.
-    """
-    account = account_unique_id(config_entry.data.get(CONF_USERNAME))
-    return any(
-        other.entry_id != config_entry.entry_id
-        and account_unique_id(other.data.get(CONF_USERNAME)) == account
-        for other in hass.config_entries.async_entries(DOMAIN)
-    )
-
-
-def _forget_account_state_if_last_entry(
-    hass: HomeAssistant, config_entry: ConfigEntry
-) -> None:
-    """Drop the account memory only once no entry is left that shares it.
-
-    The two stores above belong to one entry and go with it. This one does
-    not: it is addressed by the normalised account, and a legacy duplicate
-    entry of the same account is still allowed to load. Removing one of those
-    used to take the 403 backoff, the auth-failure streak and the
-    once-per-account warning markers away from the entry that stays, which
-    then polled as though the portal had never refused anything.
-    """
-    username = config_entry.data.get(CONF_USERNAME)
-    if _another_entry_shares_this_account(hass, config_entry):
-        _LOGGER.debug(
-            "Another entry still uses this account; keeping its remembered state."
-        )
-        return
-    forget_account_state(username)
+    forget_account_state_if_last_entry(hass, config_entry)

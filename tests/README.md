@@ -43,7 +43,7 @@ is `.github/workflows/gitleaks.yaml`.
 
 A passing test proves nothing on its own - every worthless test in this
 repository's history passed happily while the feature was broken. So
-`.github/mutations/response-gate.json` describes ~360 deliberate breakages
+`.github/mutations/response-gate.json` describes several hundred deliberate breakages
 ("delete this guard clause", "swap these two values"), and
 `.github/scripts/mutate.py` checks that a test actually fails for each one.
 

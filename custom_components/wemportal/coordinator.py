@@ -38,7 +38,7 @@ from .exceptions import (
     PortalMaintenanceError,
     WemPortalError,
 )
-from .models import account_state
+from .models import account_state, account_unique_id, forget_account_state
 from .utils import device_identifier, failure_is_new, serialize_modules
 from .wemportalapi import WemPortalApi
 
@@ -94,9 +94,51 @@ WEB_SCRAPE_ISSUE = "web_scrape_failing"
 # see models.AccountState. Cleared on success and on unload.
 
 
-def forget_auth_failures(config_entry: ConfigEntry) -> None:
-    """Drop the account's auth-failure count (unload/removal)."""
-    account_state(config_entry.data.get(CONF_USERNAME)).auth_failures = 0
+def forget_auth_failures(username: str | None) -> None:
+    """Drop the account's auth-failure count (unload, reauth, login change).
+
+    By username rather than by entry: a login change answers the count of the
+    login it just checked, which the entry does not hold yet.
+    """
+    account_state(username).auth_failures = 0
+
+
+def another_entry_shares_this_account(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> bool:
+    """Whether a second entry of the same WEM account is configured.
+
+    Asked by both halves of the teardown and by a login move, which is why it is a function: the
+    account state and the auth-failure streak live under the ACCOUNT, so
+    neither of them belongs to the entry that is going away when a legacy
+    duplicate of it is still there.
+    """
+    account = account_unique_id(config_entry.data.get(CONF_USERNAME))
+    return any(
+        other.entry_id != config_entry.entry_id
+        and account_unique_id(other.data.get(CONF_USERNAME)) == account
+        for other in hass.config_entries.async_entries(DOMAIN)
+    )
+
+
+def forget_account_state_if_last_entry(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> None:
+    """Drop the account memory only once no entry is left that shares it.
+
+    The entry's two stores belong to it and go with it. This one does not: it is addressed by the normalised account, and a legacy duplicate
+    entry of the same account is still allowed to load. Removing one of those
+    used to take the 403 backoff, the auth-failure streak and the
+    once-per-account warning markers away from the entry that stays, which
+    then polled as though the portal had never refused anything.
+    """
+    username = config_entry.data.get(CONF_USERNAME)
+    if another_entry_shares_this_account(hass, config_entry):
+        _LOGGER.debug(
+            "Another entry still uses this account; keeping its remembered state."
+        )
+        return
+    forget_account_state(username)
 
 
 def get_modules_store(hass: HomeAssistant, entry_id: str) -> Store[Any]:
@@ -385,16 +427,17 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             self._sync_rate_limit_issue()
             self._sync_web_scrape_issue(device_filter)
             self._reset_auth_failures()
-            _LOGGER.warning(
-                "Fetching WEM Portal data timed out after %ds. Note the "
-                "underlying request keeps running in its worker thread - "
-                "Python cannot cancel it - so the next operation may briefly "
-                "wait for it.",
-                DEFAULT_TIMEOUT,
-            )
-            raise UpdateFailed(
+            failure = UpdateFailed(
                 f"Timed out fetching data from wemportal after {DEFAULT_TIMEOUT}s"
-            ) from exc
+            )
+            self._announce_once(
+                "timeout",
+                "Poll cycle ran out of time. Its request keeps running in its "
+                "worker thread - Python cannot cancel it - so the next "
+                "operation may briefly wait for it",
+                failure,
+            )
+            raise failure from exc
 
     def _sync_rate_limit_issue(self) -> None:
         """Report the IP-wide backoff if it is holding, withdraw it if not.
@@ -479,6 +522,17 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.info("%s: %s", what, exc)
         else:
             _LOGGER.debug("%s (still): %s", what, exc)
+
+    def _warn_once_about_a_bug(self, exc: Exception) -> None:
+        """An error fetch_data does not wrap is a bug: a warning, with the
+        traceback that makes it findable - once, not on every cycle it keeps
+        happening."""
+        if failure_is_new(self._reported_failures, "unexpected", str(exc)):
+            _LOGGER.warning(
+                "Unexpected error updating WEM Portal data: %s", exc, exc_info=exc
+            )
+        else:
+            _LOGGER.debug("Unexpected error still happening: %s", exc)
 
     def _note_failed_cycle(self) -> None:
         """Count this failed cycle, and publish the moment the count leaves
@@ -610,9 +664,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     # the event loop would stall everything Home Assistant
                     # does for as long as the write it waits for runs.
                     await self.hass.async_add_executor_job(self.api.reset_transport)
-                raise UpdateFailed(
-                    f"Error fetching data from wemportal: {exc}"
-                ) from exc
+                # The reason alone: Home Assistant already opens the line with
+                # "Error fetching <name> data:".
+                raise UpdateFailed(str(exc)) from exc
             except Exception as exc:
                 # Catch-all safety net: covers cases that don't come from
                 # fetch_data() itself (which already wraps its own
@@ -625,10 +679,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # assumption this one covers it; it does not.
                 self._note_failed_cycle()
                 self._reset_auth_failures()
-                _LOGGER.warning("Unexpected error updating WEM Portal data: %s", exc)
-                raise UpdateFailed(
-                    f"Unexpected error fetching data from wemportal: {exc}"
-                ) from exc
+                self._warn_once_about_a_bug(exc)
+                raise UpdateFailed(f"Unexpected error: {exc}") from exc
             finally:
                 self.last_try = monotonic()
                 self._sync_rate_limit_issue()

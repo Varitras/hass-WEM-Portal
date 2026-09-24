@@ -1066,8 +1066,8 @@
   {
     "label": "reauth: accepted credentials still carrying the old failure streak",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "                    forget_auth_failures(entry)",
-    "new": "                    pass",
+    "old": "        forget_auth_failures(entry.data.get(CONF_USERNAME))\n        # Reloads even when",
+    "new": "        # Reloads even when",
     "tests": "a_successful_reauth_clears_the_auth_failure_streak"
   },
   {
@@ -2997,23 +2997,23 @@
   },
   {
     "label": "remove: the account memory must go with its account",
-    "path": "custom_components/wemportal/__init__.py",
+    "path": "custom_components/wemportal/coordinator.py",
     "old": "    forget_account_state(username)",
     "new": "    pass",
     "tests": "removing_the_entry_deletes_its_stores or removing_the_last_entry_of_an_account_does_drop_its_state"
   },
   {
     "label": "remove: a duplicate entry's removal taking the shared account memory",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "    if _another_entry_shares_this_account(hass, config_entry):\n        _LOGGER.debug(",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "    if another_entry_shares_this_account(hass, config_entry):\n        _LOGGER.debug(",
     "new": "    if False:\n        _LOGGER.debug(",
     "tests": "removing_one_of_two_entries_of_an_account_keeps_the_shared_state"
   },
   {
     "label": "unload: clearing the account's auth streak for a duplicate entry",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "    if not _another_entry_shares_this_account(hass, config_entry):\n        forget_auth_failures(config_entry)",
-    "new": "    forget_auth_failures(config_entry)",
+    "old": "    if not another_entry_shares_this_account(hass, config_entry):\n        forget_auth_failures(config_entry.data.get(CONF_USERNAME))",
+    "new": "    forget_auth_failures(config_entry.data.get(CONF_USERNAME))",
     "tests": "unloading_one_of_two_entries_keeps_the_shared_auth_streak"
   },
   {
@@ -3033,8 +3033,8 @@
   {
     "label": "remove: a never-loaded entry's issues must still be cleared",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "    _async_delete_entry_issues(hass, config_entry.entry_id)\n    _forget_account_state_if_last_entry(hass, config_entry)",
-    "new": "    _forget_account_state_if_last_entry(hass, config_entry)",
+    "old": "    _async_delete_entry_issues(hass, config_entry.entry_id)\n    forget_account_state_if_last_entry(hass, config_entry)",
+    "new": "    forget_account_state_if_last_entry(hass, config_entry)",
     "tests": "removing_a_never_loaded_entry_still_clears_its_issues"
   },
   {
@@ -3935,22 +3935,22 @@
   },
   {
     "label": "reconfigure: the entry keeping its old identity after a move",
-    "old": "                    unique_id=account,\n",
+    "old": "            unique_id=account,\n",
     "new": "",
     "tests": "reconfigure_can_move_the_entry_to_a_new_login",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: the new password not taken",
-    "old": "                CONF_PASSWORD: user_input[CONF_PASSWORD],\n            }\n            title = entry.title",
-    "new": "            }\n            title = entry.title",
+    "old": "                CONF_PASSWORD: user_input[CONF_PASSWORD],\n            },\n",
+    "new": "            },\n",
     "tests": "reconfigure_takes_a_new_password_and_reloads",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: a login that failed written to the entry anyway",
-    "old": "            if failure is None:\n                # Same reason as after a reauth",
-    "new": "            if True:\n                # Same reason as after a reauth",
+    "old": "            if failure is None:\n                # One dialog at a time",
+    "new": "            if True:\n                # One dialog at a time",
     "tests": "reconfigure_keeps_the_entry_when_the_login_fails",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -3970,7 +3970,7 @@
   },
   {
     "label": "reconfigure: a move keeping the old installation's cache",
-    "old": "                if moves_to_another_login:\n                    await self._forget_the_old_installation(entry)\n",
+    "old": "        if moves_to_another_login and not (\n            await self._forget_the_old_installation(entry)\n        ):\n            return self.async_abort(reason=\"reconfigure_unload_failed\")\n",
     "new": "",
     "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
     "path": "custom_components/wemportal/config_flow.py"
@@ -3991,8 +3991,8 @@
   },
   {
     "label": "reconfigure: a new password throwing away a valid cache",
-    "old": "                if moves_to_another_login:\n                    await self._forget_the_old_installation(entry)\n",
-    "new": "                await self._forget_the_old_installation(entry)\n",
+    "old": "        if moves_to_another_login and not (\n            await self._forget_the_old_installation(entry)\n        ):\n",
+    "new": "        if not (\n            await self._forget_the_old_installation(entry)\n        ):\n",
     "tests": "a_new_password_for_the_same_login_keeps_the_cache",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -4005,30 +4005,247 @@
   },
   {
     "label": "reconfigure: the old installation's expert slots kept after a move",
-    "old": "                options = _without_the_installation(options)\n",
+    "old": "            options = _without_the_installation(options)\n",
     "new": "",
     "tests": "drops_the_old_installations_expert_slots",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: a new password throwing away the expert slots",
-    "old": "            options: Mapping[str, Any] = entry.options\n",
-    "new": "            options: Mapping[str, Any] = _without_the_installation(entry.options)\n",
+    "old": "        options: Mapping[str, Any] = entry.options\n",
+    "new": "        options: Mapping[str, Any] = _without_the_installation(entry.options)\n",
     "tests": "keeps_the_expert_slots",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: the old account's memory kept after a move",
-    "old": "        forget_account_state(entry.data.get(CONF_USERNAME))\n",
+    "old": "        forget_account_state_if_last_entry(self.hass, entry)\n",
     "new": "",
     "tests": "forgets_the_old_accounts_memory",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: two dialogs moving to one login both succeed",
-    "old": "                await self.async_set_unique_id(account)\n                title = user_input[CONF_USERNAME]\n",
-    "new": "                title = user_input[CONF_USERNAME]\n",
+    "old": "                await self.async_set_unique_id(account)\n            checked_against =",
+    "new": "                pass\n            checked_against =",
     "tests": "cannot_both_move_to_one_login_at_once",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "damping: a measured time or address makes every repeat news again",
+    "old": "    reason = _MEASURED_NOT_MEANT.sub(\"#\", reason)\n",
+    "new": "",
+    "tests": "measured_a_different_time or different_connection_object",
+    "path": "custom_components/wemportal/utils.py"
+  },
+  {
+    "label": "damping: curl's elapsed time left in the reason",
+    "old": "r\"0x[0-9a-fA-F]+|\\d+(?= (?:milliseconds|bytes))\"",
+    "new": "r\"0x[0-9a-fA-F]+\"",
+    "tests": "measured_a_different_time",
+    "path": "custom_components/wemportal/utils.py"
+  },
+  {
+    "label": "damping: urllib3's object address left in the reason",
+    "old": "r\"0x[0-9a-fA-F]+|\\d+(?= (?:milliseconds|bytes))\"",
+    "new": "r\"\\d+(?= (?:milliseconds|bytes))\"",
+    "tests": "different_connection_object",
+    "path": "custom_components/wemportal/utils.py"
+  },
+  {
+    "label": "scrape: a failing scrape announced on every attempt",
+    "old": "            _LOGGER.debug(\"Web scraper still failing: %s\", reason)\n",
+    "new": "            _LOGGER.info(\"Web scraper still failing: %s\", reason)\n",
+    "tests": "keeps_failing_is_announced_once_and_healed_once",
+    "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "scrape: the recovery never said",
+    "old": "                    _LOGGER.info(\"The web scraper works again.\")\n",
+    "new": "                    _LOGGER.debug(\"The web scraper works again.\")\n",
+    "tests": "keeps_failing_is_announced_once_and_healed_once",
+    "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "scrape: announced with the wrapper's sentence around the cause",
+    "old": "        reason = str(exc).removeprefix(DATA_GATHERING_ERROR).strip(\" ()\") or str(exc)\n",
+    "new": "        reason = str(exc)\n",
+    "tests": "announced_by_its_cause_not_its_wrapper",
+    "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "api login: a network failure warned about twice",
+    "old": "            _LOGGER.debug(\"API login failed with a network/HTTP error: %s\", exc)",
+    "new": "            _LOGGER.warning(\"API login failed with a network/HTTP error: %s\", exc)",
+    "tests": "saying_to_whoever_handles_it",
+    "path": "custom_components/wemportal/transport.py"
+  },
+  {
+    "label": "api login: an HTML answer warned about twice",
+    "old": "            _LOGGER.debug(\"API login failed. Received HTML instead of JSON.\")",
+    "new": "            _LOGGER.warning(\"API login failed. Received HTML instead of JSON.\")",
+    "tests": "html_answer_to_the_api_login",
+    "path": "custom_components/wemportal/transport.py"
+  },
+  {
+    "label": "scrape: an empty scrape announced as an IndexError",
+    "old": "        reason = str(exc).removeprefix(DATA_GATHERING_ERROR).strip(\" ()\") or str(exc)\n",
+    "new": "        reason = str(exc.__cause__ or exc)\n",
+    "tests": "not_announced_as_an_index_error",
+    "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "coordinator: a failed cycle introduced twice",
+    "old": "                # \"Error fetching <name> data:\".\n                raise UpdateFailed(str(exc)) from exc\n",
+    "new": "                # \"Error fetching <name> data:\".\n                raise UpdateFailed(f\"Error fetching data from wemportal: {exc}\") from exc\n",
+    "tests": "failed_cycle_is_not_introduced_twice",
+    "path": "custom_components/wemportal/coordinator.py"
+  },
+  {
+    "label": "coordinator: an unexpected failure introduced twice",
+    "old": "                raise UpdateFailed(f\"Unexpected error: {exc}\") from exc\n",
+    "new": "                raise UpdateFailed(f\"Unexpected error fetching data from wemportal: {exc}\") from exc\n",
+    "tests": "unexpected_failure_is_not_introduced_twice",
+    "path": "custom_components/wemportal/coordinator.py"
+  },
+  {
+    "label": "server details: empty fields quoted as an answer again",
+    "old": "    if not said:\n",
+    "new": "    if False:\n",
+    "tests": "without_details or refused_without_details",
+    "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "server details: status 0 taken for a missing status",
+    "old": "    if server_status not in (\"\", None):\n",
+    "new": "    if server_status:\n",
+    "tests": "status_of_zero_is_a_status",
+    "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "server details: a missing status quoted as an empty field",
+    "old": "    if server_status not in (\"\", None):\n",
+    "new": "    if True:\n",
+    "tests": "half_an_answer",
+    "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "server details: a null message quoted as None",
+    "old": "    if server_message:\n",
+    "new": "    if True:\n",
+    "tests": "half_an_answer",
+    "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "coordinator: a hanging portal announced every cycle",
+    "old": "        if failure_is_new(self._reported_failures, key, str(exc)):\n            _LOGGER.info(\"%s: %s\", what, exc)\n",
+    "new": "        if True:\n            _LOGGER.info(\"%s: %s\", what, exc)\n",
+    "tests": "keeps_timing_out_is_announced_once",
+    "path": "custom_components/wemportal/coordinator.py"
+  },
+  {
+    "label": "coordinator: a bug warned about every cycle",
+    "old": "        if failure_is_new(self._reported_failures, \"unexpected\", str(exc)):\n",
+    "new": "        if True:\n",
+    "tests": "warned_once_with_its_traceback",
+    "path": "custom_components/wemportal/coordinator.py"
+  },
+  {
+    "label": "coordinator: a bug warned about without its traceback",
+    "old": ", exc, exc_info=exc\n",
+    "new": ", exc\n",
+    "tests": "warned_once_with_its_traceback",
+    "path": "custom_components/wemportal/coordinator.py"
+  },
+  {
+    "label": "reconfigure: a refused unload moving the entry anyway",
+    "old": "            if not await self.hass.config_entries.async_unload(entry.entry_id):\n                return False\n",
+    "new": "            await self.hass.config_entries.async_unload(entry.entry_id)\n",
+    "tests": "refused_unload_leaves_the_entry_as_it_was",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a move taking a duplicate entry's account memory",
+    "old": "        forget_account_state_if_last_entry(self.hass, entry)\n",
+    "new": "        __import__(\"custom_components.wemportal.models\", fromlist=[\"m\"]).forget_account_state(entry.data.get(CONF_USERNAME))\n",
+    "tests": "two_entries_of_an_account_keeps_its_memory",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: the old login's failure streak answered instead of the new one's",
+    "old": "        forget_auth_failures(user_input[CONF_USERNAME])\n",
+    "new": "        forget_auth_failures(entry.data.get(CONF_USERNAME))\n",
+    "tests": "streak_of_the_login_it_checked",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: an entry that cannot unload right now crashing the move",
+    "old": "        except OperationNotAllowed:\n            return False\n",
+    "new": "        except ZeroDivisionError:\n            return False\n",
+    "tests": "cannot_unload_right_now_says_so",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a stale dialog committing over a moved entry",
+    "old": "        return login_state(entry) != checked_against\n",
+    "new": "        return False\n",
+    "tests": "stale_password_dialog_does_not_undo_a_move or moving_one_entry_do_not_both_succeed or newer_password or checked_in_one_mode",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: commits not serialised",
+    "old": "                async with login_commit_lock(self.hass):\n                    return await self._commit_reconfigure(\n                        entry, checked_against, user_input\n                    )\n",
+    "new": "                return await self._commit_reconfigure(\n                    entry, checked_against, user_input\n                )\n",
+    "tests": "moving_one_entry_do_not_both_succeed",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a dialog writing to an entry removed meanwhile",
+    "old": "        if self.hass.config_entries.async_get_entry(entry.entry_id) is None:\n            return True\n",
+    "new": "",
+    "tests": "removed_meanwhile_ends_cleanly",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reauth: a waiting prompt writing over a login change",
+    "old": "        if self._changed_since(entry, checked_against):\n            return self.async_abort(reason=\"reauth_entry_changed\")\n",
+    "new": "",
+    "tests": "waiting_reauth_does_not_undo_a_login_change",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "options: a dialog opened before a login change saving onto it",
+    "old": "        if dict(self.config_entry.data) != self._opened_with:\n",
+    "new": "        if False:\n",
+    "tests": "opened_before_a_login_change",
+    "path": "custom_components/wemportal/options_flow.py"
+  },
+  {
+    "label": "freshness: only the account compared, not password or mode",
+    "old": "    return dict(entry.data), entry.options.get(CONF_MODE)\n",
+    "new": "    return entry.data.get(CONF_USERNAME), None\n",
+    "tests": "newer_password or checked_in_one_mode",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "freshness: the mode left out of the login state",
+    "old": "    return dict(entry.data), entry.options.get(CONF_MODE)\n",
+    "new": "    return dict(entry.data), None\n",
+    "tests": "checked_in_one_mode",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "options: saved outside the login dialogs' lock",
+    "old": "                async with login_commit_lock(self.hass):\n                    return self._save_configure(user_input)\n",
+    "new": "                return self._save_configure(user_input)\n",
+    "tests": "checked_with_the_old_password or checked_in_one_mode or move_cleans_up_wait_for_it",
+    "path": "custom_components/wemportal/options_flow.py"
+  },
+  {
+    "label": "reconfigure: an entry removed during the cleanup crashing the update",
+    "old": "        # Forgetting waits on disk, and a removal can land in between.\n        if self.hass.config_entries.async_get_entry(entry.entry_id) is None:\n            return self.async_abort(reason=\"reconfigure_entry_changed\")\n",
+    "new": "",
+    "tests": "removed_while_a_move_cleans_up",
     "path": "custom_components/wemportal/config_flow.py"
   }
 ]
