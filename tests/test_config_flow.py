@@ -1660,3 +1660,26 @@ async def test_a_dialog_whose_entry_was_removed_meanwhile_ends_cleanly(
     result = await waiting
 
     assert result["reason"] == "reconfigure_entry_changed"
+
+
+async def test_a_waiting_reauth_does_not_undo_a_login_change(hass, monkeypatch):
+    """Someone shown the reauth prompt changes the login through reconfigure
+    first and then submits the prompt too. The prompt had built its data
+    before asking the portal and wrote the old username back, under the new
+    login's unique_id."""
+    entry = await _setup(hass, _entry(hass))
+    gate, held = _hold_validation_of(monkeypatch)
+    reauth = await entry.start_reauth_flow(hass)
+    held.add(reauth["flow_id"])
+    waiting = _submit(hass, reauth["flow_id"], USER)
+    await _let_it_reach_the_portal()
+
+    assert (await _reconfigure(hass, entry, "b@example.org"))["reason"] == (
+        "reconfigure_successful"
+    )
+    gate.set()
+    result = await waiting
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reauth_entry_changed"
+    assert entry.data[CONF_USERNAME] == "b@example.org"

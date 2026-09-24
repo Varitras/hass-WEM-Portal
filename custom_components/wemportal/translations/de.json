@@ -40,7 +40,8 @@
       "unknown": "Unerwarteter Fehler",
       "reconfigure_successful": "Die Anmeldung wurde geändert.",
       "reconfigure_unload_failed": "Die Integration ließ sich zum Wechseln der Anmeldung nicht anhalten, daher wurde nichts geändert. Home Assistant neu starten und erneut versuchen.",
-      "reconfigure_entry_changed": "Der Eintrag wurde geändert oder entfernt, während dieser Dialog die Anmeldung geprüft hat, daher wurde hier nichts geändert. Den Dialog bei Bedarf erneut öffnen."
+      "reconfigure_entry_changed": "Der Eintrag wurde geändert oder entfernt, während dieser Dialog die Anmeldung geprüft hat, daher wurde hier nichts geändert. Den Dialog bei Bedarf erneut öffnen.",
+      "reauth_entry_changed": "Der Eintrag wurde geändert oder entfernt, während dieser Dialog die Anmeldung geprüft hat, daher wurde hier nichts geändert."
     }
   },
   "options": {

@@ -1066,8 +1066,8 @@
   {
     "label": "reauth: accepted credentials still carrying the old failure streak",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "                    forget_auth_failures(entry.data.get(CONF_USERNAME))\n",
-    "new": "                    pass\n",
+    "old": "        forget_auth_failures(entry.data.get(CONF_USERNAME))\n        # Reloads even when",
+    "new": "        # Reloads even when",
     "tests": "a_successful_reauth_clears_the_auth_failure_streak"
   },
   {
@@ -4194,7 +4194,7 @@
   },
   {
     "label": "reconfigure: commits not serialised",
-    "old": "                async with lock:\n                    return await self._commit_reconfigure(entry, current, user_input)\n",
+    "old": "                async with self._commit_lock():\n                    return await self._commit_reconfigure(entry, current, user_input)\n",
     "new": "                return await self._commit_reconfigure(entry, current, user_input)\n",
     "tests": "moving_one_entry_do_not_both_succeed",
     "path": "custom_components/wemportal/config_flow.py"
@@ -4204,6 +4204,13 @@
     "old": "        if entry_is_gone or account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
     "new": "        if account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
     "tests": "removed_meanwhile_ends_cleanly",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reauth: a waiting prompt writing over a login change",
+    "old": "            or account_unique_id(entry.data.get(CONF_USERNAME)) != original\n",
+    "new": "            or False\n",
+    "tests": "waiting_reauth_does_not_undo_a_login_change",
     "path": "custom_components/wemportal/config_flow.py"
   }
 ]

@@ -12,10 +12,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   integration could not be stopped - an entity refusing to unload, or an
   entry still starting up - the change still went through underneath
   entities that kept running for the old installation. It is now refused
-  with nothing changed. A dialog that waited on the portal while the same
-  entry was changed in another dialog, or removed, is refused as well,
-  instead of writing back what it had read before: that could undo a completed move, give one
-  account to two entries, or overwrite options saved meanwhile.
+  with nothing changed. A login dialog or re-authentication prompt that
+  waited on the portal while its entry was changed elsewhere, or removed, is
+  refused as well, instead of writing back what it had read before: that
+  could undo a completed move, give one account to two entries, put an old
+  username back, or overwrite options saved meanwhile.
 - **Changing the login of one of two entries of the same account keeps the
   account's memory.** An older duplicate entry may still use that account;
   its 403 pause and failure count were cleared by the change. The failure

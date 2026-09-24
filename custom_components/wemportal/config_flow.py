@@ -52,7 +52,7 @@ _LOGGER = logging.getLogger(__name__)
 
 AVAILABLE_MODES: Final = ["api", "web", "both"]
 
-_RECONFIGURE_COMMIT_LOCK: Final = f"{DOMAIN}_reconfigure_commit_lock"
+_LOGIN_COMMIT_LOCK: Final = f"{DOMAIN}_login_commit_lock"
 
 # Password uses a proper password-type selector so the browser masks the
 # input (a plain `str` field renders as clear text - shoulder-surfing /
@@ -306,23 +306,12 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 new_data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
                 failure = await self._credential_error(entry, new_data)
                 if failure is None:
-                    # The portal just accepted these credentials, so the
-                    # failures that led here are answered. Nothing else does
-                    # it: the count is dropped on unload, and an entry whose
-                    # setup failed - which is how most reauth prompts arise -
-                    # is not loaded, so its reload unloads nothing. Left
-                    # standing, the next login page the portal hands out was
-                    # the fourth in a row and asked for the same password
-                    # again.
-                    forget_auth_failures(entry.data.get(CONF_USERNAME))
-                    # Reloads even when the entry is unchanged, which is the
-                    # whole point here: someone re-entering the SAME password
-                    # is telling us the portal rejected a login it should
-                    # accept, and the entry is very likely sitting in a failed
-                    # setup. Updating alone would change nothing and still
-                    # report success. There is no update listener to collide
-                    # with (see async_setup_entry).
-                    return self.async_update_reload_and_abort(entry, data=new_data)
+                    # Under the same lock as a login change, and against the
+                    # entry as it is now: someone shown this prompt may change
+                    # the login through reconfigure first, and data built
+                    # before the wait put the old username back.
+                    async with self._commit_lock():
+                        return self._commit_reauth(entry, original, user_input)
                 errors["base"] = failure
 
         return self.async_show_form(
@@ -367,6 +356,38 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         # the account being left may still be loaded and still need it.
         forget_account_state_if_last_entry(self.hass, entry)
         return True
+
+    def _commit_lock(self) -> asyncio.Lock:
+        """One login commit at a time, reauth and reconfigure alike."""
+        lock: asyncio.Lock = self.hass.data.setdefault(
+            _LOGIN_COMMIT_LOCK, asyncio.Lock()
+        )
+        return lock
+
+    def _commit_reauth(self, entry, original, user_input):
+        """Apply a password the portal accepted, to the entry as it is now."""
+        entry_is_gone = self.hass.config_entries.async_get_entry(entry.entry_id) is None
+        if (
+            entry_is_gone
+            or account_unique_id(entry.data.get(CONF_USERNAME)) != original
+        ):
+            return self.async_abort(reason="reauth_entry_changed")
+        # The portal just accepted these credentials, so the failures that
+        # led here are answered. Nothing else does it: the count is dropped
+        # on unload, and an entry whose setup failed - which is how most
+        # reauth prompts arise - is not loaded, so its reload unloads nothing.
+        # Left standing, the next login page the portal hands out was the
+        # fourth in a row and asked for the same password again.
+        forget_auth_failures(entry.data.get(CONF_USERNAME))
+        # Reloads even when the entry is unchanged, which is the whole point
+        # here: someone re-entering the SAME password is telling us the portal
+        # rejected a login it should accept, and the entry is very likely
+        # sitting in a failed setup. Updating alone would change nothing and
+        # still report success. There is no update listener to collide with
+        # (see async_setup_entry).
+        return self.async_update_reload_and_abort(
+            entry, data={**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
+        )
 
     async def _commit_reconfigure(self, entry, current, user_input):
         """Apply a login the portal accepted, to the entry as it is now."""
@@ -440,10 +461,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 # move this entry, hand its login to another entry, or save
                 # options - and a dialog committing what it read before the
                 # wait wrote all of that back.
-                lock = self.hass.data.setdefault(
-                    _RECONFIGURE_COMMIT_LOCK, asyncio.Lock()
-                )
-                async with lock:
+                async with self._commit_lock():
                     return await self._commit_reconfigure(entry, current, user_input)
             errors["base"] = failure
 
