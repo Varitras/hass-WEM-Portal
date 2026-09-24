@@ -9003,3 +9003,142 @@ def test_an_expired_expert_session_during_an_announcement_logs_in_again(monkeypa
 
     with pytest.raises(exceptions.AuthError):
         client._establish_context()
+
+
+# --- a repeating failure is the same failure, whatever it measured ---------
+
+CURL_TIMEOUT = (
+    "curl: (28) Operation timed out after {} milliseconds with 0 bytes received."
+)
+URLLIB3_REFUSED = (
+    "HTTPSConnectionPool(host='www.wemportal.com', port=443): Max retries "
+    "exceeded with url: /app/x (Caused by NewConnectionError('<urllib3."
+    "connection.HTTPSConnection object at {}>: Failed to establish a new "
+    "connection: [Errno 111] Connection refused'))"
+)
+
+
+def test_a_timeout_that_only_measured_a_different_time_is_not_news():
+    """curl writes the elapsed time into its message, and it is never quite
+    the same twice. Compared as text, every timeout of a lasting outage was a
+    new cause, so the damping meant to say it once said it every cycle."""
+    from custom_components.wemportal.utils import failure_is_new
+
+    reported: dict[str, str] = {}
+
+    assert failure_is_new(reported, "scrape", CURL_TIMEOUT.format(30002))
+    assert not failure_is_new(reported, "scrape", CURL_TIMEOUT.format(30001))
+
+
+def test_a_refusal_from_a_different_connection_object_is_not_news():
+    """urllib3 names the connection object by its memory address."""
+    from custom_components.wemportal.utils import failure_is_new
+
+    reported: dict[str, str] = {}
+
+    assert failure_is_new(reported, "api", URLLIB3_REFUSED.format("0x7f3a1c2b3d90"))
+    assert not failure_is_new(reported, "api", URLLIB3_REFUSED.format("0x7f3a1c2b4e10"))
+
+
+def test_a_different_curl_error_is_still_news():
+    """The counter-case: the error code is the cause, and a new cause is
+    worth saying."""
+    from custom_components.wemportal.utils import failure_is_new
+
+    reported: dict[str, str] = {}
+    failure_is_new(reported, "scrape", CURL_TIMEOUT.format(30002))
+
+    assert failure_is_new(reported, "scrape", "curl: (7) Failed to connect")
+
+
+def _both_mode_api_whose_scrape(outcome):
+    api = _api()
+    api._scrape_is_due = lambda _enabled: True
+    api._api_read_is_due = lambda: False
+    api._scrape_and_merge = outcome
+    return api
+
+
+def test_a_scrape_that_keeps_failing_is_announced_once_and_healed_once(caplog):
+    """`both` mode falls back to the API when the scrape fails, and said so
+    on every scrape attempt for as long as the web frontend stayed down."""
+    import logging
+
+    def times_out():
+        raise exceptions.WemPortalError("Could not open the expert view")
+
+    api = _both_mode_api_whose_scrape(times_out)
+    said = []
+    for _cycle in range(3):
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            api._collect_both(None)
+        said.append([r for r in caplog.records if r.levelno >= logging.INFO])
+
+    assert len(said[0]) == 1, "the first failure must be announced"
+    assert not said[1] and not said[2], f"announced again: {said[1:]}"
+
+    api._scrape_and_merge = lambda: None
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        api._collect_both(None)
+        api._collect_both(None)
+    healed = [r for r in caplog.records if r.levelno >= logging.INFO]
+    assert len(healed) == 1, f"the recovery must be said exactly once: {healed}"
+
+
+def test_a_failed_api_login_leaves_the_saying_to_whoever_handles_it(
+    monkeypatch, caplog
+):
+    """The login raises with the reason attached, and the poll that catches
+    it reports an outage once. A warning here as well said the same event
+    twice - and on every attempt for as long as the network stayed down."""
+    import logging
+
+    session = RecordingSession(
+        post_exc=real_requests.exceptions.ConnectionError("reset")
+    )
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+
+    with caplog.at_level(logging.DEBUG), pytest.raises(exceptions.WemPortalError):
+        _api().api_login()
+
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_an_html_answer_to_the_api_login_is_left_to_its_handler(monkeypatch, caplog):
+    import logging
+
+    class HtmlResponse(FakeResponse):
+        def json(self):
+            raise ValueError("Expecting value")
+
+    class HtmlSession(RecordingSession):
+        def post(self, url, **kwargs):
+            return HtmlResponse(content=b"<html></html>")
+
+    monkeypatch.setattr(wemportalapi.requests, "Session", HtmlSession)
+
+    with caplog.at_level(logging.DEBUG), pytest.raises(exceptions.WemPortalError):
+        _api().api_login()
+
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_a_failing_scrape_is_announced_by_its_cause_not_its_wrapper(caplog):
+    """The wrapper is written for the entry's error display: a sentence about
+    opening an issue, around the one thing worth reading."""
+    import logging
+
+    from custom_components.wemportal.const import DATA_GATHERING_ERROR
+
+    def times_out():
+        cause = TimeoutError(CURL_TIMEOUT.format(30002))
+        raise exceptions.WemPortalError(f"{DATA_GATHERING_ERROR} ({cause})") from cause
+
+    with caplog.at_level(logging.INFO):
+        _both_mode_api_whose_scrape(times_out)._collect_both(None)
+
+    (said,) = [r.getMessage() for r in caplog.records]
+    assert "curl: (28)" in said
+    assert DATA_GATHERING_ERROR not in said

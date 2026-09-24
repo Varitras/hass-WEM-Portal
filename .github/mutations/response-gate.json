@@ -4030,5 +4030,61 @@
     "new": "                title = user_input[CONF_USERNAME]\n",
     "tests": "cannot_both_move_to_one_login_at_once",
     "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "damping: a measured time or address makes every repeat news again",
+    "old": "    reason = _MEASURED_NOT_MEANT.sub(\"#\", reason)\n",
+    "new": "",
+    "tests": "measured_a_different_time or different_connection_object",
+    "path": "custom_components/wemportal/utils.py"
+  },
+  {
+    "label": "damping: curl's elapsed time left in the reason",
+    "old": "r\"0x[0-9a-fA-F]+|\\d+(?= (?:milliseconds|bytes))\"",
+    "new": "r\"0x[0-9a-fA-F]+\"",
+    "tests": "measured_a_different_time",
+    "path": "custom_components/wemportal/utils.py"
+  },
+  {
+    "label": "damping: urllib3's object address left in the reason",
+    "old": "r\"0x[0-9a-fA-F]+|\\d+(?= (?:milliseconds|bytes))\"",
+    "new": "r\"\\d+(?= (?:milliseconds|bytes))\"",
+    "tests": "different_connection_object",
+    "path": "custom_components/wemportal/utils.py"
+  },
+  {
+    "label": "scrape: a failing scrape announced on every attempt",
+    "old": "            _LOGGER.debug(\"Web scraper still failing: %s\", reason)\n",
+    "new": "            _LOGGER.info(\"Web scraper still failing: %s\", reason)\n",
+    "tests": "keeps_failing_is_announced_once_and_healed_once",
+    "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "scrape: the recovery never said",
+    "old": "                    _LOGGER.info(\"The web scraper works again.\")\n",
+    "new": "                    _LOGGER.debug(\"The web scraper works again.\")\n",
+    "tests": "keeps_failing_is_announced_once_and_healed_once",
+    "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "scrape: announced by the wrapper instead of the cause",
+    "old": "        reason = exc.__cause__ or exc\n",
+    "new": "        reason = exc\n",
+    "tests": "announced_by_its_cause_not_its_wrapper",
+    "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "api login: a network failure warned about twice",
+    "old": "            _LOGGER.debug(\"API login failed with a network/HTTP error: %s\", exc)",
+    "new": "            _LOGGER.warning(\"API login failed with a network/HTTP error: %s\", exc)",
+    "tests": "saying_to_whoever_handles_it",
+    "path": "custom_components/wemportal/transport.py"
+  },
+  {
+    "label": "api login: an HTML answer warned about twice",
+    "old": "            _LOGGER.debug(\"API login failed. Received HTML instead of JSON.\")",
+    "new": "            _LOGGER.warning(\"API login failed. Received HTML instead of JSON.\")",
+    "tests": "html_answer_to_the_api_login",
+    "path": "custom_components/wemportal/transport.py"
   }
 ]

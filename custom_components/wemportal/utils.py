@@ -3,6 +3,7 @@
 from collections.abc import Iterable, Mapping
 from typing import Any, Final
 import logging
+import re
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
@@ -649,6 +650,15 @@ def device_is_reachable(
     return status.value not in UNREACHABLE_CONNECTION_STATES
 
 
+# What a transport library measures or allocates rather than what went wrong:
+# curl writes the elapsed time and the bytes it got into a timeout, urllib3
+# the address of its connection object into a refusal. Neither is ever quite
+# the same twice, so compared as written every repeat looked like a new cause.
+_MEASURED_NOT_MEANT: Final = re.compile(
+    r"0x[0-9a-fA-F]+|\d+(?= (?:milliseconds|bytes))"
+)
+
+
 def failure_is_new(reported: dict[str, str], key: str, reason: str) -> bool:
     """Whether `key` is not already known to be failing for this reason.
 
@@ -661,6 +671,7 @@ def failure_is_new(reported: dict[str, str], key: str, reason: str) -> bool:
     Keyed on the reason, not merely on "is failing": when the portal starts
     refusing for a different cause, that is news and gets said.
     """
+    reason = _MEASURED_NOT_MEANT.sub("#", reason)
     previous = reported.get(key)
     reported[key] = reason
     return previous != reason

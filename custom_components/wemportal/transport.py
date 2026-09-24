@@ -683,7 +683,10 @@ class WemPortalTransport:
             # Username (email) is PII and deliberately kept out of the log
             # entirely - people paste logs into issues/forums, and with one
             # account per config entry naming it adds nothing.
-            _LOGGER.warning("API login failed. Received HTML instead of JSON.")
+            # Debug, like the one below: the raise carries the reason to the
+            # poll, which reports an outage once. Said here as well, one
+            # event was two lines - and one more on every attempt.
+            _LOGGER.debug("API login failed. Received HTML instead of JSON.")
             self.valid_login = False
             raise WemPortalError(
                 "API login failed: received HTML instead of JSON (Possible rate limit or WAF block)"
@@ -695,7 +698,7 @@ class WemPortalTransport:
             # here at all and would fall through to the generic
             # "unexpected error" wrapper in fetch_data() instead of a
             # clear, specific error message.
-            _LOGGER.warning("API login failed with a network/HTTP error.")
+            _LOGGER.debug("API login failed with a network/HTTP error: %s", exc)
             self.valid_login = False
             self._raise_login_failure(response, exc)
 
