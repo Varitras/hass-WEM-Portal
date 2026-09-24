@@ -4095,27 +4095,6 @@
     "path": "custom_components/wemportal/wemportalapi.py"
   },
   {
-    "label": "server details: empty fields quoted as an answer again",
-    "old": "    if server_status in (\"\", None) and not server_message:\n",
-    "new": "    if False:\n",
-    "tests": "without_details or refused_without_details",
-    "path": "custom_components/wemportal/mobile_protocol.py"
-  },
-  {
-    "label": "server details: status 0 taken for a missing status",
-    "old": "    if server_status in (\"\", None) and not server_message:\n",
-    "new": "    if not server_status and not server_message:\n",
-    "tests": "status_of_zero_is_a_status",
-    "path": "custom_components/wemportal/mobile_protocol.py"
-  },
-  {
-    "label": "server details: a message without a status dropped",
-    "old": "    if server_status in (\"\", None) and not server_message:\n",
-    "new": "    if server_status in (\"\", None):\n",
-    "tests": "status_of_zero_is_a_status",
-    "path": "custom_components/wemportal/mobile_protocol.py"
-  },
-  {
     "label": "coordinator: a failed cycle introduced twice",
     "old": "                # \"Error fetching <name> data:\".\n                raise UpdateFailed(str(exc)) from exc\n",
     "new": "                # \"Error fetching <name> data:\".\n                raise UpdateFailed(f\"Error fetching data from wemportal: {exc}\") from exc\n",
@@ -4128,5 +4107,33 @@
     "new": "                raise UpdateFailed(f\"Unexpected error fetching data from wemportal: {exc}\") from exc\n",
     "tests": "unexpected_failure_is_not_introduced_twice",
     "path": "custom_components/wemportal/coordinator.py"
+  },
+  {
+    "label": "server details: empty fields quoted as an answer again",
+    "old": "    if not said:\n",
+    "new": "    if False:\n",
+    "tests": "without_details or refused_without_details",
+    "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "server details: status 0 taken for a missing status",
+    "old": "    if server_status not in (\"\", None):\n",
+    "new": "    if server_status:\n",
+    "tests": "status_of_zero_is_a_status",
+    "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "server details: a missing status quoted as an empty field",
+    "old": "    if server_status not in (\"\", None):\n",
+    "new": "    if True:\n",
+    "tests": "half_an_answer",
+    "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "server details: a null message quoted as None",
+    "old": "    if server_message:\n",
+    "new": "    if True:\n",
+    "tests": "half_an_answer",
+    "path": "custom_components/wemportal/mobile_protocol.py"
   }
 ]

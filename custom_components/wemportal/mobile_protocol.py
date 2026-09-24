@@ -44,9 +44,14 @@ def what_the_server_said(
     "Server returned status code:  and message: " - as if the portal had
     answered and said nothing, while the one fact there was went unsaid.
     """
-    if server_status in ("", None) and not server_message:
+    said = []
+    if server_status not in ("", None):
+        said.append(f"status code: {server_status}")
+    if server_message:
+        said.append(f"message: {server_message}")
+    if not said:
         return f"HTTP {http_status}, no status or message in the answer"
-    return f"Server returned status code: {server_status} and message: {server_message}"
+    return "Server returned " + " and ".join(said)
 
 
 def described_parameters(payload: Any) -> list[dict[str, Any]] | None:

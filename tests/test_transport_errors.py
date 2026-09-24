@@ -356,3 +356,14 @@ def test_a_status_of_zero_is_a_status(status, message, quoted):
     from custom_components.wemportal.mobile_protocol import what_the_server_said
 
     assert quoted in what_the_server_said(500, status, message)
+
+
+@pytest.mark.parametrize(("status", "message"), [(5, None), ("", "Unbekannter Fehler")])
+def test_half_an_answer_quotes_only_the_half_it_has(status, message):
+    """Status without message, or the other way round: the missing half was
+    quoted as "None" or as an empty field."""
+    from custom_components.wemportal.mobile_protocol import what_the_server_said
+
+    said = what_the_server_said(500, status, message)
+
+    assert "None" not in said and "code:  " not in said, said
