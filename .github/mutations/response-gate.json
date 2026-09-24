@@ -4026,8 +4026,8 @@
   },
   {
     "label": "reconfigure: two dialogs moving to one login both succeed",
-    "old": "                await self.async_set_unique_id(account)\n            checked =",
-    "new": "                pass\n            checked =",
+    "old": "                await self.async_set_unique_id(account)\n            checked_against =",
+    "new": "                pass\n            checked_against =",
     "tests": "cannot_both_move_to_one_login_at_once",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -4187,37 +4187,65 @@
   },
   {
     "label": "reconfigure: a stale dialog committing over a moved entry",
-    "old": "        if entry_is_gone or account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
-    "new": "        if entry_is_gone:\n",
-    "tests": "stale_password_dialog_does_not_undo_a_move or moving_one_entry_do_not_both_succeed",
+    "old": "        return login_state(entry) != checked_against\n",
+    "new": "        return False\n",
+    "tests": "stale_password_dialog_does_not_undo_a_move or moving_one_entry_do_not_both_succeed or newer_password or checked_in_one_mode",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: commits not serialised",
-    "old": "                async with self._commit_lock():\n                    return await self._commit_reconfigure(entry, current, user_input)\n",
-    "new": "                return await self._commit_reconfigure(entry, current, user_input)\n",
+    "old": "                async with login_commit_lock(self.hass):\n                    return await self._commit_reconfigure(\n                        entry, checked_against, user_input\n                    )\n",
+    "new": "                return await self._commit_reconfigure(\n                    entry, checked_against, user_input\n                )\n",
     "tests": "moving_one_entry_do_not_both_succeed",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: a dialog writing to an entry removed meanwhile",
-    "old": "        if entry_is_gone or account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
-    "new": "        if account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
+    "old": "        if self.hass.config_entries.async_get_entry(entry.entry_id) is None:\n            return True\n",
+    "new": "",
     "tests": "removed_meanwhile_ends_cleanly",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reauth: a waiting prompt writing over a login change",
-    "old": "            or account_unique_id(entry.data.get(CONF_USERNAME)) != original\n",
-    "new": "            or False\n",
+    "old": "        if self._changed_since(entry, checked_against):\n            return self.async_abort(reason=\"reauth_entry_changed\")\n",
+    "new": "",
     "tests": "waiting_reauth_does_not_undo_a_login_change",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "options: a dialog opened before a login change saving onto it",
-    "old": "        if now_for != self._opened_for:\n",
+    "old": "        if dict(self.config_entry.data) != self._opened_with:\n",
     "new": "        if False:\n",
     "tests": "opened_before_a_login_change",
     "path": "custom_components/wemportal/options_flow.py"
+  },
+  {
+    "label": "freshness: only the account compared, not password or mode",
+    "old": "    return dict(entry.data), entry.options.get(CONF_MODE)\n",
+    "new": "    return entry.data.get(CONF_USERNAME), None\n",
+    "tests": "newer_password or checked_in_one_mode",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "freshness: the mode left out of the login state",
+    "old": "    return dict(entry.data), entry.options.get(CONF_MODE)\n",
+    "new": "    return dict(entry.data), None\n",
+    "tests": "checked_in_one_mode",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "options: saved outside the login dialogs' lock",
+    "old": "                async with login_commit_lock(self.hass):\n                    return self._save_configure(user_input)\n",
+    "new": "                return self._save_configure(user_input)\n",
+    "tests": "checked_with_the_old_password or checked_in_one_mode or move_cleans_up_wait_for_it",
+    "path": "custom_components/wemportal/options_flow.py"
+  },
+  {
+    "label": "reconfigure: an entry removed during the cleanup crashing the update",
+    "old": "        # Forgetting waits on disk, and a removal can land in between.\n        if self.hass.config_entries.async_get_entry(entry.entry_id) is None:\n            return self.async_abort(reason=\"reconfigure_entry_changed\")\n",
+    "new": "",
+    "tests": "removed_while_a_move_cleans_up",
+    "path": "custom_components/wemportal/config_flow.py"
   }
 ]

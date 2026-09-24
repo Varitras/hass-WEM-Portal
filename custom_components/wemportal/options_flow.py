@@ -63,13 +63,13 @@ from .expert_options import (
     expert_client_options,
 )
 
-from .models import account_unique_id
 from .config_flow import (
     AVAILABLE_MODES,
     CannotConnect,
     ExpertBusy,
     InvalidAuth,
     RateLimited,
+    login_commit_lock,
     validate_input,
 )
 
@@ -110,11 +110,11 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
         self._discovered: list[dict[str, Any]] = []
         self._selected_modules: list[dict[str, Any]] = []
         # The login this dialog was opened for; see _save_configure.
-        self._opened_for: str | None = None
+        self._opened_with: dict[str, Any] | None = None
 
     async def async_step_init(self, user_input=None):
         """Options menu: configure, discover expert parameters, or re-scan."""
-        self._opened_for = account_unique_id(self.config_entry.data.get(CONF_USERNAME))
+        self._opened_with = dict(self.config_entry.data)
         return self.async_show_menu(
             step_id="init",
             menu_options=["configure", "discover_modules", "rescan_parameters"],
@@ -189,7 +189,10 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
             if not errors:
                 errors.update(await self._validate_mode_change(user_input))
             if not errors:
-                return self._save_configure(user_input)
+                # Under the login dialogs' lock: the manager writes what this
+                # returns without another await, so the check inside holds.
+                async with login_commit_lock(self.hass):
+                    return self._save_configure(user_input)
 
         # On an error redisplay, prefill the form with what the user just
         # typed (so nothing has to be re-entered); otherwise with the
@@ -315,11 +318,12 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
         # instead of a silent success, and a stray whitespace edit in an
         # empty ID field must not count as a change either.
         # The slots and the module list on this form were read from the
-        # installation behind the login the dialog was opened for. Saved after
-        # a login change, they put another heating system's parameters on the
-        # new login's write allowlist.
-        now_for = account_unique_id(self.config_entry.data.get(CONF_USERNAME))
-        if now_for != self._opened_for:
+        # installation behind the login the dialog was opened for, and a mode
+        # switch was checked with that login's password. Saved after a login
+        # change, they put another heating system's parameters on the new
+        # login's write allowlist, or a mode beside a password never tried in
+        # it.
+        if dict(self.config_entry.data) != self._opened_with:
             return self.async_abort(reason="options_entry_changed")
         current = dict(self.config_entry.options)
         merged = {**current, **user_input}

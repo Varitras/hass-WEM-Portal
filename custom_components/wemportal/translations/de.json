@@ -113,7 +113,7 @@
     "abort": {
       "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen.",
       "discovery_aborted": "Das WEM-Portal-Konto, für das gesucht wurde, wurde neu geladen oder entfernt, deshalb wurde die Suche abgebrochen. Es wurde nichts geändert. Öffne die Optionen erneut, sobald die Integration fertig geladen ist.",
-      "options_entry_changed": "Die Anmeldung dieses Eintrags wurde geändert, während die Optionen offen waren, daher wurde nichts gespeichert - sie stammten von der vorherigen Anlage. Die Optionen bitte erneut öffnen."
+      "options_entry_changed": "Die Anmeldung dieses Eintrags wurde geändert, während die Optionen offen waren, daher wurde nichts gespeichert. Die Optionen bitte erneut öffnen."
     }
   },
   "issues": {

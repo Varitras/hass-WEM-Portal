@@ -1534,10 +1534,10 @@ def _hold_validation_of(monkeypatch):
     return gate, held
 
 
-def _submit(hass, flow_id, username):
+def _submit(hass, flow_id, username, password="pw"):
     return asyncio.ensure_future(
         hass.config_entries.flow.async_configure(
-            flow_id, {CONF_USERNAME: username, CONF_PASSWORD: "pw"}
+            flow_id, {CONF_USERNAME: username, CONF_PASSWORD: password}
         )
     )
 
@@ -1642,8 +1642,9 @@ async def test_options_saved_while_a_dialog_waited_are_kept(hass, monkeypatch):
     assert entry.options[CONF_LANGUAGE] == "de"
 
 
+@pytest.mark.parametrize("login", [USER, "b@example.org"])
 async def test_a_dialog_whose_entry_was_removed_meanwhile_ends_cleanly(
-    hass, monkeypatch
+    hass, monkeypatch, login
 ):
     """Home Assistant aborts a waiting reauth when its entry is removed, not
     a waiting reconfigure - which then updated an entry that no longer
@@ -1652,7 +1653,7 @@ async def test_a_dialog_whose_entry_was_removed_meanwhile_ends_cleanly(
     gate, held = _hold_validation_of(monkeypatch)
     flow = await entry.start_reconfigure_flow(hass)
     held.add(flow["flow_id"])
-    waiting = _submit(hass, flow["flow_id"], USER)
+    waiting = _submit(hass, flow["flow_id"], login)
     await _let_it_reach_the_portal()
 
     await hass.config_entries.async_remove(entry.entry_id)
@@ -1706,3 +1707,187 @@ async def test_options_opened_before_a_login_change_are_not_saved_onto_it(hass):
 
     assert result["reason"] == "options_entry_changed"
     assert CONF_EXPERT_SLOT_ID_TEMPLATE % 1 not in entry.options
+
+
+# --- a dialog commits only onto the login state it checked ------------------
+
+
+async def test_a_waiting_reauth_does_not_undo_a_newer_password(hass, monkeypatch):
+    """Same account, so the account check passed - and the prompt that had
+    checked the older password saved it over the newer one."""
+    entry = await _setup(hass, _entry(hass))
+    gate, held = _hold_validation_of(monkeypatch)
+    reauth = await entry.start_reauth_flow(hass)
+    held.add(reauth["flow_id"])
+    waiting = _submit(hass, reauth["flow_id"], USER, "older")
+    await _let_it_reach_the_portal()
+
+    await _reconfigure(hass, entry, USER, "newer")
+    gate.set()
+    result = await waiting
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reauth_entry_changed"
+    assert entry.data[CONF_PASSWORD] == "newer"
+
+
+async def test_a_waiting_reconfigure_does_not_undo_a_newer_password(hass, monkeypatch):
+    entry = await _setup(hass, _entry(hass))
+    gate, held = _hold_validation_of(monkeypatch)
+    older = await entry.start_reconfigure_flow(hass)
+    held.add(older["flow_id"])
+    waiting = _submit(hass, older["flow_id"], USER, "older")
+    await _let_it_reach_the_portal()
+
+    await _reconfigure(hass, entry, USER, "newer")
+    gate.set()
+    result = await waiting
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_entry_changed"
+    assert entry.data[CONF_PASSWORD] == "newer"
+
+
+async def test_a_password_checked_in_one_mode_is_not_saved_under_another(
+    hass, monkeypatch
+):
+    """The login dialog checked the new password on the API; the options
+    dialog meanwhile switched to web with the old one. Both saved, leaving a
+    web entry with a password nobody had tried on the web."""
+    entry = await _setup(hass, _entry(hass))
+    gate, held = _hold_validation_of(monkeypatch)
+    flow = await entry.start_reconfigure_flow(hass)
+    held.add(flow["flow_id"])
+    waiting = _submit(hass, flow["flow_id"], USER, "new-password")
+    await _let_it_reach_the_portal()
+
+    options = await _open_options(hass, entry, "configure")
+    await hass.config_entries.options.async_configure(
+        options["flow_id"], _configure_input(**{CONF_MODE: "web"})
+    )
+    await hass.async_block_till_done()
+    gate.set()
+    result = await waiting
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_entry_changed"
+    assert entry.options[CONF_MODE] == "web"
+    assert entry.data[CONF_PASSWORD] != "new-password"
+
+
+async def test_a_mode_checked_with_the_old_password_is_not_saved_over_a_new_one(
+    hass, monkeypatch
+):
+    """The other direction: the options dialog checked web with the old
+    password, the login dialog saved a new one meanwhile, and the options
+    dialog then switched the entry to web on a password it never tried."""
+    from custom_components.wemportal import options_flow as options_module
+
+    entry = await _setup(hass, _entry(hass))
+    gate = asyncio.Event()
+    real_validate = options_module.validate_input
+
+    async def slow_validate(hass_, data):
+        await gate.wait()
+        return await real_validate(hass_, data)
+
+    monkeypatch.setattr(options_module, "validate_input", slow_validate)
+    options = await _open_options(hass, entry, "configure")
+    waiting = asyncio.ensure_future(
+        hass.config_entries.options.async_configure(
+            options["flow_id"], _configure_input(**{CONF_MODE: "web"})
+        )
+    )
+    await _let_it_reach_the_portal()
+
+    await _reconfigure(hass, entry, USER, "newer")
+    gate.set()
+    result = await waiting
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "options_entry_changed"
+    assert entry.options[CONF_MODE] == "api"
+
+
+async def test_an_entry_removed_while_a_move_cleans_up_ends_the_dialog_cleanly(
+    hass, monkeypatch
+):
+    """The existence check ran before the old installation was forgotten,
+    and that waits on disk: removed in between, the update that followed
+    raised UnknownEntry."""
+    from custom_components.wemportal import config_flow as flow_module
+
+    real_store = flow_module.get_modules_store
+    cleaning = asyncio.Event()
+    removed = asyncio.Event()
+
+    class RemovedWhileForgetting:
+        def __init__(self, store):
+            self._store = store
+
+        async def async_remove(self):
+            cleaning.set()
+            await removed.wait()
+            await self._store.async_remove()
+
+    monkeypatch.setattr(
+        flow_module,
+        "get_modules_store",
+        lambda hass, entry_id: RemovedWhileForgetting(real_store(hass, entry_id)),
+    )
+    entry = await _setup(hass, _entry(hass))
+    flow = await entry.start_reconfigure_flow(hass)
+    waiting = _submit(hass, flow["flow_id"], "b@example.org")
+    await cleaning.wait()
+    await hass.config_entries.async_remove(entry.entry_id)
+    removed.set()
+    result = await waiting
+
+    assert result["reason"] == "reconfigure_entry_changed"
+
+
+async def test_options_saved_while_a_login_move_cleans_up_wait_for_it(
+    hass, monkeypatch
+):
+    """The login dialog reads the options when it commits, after forgetting
+    the old installation - which waits on disk. An options save landing in
+    that wait switched the mode under a password checked in the old one."""
+    from custom_components.wemportal import config_flow as flow_module
+
+    real_store = flow_module.get_modules_store
+    cleaning = asyncio.Event()
+    options_sent = asyncio.Event()
+
+    class SavedOverWhileForgetting:
+        def __init__(self, store):
+            self._store = store
+
+        async def async_remove(self):
+            cleaning.set()
+            await options_sent.wait()
+            await _let_it_reach_the_portal()
+            await self._store.async_remove()
+
+    monkeypatch.setattr(
+        flow_module,
+        "get_modules_store",
+        lambda hass, entry_id: SavedOverWhileForgetting(real_store(hass, entry_id)),
+    )
+    entry = await _setup(hass, _entry(hass))
+    options = await _open_options(hass, entry, "configure")
+    flow = await entry.start_reconfigure_flow(hass)
+    moving = _submit(hass, flow["flow_id"], "b@example.org")
+    await cleaning.wait()
+    saving = asyncio.ensure_future(
+        hass.config_entries.options.async_configure(
+            options["flow_id"], _configure_input(**{CONF_MODE: "web"})
+        )
+    )
+    await _let_it_reach_the_portal()
+    options_sent.set()
+    moved, saved = await asyncio.gather(moving, saving)
+    await hass.async_block_till_done()
+
+    assert moved["reason"] == "reconfigure_successful"
+    assert saved["reason"] == "options_entry_changed"
+    assert entry.options[CONF_MODE] == "api"

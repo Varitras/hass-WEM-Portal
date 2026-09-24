@@ -13,12 +13,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
   entry still starting up - the change still went through underneath
   entities that kept running for the old installation. It is now refused
   with nothing changed. A login dialog or re-authentication prompt that
-  waited on the portal while its entry was changed elsewhere, or removed, is
-  refused as well, instead of writing back what it had read before: that
-  could undo a completed move, give one account to two entries, put an old
-  username back, or overwrite options saved meanwhile. The options dialog,
-  left open across a login change, no longer saves the expert parameters it
-  offered for the previous installation onto the new login.
+  waited on the portal while its entry was changed elsewhere - another
+  login, a newer password, a different mode - or removed, is refused as
+  well, instead of writing back what it had read before: that could undo a
+  completed move, give one account to two entries, put an old username or
+  password back, or save a password beside a mode it was never tried in.
+  The options dialog, left open across a login change, no longer saves the
+  expert parameters it offered for the previous installation, or a mode it
+  checked with the previous password.
 - **Changing the login of one of two entries of the same account keeps the
   account's memory.** An older duplicate entry may still use that account;
   its 403 pause and failure count were cleared by the change. The failure

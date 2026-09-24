@@ -134,6 +134,26 @@ class InvalidAuth(exceptions.HomeAssistantError):
     """Error to indicate there is invalid auth."""
 
 
+LoginState = tuple[dict[str, Any], Any]
+
+
+def login_state(entry: ConfigEntry) -> LoginState:
+    """What a login check is made against: the entry's data and its mode.
+
+    A dialog saves what the portal accepted only while this is unchanged.
+    The account alone was not enough: an older dialog put back a password a
+    newer one had replaced, and a password checked in one mode was saved
+    beside a mode switched meanwhile - a pair nobody had tried.
+    """
+    return dict(entry.data), entry.options.get(CONF_MODE)
+
+
+def login_commit_lock(hass: HomeAssistant) -> asyncio.Lock:
+    """One commit of login or options at a time, whichever dialog."""
+    lock: asyncio.Lock = hass.data.setdefault(_LOGIN_COMMIT_LOCK, asyncio.Lock())
+    return lock
+
+
 def _without_the_installation(options: Mapping[str, Any]) -> dict[str, Any]:
     """The options minus what names parts of one particular installation.
 
@@ -303,6 +323,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             if entered != original:
                 errors["base"] = "wrong_account"
             else:
+                checked_against = login_state(entry)
                 new_data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
                 failure = await self._credential_error(entry, new_data)
                 if failure is None:
@@ -310,8 +331,8 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     # entry as it is now: someone shown this prompt may change
                     # the login through reconfigure first, and data built
                     # before the wait put the old username back.
-                    async with self._commit_lock():
-                        return self._commit_reauth(entry, original, user_input)
+                    async with login_commit_lock(self.hass):
+                        return self._commit_reauth(entry, checked_against, user_input)
                 errors["base"] = failure
 
         return self.async_show_form(
@@ -357,20 +378,9 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         forget_account_state_if_last_entry(self.hass, entry)
         return True
 
-    def _commit_lock(self) -> asyncio.Lock:
-        """One login commit at a time, reauth and reconfigure alike."""
-        lock: asyncio.Lock = self.hass.data.setdefault(
-            _LOGIN_COMMIT_LOCK, asyncio.Lock()
-        )
-        return lock
-
-    def _commit_reauth(self, entry, original, user_input):
+    def _commit_reauth(self, entry, checked_against, user_input):
         """Apply a password the portal accepted, to the entry as it is now."""
-        entry_is_gone = self.hass.config_entries.async_get_entry(entry.entry_id) is None
-        if (
-            entry_is_gone
-            or account_unique_id(entry.data.get(CONF_USERNAME)) != original
-        ):
+        if self._changed_since(entry, checked_against):
             return self.async_abort(reason="reauth_entry_changed")
         # The portal just accepted these credentials, so the failures that
         # led here are answered. Nothing else does it: the count is dropped
@@ -389,13 +399,19 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             entry, data={**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
         )
 
-    async def _commit_reconfigure(self, entry, current, user_input):
+    def _changed_since(self, entry, checked_against: LoginState) -> bool:
+        """Removed, or no longer the login state the portal check was made
+        against. Removed counts: Home Assistant aborts a waiting reauth when
+        its entry goes, not a waiting reconfigure."""
+        if self.hass.config_entries.async_get_entry(entry.entry_id) is None:
+            return True
+        return login_state(entry) != checked_against
+
+    async def _commit_reconfigure(self, entry, checked_against, user_input):
         """Apply a login the portal accepted, to the entry as it is now."""
-        # Removed meanwhile counts as changed: Home Assistant aborts a waiting
-        # reauth when its entry goes, not a waiting reconfigure.
-        entry_is_gone = self.hass.config_entries.async_get_entry(entry.entry_id) is None
-        if entry_is_gone or account_unique_id(entry.data.get(CONF_USERNAME)) != current:
+        if self._changed_since(entry, checked_against):
             return self.async_abort(reason="reconfigure_entry_changed")
+        current = account_unique_id(entry.data.get(CONF_USERNAME))
         # The target needs no second look: the flow reserved it before
         # asking the portal, and every other flow for it aborts on that.
         account = account_unique_id(user_input[CONF_USERNAME])
@@ -404,6 +420,9 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             await self._forget_the_old_installation(entry)
         ):
             return self.async_abort(reason="reconfigure_unload_failed")
+        # Forgetting waits on disk, and a removal can land in between.
+        if self.hass.config_entries.async_get_entry(entry.entry_id) is None:
+            return self.async_abort(reason="reconfigure_entry_changed")
         # Same reason as after a reauth: the portal just accepted this login,
         # so the failures counted before are answered. That login's count,
         # not the entry's - on a move the old account was not asked. And
@@ -453,6 +472,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 # the scan above sees entries, not another dialog moving an
                 # entry to the same login right now.
                 await self.async_set_unique_id(account)
+            checked_against = login_state(entry)
             checked = {**entry.data, **user_input}
             failure = await self._credential_error(entry, checked)
             if failure is None:
@@ -461,8 +481,10 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 # move this entry, hand its login to another entry, or save
                 # options - and a dialog committing what it read before the
                 # wait wrote all of that back.
-                async with self._commit_lock():
-                    return await self._commit_reconfigure(entry, current, user_input)
+                async with login_commit_lock(self.hass):
+                    return await self._commit_reconfigure(
+                        entry, checked_against, user_input
+                    )
             errors["base"] = failure
 
         return self.async_show_form(
