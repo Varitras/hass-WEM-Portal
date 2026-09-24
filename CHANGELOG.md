@@ -6,6 +6,45 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Changing the login is refused when it cannot be done safely.** If the
+  integration could not be stopped - an entity refusing to unload, or an
+  entry still starting up - the change still went through underneath
+  entities that kept running for the old installation. It is now refused
+  with nothing changed. A dialog that waited on the portal while the same
+  entry was changed in another dialog is refused as well, instead of writing
+  back what it had read before: that could undo a completed move, give one
+  account to two entries, or overwrite options saved meanwhile.
+- **Changing the login of one of two entries of the same account keeps the
+  account's memory.** An older duplicate entry may still use that account;
+  its 403 pause and failure count were cleared by the change. The failure
+  count that is cleared is now the new login's, the one the portal just
+  accepted.
+- **A lasting connection failure is reported once, not on every cycle.** The
+  damping from 1.13.2 compared the error text, and a refused or timed-out
+  connection carries the address of the connection object in it - so no two
+  looked alike and every one was reported. Measured values such as
+  addresses, times and byte counts no longer count as a new cause.
+- **A portal that keeps timing out, and an unexpected error, are reported
+  once.** Both wrote a warning on every cycle beside Home Assistant's own
+  error. A timeout is now one info line until a cycle succeeds again; an
+  unexpected error - a bug - stays a warning, once, now with the traceback
+  that makes it findable.
+- **A failing web scrape in `both` mode is announced once, and so is its
+  recovery.** It was a warning on every scrape attempt, wrapped in a generic
+  sentence around the actual cause. It is now one info line naming the
+  cause, one when the scraper works again, and debug in between.
+- **A failed API login is no longer a warning of its own.** The poll that
+  catches it already reports the outage once; the extra line repeated on
+  every login attempt. The 403 pause stays a warning.
+- **An error quotes only what the portal actually said.** A 403 from a
+  firewall page carries no status or message, and the error read "status
+  code: and message:" as if the portal had answered with nothing; it now
+  names the HTTP status. Half an answer is quoted as the half it is.
+- **A failed cycle is no longer introduced twice.** Home Assistant opens the
+  line with "Error fetching ... data:", and ours began with the same words.
+
 ## [1.14.0b1] – 2026-09-24
 
 A beta: the login can be changed without removing the integration, errors
