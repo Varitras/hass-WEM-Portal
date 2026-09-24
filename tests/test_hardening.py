@@ -9142,3 +9142,24 @@ def test_a_failing_scrape_is_announced_by_its_cause_not_its_wrapper(caplog):
     (said,) = [r.getMessage() for r in caplog.records]
     assert "curl: (28)" in said
     assert DATA_GATHERING_ERROR not in said
+
+
+def test_a_scrape_without_a_result_is_not_announced_as_an_index_error(caplog):
+    """An empty scrape is wrapped around the IndexError that found it empty.
+    Announced by that cause, the log read "list index out of range" - an
+    internal detail in place of the reason."""
+    import logging
+
+    from custom_components.wemportal.const import DATA_GATHERING_ERROR
+
+    def comes_back_empty():
+        try:
+            [][0]
+        except IndexError as exc:
+            raise exceptions.WemPortalError(DATA_GATHERING_ERROR) from exc
+
+    with caplog.at_level(logging.INFO):
+        _both_mode_api_whose_scrape(comes_back_empty)._collect_both(None)
+
+    (said,) = [r.getMessage() for r in caplog.records]
+    assert "index" not in said, said

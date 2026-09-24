@@ -952,15 +952,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
 
     def _note_scrape_failure(self, exc: Exception) -> None:
-        """Say a failing scrape when it starts, then stay quiet about it.
+        """Say a failing scrape once, not on every retry of its backoff.
 
-        The scrape is retried on its own backoff for as long as the web
-        frontend is down, and each attempt said the same thing again. The
-        cause, not the wrapper: the wrapper's text is written for the entry's
-        error display and buried what went wrong.
+        Without the wrapper's sentence, written for the entry's error display,
+        but not by the chained cause either: for an empty scrape that is an
+        IndexError, an internal detail in place of the reason.
         """
-        reason = exc.__cause__ or exc
-        if failure_is_new(self._reported_failures, _SCRAPE_FAILURE_KEY, str(reason)):
+        reason = str(exc).removeprefix(DATA_GATHERING_ERROR).strip(" ()") or str(exc)
+        if failure_is_new(self._reported_failures, _SCRAPE_FAILURE_KEY, reason):
             _LOGGER.info(
                 "Web scraper failed, using the API only until it works: %s", reason
             )

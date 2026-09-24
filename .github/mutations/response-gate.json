@@ -4067,9 +4067,9 @@
     "path": "custom_components/wemportal/wemportalapi.py"
   },
   {
-    "label": "scrape: announced by the wrapper instead of the cause",
-    "old": "        reason = exc.__cause__ or exc\n",
-    "new": "        reason = exc\n",
+    "label": "scrape: announced with the wrapper's sentence around the cause",
+    "old": "        reason = str(exc).removeprefix(DATA_GATHERING_ERROR).strip(\" ()\") or str(exc)\n",
+    "new": "        reason = str(exc)\n",
     "tests": "announced_by_its_cause_not_its_wrapper",
     "path": "custom_components/wemportal/wemportalapi.py"
   },
@@ -4086,5 +4086,12 @@
     "new": "            _LOGGER.warning(\"API login failed. Received HTML instead of JSON.\")",
     "tests": "html_answer_to_the_api_login",
     "path": "custom_components/wemportal/transport.py"
+  },
+  {
+    "label": "scrape: an empty scrape announced as an IndexError",
+    "old": "        reason = str(exc).removeprefix(DATA_GATHERING_ERROR).strip(\" ()\") or str(exc)\n",
+    "new": "        reason = str(exc.__cause__ or exc)\n",
+    "tests": "not_announced_as_an_index_error",
+    "path": "custom_components/wemportal/wemportalapi.py"
   }
 ]

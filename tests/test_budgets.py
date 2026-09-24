@@ -44,7 +44,7 @@ LINE_BUDGETS = {
     # 2485 after the weekly-programme path left for schedule.py; raised here
     # for the type-annotation phase, which adds lines - multi-line signatures,
     # the TYPE_CHECKING import, the narrowing asserts - without adding code
-    # paths. A one-time step up; the ceiling still only ratchets down from here.
+    # paths.
     # Up again by 18 from 2562 for behaviour, not layout: a failing scrape in
     # `both` mode is said once and its recovery once, instead of every attempt.
     "wemportalapi.py": 2580,
