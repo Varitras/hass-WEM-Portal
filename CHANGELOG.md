@@ -6,6 +6,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.14.0b2] – 2026-09-24
+
+A second beta. Everything from 1.14.0b1, plus: a failure that lasts is said
+once and says what it is, and changing the login is safe when dialogs overlap
+or the integration will not stop.
+
 ### Fixed
 
 - **Changing the login is refused when it cannot be done safely.** If the
