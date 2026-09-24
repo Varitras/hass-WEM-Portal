@@ -10,6 +10,7 @@ import copy
 import threading
 import time
 from datetime import datetime, timedelta
+from enum import Enum
 
 import requests
 from homeassistant.const import CONF_SCAN_INTERVAL
@@ -182,6 +183,14 @@ SCRAPER_FALLBACK_DEVICE_ID: Final = "0000"
 SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE: Final = 3
 
 _SCRAPE_FAILURE_KEY: Final = "web-scrape"
+
+
+class NoRead(Enum):
+    """A device with nothing to read: not a failed refresh, and not a
+    refreshed one either. Counted as refreshed, one such device made a cycle
+    in which every real read failed look successful."""
+
+    NOTHING_TO_READ = "nothing to read"
 
 
 # The three rows a device status read owns. Named once because they are
@@ -1853,7 +1862,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         self._acquire_api_lock("value re-read")
         try:
-            return self._fetch_parameter_values(str(device_id))
+            outcome = self._fetch_parameter_values(str(device_id))
+            if outcome is NoRead.NOTHING_TO_READ:
+                # Nothing read back is nothing verified.
+                return "the device has nothing to read back"
+            return outcome
         except AuthError as exc:
             return str(exc)
         finally:
@@ -2057,12 +2070,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 continue
             # `is None`, never a truth test: the reason for a FAILURE is what
             # comes back, so a truthy answer is the bad one.
-            failure = self._fetch_parameter_values(device_id)
-            if failure is None:
+            outcome = self._fetch_parameter_values(device_id)
+            if outcome is None:
                 successes += 1
                 self._last_device_read[device_id] = time.monotonic()
-            else:
-                failures.append(f"device {short_device_id(device_id)}: {failure}")
+            elif outcome is not NoRead.NOTHING_TO_READ:
+                failures.append(f"device {short_device_id(device_id)}: {outcome}")
                 self._forget_stale_device_values(device_id)
             self._fetch_circuit_times(device_id)
 
@@ -2215,7 +2228,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             if isinstance(row, Reading):
                 row.value = None
 
-    def _fetch_parameter_values(self, device_id: str) -> str | None:
+    def _fetch_parameter_values(self, device_id: str) -> str | NoRead | None:
         """Refresh and read all known parameter values for one device.
 
         Returns None when the values were refreshed, and otherwise the reason
@@ -2232,6 +2245,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         Assistant to report "all API parameter fetches failed this cycle" and
         nothing else. Correlating that with the warning above it by timestamp
         was work the caller could do for the user.
+
+        A device with nothing to read answers NoRead.NOTHING_TO_READ: no
+        request, so neither refreshed nor failed.
         """
         # Reached only from get_data, which skips any device_id that is not in
         # self.modules - so the module list is a real dict at this point.
@@ -2326,7 +2342,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                         "no parameters.",
                         device_id,
                     )
-                return None
+                return NoRead.NOTHING_TO_READ
 
             # Modules whose description has not arrived at all: discovery has
             # not produced any yet. That IS a failed refresh - no values were

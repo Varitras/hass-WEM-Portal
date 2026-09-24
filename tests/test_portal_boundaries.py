@@ -192,7 +192,7 @@ def test_a_value_read_answered_with_null_fails_the_cycle_cleanly():
 
     failure = api._fetch_parameter_values("1234")
 
-    assert failure is not None, "a null body was counted as a successful read"
+    assert isinstance(failure, str), "a null body was counted as a successful read"
     assert "answer object" in failure, (
         f"the failure reason reads like a code bug, not a portal answer: {failure!r}"
     )

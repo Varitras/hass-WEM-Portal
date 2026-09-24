@@ -1297,8 +1297,8 @@
   {
     "label": "cycle: reading the failure reason as a truth value must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            failure = self._fetch_parameter_values(device_id)\n            if failure is None:",
-    "new": "            failure = self._fetch_parameter_values(device_id)\n            if failure:",
+    "old": "            outcome = self._fetch_parameter_values(device_id)\n            if outcome is None:",
+    "new": "            outcome = self._fetch_parameter_values(device_id)\n            if outcome:",
     "tests": "a_failed_cycle_says_why_it_failed"
   },
   {
@@ -1997,8 +1997,8 @@
   {
     "label": "freshness: a silent device left publishing its last values",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                failures.append(f\"device {short_device_id(device_id)}: {failure}\")\n                self._forget_stale_device_values(device_id)",
-    "new": "                failures.append(f\"device {short_device_id(device_id)}: {failure}\")",
+    "old": "                failures.append(f\"device {short_device_id(device_id)}: {outcome}\")\n                self._forget_stale_device_values(device_id)",
+    "new": "                failures.append(f\"device {short_device_id(device_id)}: {outcome}\")",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -4268,5 +4268,26 @@
     "new": "            return f\"{parts.scheme}://{parts.netloc}{path}?{parts.query}\"\n",
     "tests": "does_not_publish_its_url",
     "path": "custom_components/wemportal/web_protocol.py"
+  },
+  {
+    "label": "cycle: an empty device counted as refreshed",
+    "old": "                return NoRead.NOTHING_TO_READ\n",
+    "new": "                return None\n",
+    "tests": "empty_device_does_not_hide_that_every_real_read_failed",
+    "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "cycle: an empty device counted as failed",
+    "old": "            elif outcome is not NoRead.NOTHING_TO_READ:\n",
+    "new": "            else:\n",
+    "tests": "only_an_empty_device_is_not_a_failure or empty_device_beside_a_refreshed_one",
+    "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "read-back: nothing read back taken as verified",
+    "old": "                return \"the device has nothing to read back\"\n",
+    "new": "                return None\n",
+    "tests": "read_back_that_read_nothing_does_not_verify",
+    "path": "custom_components/wemportal/wemportalapi.py"
   }
 ]

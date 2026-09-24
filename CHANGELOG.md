@@ -21,6 +21,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
   reaches the log. The address is now cut down to its endpoint, as the 403
   message already did.
 
+### Fixed
+
+- **A device with nothing to read no longer hides a failed cycle.** It was
+  counted as refreshed, so when every device that does have values failed to
+  update, the cycle still looked successful: no backoff, no unavailable
+  entities, and the old values kept being shown until they aged out. It now
+  counts as neither a success nor a failure.
+
 ## [1.14.0b2] – 2026-09-24
 
 A second beta. Everything from 1.14.0b1, plus: a failure that lasts is said
