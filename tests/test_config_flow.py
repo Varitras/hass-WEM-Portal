@@ -1495,3 +1495,21 @@ async def test_a_move_clears_the_failure_streak_of_the_login_it_checked(
     await _reconfigure(hass, entry, "new@example.org")
 
     assert account_state("new@example.org").auth_failures == 1
+
+
+async def test_a_move_of_an_entry_that_cannot_unload_right_now_says_so(hass):
+    """An entry still setting up, or left behind by an unload that failed,
+    is one Home Assistant refuses to unload at all - it raises instead of
+    answering False. The retry after "restart and try again" is exactly that
+    case, and it ended in an unhandled flow error."""
+    from homeassistant.config_entries import ConfigEntryState
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    entry.mock_state(hass, ConfigEntryState.FAILED_UNLOAD)
+
+    result = await _reconfigure(hass, entry, "new@example.org")
+
+    assert result["reason"] == "reconfigure_unload_failed"
+    assert entry.data[CONF_USERNAME] == USER
+    await coordinator.async_shutdown()

@@ -11,6 +11,7 @@ from homeassistant import exceptions
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
+    OperationNotAllowed,
 )
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
@@ -348,9 +349,14 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         nothing can put the old data back between here and the fresh setup
         that follows. False, having forgotten nothing, when it would not
         unload: its entities still run for the old installation, and a move
-        under them would have them write with the new login.
+        under them would have them write with the new login. The same when
+        Home Assistant refuses to try - an entry still setting up, or left
+        behind by an unload that failed - which it says by raising.
         """
-        if not await self.hass.config_entries.async_unload(entry.entry_id):
+        try:
+            if not await self.hass.config_entries.async_unload(entry.entry_id):
+                return False
+        except OperationNotAllowed:
             return False
         await get_modules_store(self.hass, entry.entry_id).async_remove()
         await get_scraper_device_store(self.hass, entry.entry_id).async_remove()

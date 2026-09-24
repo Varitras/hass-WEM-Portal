@@ -4159,8 +4159,8 @@
   },
   {
     "label": "reconfigure: a refused unload moving the entry anyway",
-    "old": "        if not await self.hass.config_entries.async_unload(entry.entry_id):\n            return False\n",
-    "new": "        await self.hass.config_entries.async_unload(entry.entry_id)\n",
+    "old": "            if not await self.hass.config_entries.async_unload(entry.entry_id):\n                return False\n",
+    "new": "            await self.hass.config_entries.async_unload(entry.entry_id)\n",
     "tests": "refused_unload_leaves_the_entry_as_it_was",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -4176,6 +4176,13 @@
     "old": "                forget_auth_failures(user_input[CONF_USERNAME])\n",
     "new": "                forget_auth_failures(entry.data.get(CONF_USERNAME))\n",
     "tests": "streak_of_the_login_it_checked",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: an entry that cannot unload right now crashing the move",
+    "old": "        except OperationNotAllowed:\n            return False\n",
+    "new": "        except ZeroDivisionError:\n            return False\n",
+    "tests": "cannot_unload_right_now_says_so",
     "path": "custom_components/wemportal/config_flow.py"
   }
 ]
