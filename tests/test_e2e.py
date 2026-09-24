@@ -3737,3 +3737,42 @@ async def test_an_outage_after_a_good_cycle_is_announced_again(
         and record.levelno >= logging.INFO
         and "maintenance" in record.getMessage().lower()
     ], "an outage after a good cycle was not announced"
+
+
+async def test_a_failed_cycle_is_not_introduced_twice(hass, monkeypatch):
+    """Home Assistant logs a failed refresh as "Error fetching <name> data:"
+    followed by the reason. Our reason began with "Error fetching data from
+    wemportal:" as well, so every such line said it twice."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+
+    def fails(self, *_args, **_kwargs):
+        raise WemPortalError("the portal said no")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", fails)
+
+    with pytest.raises(UpdateFailed) as excinfo:
+        await coordinator._async_update_data()
+
+    assert str(excinfo.value) == "the portal said no"
+
+
+async def test_an_unexpected_failure_is_not_introduced_twice(hass, monkeypatch):
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+
+    def breaks(self, *_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", breaks)
+
+    with pytest.raises(UpdateFailed) as excinfo:
+        await coordinator._async_update_data()
+
+    assert str(excinfo.value) == "Unexpected error: boom"

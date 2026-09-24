@@ -610,9 +610,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     # the event loop would stall everything Home Assistant
                     # does for as long as the write it waits for runs.
                     await self.hass.async_add_executor_job(self.api.reset_transport)
-                raise UpdateFailed(
-                    f"Error fetching data from wemportal: {exc}"
-                ) from exc
+                # The reason alone: Home Assistant already opens the line with
+                # "Error fetching <name> data:".
+                raise UpdateFailed(str(exc)) from exc
             except Exception as exc:
                 # Catch-all safety net: covers cases that don't come from
                 # fetch_data() itself (which already wraps its own
@@ -626,9 +626,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 self._note_failed_cycle()
                 self._reset_auth_failures()
                 _LOGGER.warning("Unexpected error updating WEM Portal data: %s", exc)
-                raise UpdateFailed(
-                    f"Unexpected error fetching data from wemportal: {exc}"
-                ) from exc
+                raise UpdateFailed(f"Unexpected error: {exc}") from exc
             finally:
                 self.last_try = monotonic()
                 self._sync_rate_limit_issue()
