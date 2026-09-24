@@ -68,8 +68,8 @@ rules:
   test-coverage:
     status: todo
     comment: >-
-      The rule asks for above 95% over the integration; measured is 90% of
-      4609 statements with branch coverage. The largest gap is expert_writer.py
+      The rule asks for above 95% over the integration; measured is 90% with
+      branch coverage. The largest gap is expert_writer.py
       at 68%, the web-scraping client for expert parameters - its error
       branches need portal HTML nobody has captured yet. number.py and
       select.py are at 82%, web_protocol.py at 84%; most other modules are
