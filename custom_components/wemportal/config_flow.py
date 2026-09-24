@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from typing import Any, Final
 import logging
@@ -50,6 +51,8 @@ from .wemportalapi import WemPortalApi
 _LOGGER = logging.getLogger(__name__)
 
 AVAILABLE_MODES: Final = ["api", "web", "both"]
+
+_RECONFIGURE_COMMIT_LOCK: Final = f"{DOMAIN}_reconfigure_commit_lock"
 
 # Password uses a proper password-type selector so the browser masks the
 # input (a plain `str` field renders as clear text - shoulder-surfing /
@@ -365,6 +368,41 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         forget_account_state_if_last_entry(self.hass, entry)
         return True
 
+    async def _commit_reconfigure(self, entry, current, user_input):
+        """Apply a login the portal accepted, to the entry as it is now."""
+        if account_unique_id(entry.data.get(CONF_USERNAME)) != current:
+            return self.async_abort(reason="reconfigure_entry_changed")
+        # The target needs no second look: the flow reserved it before
+        # asking the portal, and every other flow for it aborts on that.
+        account = account_unique_id(user_input[CONF_USERNAME])
+        moves_to_another_login = account != current
+        if moves_to_another_login and not (
+            await self._forget_the_old_installation(entry)
+        ):
+            return self.async_abort(reason="reconfigure_unload_failed")
+        # Same reason as after a reauth: the portal just accepted this login,
+        # so the failures counted before are answered. That login's count,
+        # not the entry's - on a move the old account was not asked. And
+        # before the update: the reload it starts runs eagerly, and the new
+        # coordinator copies the count when it is built.
+        forget_auth_failures(user_input[CONF_USERNAME])
+        title = entry.title
+        options: Mapping[str, Any] = entry.options
+        if moves_to_another_login:
+            title = user_input[CONF_USERNAME]
+            options = _without_the_installation(options)
+        return self.async_update_reload_and_abort(
+            entry,
+            unique_id=account,
+            title=title,
+            data={
+                **entry.data,
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+            },
+            options=options,
+        )
+
     async def async_step_reconfigure(self, user_input=None):
         """Change the login of an existing entry, the account included.
 
@@ -386,40 +424,24 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             # unique_id lookup would - and the ones from before unique_ids too.
             if moves_to_another_login and self._account_already_has_an_entry(account):
                 return self.async_abort(reason="already_configured")
-            new_data = {
-                **entry.data,
-                CONF_USERNAME: user_input[CONF_USERNAME],
-                CONF_PASSWORD: user_input[CONF_PASSWORD],
-            }
-            title = entry.title
-            options: Mapping[str, Any] = entry.options
             if moves_to_another_login:
                 # Claims the login for this flow before the portal is asked:
                 # the scan above sees entries, not another dialog moving an
                 # entry to the same login right now.
                 await self.async_set_unique_id(account)
-                title = user_input[CONF_USERNAME]
-                options = _without_the_installation(options)
-            failure = await self._credential_error(entry, new_data)
+            checked = {**entry.data, **user_input}
+            failure = await self._credential_error(entry, checked)
             if failure is None:
-                if moves_to_another_login and not (
-                    await self._forget_the_old_installation(entry)
-                ):
-                    return self.async_abort(reason="reconfigure_unload_failed")
-                # Same reason as after a reauth: the portal just accepted
-                # this login, so the failures counted before are answered.
-                # That login's count, not the entry's - on a move the old
-                # account was not asked. And before the update: the reload
-                # it starts runs eagerly, and the new coordinator copies the
-                # count when it is built.
-                forget_auth_failures(user_input[CONF_USERNAME])
-                return self.async_update_reload_and_abort(
-                    entry,
-                    unique_id=account,
-                    title=title,
-                    data=new_data,
-                    options=options,
+                # One dialog at a time from here, and the entry read again
+                # inside: while this one waited on the portal, another could
+                # move this entry, hand its login to another entry, or save
+                # options - and a dialog committing what it read before the
+                # wait wrote all of that back.
+                lock = self.hass.data.setdefault(
+                    _RECONFIGURE_COMMIT_LOCK, asyncio.Lock()
                 )
+                async with lock:
+                    return await self._commit_reconfigure(entry, current, user_input)
             errors["base"] = failure
 
         return self.async_show_form(

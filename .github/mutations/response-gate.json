@@ -3935,22 +3935,22 @@
   },
   {
     "label": "reconfigure: the entry keeping its old identity after a move",
-    "old": "                    unique_id=account,\n",
+    "old": "            unique_id=account,\n",
     "new": "",
     "tests": "reconfigure_can_move_the_entry_to_a_new_login",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: the new password not taken",
-    "old": "                CONF_PASSWORD: user_input[CONF_PASSWORD],\n            }\n            title = entry.title",
-    "new": "            }\n            title = entry.title",
+    "old": "                CONF_PASSWORD: user_input[CONF_PASSWORD],\n            },\n",
+    "new": "            },\n",
     "tests": "reconfigure_takes_a_new_password_and_reloads",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: a login that failed written to the entry anyway",
-    "old": "            if failure is None:\n                if moves_to_another_login and not (",
-    "new": "            if True:\n                if moves_to_another_login and not (",
+    "old": "            if failure is None:\n                # One dialog at a time",
+    "new": "            if True:\n                # One dialog at a time",
     "tests": "reconfigure_keeps_the_entry_when_the_login_fails",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -3970,7 +3970,7 @@
   },
   {
     "label": "reconfigure: a move keeping the old installation's cache",
-    "old": "                if moves_to_another_login and not (\n                    await self._forget_the_old_installation(entry)\n                ):\n                    return self.async_abort(reason=\"reconfigure_unload_failed\")\n",
+    "old": "        if moves_to_another_login and not (\n            await self._forget_the_old_installation(entry)\n        ):\n            return self.async_abort(reason=\"reconfigure_unload_failed\")\n",
     "new": "",
     "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
     "path": "custom_components/wemportal/config_flow.py"
@@ -3991,8 +3991,8 @@
   },
   {
     "label": "reconfigure: a new password throwing away a valid cache",
-    "old": "                if moves_to_another_login and not (\n                    await self._forget_the_old_installation(entry)\n                ):\n",
-    "new": "                if not (\n                    await self._forget_the_old_installation(entry)\n                ):\n",
+    "old": "        if moves_to_another_login and not (\n            await self._forget_the_old_installation(entry)\n        ):\n",
+    "new": "        if not (\n            await self._forget_the_old_installation(entry)\n        ):\n",
     "tests": "a_new_password_for_the_same_login_keeps_the_cache",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -4005,15 +4005,15 @@
   },
   {
     "label": "reconfigure: the old installation's expert slots kept after a move",
-    "old": "                options = _without_the_installation(options)\n",
+    "old": "            options = _without_the_installation(options)\n",
     "new": "",
     "tests": "drops_the_old_installations_expert_slots",
     "path": "custom_components/wemportal/config_flow.py"
   },
   {
     "label": "reconfigure: a new password throwing away the expert slots",
-    "old": "            options: Mapping[str, Any] = entry.options\n",
-    "new": "            options: Mapping[str, Any] = _without_the_installation(entry.options)\n",
+    "old": "        options: Mapping[str, Any] = entry.options\n",
+    "new": "        options: Mapping[str, Any] = _without_the_installation(entry.options)\n",
     "tests": "keeps_the_expert_slots",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -4026,8 +4026,8 @@
   },
   {
     "label": "reconfigure: two dialogs moving to one login both succeed",
-    "old": "                await self.async_set_unique_id(account)\n                title = user_input[CONF_USERNAME]\n",
-    "new": "                title = user_input[CONF_USERNAME]\n",
+    "old": "                await self.async_set_unique_id(account)\n            checked =",
+    "new": "                pass\n            checked =",
     "tests": "cannot_both_move_to_one_login_at_once",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -4173,8 +4173,8 @@
   },
   {
     "label": "reconfigure: the old login's failure streak answered instead of the new one's",
-    "old": "                forget_auth_failures(user_input[CONF_USERNAME])\n",
-    "new": "                forget_auth_failures(entry.data.get(CONF_USERNAME))\n",
+    "old": "        forget_auth_failures(user_input[CONF_USERNAME])\n",
+    "new": "        forget_auth_failures(entry.data.get(CONF_USERNAME))\n",
     "tests": "streak_of_the_login_it_checked",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -4183,6 +4183,20 @@
     "old": "        except OperationNotAllowed:\n            return False\n",
     "new": "        except ZeroDivisionError:\n            return False\n",
     "tests": "cannot_unload_right_now_says_so",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a stale dialog committing over a moved entry",
+    "old": "        if account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
+    "new": "        if False:\n",
+    "tests": "stale_password_dialog_does_not_undo_a_move or moving_one_entry_do_not_both_succeed",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: commits not serialised",
+    "old": "                async with lock:\n                    return await self._commit_reconfigure(entry, current, user_input)\n",
+    "new": "                return await self._commit_reconfigure(entry, current, user_input)\n",
+    "tests": "moving_one_entry_do_not_both_succeed",
     "path": "custom_components/wemportal/config_flow.py"
   }
 ]

@@ -1513,3 +1513,130 @@ async def test_a_move_of_an_entry_that_cannot_unload_right_now_says_so(hass):
     assert result["reason"] == "reconfigure_unload_failed"
     assert entry.data[CONF_USERNAME] == USER
     await coordinator.async_shutdown()
+
+
+# --- a dialog that waited on the portal commits against the entry as it is now
+
+
+def _hold_validation_of(monkeypatch):
+    """Let the listed flows wait in the portal check until released."""
+    from custom_components.wemportal.config_flow import WemPortalConfigFlow
+
+    gate = asyncio.Event()
+    held: set[str] = set()
+
+    async def _checked(self, _entry, _data):
+        if self.flow_id in held:
+            await gate.wait()
+        return None
+
+    monkeypatch.setattr(WemPortalConfigFlow, "_credential_error", _checked)
+    return gate, held
+
+
+def _submit(hass, flow_id, username):
+    return asyncio.ensure_future(
+        hass.config_entries.flow.async_configure(
+            flow_id, {CONF_USERNAME: username, CONF_PASSWORD: "pw"}
+        )
+    )
+
+
+async def _let_it_reach_the_portal():
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+
+async def test_a_stale_password_dialog_does_not_undo_a_move(hass, monkeypatch):
+    """A password dialog waits on the portal; meanwhile the entry moves to B
+    and another entry takes A. The first dialog then wrote A back - two
+    loaded entries on one account."""
+    other = MockConfigEntry(
+        domain=DOMAIN,
+        title="other@example.org",
+        unique_id="other@example.org",
+        data={CONF_USERNAME: "other@example.org", CONF_PASSWORD: "x"},
+        options=BASE_OPTIONS,
+    )
+    other.add_to_hass(hass)
+    entry = await _setup(hass, _entry(hass))
+    await hass.async_block_till_done()
+    gate, held = _hold_validation_of(monkeypatch)
+
+    stale = await entry.start_reconfigure_flow(hass)
+    held.add(stale["flow_id"])
+    waiting = _submit(hass, stale["flow_id"], USER)
+    await _let_it_reach_the_portal()
+
+    assert (await _reconfigure(hass, entry, "b@example.org"))["reason"] == (
+        "reconfigure_successful"
+    )
+    assert (await _reconfigure(hass, other, USER))["reason"] == (
+        "reconfigure_successful"
+    )
+    gate.set()
+    result = await waiting
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_entry_changed"
+    assert entry.unique_id == "b@example.org"
+    assert other.unique_id == USER
+
+
+async def test_two_dialogs_moving_one_entry_do_not_both_succeed(hass, monkeypatch):
+    """Forgetting the old installation waits on disk, so a second dialog got
+    in between: it saw the entry unchanged, moved it too, and both reported
+    success while only the last account stuck. Slowed here the way real
+    storage is, or the first dialog finishes before the second starts."""
+    from custom_components.wemportal import config_flow as flow_module
+
+    real_store = flow_module.get_modules_store
+
+    class SlowToForget:
+        def __init__(self, store):
+            self._store = store
+
+        async def async_remove(self):
+            await asyncio.sleep(0.05)
+            await self._store.async_remove()
+
+    monkeypatch.setattr(
+        flow_module,
+        "get_modules_store",
+        lambda hass, entry_id: SlowToForget(real_store(hass, entry_id)),
+    )
+    entry = await _setup(hass, _entry(hass))
+    gate, held = _hold_validation_of(monkeypatch)
+    flows = [await entry.start_reconfigure_flow(hass) for _ in range(2)]
+    held.update(flow["flow_id"] for flow in flows)
+    moves = [
+        _submit(hass, flow["flow_id"], target)
+        for flow, target in zip(flows, ("b@example.org", "d@example.org"))
+    ]
+    await _let_it_reach_the_portal()
+    gate.set()
+    results = await asyncio.gather(*moves)
+    await hass.async_block_till_done()
+
+    reasons = sorted(result["reason"] for result in results)
+    assert reasons == ["reconfigure_entry_changed", "reconfigure_successful"], reasons
+
+
+async def test_options_saved_while_a_dialog_waited_are_kept(hass, monkeypatch):
+    """The dialog read the options before asking the portal and wrote that
+    copy back afterwards, over whatever the options flow saved meanwhile."""
+    entry = await _setup(hass, _entry(hass))
+    gate, held = _hold_validation_of(monkeypatch)
+    flow = await entry.start_reconfigure_flow(hass)
+    held.add(flow["flow_id"])
+    waiting = _submit(hass, flow["flow_id"], USER)
+    await _let_it_reach_the_portal()
+
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_LANGUAGE: "de"}
+    )
+    gate.set()
+    await waiting
+    await hass.async_block_till_done()
+
+    assert entry.options[CONF_LANGUAGE] == "de"

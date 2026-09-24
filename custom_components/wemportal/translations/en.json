@@ -39,7 +39,8 @@
       "reauth_successful": "Re-authentication was successful",
       "unknown": "Unexpected error",
       "reconfigure_successful": "The login was changed.",
-      "reconfigure_unload_failed": "The integration could not be stopped to change the login, so nothing was changed. Restart Home Assistant and try again."
+      "reconfigure_unload_failed": "The integration could not be stopped to change the login, so nothing was changed. Restart Home Assistant and try again.",
+      "reconfigure_entry_changed": "The entry was changed in another dialog while this one was checking the login, so nothing was changed here. Open the dialog again."
     }
   },
   "options": {
