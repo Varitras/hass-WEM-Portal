@@ -132,9 +132,9 @@ def test_forbidden_url_is_redacted_before_it_reaches_a_log_or_message():
 
 def test_forbidden_url_drops_a_cookieless_session_id():
     """ASP.NET can put the session id in the PATH; that is credential-grade."""
-    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal import web_protocol
 
-    redacted = expert_writer.redact_url(
+    redacted = web_protocol.redact_url(
         "https://www.wemportal.com/(S(livesessiontoken))/Web/Default.aspx"
     )
 
@@ -200,9 +200,9 @@ def test_every_cookieless_session_form_is_redacted(url):
     so any form that ASP.NET actually emits has to go, not just the one that
     happened to be in front of us when the pattern was written.
     """
-    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal import web_protocol
 
-    redacted = expert_writer.redact_url(url)
+    redacted = web_protocol.redact_url(url)
 
     assert "livesessiontoken" not in redacted
     assert redacted.endswith("/Web/Default.aspx")

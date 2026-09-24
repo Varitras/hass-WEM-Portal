@@ -9163,3 +9163,76 @@ def test_a_scrape_without_a_result_is_not_announced_as_an_index_error(caplog):
 
     (said,) = [r.getMessage() for r in caplog.records]
     assert "index" not in said, said
+
+
+# --- a login page nobody expected does not publish its URL ------------------
+
+# Cookieless ASP.NET puts the session into the path - it works like a
+# password for as long as it lives - and the dialog requests carry the
+# installation's entityvalue in the query. Both are made up here.
+SESSION_IN_PATH = "abcdefghijklmnopqrstuvwx"
+VALUE_IN_QUERY = "0123ABCD4567EF"
+UNEXPECTED_PAGE_URL = (
+    f"https://www.wemportal.com/(S({SESSION_IN_PATH}))/Web/Default.aspx"
+    f"?entityvalue={VALUE_IN_QUERY}"
+)
+
+
+class _UnexpectedPageResponse:
+    status_code = 200
+
+    def __init__(self, text, url=UNEXPECTED_PAGE_URL):
+        self.text = text
+        self.url = url
+
+
+def _assert_url_is_redacted(message):
+    assert SESSION_IN_PATH not in message, message
+    assert VALUE_IN_QUERY not in message, message
+    assert "/Web/Default.aspx" in message, "the endpoint is what makes it diagnosable"
+
+
+def test_an_unexpected_expert_login_answer_does_not_publish_its_url(monkeypatch):
+    """The branch that says the portal may not have taken our cookies - which
+    is exactly when ASP.NET moves the session into the URL - quoted that URL
+    in full, into an error that reaches the log people paste into issues."""
+    from custom_components.wemportal import expert_writer
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            return _UnexpectedPageResponse(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return _UnexpectedPageResponse("<html><body>something else</body></html>")
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_k: _Session())
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+
+    with pytest.raises(exceptions.ServerError) as excinfo:
+        client._full_login()
+
+    _assert_url_is_redacted(str(excinfo.value))
+
+
+def test_an_unexpected_scraper_login_answer_does_not_publish_its_url(monkeypatch):
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    class _Session:
+        cookies = types.SimpleNamespace(clear=lambda: None)
+
+        def get(self, *_args, **_kwargs):
+            return _UnexpectedPageResponse(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return _UnexpectedPageResponse("<html><body>something else</body></html>")
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _Session()
+    monkeypatch.setattr(
+        "custom_components.wemportal.scraper.time.sleep", lambda _seconds: None
+    )
+
+    with pytest.raises(exceptions.ServerError) as excinfo:
+        scraper.scrape()
+
+    _assert_url_is_redacted(str(excinfo.value))

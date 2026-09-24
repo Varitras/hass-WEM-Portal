@@ -38,6 +38,7 @@ from .web_protocol import (
     maintenance_blocking,
     maintenance_notice,
     note_maintenance_announcement,
+    redact_url,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -523,7 +524,7 @@ class WemPortalScraper:
                 "The WEM Portal answered the login with a page that is neither "
                 "a session nor the login form, so there is nothing to read and "
                 "nothing to say about the credentials. This can also mean the "
-                f"portal did not accept our cookies. URL: {login_response.url}"
+                f"portal did not accept our cookies. URL: {redact_url(login_response.url)}"
             )
 
         # Wait a moment

@@ -4247,5 +4247,26 @@
     "new": "",
     "tests": "removed_while_a_move_cleans_up",
     "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "expert login: an unexpected answer quoting its URL unredacted",
+    "old": "URL: {redact_url(login_response.url)}\"",
+    "new": "URL: {login_response.url}\"",
+    "tests": "unexpected_expert_login_answer_does_not_publish_its_url",
+    "path": "custom_components/wemportal/expert_writer.py"
+  },
+  {
+    "label": "scraper login: an unexpected answer quoting its URL unredacted",
+    "old": "URL: {redact_url(login_response.url)}\"",
+    "new": "URL: {login_response.url}\"",
+    "tests": "unexpected_scraper_login_answer_does_not_publish_its_url",
+    "path": "custom_components/wemportal/scraper.py"
+  },
+  {
+    "label": "redaction: the query left on the URL",
+    "old": "            return f\"{parts.scheme}://{parts.netloc}{path}\"\n",
+    "new": "            return f\"{parts.scheme}://{parts.netloc}{path}?{parts.query}\"\n",
+    "tests": "does_not_publish_its_url",
+    "path": "custom_components/wemportal/web_protocol.py"
   }
 ]

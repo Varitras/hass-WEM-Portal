@@ -10,7 +10,9 @@ that the transport reaches for this rather than utils.
 """
 
 from typing import Final
+from urllib.parse import urlsplit
 import logging
+import re
 
 from .const import WEB_LOGGED_IN_MARKER
 
@@ -110,3 +112,38 @@ def note_maintenance_announcement(notice: str, reported: set[str]) -> None:
         return
     reported.add(notice)
     _LOGGER.info("The WEM Portal announces maintenance: %s", notice)
+
+
+# ASP.NET embeds a cookieless session id in the PATH - credential-equivalent,
+# so it must never reach a log or a user-facing string. The documented form is
+# /(S(<id>))/, but the token letter is not case-sensitive and several tokens
+# can share one segment (/(A(..)S(..)F(..))/), so match the general shape
+# rather than the single upper-case example.
+_COOKIELESS_SESSION_RE = re.compile(r"/\((?:[A-Za-z]\([^)]*\))+\)")
+
+# What redact_url returns when there is no endpoint left to name. A fixed
+# string rather than an empty one: it goes into log lines that ask "which
+# request did the portal reject?", where a blank reads as a formatting bug.
+_UNKNOWN_URL = "unknown URL"
+
+
+def redact_url(url: object) -> str:
+    """Return only the endpoint of a portal URL, stripped of identifying data.
+
+    A 403 has to stay diagnosable ("which request did the portal reject?")
+    without publishing anything installation-specific. Two parts have to go:
+    the QUERY, which carries the full entityvalue on the parameter-dialog
+    requests, and a cookieless ASP.NET session id in the PATH. The endpoint
+    alone answers the diagnostic question.
+    """
+    if not url:
+        return _UNKNOWN_URL
+    try:
+        parts = urlsplit(str(url))
+        path = _COOKIELESS_SESSION_RE.sub("", parts.path)
+        if parts.netloc:
+            return f"{parts.scheme}://{parts.netloc}{path}"
+        return path or _UNKNOWN_URL
+    except Exception:  # noqa: BLE001
+        # Redaction must never be the thing that breaks error handling.
+        return _UNKNOWN_URL

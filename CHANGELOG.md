@@ -12,6 +12,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
   table per action, what each repair means, and what the diagnostics
   download leaves out.
 
+### Security
+
+- **An unexpected answer to the web or expert login no longer puts its
+  address into the error.** That answer is what the portal gives when it did
+  not take our cookies - exactly when ASP.NET moves the session into the
+  address, where it works like a password until it expires - and the error
+  reaches the log. The address is now cut down to its endpoint, as the 403
+  message already did.
+
 ## [1.14.0b2] – 2026-09-24
 
 A second beta. Everything from 1.14.0b1, plus: a failure that lasts is said
