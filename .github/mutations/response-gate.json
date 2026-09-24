@@ -4187,8 +4187,8 @@
   },
   {
     "label": "reconfigure: a stale dialog committing over a moved entry",
-    "old": "        if account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
-    "new": "        if False:\n",
+    "old": "        if entry_is_gone or account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
+    "new": "        if entry_is_gone:\n",
     "tests": "stale_password_dialog_does_not_undo_a_move or moving_one_entry_do_not_both_succeed",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -4197,6 +4197,13 @@
     "old": "                async with lock:\n                    return await self._commit_reconfigure(entry, current, user_input)\n",
     "new": "                return await self._commit_reconfigure(entry, current, user_input)\n",
     "tests": "moving_one_entry_do_not_both_succeed",
+    "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "reconfigure: a dialog writing to an entry removed meanwhile",
+    "old": "        if entry_is_gone or account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
+    "new": "        if account_unique_id(entry.data.get(CONF_USERNAME)) != current:\n",
+    "tests": "removed_meanwhile_ends_cleanly",
     "path": "custom_components/wemportal/config_flow.py"
   }
 ]

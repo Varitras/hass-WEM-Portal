@@ -370,7 +370,10 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _commit_reconfigure(self, entry, current, user_input):
         """Apply a login the portal accepted, to the entry as it is now."""
-        if account_unique_id(entry.data.get(CONF_USERNAME)) != current:
+        # Removed meanwhile counts as changed: Home Assistant aborts a waiting
+        # reauth when its entry goes, not a waiting reconfigure.
+        entry_is_gone = self.hass.config_entries.async_get_entry(entry.entry_id) is None
+        if entry_is_gone or account_unique_id(entry.data.get(CONF_USERNAME)) != current:
             return self.async_abort(reason="reconfigure_entry_changed")
         # The target needs no second look: the flow reserved it before
         # asking the portal, and every other flow for it aborts on that.

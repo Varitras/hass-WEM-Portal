@@ -1640,3 +1640,23 @@ async def test_options_saved_while_a_dialog_waited_are_kept(hass, monkeypatch):
     await hass.async_block_till_done()
 
     assert entry.options[CONF_LANGUAGE] == "de"
+
+
+async def test_a_dialog_whose_entry_was_removed_meanwhile_ends_cleanly(
+    hass, monkeypatch
+):
+    """Home Assistant aborts a waiting reauth when its entry is removed, not
+    a waiting reconfigure - which then updated an entry that no longer
+    existed and ended in an unhandled flow error."""
+    entry = await _setup(hass, _entry(hass))
+    gate, held = _hold_validation_of(monkeypatch)
+    flow = await entry.start_reconfigure_flow(hass)
+    held.add(flow["flow_id"])
+    waiting = _submit(hass, flow["flow_id"], USER)
+    await _let_it_reach_the_portal()
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    gate.set()
+    result = await waiting
+
+    assert result["reason"] == "reconfigure_entry_changed"
