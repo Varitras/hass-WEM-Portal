@@ -16,7 +16,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
   waited on the portal while its entry was changed elsewhere, or removed, is
   refused as well, instead of writing back what it had read before: that
   could undo a completed move, give one account to two entries, put an old
-  username back, or overwrite options saved meanwhile.
+  username back, or overwrite options saved meanwhile. The options dialog,
+  left open across a login change, no longer saves the expert parameters it
+  offered for the previous installation onto the new login.
 - **Changing the login of one of two entries of the same account keeps the
   account's memory.** An older duplicate entry may still use that account;
   its 403 pause and failure count were cleared by the change. The failure

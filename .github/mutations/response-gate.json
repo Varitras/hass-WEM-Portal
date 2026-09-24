@@ -4212,5 +4212,12 @@
     "new": "            or False\n",
     "tests": "waiting_reauth_does_not_undo_a_login_change",
     "path": "custom_components/wemportal/config_flow.py"
+  },
+  {
+    "label": "options: a dialog opened before a login change saving onto it",
+    "old": "        if now_for != self._opened_for:\n",
+    "new": "        if False:\n",
+    "tests": "opened_before_a_login_change",
+    "path": "custom_components/wemportal/options_flow.py"
   }
 ]

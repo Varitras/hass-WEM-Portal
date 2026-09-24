@@ -112,7 +112,8 @@
     },
     "abort": {
       "no_changes": "No changes to save - the integration was not reloaded.",
-      "discovery_aborted": "The WEM Portal account this was searching was reloaded or removed, so the search stopped. Nothing was changed. Open the options again once the integration has finished loading."
+      "discovery_aborted": "The WEM Portal account this was searching was reloaded or removed, so the search stopped. Nothing was changed. Open the options again once the integration has finished loading.",
+      "options_entry_changed": "The login of this entry was changed while the options were open, so nothing was saved - they were read for the previous installation. Open the options again."
     }
   },
   "issues": {

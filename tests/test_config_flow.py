@@ -1683,3 +1683,26 @@ async def test_a_waiting_reauth_does_not_undo_a_login_change(hass, monkeypatch):
 
     assert result["reason"] == "reauth_entry_changed"
     assert entry.data[CONF_USERNAME] == "b@example.org"
+
+
+async def test_options_opened_before_a_login_change_are_not_saved_onto_it(hass):
+    """The options dialog offers expert slots and a module list read from the
+    installation behind the login it was opened for. Saved after a login
+    change, those landed on the new login: another heating system's
+    parameters on the write allowlist."""
+    from .test_e2e import _open_options
+
+    entry = await _setup(hass, _entry(hass))
+    form = await _open_options(hass, entry, "configure")
+    assert (await _reconfigure(hass, entry, "b@example.org"))["reason"] == (
+        "reconfigure_successful"
+    )
+
+    schema_keys = {str(marker) for marker in form["data_schema"].schema}
+    payload = {key: value for key, value in entry.options.items() if key in schema_keys}
+    payload.update({CONF_EXPERT_WRITE: True, CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A})
+    result = await hass.config_entries.options.async_configure(form["flow_id"], payload)
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "options_entry_changed"
+    assert CONF_EXPERT_SLOT_ID_TEMPLATE % 1 not in entry.options
