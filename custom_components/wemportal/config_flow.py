@@ -21,7 +21,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .models import account_unique_id, forget_account_state
+from .models import account_unique_id
 from .const import (
     CONF_EXPERT_MODULE_ARG,
     CONF_EXPERT_MODULE_LIST,
@@ -39,6 +39,7 @@ from .const import (
 )
 from .exceptions import AuthError, ForbiddenError
 from .coordinator import (
+    forget_account_state_if_last_entry,
     forget_auth_failures,
     get_modules_store,
     get_scraper_device_store,
@@ -309,7 +310,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                     # standing, the next login page the portal hands out was
                     # the fourth in a row and asked for the same password
                     # again.
-                    forget_auth_failures(entry)
+                    forget_auth_failures(entry.data.get(CONF_USERNAME))
                     # Reloads even when the entry is unchanged, which is the
                     # whole point here: someone re-entering the SAME password
                     # is telling us the portal rejected a login it should
@@ -334,7 +335,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def _forget_the_old_installation(self, entry) -> None:
+    async def _forget_the_old_installation(self, entry) -> bool:
         """Drop what the entry kept on disk for the login it is leaving.
 
         The module list and the scraped readings' device id are per entry, but
@@ -345,14 +346,18 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
 
         Unloaded first: the unload waits for a store write in flight, so
         nothing can put the old data back between here and the fresh setup
-        that follows.
+        that follows. False, having forgotten nothing, when it would not
+        unload: its entities still run for the old installation, and a move
+        under them would have them write with the new login.
         """
-        await self.hass.config_entries.async_unload(entry.entry_id)
+        if not await self.hass.config_entries.async_unload(entry.entry_id):
+            return False
         await get_modules_store(self.hass, entry.entry_id).async_remove()
         await get_scraper_device_store(self.hass, entry.entry_id).async_remove()
-        # Keyed by the account, not the entry. The move is what leaves that
-        # account without an entry - no other one may hold it.
-        forget_account_state(entry.data.get(CONF_USERNAME))
+        # Keyed by the account, not the entry: an older duplicate entry of
+        # the account being left may still be loaded and still need it.
+        forget_account_state_if_last_entry(self.hass, entry)
+        return True
 
     async def async_step_reconfigure(self, user_input=None):
         """Change the login of an existing entry, the account included.
@@ -391,11 +396,17 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 options = _without_the_installation(options)
             failure = await self._credential_error(entry, new_data)
             if failure is None:
+                if moves_to_another_login and not (
+                    await self._forget_the_old_installation(entry)
+                ):
+                    return self.async_abort(reason="reconfigure_unload_failed")
                 # Same reason as after a reauth: the portal just accepted
                 # this login, so the failures counted before are answered.
-                forget_auth_failures(entry)
-                if moves_to_another_login:
-                    await self._forget_the_old_installation(entry)
+                # That login's count, not the entry's - on a move the old
+                # account was not asked. And before the update: the reload
+                # it starts runs eagerly, and the new coordinator copies the
+                # count when it is built.
+                forget_auth_failures(user_input[CONF_USERNAME])
                 return self.async_update_reload_and_abort(
                     entry,
                     unique_id=account,

@@ -1315,9 +1315,9 @@ def test_removing_the_last_entry_of_an_account_does_drop_its_state():
 
 def integration_forget_if_last(hass, config_entry):
     """The production call under test, by its real name."""
-    import custom_components.wemportal as integration
+    from custom_components.wemportal import coordinator
 
-    integration._forget_account_state_if_last_entry(hass, config_entry)
+    coordinator.forget_account_state_if_last_entry(hass, config_entry)
 
 
 def test_a_disabled_scraper_device_does_not_keep_the_web_report_standing():

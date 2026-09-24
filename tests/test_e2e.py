@@ -2555,7 +2555,7 @@ async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
     assert raised is not None, (
         "the reauth threshold was never reached across setup retries"
     )
-    coord_mod.forget_auth_failures(entry)
+    coord_mod.forget_auth_failures(entry.data[CONF_USERNAME])
 
 
 async def test_a_successful_cycle_clears_the_auth_failure_count(hass):

@@ -38,7 +38,8 @@
       "already_in_progress": "Die Einrichtung für dieses Konto läuft bereits",
       "reauth_successful": "Neuanmeldung erfolgreich",
       "unknown": "Unerwarteter Fehler",
-      "reconfigure_successful": "Die Anmeldung wurde geändert."
+      "reconfigure_successful": "Die Anmeldung wurde geändert.",
+      "reconfigure_unload_failed": "Die Integration ließ sich zum Wechseln der Anmeldung nicht anhalten, daher wurde nichts geändert. Home Assistant neu starten und erneut versuchen."
     }
   },
   "options": {

@@ -1421,3 +1421,77 @@ async def test_two_entries_cannot_both_move_to_one_login_at_once(hass, monkeypat
     reasons = sorted(result["reason"] for result in results)
     assert reasons == ["already_in_progress", "reconfigure_successful"], reasons
     assert entry.unique_id != other.unique_id
+
+
+async def test_a_refused_unload_leaves_the_entry_as_it_was(
+    hass, hass_storage, monkeypatch
+):
+    """The move unloads the entry before it forgets anything. When a platform
+    refuses to unload, the old entities keep running - and the move went on
+    anyway: it cleared the old installation's state and wrote the new login
+    under entities that still addressed the old heating system."""
+    import custom_components.wemportal as integration
+    from custom_components.wemportal.models import account_state
+
+    entry = _entry(hass, options=_OLD_INSTALLATION_EXPERT_OPTIONS)
+    scraper_key = f"{DOMAIN}_{entry.entry_id}_scraper_device"
+    hass_storage[scraper_key] = {"version": 1, "key": scraper_key, "data": "9999"}
+    await _setup(hass, entry)
+    account_state(USER).maintenance_announcements_reported.add("notice")
+
+    async def refuses(_hass, _entry):
+        return False
+
+    monkeypatch.setattr(integration, "async_unload_entry", refuses)
+
+    result = await _reconfigure(hass, entry, "new@example.org")
+
+    assert result["reason"] == "reconfigure_unload_failed"
+    assert entry.data[CONF_USERNAME] == USER
+    assert entry.options[CONF_EXPERT_SLOT_ID_TEMPLATE % 1] == EV_A
+    assert hass_storage[scraper_key]["data"] == "9999"
+    assert account_state(USER).maintenance_announcements_reported == {"notice"}
+    # Only the refusal was faked. The coordinator is real and still running,
+    # and its timer would outlive the test.
+    await entry.runtime_data.coordinator.async_shutdown()
+
+
+async def test_moving_one_of_two_entries_of_an_account_keeps_its_memory(hass):
+    """An older duplicate entry of the same account may still be loaded, and
+    the account's cooldown and failure streak are its too. Unload and removal
+    keep them while another entry uses the account; the move did not, and
+    the entry that stayed could resume requests the portal had just paused."""
+    from custom_components.wemportal.models import account_state
+
+    staying = await _setup(hass, _entry(hass))
+    moving = await _setup(hass, _entry(hass))
+    account_state(USER).expert_blocked_until = 1e12
+    account_state(USER).auth_failures = 2
+
+    result = await _reconfigure(hass, moving, "new@example.org")
+
+    assert result["reason"] == "reconfigure_successful"
+    assert staying.data[CONF_USERNAME] == USER
+    assert account_state(USER).expert_blocked_until == 1e12
+    assert account_state(USER).auth_failures == 2
+
+
+async def test_a_move_clears_the_failure_streak_of_the_login_it_checked(
+    hass, monkeypatch
+):
+    """The portal just accepted the NEW login; the old one was not asked.
+    Left standing, a streak of two on the new account turned the first
+    hiccup after the move into a reauth prompt for a login just accepted."""
+    from custom_components.wemportal.exceptions import AuthError
+    from custom_components.wemportal.models import account_state
+
+    entry = await _setup(hass, _entry(hass))
+    account_state("new@example.org").auth_failures = 2
+
+    def one_hiccup(self, *_args, **_kwargs):
+        raise AuthError("transient login page")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", one_hiccup)
+    await _reconfigure(hass, entry, "new@example.org")
+
+    assert account_state("new@example.org").auth_failures == 1
