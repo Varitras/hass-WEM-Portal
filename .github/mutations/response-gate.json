@@ -4135,5 +4135,26 @@
     "new": "    if True:\n",
     "tests": "half_an_answer",
     "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "coordinator: a hanging portal announced every cycle",
+    "old": "        if failure_is_new(self._reported_failures, key, str(exc)):\n            _LOGGER.info(\"%s: %s\", what, exc)\n",
+    "new": "        if True:\n            _LOGGER.info(\"%s: %s\", what, exc)\n",
+    "tests": "keeps_timing_out_is_announced_once",
+    "path": "custom_components/wemportal/coordinator.py"
+  },
+  {
+    "label": "coordinator: a bug warned about every cycle",
+    "old": "        if failure_is_new(self._reported_failures, \"unexpected\", str(exc)):\n",
+    "new": "        if True:\n",
+    "tests": "warned_once_with_its_traceback",
+    "path": "custom_components/wemportal/coordinator.py"
+  },
+  {
+    "label": "coordinator: a bug warned about without its traceback",
+    "old": ", exc, exc_info=exc\n",
+    "new": ", exc\n",
+    "tests": "warned_once_with_its_traceback",
+    "path": "custom_components/wemportal/coordinator.py"
   }
 ]

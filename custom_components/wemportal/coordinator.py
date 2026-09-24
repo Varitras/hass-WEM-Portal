@@ -385,16 +385,17 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             self._sync_rate_limit_issue()
             self._sync_web_scrape_issue(device_filter)
             self._reset_auth_failures()
-            _LOGGER.warning(
-                "Fetching WEM Portal data timed out after %ds. Note the "
-                "underlying request keeps running in its worker thread - "
-                "Python cannot cancel it - so the next operation may briefly "
-                "wait for it.",
-                DEFAULT_TIMEOUT,
-            )
-            raise UpdateFailed(
+            failure = UpdateFailed(
                 f"Timed out fetching data from wemportal after {DEFAULT_TIMEOUT}s"
-            ) from exc
+            )
+            self._announce_once(
+                "timeout",
+                "Poll cycle ran out of time. Its request keeps running in its "
+                "worker thread - Python cannot cancel it - so the next "
+                "operation may briefly wait for it",
+                failure,
+            )
+            raise failure from exc
 
     def _sync_rate_limit_issue(self) -> None:
         """Report the IP-wide backoff if it is holding, withdraw it if not.
@@ -479,6 +480,17 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.info("%s: %s", what, exc)
         else:
             _LOGGER.debug("%s (still): %s", what, exc)
+
+    def _warn_once_about_a_bug(self, exc: Exception) -> None:
+        """An error fetch_data does not wrap is a bug: a warning, with the
+        traceback that makes it findable - once, not on every cycle it keeps
+        happening."""
+        if failure_is_new(self._reported_failures, "unexpected", str(exc)):
+            _LOGGER.warning(
+                "Unexpected error updating WEM Portal data: %s", exc, exc_info=exc
+            )
+        else:
+            _LOGGER.debug("Unexpected error still happening: %s", exc)
 
     def _note_failed_cycle(self) -> None:
         """Count this failed cycle, and publish the moment the count leaves
@@ -625,7 +637,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # assumption this one covers it; it does not.
                 self._note_failed_cycle()
                 self._reset_auth_failures()
-                _LOGGER.warning("Unexpected error updating WEM Portal data: %s", exc)
+                self._warn_once_about_a_bug(exc)
                 raise UpdateFailed(f"Unexpected error: {exc}") from exc
             finally:
                 self.last_try = monotonic()
