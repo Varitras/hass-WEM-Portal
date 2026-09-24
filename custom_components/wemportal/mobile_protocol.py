@@ -35,6 +35,20 @@ def as_answer_dict(payload: Any) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def what_the_server_said(
+    http_status: int, server_status: Any, server_message: Any
+) -> str:
+    """The portal's own status and message, or that the answer had neither.
+
+    A 403 from a firewall page carries no JSON. Quoted anyway, it read
+    "Server returned status code:  and message: " - as if the portal had
+    answered and said nothing, while the one fact there was went unsaid.
+    """
+    if server_status in ("", None) and not server_message:
+        return f"HTTP {http_status}, no status or message in the answer"
+    return f"Server returned status code: {server_status} and message: {server_message}"
+
+
 def described_parameters(payload: Any) -> list[dict[str, Any]] | None:
     """The parameter descriptions of a module answer, or None.
 

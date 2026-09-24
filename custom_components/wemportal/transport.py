@@ -47,7 +47,7 @@ from .exceptions import (
 # device or a reading is. The import guard in tests/test_transport_boundary
 # lists the domain modules, and neither of these is one of them - status_is_success
 # reads a status field, maintenance_blocking reads a downtime page.
-from .mobile_protocol import as_answer_dict, status_is_success
+from .mobile_protocol import as_answer_dict, status_is_success, what_the_server_said
 from .web_protocol import maintenance_blocking, message_reports_maintenance
 
 _LOGGER = logging.getLogger(__name__)
@@ -467,7 +467,8 @@ class WemPortalTransport:
             # that number is the web session's, this is the mobile API's.
             self.valid_login = False
             forbidden_error = ForbiddenError(
-                f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
+                f"{DATA_GATHERING_ERROR} "
+                f"{what_the_server_said(response.status_code, server_status, server_message)}"
             )
             forbidden_error.server_status = server_status
             raise forbidden_error from exc
@@ -523,7 +524,8 @@ class WemPortalTransport:
             )
         else:
             wem_error = WemPortalError(
-                f"{DATA_GATHERING_ERROR} Server returned status code: {server_status} and message: {server_message}"
+                f"{DATA_GATHERING_ERROR} "
+                f"{what_the_server_said(response.status_code, server_status, server_message)}"
             )
         # Expose the server-side status code so callers can react to specific
         # ones (e.g. Statistics skips an invalid group) without parsing the
@@ -720,9 +722,8 @@ class WemPortalTransport:
             ) from exc
 
         response_status, response_message = self.get_response_details(response)
-        server_said = (
-            f"Server returned internal status code: {response_status} "
-            f"and message: {response_message}"
+        server_said = what_the_server_said(
+            response.status_code, response_status, response_message
         )
 
         if message_reports_maintenance(response_message):

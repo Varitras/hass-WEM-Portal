@@ -4093,5 +4093,26 @@
     "new": "        reason = str(exc.__cause__ or exc)\n",
     "tests": "not_announced_as_an_index_error",
     "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "server details: empty fields quoted as an answer again",
+    "old": "    if server_status in (\"\", None) and not server_message:\n",
+    "new": "    if False:\n",
+    "tests": "without_details or refused_without_details",
+    "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "server details: status 0 taken for a missing status",
+    "old": "    if server_status in (\"\", None) and not server_message:\n",
+    "new": "    if not server_status and not server_message:\n",
+    "tests": "status_of_zero_is_a_status",
+    "path": "custom_components/wemportal/mobile_protocol.py"
+  },
+  {
+    "label": "server details: a message without a status dropped",
+    "old": "    if server_status in (\"\", None) and not server_message:\n",
+    "new": "    if server_status in (\"\", None):\n",
+    "tests": "status_of_zero_is_a_status",
+    "path": "custom_components/wemportal/mobile_protocol.py"
   }
 ]
