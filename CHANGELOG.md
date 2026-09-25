@@ -6,6 +6,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **README:** prerequisites, one-click buttons for HACS and setup, a field
+  table per action, what each repair means, and what the diagnostics
+  download leaves out.
+
 ## [1.14.0b2] – 2026-09-24
 
 A second beta. Everything from 1.14.0b1, plus: a failure that lasts is said

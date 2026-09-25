@@ -119,13 +119,21 @@ portal's own granularity, and asking more often only spends requests.
 
 ## Installation
 
-Requires **Home Assistant 2026.8.0** or newer.
+### Prerequisites
+
+- **Home Assistant 2026.8.0** or newer.
+- A **WEM Portal account** with your heating system registered in it - if the
+  WEM app on your phone shows it, the integration can see it.
+- For [expert write access](#expert-write-access-web) only: the installation's
+  Fachmann access in the portal.
 
 ### HACS (custom repository)
 
-1. In [HACS](https://github.com/hacs/default), add
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Varitras&repository=hass-WEM-Portal&category=integration)
+
+1. In [HACS](https://hacs.xyz/), add
    `https://github.com/Varitras/hass-WEM-Portal` as a custom repository
-   (category: Integration).
+   (category: Integration), or use the button above.
 2. Install it and restart Home Assistant.
 3. Continue with [Setup](#setup).
 
@@ -134,7 +142,7 @@ Requires **Home Assistant 2026.8.0** or newer.
 Copy everything from `custom_components/wemportal/` in this repository into
 `<config directory>/custom_components/wemportal/`, then restart Home Assistant.
 
-```bash
+```text
 custom_components
 └── wemportal
     ├── __init__.py
@@ -145,6 +153,8 @@ custom_components
 ---
 
 ## Setup
+
+[![Open your Home Assistant instance and start setting up this integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=wemportal)
 
 `Settings > Devices & Services > Add integration >` search for
 **Weishaupt WEM Portal**.
@@ -245,6 +255,8 @@ connection, they share the same budget.
 
 ### Polling
 
+Both intervals are entered in seconds.
+
 | Option | Default | Notes |
 |---|---|---|
 | `scan_interval` | 30 min | Web scraping. Below 15 min is not recommended; under 60 s is clamped to 60 s. |
@@ -293,6 +305,13 @@ data:
   end: "2027-01-02"
 ```
 
+| Field | Required | Meaning |
+|---|---|---|
+| `begin_entity` | yes | The date entity holding the first day of the holiday. |
+| `begin` | yes | First day of the holiday. |
+| `end_entity` | yes | The date entity holding the last day. |
+| `end` | yes | Last day of the holiday; must not be before `begin`. |
+
 Both entities must belong to the same module — the portal addresses parameters
 per module. A period ending before it starts is refused: the portal answers
 such a pair with a success status and stores nothing.
@@ -314,6 +333,11 @@ data:
   entityvalue: "3A7F91C2E0B48D5619F2A0C7B4E83D105C2A"
   value: 30
 ```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `entityvalue` | yes | The parameter's hex ID from your own installation - see [Step 1](#step-1-find-the-parameter). |
+| `value` | yes | The new value: a number, or the word the portal shows for an option beside the scale (for example `Aus`). |
 
 Administrator only. Runs synchronously and **raises on failure**, so an
 automation can tell whether the write succeeded. It takes a few seconds for the
@@ -614,6 +638,9 @@ every model.
 - **Web-mode entities are keyed by the portal's labels.** Changing the language
   of your portal account, or the portal rewording a row, creates new entities;
   the old ones keep their history.
+- **Entity names follow the `language` option, not Home Assistant's.** They
+  are built at runtime from what the portal reports, in English or German;
+  Home Assistant's own language setting does not translate them.
 
 ---
 
@@ -631,8 +658,30 @@ Portal, click the three dots on the card, choose `Enable debug logging`.
 | A new parameter does not appear | Parameter lists are cached for 24 hours. Use `Search the portal for new API parameters`. |
 | Expert discovery says another operation is running | The auto-poll or a write holds the per-account lock. Try again in a moment. |
 
-When opening an issue, please include the debug log — **with your
-`entityvalue` IDs and email address removed**.
+### Repairs
+
+Some problems show up under `Settings > System > Repairs` and clear
+themselves once the cause is gone:
+
+| Repair | Meaning |
+|---|---|
+| WEM Portal is refusing requests (rate limit) | The IP is blocked; polling is paused and resumes by itself. |
+| WEM Portal web access is not working | In `both` mode, the web half keeps failing while the API half still delivers. |
+| Expert parameter … cannot be requested | A slot holds an ID that is not a readable parameter ID. Fix or clear it in the options. |
+| Expert parameter … keeps failing to read | One parameter fails while the others read; usually a wrong ID. |
+
+### Diagnostics
+
+`Settings > Devices & Services`, WEM Portal, the three dots on the entry,
+**Download diagnostics**. The file leaves out the username, password, session
+cookie, expert parameter IDs and the discovery cache, and replaces device IDs
+with `device_1`, `device_2` and so on.
+
+### Reporting a problem
+
+Please attach the diagnostics file and the debug log — **with your
+`entityvalue` IDs and email address removed from the log**; the diagnostics
+file already leaves them out.
 
 ---
 
