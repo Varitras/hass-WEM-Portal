@@ -17,7 +17,6 @@ import math
 import random
 import re
 import time
-from urllib.parse import urlsplit
 
 from curl_cffi import requests
 from lxml import html
@@ -45,6 +44,7 @@ from .web_protocol import (
     maintenance_blocking,
     maintenance_notice,
     note_maintenance_announcement,
+    redact_url,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -334,41 +334,6 @@ VALUE_FIELD_ID = "ctl00_DialogContent_ddlNewValue"
 # spellings come from one place - they are the same portal concept.
 _HIDDEN_FIELD_TOKEN = "hiddenField"
 _HIDDEN_FIELD_MARKER = f"|{_HIDDEN_FIELD_TOKEN}|"
-
-
-# ASP.NET embeds a cookieless session id in the PATH - credential-equivalent,
-# so it must never reach a log or a user-facing string. The documented form is
-# /(S(<id>))/, but the token letter is not case-sensitive and several tokens
-# can share one segment (/(A(..)S(..)F(..))/), so match the general shape
-# rather than the single upper-case example.
-_COOKIELESS_SESSION_RE = re.compile(r"/\((?:[A-Za-z]\([^)]*\))+\)")
-
-# What redact_url returns when there is no endpoint left to name. A fixed
-# string rather than an empty one: it goes into log lines that ask "which
-# request did the portal reject?", where a blank reads as a formatting bug.
-_UNKNOWN_URL = "unknown URL"
-
-
-def redact_url(url) -> str:
-    """Return only the endpoint of a portal URL, stripped of identifying data.
-
-    A 403 has to stay diagnosable ("which request did the portal reject?")
-    without publishing anything installation-specific. Two parts have to go:
-    the QUERY, which carries the full entityvalue on the parameter-dialog
-    requests, and a cookieless ASP.NET session id in the PATH. The endpoint
-    alone answers the diagnostic question.
-    """
-    if not url:
-        return _UNKNOWN_URL
-    try:
-        parts = urlsplit(str(url))
-        path = _COOKIELESS_SESSION_RE.sub("", parts.path)
-        if parts.netloc:
-            return f"{parts.scheme}://{parts.netloc}{path}"
-        return path or _UNKNOWN_URL
-    except Exception:  # noqa: BLE001
-        # Redaction must never be the thing that breaks error handling.
-        return _UNKNOWN_URL
 
 
 def short_entityvalue(entityvalue: str) -> str:
@@ -955,7 +920,7 @@ class WemPortalExpertClient:
             raise ServerError(
                 "The WEM Portal answered the expert login with a page that is "
                 "neither a session nor the login form. This can also mean the "
-                f"portal did not accept our cookies. URL: {login_response.url}"
+                f"portal did not accept our cookies. URL: {redact_url(login_response.url)}"
             )
 
         self._establish_context()

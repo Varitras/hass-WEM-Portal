@@ -20,7 +20,7 @@ from custom_components.wemportal import (
 )
 from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.const import WEB_LOGGED_IN_MARKER
-from custom_components.wemportal.wemportalapi import WemPortalApi
+from custom_components.wemportal.wemportalapi import NoRead, WemPortalApi
 
 
 # A week the device really reported a programme for: the switching times
@@ -4899,7 +4899,7 @@ def test_an_empty_value_read_is_not_a_refreshed_device():
     api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {"P1": {}}}}}
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse({"Modules": []})
 
-    assert api._fetch_parameter_values("1234") is not None
+    assert isinstance(api._fetch_parameter_values("1234"), str)
 
 
 def test_a_device_without_modules_is_not_turned_into_a_failure():
@@ -4910,7 +4910,7 @@ def test_a_device_without_modules_is_not_turned_into_a_failure():
     api.modules = {"1234": {}}
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse({"Modules": []})
 
-    assert api._fetch_parameter_values("1234") is None
+    assert api._fetch_parameter_values("1234") is NoRead.NOTHING_TO_READ
 
 
 class _BodyResponse(FakeResponse):
@@ -5209,7 +5209,7 @@ def test_a_rejected_refresh_is_not_read_as_a_fresh_measurement():
 
     api.make_api_call = make_api_call
 
-    assert api._fetch_parameter_values("1234") is not None
+    assert isinstance(api._fetch_parameter_values("1234"), str)
     assert len(urls) == 1, "the read must not happen after a refused refresh"
 
 
@@ -5409,7 +5409,7 @@ def test_an_unreadable_refresh_answer_does_not_serve_the_previous_job():
 
     api.make_api_call = make_api_call
 
-    assert api._fetch_parameter_values("1234") is not None
+    assert isinstance(api._fetch_parameter_values("1234"), str)
     assert len(urls) == 1, "the read ran anyway"
 
 
@@ -6180,7 +6180,7 @@ def test_a_refresh_answering_false_is_a_refusal():
         {"Status": False} if "Refresh" in url else {"Modules": []}
     )
 
-    assert api._fetch_parameter_values("1234") is not None
+    assert isinstance(api._fetch_parameter_values("1234"), str)
 
 
 def test_a_missing_job_id_is_reported_once_per_device(caplog):
@@ -6864,7 +6864,7 @@ def test_a_device_with_no_parameters_is_not_asked_for_values(caplog):
         failure = api._fetch_parameter_values("1234")
 
     assert calls == [], "a read with an empty module list was sent anyway"
-    assert failure is not None, (
+    assert isinstance(failure, str), (
         "a device whose discovery produced nothing was counted as refreshed"
     )
     assert "no known parameters" in failure, (
@@ -6886,7 +6886,7 @@ def test_a_device_with_no_modules_at_all_is_not_a_failure():
     calls = []
     api.make_api_call = lambda url, **_kwargs: calls.append(url) or FakeResponse({})
 
-    assert api._fetch_parameter_values("1234") is None
+    assert api._fetch_parameter_values("1234") is NoRead.NOTHING_TO_READ
     assert calls == [], "a read with an empty module list was sent anyway"
 
 
@@ -6963,7 +6963,9 @@ def test_a_device_whose_modules_were_all_refused_says_so(caplog):
     with caplog.at_level(logging.WARNING):
         failure = api._fetch_parameter_values("1234")
 
-    assert failure is None, "a refused description must not fail the whole cycle"
+    assert failure is NoRead.NOTHING_TO_READ, (
+        "a refused description must not fail the whole cycle"
+    )
     assert calls == [], "a read with an empty module list was sent anyway"
     assert "refused to describe" in caplog.text, (
         "an empty device gave the user nothing to go on"
@@ -6984,7 +6986,7 @@ def test_a_device_that_is_simply_empty_stays_quiet(caplog):
     api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": {}}}}
 
     with caplog.at_level(logging.WARNING):
-        assert api._fetch_parameter_values("1234") is None
+        assert api._fetch_parameter_values("1234") is NoRead.NOTHING_TO_READ
 
     assert not caplog.records, f"an empty device warned anyway: {caplog.text}"
 
@@ -7639,7 +7641,7 @@ def test_a_device_whose_every_module_was_rejected_is_not_a_failed_cycle():
     reads = []
     api.make_api_call = lambda url, **_kwargs: reads.append(url) or FakeResponse({})
 
-    assert api._fetch_parameter_values("1234") is None, (
+    assert api._fetch_parameter_values("1234") is NoRead.NOTHING_TO_READ, (
         "a device with nothing to poll was reported as a failed refresh"
     )
     assert reads == [], "a module with no known parameters was read anyway"
@@ -7652,7 +7654,7 @@ def test_a_module_still_awaiting_its_description_does_fail_the_cycle():
     api, _calls = _discovery_api([{"Parameters": []}])
     del api.modules["1234"][(0, 1)]["parameters"]
 
-    assert api._fetch_parameter_values("1234") is not None
+    assert isinstance(api._fetch_parameter_values("1234"), str)
 
 
 def test_get_devices_carries_the_parameter_timestamp_too():
@@ -9163,3 +9165,130 @@ def test_a_scrape_without_a_result_is_not_announced_as_an_index_error(caplog):
 
     (said,) = [r.getMessage() for r in caplog.records]
     assert "index" not in said, said
+
+
+# --- a login page nobody expected does not publish its URL ------------------
+
+# Cookieless ASP.NET puts the session into the path - it works like a
+# password for as long as it lives - and the dialog requests carry the
+# installation's entityvalue in the query. Both are made up here.
+SESSION_IN_PATH = "abcdefghijklmnopqrstuvwx"
+VALUE_IN_QUERY = "0123ABCD4567EF"
+UNEXPECTED_PAGE_URL = (
+    f"https://www.wemportal.com/(S({SESSION_IN_PATH}))/Web/Default.aspx"
+    f"?entityvalue={VALUE_IN_QUERY}"
+)
+
+
+class _UnexpectedPageResponse:
+    status_code = 200
+
+    def __init__(self, text, url=UNEXPECTED_PAGE_URL):
+        self.text = text
+        self.url = url
+
+
+def _assert_url_is_redacted(message):
+    assert SESSION_IN_PATH not in message, message
+    assert VALUE_IN_QUERY not in message, message
+    assert "/Web/Default.aspx" in message, "the endpoint is what makes it diagnosable"
+
+
+def test_an_unexpected_expert_login_answer_does_not_publish_its_url(monkeypatch):
+    """The branch that says the portal may not have taken our cookies - which
+    is exactly when ASP.NET moves the session into the URL - quoted that URL
+    in full, into an error that reaches the log people paste into issues."""
+    from custom_components.wemportal import expert_writer
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            return _UnexpectedPageResponse(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return _UnexpectedPageResponse("<html><body>something else</body></html>")
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_k: _Session())
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+
+    with pytest.raises(exceptions.ServerError) as excinfo:
+        client._full_login()
+
+    _assert_url_is_redacted(str(excinfo.value))
+
+
+def test_an_unexpected_scraper_login_answer_does_not_publish_its_url(monkeypatch):
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    class _Session:
+        cookies = types.SimpleNamespace(clear=lambda: None)
+
+        def get(self, *_args, **_kwargs):
+            return _UnexpectedPageResponse(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return _UnexpectedPageResponse("<html><body>something else</body></html>")
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _Session()
+    monkeypatch.setattr(
+        "custom_components.wemportal.scraper.time.sleep", lambda _seconds: None
+    )
+
+    with pytest.raises(exceptions.ServerError) as excinfo:
+        scraper.scrape()
+
+    _assert_url_is_redacted(str(excinfo.value))
+
+
+# --- a device with nothing to read neither succeeds nor fails --------------
+
+
+def _mixed_cycle_api(other_device_outcome):
+    """Device 1234 has no modules; 5678 has parameters and answers with
+    `other_device_outcome` (None for refreshed, a reason for failed)."""
+    api = _api()
+    api.data = {"1234": {}, "5678": {}}
+    api.modules = {
+        "1234": {},
+        "5678": {
+            (0, 1): {"Index": 0, "Type": 1, "Name": "Heat pump", "parameters": ["p"]}
+        },
+    }
+    real_fetch = api._fetch_parameter_values
+    api._fetch_parameter_values = lambda device_id: (
+        real_fetch(device_id) if device_id == "1234" else other_device_outcome
+    )
+    api._fetch_device_status = lambda _device_id: True
+    api._fetch_circuit_times = lambda _device_id: None
+    api.get_statistics = lambda _enabled: None
+    return api
+
+
+def test_an_empty_device_does_not_hide_that_every_real_read_failed():
+    """The empty device counted as refreshed, so a cycle in which every device
+    that HAS values failed looked successful: no backoff, no unavailability,
+    and the failed device's old values kept being shown."""
+    api = _mixed_cycle_api("the portal said no")
+
+    with pytest.raises(exceptions.WemPortalError, match="the portal said no"):
+        api.get_data(["1234", "5678"])
+
+
+def test_an_empty_device_beside_a_refreshed_one_is_a_good_cycle():
+    _mixed_cycle_api(None).get_data(["1234", "5678"])
+
+
+def test_a_cycle_with_only_an_empty_device_is_not_a_failure():
+    """Nothing was attempted, so nothing failed - the reason the empty device
+    was made quiet in the first place."""
+    _mixed_cycle_api(None).get_data(["1234"])
+
+
+def test_a_read_back_that_read_nothing_does_not_verify_a_write():
+    """The read-back after a write shares the fetch. "Nothing to read" is not
+    a failed poll, but it is not a confirmation of the written value either."""
+    api = _api()
+    api.data = {"1234": {}}
+    api.modules = {"1234": {}}
+
+    assert isinstance(api.reread_device_values("1234"), str)

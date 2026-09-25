@@ -47,7 +47,9 @@ LINE_BUDGETS = {
     # paths.
     # Up again by 18 from 2562 for behaviour, not layout: a failing scrape in
     # `both` mode is said once and its recovery once, instead of every attempt.
-    "wemportalapi.py": 2580,
+    # And by 15 more for a third outcome of a device's read: nothing to read,
+    # which a no-op device had passed off as a successful refresh.
+    "wemportalapi.py": 2595,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     "expert_writer.py": 1912,
