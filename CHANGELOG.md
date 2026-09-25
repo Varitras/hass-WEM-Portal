@@ -12,6 +12,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   table per action, what each repair means, and what the diagnostics
   download leaves out.
 
+### Changed
+
+- **The setup and options dialogs explain each field under it.** Labels
+  carried every default, unit and warning in one long line; they are now
+  short, with the explanation shown below the field in both languages.
+
 ### Security
 
 - **An unexpected answer to the web or expert login no longer puts its

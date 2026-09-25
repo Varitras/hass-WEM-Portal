@@ -3419,6 +3419,27 @@ def test_the_two_translation_catalogues_carry_the_same_keys():
     assert not missing, f"these keys exist in only one language: {sorted(missing)}"
 
 
+def test_every_form_field_explains_itself_below_its_label():
+    """Home Assistant shows `data` as the field's label and `data_description`
+    as the help text under it. With labels only, every default, unit and
+    warning was packed into the label - a one-line paragraph per field. A
+    field added without its description would slide back into that.
+    """
+    undescribed = []
+    for name in ("translations/en.json", "translations/de.json"):
+        catalogue = _catalogue(name)
+        for section in ("config", "options"):
+            for step_name, step in catalogue[section]["step"].items():
+                labelled = set(step.get("data", {}))
+                described = set(step.get("data_description", {}))
+                undescribed += [
+                    f"{name}: {section}.{step_name}.{field}"
+                    for field in sorted(labelled ^ described)
+                ]
+
+    assert not undescribed, f"label and help text out of step: {undescribed}"
+
+
 def test_service_texts_exist_in_every_translation_file():
     """Home Assistant reads service name/description from the translation
     catalogue, not from services.yaml. A key missing in one file shows up only
