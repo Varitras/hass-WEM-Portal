@@ -1,5 +1,4 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://hacs.xyz/docs/faq/custom_repositories)
-[![buy me a coffee](https://img.shields.io/badge/If%20you%20like%20it-Buy%20me%20a%20coffee-yellow.svg?style=for-the-badge)](https://www.buymeacoffee.com/erikkastelec)
 [![License](https://img.shields.io/github/license/Varitras/hass-WEM-Portal?style=for-the-badge)](LICENSE)
 
 # hass-WEM-Portal
