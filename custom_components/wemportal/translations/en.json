@@ -3,26 +3,40 @@
     "step": {
       "user": {
         "data": {
-          "username": "Username (email)",
+          "username": "Username",
           "password": "Password",
-          "language": "Language of sensor/parameter names (default = en)",
-          "mode": "Mode (default = api)"
+          "language": "Language of entity names",
+          "mode": "Mode"
+        },
+        "data_description": {
+          "username": "The e-mail address you log into the WEM Portal with.",
+          "password": "Your WEM Portal password.",
+          "language": "English (en) or German (de). Names are built from what the portal reports, so Home Assistant's own language does not change them. Default: en.",
+          "mode": "Where readings come from: api (the mobile app's interface, covers every device - right for most people), web (the expert web page) or both. Checked against the portal before it is saved. Default: api."
         }
       },
       "reauth_confirm": {
         "title": "Re-authenticate WEM Portal",
         "description": "Logging in to the WEM Portal failed repeatedly. Re-enter your credentials to continue.",
         "data": {
-          "username": "Username (email)",
+          "username": "Username",
           "password": "Password"
+        },
+        "data_description": {
+          "username": "The e-mail address you log into the WEM Portal with.",
+          "password": "Your WEM Portal password."
         }
       },
       "reconfigure": {
         "title": "Change the WEM Portal login",
         "description": "Update the username or password of this account. A different username moves this entry to that login; if it belongs to another installation, its devices appear as new ones and the old ones can be removed by hand.",
         "data": {
-          "username": "Username (email)",
+          "username": "Username",
           "password": "Password"
+        },
+        "data_description": {
+          "username": "The e-mail address you log into the WEM Portal with.",
+          "password": "Your WEM Portal password."
         }
       }
     },
@@ -56,37 +70,70 @@
       "configure": {
         "description": "{status}",
         "data": {
-          "scan_interval": "Web scraping interval (default = 1800 sec)",
-          "api_scan_interval": "Api scan interval in seconds (default = 300, recommended >= 180)",
-          "language": "Language of sensor/parameter names (default = en)",
-          "mode": "Mode(default = api)",
-          "expert_write_enabled": "Expert write access via web (default = off)",
-          "expert_module_arg": "Module menu index (only used when module select is enabled; empty = 6 = heat pump)",
-          "expert_auto_poll_enabled": "Poll expert parameters periodically (default = off). Note: polling too frequently can trigger a temporary block (403) from the portal.",
-          "expert_poll_interval_minutes": "Poll interval in minutes (default = 60, minimum = 15)",
-          "expert_slot_1_name": "Expert parameter 1: name (optional)",
-          "expert_slot_1_id": "Expert parameter 1: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_2_name": "Expert parameter 2: name (optional)",
-          "expert_slot_2_id": "Expert parameter 2: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_3_name": "Expert parameter 3: name (optional)",
-          "expert_slot_3_id": "Expert parameter 3: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_4_name": "Expert parameter 4: name (optional)",
-          "expert_slot_4_id": "Expert parameter 4: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_5_name": "Expert parameter 5: name (optional)",
-          "expert_slot_5_id": "Expert parameter 5: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_6_name": "Expert parameter 6: name (optional)",
-          "expert_slot_6_id": "Expert parameter 6: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_7_name": "Expert parameter 7: name (optional)",
-          "expert_slot_7_id": "Expert parameter 7: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_8_name": "Expert parameter 8: name (optional)",
-          "expert_slot_8_id": "Expert parameter 8: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_9_name": "Expert parameter 9: name (optional)",
-          "expert_slot_9_id": "Expert parameter 9: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_10_name": "Expert parameter 10: name (optional)",
-          "expert_slot_10_id": "Expert parameter 10: entityvalue (hex ID, e.g. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_enable_module_nav": "⚠ Enable module select (default = off). Note: normally unnecessary - only enable this if you know what you are doing.",
-          "expert_enable_security_code": "⚠ Enable security-code step (default = off). Note: normally unnecessary - only enable this if you know what you are doing.",
-          "expert_notify_on_success": "Show a notification after a successful expert write (default = off; failures are raised, so the caller sees them)"
+          "scan_interval": "Web scraping interval",
+          "api_scan_interval": "API polling interval",
+          "language": "Language of entity names",
+          "mode": "Mode",
+          "expert_write_enabled": "Expert write access via web",
+          "expert_module_arg": "Module menu index",
+          "expert_auto_poll_enabled": "Poll expert parameters periodically",
+          "expert_poll_interval_minutes": "Expert poll interval",
+          "expert_slot_1_name": "Expert parameter 1: name",
+          "expert_slot_1_id": "Expert parameter 1: ID",
+          "expert_slot_2_name": "Expert parameter 2: name",
+          "expert_slot_2_id": "Expert parameter 2: ID",
+          "expert_slot_3_name": "Expert parameter 3: name",
+          "expert_slot_3_id": "Expert parameter 3: ID",
+          "expert_slot_4_name": "Expert parameter 4: name",
+          "expert_slot_4_id": "Expert parameter 4: ID",
+          "expert_slot_5_name": "Expert parameter 5: name",
+          "expert_slot_5_id": "Expert parameter 5: ID",
+          "expert_slot_6_name": "Expert parameter 6: name",
+          "expert_slot_6_id": "Expert parameter 6: ID",
+          "expert_slot_7_name": "Expert parameter 7: name",
+          "expert_slot_7_id": "Expert parameter 7: ID",
+          "expert_slot_8_name": "Expert parameter 8: name",
+          "expert_slot_8_id": "Expert parameter 8: ID",
+          "expert_slot_9_name": "Expert parameter 9: name",
+          "expert_slot_9_id": "Expert parameter 9: ID",
+          "expert_slot_10_name": "Expert parameter 10: name",
+          "expert_slot_10_id": "Expert parameter 10: ID",
+          "expert_enable_module_nav": "⚠ Enable module select",
+          "expert_enable_security_code": "⚠ Enable security-code step",
+          "expert_notify_on_success": "Notify on successful expert write"
+        },
+        "data_description": {
+          "scan_interval": "In seconds; used in web and both mode. Default 1800, below 900 is not recommended. Every request counts against the portal's limit per IP address.",
+          "api_scan_interval": "In seconds; used in api and both mode. Default 300, below 180 is not recommended. Every request counts against the portal's limit per IP address.",
+          "language": "English (en) or German (de). Names are built from what the portal reports, so Home Assistant's own language does not change them. Default: en.",
+          "mode": "Where readings come from: api (the mobile app's interface, covers every device - right for most people), web (the expert web page) or both. Checked against the portal before it is saved. Default: api.",
+          "expert_write_enabled": "Makes each filled parameter slot below a writable number entity and enables the set_expert_parameter action. Changes real settings on your heating system. Default: off.",
+          "expert_module_arg": "Only used when module select is enabled. Empty means 6, the heat pump on the reference installation.",
+          "expert_auto_poll_enabled": "Reads the slot parameters on a timer, so their entities show current values without a write. Each read is a full web navigation; polling too often can trigger a temporary block (403). Default: off.",
+          "expert_poll_interval_minutes": "In minutes. Default 60, minimum 15.",
+          "expert_slot_1_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_1_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_slot_2_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_2_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_slot_3_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_3_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_slot_4_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_4_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_slot_5_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_5_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_slot_6_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_6_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_slot_7_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_7_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_slot_8_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_8_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_slot_9_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_9_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_slot_10_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
+          "expert_slot_10_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
+          "expert_enable_module_nav": "Runs the portal's module selection before each expert operation. Normally unnecessary and adds requests - only enable it if reads or writes fail without it. Default: off.",
+          "expert_enable_security_code": "Unlocks the expert level with the security code on every session. Only for a portal that asks for it; adds requests. Default: off.",
+          "expert_notify_on_success": "Shows a notification when a write was confirmed. Failures are always raised to whoever asked for the write. Default: off."
         }
       },
       "discover_modules": {
@@ -94,7 +141,11 @@
         "description": "Select which modules to search. This opens a short portal session; searching many modules increases the risk of a temporary block (403).",
         "data": {
           "modules": "Modules to search",
-          "refresh": "Reload the module list from the portal (rarely needed - the list is cached, and an extra portal login right after the first one can trigger a 403 block)"
+          "refresh": "Reload the module list from the portal"
+        },
+        "data_description": {
+          "modules": "One module at a time is gentler on the portal.",
+          "refresh": "Rarely needed: the list is cached, and an extra portal login right after the first one can trigger a 403 block."
         }
       }
     },

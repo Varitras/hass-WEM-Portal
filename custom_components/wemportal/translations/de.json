@@ -3,26 +3,40 @@
     "step": {
       "user": {
         "data": {
-          "username": "Benutzername (E-Mail)",
+          "username": "Benutzername",
           "password": "Passwort",
-          "language": "Sprache der Sensor-/Parameternamen (Standard = en)",
-          "mode": "Modus (Standard = api)"
+          "language": "Sprache der Entitätsnamen",
+          "mode": "Modus"
+        },
+        "data_description": {
+          "username": "Die E-Mail-Adresse, mit der du dich am WEM Portal anmeldest.",
+          "password": "Dein Passwort für das WEM Portal.",
+          "language": "Englisch (en) oder Deutsch (de). Die Namen entstehen aus dem, was das Portal meldet; die Sprache von Home Assistant ändert sie nicht. Standard: en.",
+          "mode": "Woher die Werte kommen: api (die Schnittstelle der App, deckt jedes Gerät ab - für die meisten richtig), web (die Fachmann-Webseite) oder both. Wird vor dem Speichern am Portal geprüft. Standard: api."
         }
       },
       "reauth_confirm": {
         "title": "WEM Portal neu anmelden",
         "description": "Die Anmeldung am WEM Portal ist mehrfach fehlgeschlagen. Bitte Zugangsdaten neu eingeben.",
         "data": {
-          "username": "Benutzername (E-Mail)",
+          "username": "Benutzername",
           "password": "Passwort"
+        },
+        "data_description": {
+          "username": "Die E-Mail-Adresse, mit der du dich am WEM Portal anmeldest.",
+          "password": "Dein Passwort für das WEM Portal."
         }
       },
       "reconfigure": {
         "title": "WEM-Portal-Anmeldung ändern",
         "description": "Ändere Benutzername oder Passwort dieses Kontos. Ein anderer Benutzername zieht diesen Eintrag auf diese Anmeldung um; gehört sie zu einer anderen Anlage, erscheinen deren Geräte neu und die alten lassen sich von Hand entfernen.",
         "data": {
-          "username": "Benutzername (E-Mail)",
+          "username": "Benutzername",
           "password": "Passwort"
+        },
+        "data_description": {
+          "username": "Die E-Mail-Adresse, mit der du dich am WEM Portal anmeldest.",
+          "password": "Dein Passwort für das WEM Portal."
         }
       }
     },
@@ -56,37 +70,70 @@
       "configure": {
         "description": "{status}",
         "data": {
-          "scan_interval": "Web-Scraping-Intervall (Standard = 1800 Sek.)",
-          "api_scan_interval": "API-Abfrageintervall in Sekunden (Standard 300, empfohlen >= 180)",
-          "language": "Sprache der Sensor-/Parameternamen (Standard = en)",
-          "mode": "Modus (Standard = api)",
-          "expert_write_enabled": "Experten-Schreibzugriff über Web (Standard = aus)",
-          "expert_module_arg": "Modul-Menüindex (nur wirksam bei aktivierter Modul-Auswahl; leer = 6 = Wärmepumpe)",
-          "expert_auto_poll_enabled": "Experten-Parameter regelmäßig abfragen (Standard = aus). Achtung: Zu häufiges Abfragen kann zu einer vorübergehenden Sperre (403) durch das Portal führen.",
-          "expert_poll_interval_minutes": "Abfrageintervall in Minuten (Standard = 60, Minimum = 15)",
-          "expert_slot_1_name": "Experten-Parameter 1: Name (optional)",
-          "expert_slot_1_id": "Experten-Parameter 1: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_2_name": "Experten-Parameter 2: Name (optional)",
-          "expert_slot_2_id": "Experten-Parameter 2: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_3_name": "Experten-Parameter 3: Name (optional)",
-          "expert_slot_3_id": "Experten-Parameter 3: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_4_name": "Experten-Parameter 4: Name (optional)",
-          "expert_slot_4_id": "Experten-Parameter 4: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_5_name": "Experten-Parameter 5: Name (optional)",
-          "expert_slot_5_id": "Experten-Parameter 5: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_6_name": "Experten-Parameter 6: Name (optional)",
-          "expert_slot_6_id": "Experten-Parameter 6: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_7_name": "Experten-Parameter 7: Name (optional)",
-          "expert_slot_7_id": "Experten-Parameter 7: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_8_name": "Experten-Parameter 8: Name (optional)",
-          "expert_slot_8_id": "Experten-Parameter 8: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_9_name": "Experten-Parameter 9: Name (optional)",
-          "expert_slot_9_id": "Experten-Parameter 9: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_slot_10_name": "Experten-Parameter 10: Name (optional)",
-          "expert_slot_10_id": "Experten-Parameter 10: entityvalue (Hex-ID, z. B. 3A7F91C2E0B48D5619F2A0C7B4E83D105C2A, optional)",
-          "expert_enable_module_nav": "⚠ Modul-Auswahl aktivieren (Standard = aus). Hinweis: normalerweise nicht nötig – nur aktivieren, wenn du weißt, was du tust.",
-          "expert_enable_security_code": "⚠ Sicherheitscode-Schritt aktivieren (Standard = aus). Hinweis: normalerweise nicht nötig – nur aktivieren, wenn du weißt, was du tust.",
-          "expert_notify_on_success": "Bei erfolgreichem Experten-Schreibvorgang eine Benachrichtigung anzeigen (Standard = aus; Fehler werden als Fehler gemeldet, nicht als Benachrichtigung)"
+          "scan_interval": "Web-Scraping-Intervall",
+          "api_scan_interval": "API-Abfrageintervall",
+          "language": "Sprache der Entitätsnamen",
+          "mode": "Modus",
+          "expert_write_enabled": "Experten-Schreibzugriff über Web",
+          "expert_module_arg": "Modul-Menüindex",
+          "expert_auto_poll_enabled": "Experten-Parameter regelmäßig abfragen",
+          "expert_poll_interval_minutes": "Experten-Abfrageintervall",
+          "expert_slot_1_name": "Experten-Parameter 1: Name",
+          "expert_slot_1_id": "Experten-Parameter 1: ID",
+          "expert_slot_2_name": "Experten-Parameter 2: Name",
+          "expert_slot_2_id": "Experten-Parameter 2: ID",
+          "expert_slot_3_name": "Experten-Parameter 3: Name",
+          "expert_slot_3_id": "Experten-Parameter 3: ID",
+          "expert_slot_4_name": "Experten-Parameter 4: Name",
+          "expert_slot_4_id": "Experten-Parameter 4: ID",
+          "expert_slot_5_name": "Experten-Parameter 5: Name",
+          "expert_slot_5_id": "Experten-Parameter 5: ID",
+          "expert_slot_6_name": "Experten-Parameter 6: Name",
+          "expert_slot_6_id": "Experten-Parameter 6: ID",
+          "expert_slot_7_name": "Experten-Parameter 7: Name",
+          "expert_slot_7_id": "Experten-Parameter 7: ID",
+          "expert_slot_8_name": "Experten-Parameter 8: Name",
+          "expert_slot_8_id": "Experten-Parameter 8: ID",
+          "expert_slot_9_name": "Experten-Parameter 9: Name",
+          "expert_slot_9_id": "Experten-Parameter 9: ID",
+          "expert_slot_10_name": "Experten-Parameter 10: Name",
+          "expert_slot_10_id": "Experten-Parameter 10: ID",
+          "expert_enable_module_nav": "⚠ Modul-Auswahl aktivieren",
+          "expert_enable_security_code": "⚠ Sicherheitscode-Schritt aktivieren",
+          "expert_notify_on_success": "Bei erfolgreichem Experten-Schreibvorgang benachrichtigen"
+        },
+        "data_description": {
+          "scan_interval": "In Sekunden; gilt im Modus web und both. Standard 1800, unter 900 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
+          "api_scan_interval": "In Sekunden; gilt im Modus api und both. Standard 300, unter 180 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
+          "language": "Englisch (en) oder Deutsch (de). Die Namen entstehen aus dem, was das Portal meldet; die Sprache von Home Assistant ändert sie nicht. Standard: en.",
+          "mode": "Woher die Werte kommen: api (die Schnittstelle der App, deckt jedes Gerät ab - für die meisten richtig), web (die Fachmann-Webseite) oder both. Wird vor dem Speichern am Portal geprüft. Standard: api.",
+          "expert_write_enabled": "Macht jeden gefüllten Parameter-Platz unten zu einer beschreibbaren Zahl-Entität und schaltet die Aktion set_expert_parameter frei. Ändert echte Einstellungen deiner Heizung. Standard: aus.",
+          "expert_module_arg": "Nur wirksam bei aktivierter Modul-Auswahl. Leer bedeutet 6, die Wärmepumpe der Referenzanlage.",
+          "expert_auto_poll_enabled": "Liest die Parameter der Plätze zeitgesteuert, damit ihre Entitäten ohne Schreibvorgang aktuelle Werte zeigen. Jeder Lesevorgang ist eine vollständige Web-Navigation; zu häufiges Abfragen kann eine vorübergehende Sperre (403) auslösen. Standard: aus.",
+          "expert_poll_interval_minutes": "In Minuten. Standard 60, Minimum 15.",
+          "expert_slot_1_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_1_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_2_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_2_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_3_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_3_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_4_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_4_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_5_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_5_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_6_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_6_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_7_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_7_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_8_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_8_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_9_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_9_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_10_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
+          "expert_slot_10_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_enable_module_nav": "Führt vor jedem Experten-Vorgang die Modulauswahl des Portals aus. Normalerweise unnötig und kostet Anfragen - nur aktivieren, wenn Lesen oder Schreiben ohne sie fehlschlägt. Standard: aus.",
+          "expert_enable_security_code": "Entsperrt die Fachmann-Ebene in jeder Sitzung mit dem Sicherheitscode. Nur für ein Portal, das ihn verlangt; kostet Anfragen. Standard: aus.",
+          "expert_notify_on_success": "Zeigt eine Benachrichtigung, wenn ein Schreibvorgang bestätigt wurde. Fehler werden immer an den Auslöser des Schreibvorgangs gemeldet. Standard: aus."
         }
       },
       "discover_modules": {
@@ -94,7 +141,11 @@
         "description": "Wähle die zu durchsuchenden Module. Dies öffnet eine kurze Portal-Sitzung; viele Module erhöhen das Risiko einer vorübergehenden Sperre (403).",
         "data": {
           "modules": "Zu durchsuchende Module",
-          "refresh": "Modul-Liste neu vom Portal laden (selten nötig – die Liste ist gespeichert, und ein zusätzlicher Portal-Login direkt nach dem ersten kann eine 403-Sperre auslösen)"
+          "refresh": "Modul-Liste neu vom Portal laden"
+        },
+        "data_description": {
+          "modules": "Ein Modul nach dem anderen schont das Portal.",
+          "refresh": "Selten nötig: Die Liste ist gespeichert, und ein zusätzlicher Portal-Login direkt nach dem ersten kann eine 403-Sperre auslösen."
         }
       }
     },
