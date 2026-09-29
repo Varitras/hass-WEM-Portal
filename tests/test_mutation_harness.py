@@ -203,7 +203,7 @@ def test_the_file_is_restored_even_when_the_run_explodes(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mutate,
         "run_tests",
-        lambda selector, paths=None, root=None: (_ for _ in ()).throw(
+        lambda selector, paths=None, root=None, **_: (_ for _ in ()).throw(
             RuntimeError("boom")
         ),
     )
@@ -506,7 +506,9 @@ def test_a_dead_selector_stops_before_anything_is_mutated(tmp_path, monkeypatch)
     # mutation later.
     runs = []
     monkeypatch.setattr(
-        mutate, "run_tests", lambda selector, paths=None: runs.append(paths) or True
+        mutate,
+        "run_tests",
+        lambda selector, paths=None, **_: runs.append(paths) or True,
     )
     plan = tmp_path / "plan.json"
     plan.write_text(
@@ -587,7 +589,7 @@ def test_one_job_runs_in_the_repository_itself(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mutate,
         "run_tests",
-        lambda selector, paths=None, root=None: seen.append(root) or True,
+        lambda selector, paths=None, root=None, **_: seen.append(root) or True,
     )
     copies = []
     monkeypatch.setattr(
@@ -689,7 +691,7 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
     survivor = 1
     finished = [threading.Event() for _ in range(cases)]
 
-    def slowest_first(selector, paths=None, root=None):
+    def slowest_first(selector, paths=None, root=None, **_):
         # WHICH case this is comes from the mutated file in this worker's own
         # tree, not from the worker's number: the pool hands cases to whatever
         # worker is free, so the two are only incidentally the same.
@@ -754,7 +756,7 @@ def test_the_worker_copies_are_removed_afterwards(tmp_path, monkeypatch):
         mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
     )
     monkeypatch.setattr(
-        mutate, "run_tests", lambda selector, paths=None, root=None: True
+        mutate, "run_tests", lambda selector, paths=None, root=None, **_: True
     )
     holding = []
     real_mkdtemp = tempfile.mkdtemp
@@ -783,7 +785,7 @@ def test_a_worker_tree_is_clean_again_for_the_next_case(tmp_path, monkeypatch):
 
     seen = []
 
-    def record_what_the_tree_looks_like(selector, paths=None, root=None):
+    def record_what_the_tree_looks_like(selector, paths=None, root=None, **_):
         seen.append((root / "module.py").read_text(encoding="utf-8"))
         return True
 
@@ -799,3 +801,39 @@ def test_a_worker_tree_is_clean_again_for_the_next_case(tmp_path, monkeypatch):
     assert seen == ["a = 2\nb = 1\n", "a = 1\nb = 2\n"], (
         "a case ran against a mutation left behind by the previous one"
     )
+
+
+@pytest.mark.parametrize(
+    "crash",
+    [
+        "NameError: name 'enabled_devices' is not defined",
+        "UnboundLocalError: cannot access local variable 'value'",
+        "SyntaxError: invalid syntax",
+    ],
+)
+def test_a_mutation_that_does_not_run_is_not_evidence(monkeypatch, crash):
+    """A mutation that crashes on a name its own code no longer has fails
+    every selected test - and that failure was counted as "caught". One such
+    case stood green in the plan while proving nothing: the test never got
+    as far as the behaviour it was named for."""
+    monkeypatch.setattr(
+        mutate.subprocess,
+        "run",
+        lambda *_args, **_kwargs: _Result(1, f"E       {crash}\n1 failed"),
+    )
+
+    with pytest.raises(SystemExit, match="does not run"):
+        mutate.run_tests("something")
+
+
+def test_a_crash_the_plan_declares_as_the_defect_is_caught(monkeypatch):
+    """Deleting an import IS a NameError, and a test written to notice exactly
+    that is doing its job. The plan says so for that case, and only then does
+    the crash count."""
+    monkeypatch.setattr(
+        mutate.subprocess,
+        "run",
+        lambda *_args, **_kwargs: _Result(1, "E       NameError: name 'X'\n1 failed"),
+    )
+
+    assert mutate.run_tests("something", crash_is_the_defect=True) is True

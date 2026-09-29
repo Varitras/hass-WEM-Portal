@@ -57,6 +57,7 @@ import json
 import os
 import queue
 import shutil
+import re
 import subprocess
 import sys
 import tempfile
@@ -149,7 +150,28 @@ def files_for(selector: str, locations: dict) -> list:
     return sorted(files)
 
 
-def run_tests(selector: str, paths=None, root: Path | None = None) -> bool:
+class BrokenMutation(SystemExit):
+    """The mutated code does not run, so its failing tests prove nothing.
+
+    Collected rather than fatal: one broken case must not hide the next.
+    """
+
+
+# A failure that comes from the mutated code not running at all: a name it
+# no longer has, a local it deleted, text that does not parse. A case whose
+# defect IS such a crash - a deleted import - says so with
+# "crash_is_the_defect".
+_MUTATION_DOES_NOT_RUN = re.compile(
+    r"^E\s+(NameError|UnboundLocalError|SyntaxError|IndentationError)\b", re.MULTILINE
+)
+
+
+def run_tests(
+    selector: str,
+    paths=None,
+    root: Path | None = None,
+    crash_is_the_defect: bool = False,
+) -> bool:
     """True if the selected tests FAIL, i.e. the mutation was caught.
 
     `root` is the tree to run in, which is the repository itself unless a
@@ -198,6 +220,16 @@ def run_tests(selector: str, paths=None, root: Path | None = None) -> bool:
         raise SystemExit(f"selector {selector!r} matched no tests")
 
     if result.returncode == PYTEST_TESTS_FAILED:
+        crash = _MUTATION_DOES_NOT_RUN.search(result.stdout)
+        if crash and not crash_is_the_defect:
+            # Every selected test fails on a crash like this, whatever it was
+            # written to notice - "caught" would be the harness vouching for a
+            # test that never reached its assertion. The mutation is broken.
+            raise BrokenMutation(
+                f"selector {selector!r}: the mutated code does not run "
+                f"({crash.group(1)}), so the failure says nothing about the "
+                "behaviour under test. Fix the mutation."
+            )
         return True
     if result.returncode == PYTEST_ALL_PASSED:
         return False
@@ -297,11 +329,19 @@ def build_worktrees(count: int, into: Path, cases: list) -> list:
     return trees
 
 
-def run_case(case: dict, files: list, root: Path | None) -> bool:
+def run_case(case: dict, files: list, root: Path | None) -> bool | None:
     """One mutation, applied and reverted in `root`."""
     target, original = apply_mutation(case, root=root)
     try:
-        return run_tests(case["tests"], files, root=root)
+        return run_tests(
+            case["tests"],
+            files,
+            root=root,
+            crash_is_the_defect=case.get("crash_is_the_defect", False),
+        )
+    except BrokenMutation as broken:
+        print(f"\n{broken}", file=sys.stderr)
+        return None
     finally:
         target.write_bytes(original)
 
@@ -405,17 +445,28 @@ def main() -> int:
     else:
         results = run_in_parallel(cases, targets, jobs)
 
+    broken = []
     for case, caught in zip(cases, results, strict=True):
         label = case.get("label", case["path"])
+        if caught is None:
+            print(f"BROKEN   {label}")
+            broken.append(label)
+            continue
         print(f"{'caught  ' if caught else 'SURVIVED'} {label}")
         if not caught:
             survived.append(label)
 
+    if broken:
+        print(
+            "\nThese mutations do not run - their failing tests prove "
+            "nothing:\n  " + "\n  ".join(broken)
+        )
     if survived:
         print(
             "\nThese mutations survived - the code was broken and the tests "
             "stayed green:\n  " + "\n  ".join(survived)
         )
+    if broken or survived:
         return 1
     print(f"\nall {len(cases)} mutations caught")
     return 0

@@ -354,7 +354,8 @@
     "path": "custom_components/wemportal/options_flow.py",
     "old": "        from .expert_writer import WemPortalExpertClient\n\n        entry = self.config_entry",
     "new": "        entry = self.config_entry",
-    "tests": "expert_client_is_actually_buildable"
+    "tests": "expert_client_is_actually_buildable",
+    "crash_is_the_defect": true
   },
   {
     "label": "status: a boolean false must never count as success",
@@ -787,21 +788,21 @@
     "label": "auth: a refused re-login raised past the post-write read-back",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        except AuthError as exc:\n            return str(exc)",
-    "new": "        except UnknownAuthError as exc:\n            return str(exc)",
+    "new": "        except () as exc:\n            return str(exc)",
     "tests": "a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise"
   },
   {
     "label": "auth: a refused re-login reported as one device failing",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        except AuthError:\n            # Not this device failing: an account is one login.",
-    "new": "        except UnknownAuthError:\n            # Not this device failing: an account is one login.",
+    "new": "        except ():\n            # Not this device failing: an account is one login.",
     "tests": "a_refused_relogin_is_not_reported_as_one_device_failing"
   },
   {
     "label": "auth: a refused re-login reported as an unreadable status",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        except AuthError:\n            # A rejected login is not an unreadable status; see AuthError.",
-    "new": "        except UnknownAuthError:\n            # A rejected login is not an unreadable status; see AuthError.",
+    "new": "        except ():\n            # A rejected login is not an unreadable status; see AuthError.",
     "tests": "a_refused_relogin_is_not_reported_as_an_unreadable_status"
   },
   {
@@ -815,7 +816,7 @@
     "label": "auth: a refused re-login lost around the schedule loop",
     "path": "custom_components/wemportal/schedule.py",
     "old": "        except AuthError:\n            # The outer half of the same rule",
-    "new": "        except UnknownAuthError:\n            # The outer half of the same rule",
+    "new": "        except ():\n            # The outer half of the same rule",
     "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
   },
   {
@@ -1606,7 +1607,7 @@
     "label": "rediscovery: deleting a module the portal rejects must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        values[\"parameters\"] = {}",
-    "new": "        if unsupported:\n            del self.modules[device_id][key]\n            return\n        values[\"parameters\"] = {}",
+    "new": "        if unsupported:\n            modules = self.modules[device_id]\n            del modules[next(k for k, v in modules.items() if v is values)]\n            return\n        values[\"parameters\"] = {}",
     "tests": "a_module_the_portal_rejects_is_kept_and_asked_again"
   },
   {
@@ -2404,7 +2405,7 @@
     "label": "expert: a teardown reported to the caller as a successful write",
     "path": "custom_components/wemportal/expert_number.py",
     "old": "        except ExpertOperationAborted as exc:",
-    "new": "        except _NeverRaised as exc:",
+    "new": "        except () as exc:",
     "tests": "a_write_stopped_by_a_teardown_reaches_the_caller_too"
   },
   {
@@ -2565,7 +2566,7 @@
     "label": "discovery: an abort escaping the flow instead of ending it",
     "path": "custom_components/wemportal/options_flow.py",
     "old": "        except ExpertOperationAborted as exc:",
-    "new": "        except _NeverRaised as exc:",
+    "new": "        except () as exc:",
     "tests": "an_aborted_discovery_ends_the_flow_instead_of_escaping"
   },
   {
