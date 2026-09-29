@@ -126,3 +126,12 @@ def test_a_scraped_count_without_a_unit_stays_whole():
     fixed, _unit = utils.fix_value_and_unit(value, unit)
 
     assert (fixed, type(fixed)) == (12, int), f"shown as {fixed!r}"
+
+
+@pytest.mark.parametrize(("word", "expected"), [("Aus", 0), ("Ein", 1), ("off", 0)])
+def test_an_on_off_word_reads_as_a_whole_number(word, expected):
+    """ "Aus" means nothing, not nothing to one decimal: shown as "0.0" it
+    was the one zero on the device that still carried a decimal."""
+    number = utils.sanitize_value(word)
+
+    assert (number, type(number)) == (expected, int), f"{word!r} became {number!r}"

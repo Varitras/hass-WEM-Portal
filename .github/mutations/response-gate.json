@@ -4429,5 +4429,12 @@
     "old": "        return number, \"\"\n",
     "new": "        return float(number), \"\"\n",
     "tests": "scraped_count_without_a_unit_stays_whole"
+  },
+  {
+    "label": "whole numbers: an on/off word read as a float again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    if value_lower in BOOLEAN_OFF_STRINGS:\n        return 0\n",
+    "new": "    if value_lower in BOOLEAN_OFF_STRINGS:\n        return 0.0\n",
+    "tests": "on_off_word_reads_as_a_whole_number"
   }
 ]

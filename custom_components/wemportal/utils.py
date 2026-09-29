@@ -273,13 +273,13 @@ def sanitize_value(value_str: Any) -> Any:
             a non-string value, in which case it is returned unchanged).
 
     Returns:
-        A float for numeric/boolean values; None for empty or "missing
+        A number for numeric/boolean values; None for empty or "missing
         data" values (the sensor then shows as unavailable rather than
         reporting a fabricated 0); or the original string if it can't be
         interpreted as a number or known boolean/placeholder.
 
     Note on boolean handling: "Ein"/"On"/"Aus"/"Off" are ALWAYS mapped to
-    1.0/0.0 here, never to text, regardless of `unit`. An earlier version
+    1/0 here, never to text, regardless of `unit`. An earlier version
     of this function returned text ("On"/"Off") when no unit was present,
     to make plain status sensors read more naturally - but the same raw
     value/name can also belong to a genuinely numeric sensor (e.g. a
@@ -318,9 +318,9 @@ def sanitize_value(value_str: Any) -> Any:
         return None
 
     if value_lower in BOOLEAN_OFF_STRINGS:
-        return 0.0
+        return 0
     if value_lower in BOOLEAN_ON_STRINGS:
-        return 1.0
+        return 1
 
     number = parse_portal_number(value_str)
     if number is not None:

@@ -103,7 +103,7 @@ def _describe_value(
             # the literal option names built from this same
             # parameter's EnumValues in _writeable_entity
             # (select.py matches the raw value against those
-            # names verbatim). Rewriting "Aus" to "Off"/0.0
+            # names verbatim). Rewriting "Aus" to "Off"/0
             # here would silently break that match.
             final_value = sanitize_value(string_value)
         else:
@@ -168,7 +168,7 @@ def _time_or_programme_entity(common: Reading, sent_a_number: bool) -> Reading |
     to a date rather than a datetime.
 
     Decided on the RAW NumericValue, not on the mapped one. sanitize_value()
-    turns "Off"/"Aus" into 0.0, so a parameter that answered with a word would
+    turns "Off"/"Aus" into 0, so a parameter that answered with a word would
     otherwise have looked like a number and become the 1st of January 1970 -
     caught by the golden matrix the moment it gained an EnumValues axis.
 
