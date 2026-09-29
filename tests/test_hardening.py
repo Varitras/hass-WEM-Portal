@@ -307,7 +307,7 @@ def test_global_403_still_pauses_the_expert_path():
     """The reverse must keep working: a genuine rate limit seen by the API
     or scraper is the real signal, and must stop expert requests too."""
     api = _api()
-    api._activate_cooldown()
+    api._activate_cooldown("a test 403")
 
     with pytest.raises(exceptions.ForbiddenError):
         api.check_cooldown()
@@ -2401,7 +2401,7 @@ def test_the_constructor_restores_the_state_that_was_persisted():
     caller is covered by the e2e setup tests.
     """
     old = _api(cached_modules=CACHED_MODULES, scraper_device_id="0000")
-    old._activate_cooldown()
+    old._activate_cooldown("a test 403")
     old.activate_expert_cooldown()
     old.expert_cookies = {"cookies": {"ASP.NET_SessionId": "keep-me"}, "saved_at": 1.0}
 
@@ -3808,7 +3808,7 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
 
     monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
     api = _api()
-    api._activate_cooldown()
+    api._activate_cooldown("a test 403")
 
     with pytest.raises(exceptions.ForbiddenError):
         api.web_login()
@@ -6332,7 +6332,7 @@ def test_a_brand_new_api_still_sees_an_active_cooldown():
     said stop.
     """
     api = _api()
-    api._activate_cooldown()
+    api._activate_cooldown("a test 403")
 
     retry = WemPortalApi("user@example.org", "secret")
 
@@ -6343,7 +6343,7 @@ def test_a_brand_new_api_still_sees_an_active_cooldown():
 def test_config_flow_validation_sees_it_too():
     """Same hole, different door: validating credentials builds its own api
     and would otherwise send requests during an active rate limit."""
-    _api()._activate_cooldown()
+    _api()._activate_cooldown("a test 403")
 
     other_account = WemPortalApi("someone@example.org", "other")
 
@@ -6366,7 +6366,7 @@ def test_a_replacement_cannot_shorten_a_running_cooldown():
     """Callers still pass the old value; passing a smaller one - or none -
     must never pull the backoff in."""
     api = _api()
-    api._activate_cooldown()
+    api._activate_cooldown("a test 403")
     active = api._blocked_until
 
     replacement = WemPortalApi("user@example.org", "secret", blocked_until=0.0)

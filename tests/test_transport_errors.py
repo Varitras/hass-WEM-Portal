@@ -11,6 +11,7 @@ the three value-carrying requests are allowed and the other twelve are not.
 """
 
 import ast
+import logging
 import pathlib
 
 import pytest
@@ -367,3 +368,69 @@ def test_half_an_answer_quotes_only_the_half_it_has(status, message):
     said = what_the_server_said(500, status, message)
 
     assert "None" not in said and "code:  " not in said, said
+
+
+# --- the pause says which request earned it -------------------------------
+
+
+def _pause_warnings(caplog):
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno >= logging.WARNING and "Pausing ALL" in record.getMessage()
+    ]
+
+
+def test_the_pause_names_the_request_the_portal_refused(caplog):
+    """The warning said only that a 403 came. Which of a cycle's requests
+    earned it - values, statistics, a schedule, the login - is what tells a
+    real block from a firewall's hiccup, and it was nowhere in the log."""
+    session = FlakySession(
+        failures=0, final=FakeResponse({}, status_code=403, content=b"<html>")
+    )
+
+    with caplog.at_level(logging.WARNING), pytest.raises(exceptions.ForbiddenError):
+        _api(session).make_api_call(
+            "https://www.wemportal.com/app/Statistics/Read?DeviceID=4711",
+            data={"x": 1},
+        )
+
+    (warning,) = _pause_warnings(caplog)
+    assert "/app/Statistics/Read" in warning, warning
+    assert "no status or message" in warning, warning
+    assert "4711" not in warning, warning
+
+
+def test_the_pause_after_a_refused_api_login_names_the_login(monkeypatch, caplog):
+    from .test_hardening import RecordingSession
+
+    class RefusingSession(RecordingSession):
+        def post(self, url, **kwargs):
+            return FakeResponse({}, status_code=403, content=b"<html>")
+
+    monkeypatch.setattr(wemportalapi.requests, "Session", RefusingSession)
+
+    with caplog.at_level(logging.WARNING), pytest.raises(exceptions.ForbiddenError):
+        WemPortalApi("user@example.org", "secret").api_login()
+
+    (warning,) = _pause_warnings(caplog)
+    assert "/app/Account/Login" in warning, warning
+
+
+def test_a_refused_web_page_names_itself():
+    """The scrape's 403 reaches the pause only as this error's text."""
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    scraper = WemPortalScraper("user@example.org", "secret", None)
+    refused = FakeResponse(
+        {},
+        status_code=403,
+        url="https://www.wemportal.com/Web/(S(abc123def456))/Default.aspx?x=4711",
+    )
+
+    with pytest.raises(exceptions.ForbiddenError) as excinfo:
+        scraper._check_response(refused, "expert page")
+
+    message = str(excinfo.value)
+    assert "/Web/Default.aspx" in message, message
+    assert "abc123def456" not in message and "4711" not in message, message

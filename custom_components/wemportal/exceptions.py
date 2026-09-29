@@ -66,6 +66,15 @@ class ForbiddenError(WemPortalError):
     """Exception to indicate a forbidden error (403)."""
 
 
+def time_left(seconds: float) -> str:
+    """How long a 403 backoff still holds, as its ForbiddenError says it:
+    minutes above one, seconds below."""
+    remaining = int(seconds)
+    if remaining >= 60:
+        return f"~{(remaining + 59) // 60} min"
+    return f"{remaining}s"
+
+
 class ExpiredSessionError(WemPortalError):
     """
     Custom exception for expired session errors

@@ -647,7 +647,7 @@ async def test_a_rate_limit_becomes_a_repair_issue_until_the_block_lapses(
     registry = issue_registry.async_get(hass)
 
     def refuse(self, *_args, **_kwargs):
-        self._activate_cooldown()
+        self._activate_cooldown("a test 403")
         raise ForbiddenError("rate limited")
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", refuse)
@@ -693,7 +693,7 @@ async def test_a_403_a_sub_task_swallowed_still_raises_the_repair_issue(
     def succeed_but_earn_a_403(self, *_args, **_kwargs):
         # Exactly what a swallowed 403 leaves behind: the backoff is set,
         # and the cycle returns data anyway.
-        self._activate_cooldown()
+        self._activate_cooldown("a test 403")
         return FAKE_DATA
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", succeed_but_earn_a_403)
@@ -737,7 +737,7 @@ async def test_a_successful_cycle_under_an_active_block_keeps_the_issue(
     entry = await _setup(hass, _entry(hass))
 
     def blocked_but_returning_data(self, *_args, **_kwargs):
-        self._activate_cooldown()
+        self._activate_cooldown("a test 403")
         return FAKE_DATA
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", blocked_but_returning_data)
@@ -820,7 +820,7 @@ async def test_removing_a_never_loaded_entry_still_clears_its_issues(hass, monke
     def refuse(self, *_args, **_kwargs):
         # Both halves, as the transport does them: the backoff is what the
         # report is derived from, the exception is what fails the setup.
-        self._activate_cooldown()
+        self._activate_cooldown("a test 403")
         raise ForbiddenError("rate limited")
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", refuse)

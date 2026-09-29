@@ -1794,7 +1794,7 @@
   {
     "label": "login: a refused login PAGE reported as a network problem",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                self._activate_cooldown()\n                raise ForbiddenError(\n                    \"Access forbidden while loading the login page.\"\n                ) from exc\n            raise UnknownAuthError",
+    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                self._activate_cooldown(f\"the web login page {redact_url(login_url)}\")\n                raise ForbiddenError(\n                    \"Access forbidden while loading the login page.\"\n                ) from exc\n            raise UnknownAuthError",
     "new": "            raise UnknownAuthError",
     "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
   },
@@ -3152,8 +3152,8 @@
   {
     "label": "scrape: a 403 must count as a failed scrape",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            self._register_scrape_failure()\n            self._activate_cooldown()\n            self._reset_scraper()",
-    "new": "            self._activate_cooldown()\n            self._reset_scraper()",
+    "old": "            self._register_scrape_failure()\n            self._activate_cooldown(f\"the web scrape: {exc}\")\n            self._reset_scraper()",
+    "new": "            self._activate_cooldown(f\"the web scrape: {exc}\")\n            self._reset_scraper()",
     "tests": "every_failed_scrape_earns_a_backoff"
   },
   {
@@ -3642,7 +3642,7 @@
   {
     "label": "boundary: the transport reaching for utils again must be caught",
     "path": "custom_components/wemportal/transport.py",
-    "old": "from .web_protocol import maintenance_blocking, message_reports_maintenance",
+    "old": "from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url",
     "new": "from .utils import parse_portal_number",
     "tests": "transport_imports_only_domain_free_siblings"
   },
@@ -4289,5 +4289,26 @@
     "new": "                return None\n",
     "tests": "read_back_that_read_nothing_does_not_verify",
     "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "403 pause: the warning no longer names the refused request",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                cause,\n                seconds // 60,",
+    "new": "                \"a request\",\n                seconds // 60,",
+    "tests": "pause_names_the_request_the_portal_refused or pause_after_a_refused_api_login_names_the_login"
+  },
+  {
+    "label": "403 pause: the refused API request quoted unredacted",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            self._activate_cooldown(\n                f\"{redact_url(url)} \"",
+    "new": "            self._activate_cooldown(\n                f\"{url} \"",
+    "tests": "pause_names_the_request_the_portal_refused"
+  },
+  {
+    "label": "403 pause: a refused web page no longer names itself",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                f\"for the {what} at {redact_url(getattr(response, 'url', None))}.\"",
+    "new": "                f\"for the {what}.\"",
+    "tests": "refused_web_page_names_itself"
   }
 ]

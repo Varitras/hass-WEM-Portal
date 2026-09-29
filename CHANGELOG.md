@@ -17,6 +17,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **The setup and options dialogs explain each field under it.** Labels
   carried every default, unit and warning in one long line; they are now
   short, with the explanation shown below the field in both languages.
+- **The rate-limit warning names the request the portal refused.** It said
+  only that a 403 came and everything was paused; which request earned it -
+  values, statistics, a schedule, a login or the web page - and whether the
+  answer came from the portal or a bare firewall page is now in the line.
 
 ### Security
 

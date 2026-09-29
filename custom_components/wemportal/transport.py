@@ -41,6 +41,7 @@ from .exceptions import (
     ServerError,
     UnknownAuthError,
     WemPortalError,
+    time_left,
 )
 
 # Protocol, not domain: how a portal answer is READ, with no idea what a
@@ -48,7 +49,7 @@ from .exceptions import (
 # lists the domain modules, and neither of these is one of them - status_is_success
 # reads a status field, maintenance_blocking reads a downtime page.
 from .mobile_protocol import as_answer_dict, status_is_success, what_the_server_said
-from .web_protocol import maintenance_blocking, message_reports_maintenance
+from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -178,7 +179,7 @@ class WemPortalTransport:
             self._account_state.expert_blocked_until, value or 0.0
         )
 
-    def _activate_cooldown(self, seconds=FORBIDDEN_COOLDOWN_SECONDS):
+    def _activate_cooldown(self, cause: str, seconds=FORBIDDEN_COOLDOWN_SECONDS):
         """Pause ALL further outbound requests for a while after being
         rate-limited (HTTP 403) by the WEM Portal server.
 
@@ -187,13 +188,19 @@ class WemPortalTransport:
         endpoints (statistics, circuit times, ...) right after the server
         already signaled it's unhappy would defeat the purpose. Never
         shortens an existing cooldown, only extends it.
+
+        `cause` names the refused request: which of a cycle's requests the
+        portal turned down is what tells a real block from a one-off refusal,
+        and without it the warning could not say.
         """
         new_blocked_until = time.monotonic() + seconds
         if new_blocked_until > self._blocked_until:
             self._blocked_until = new_blocked_until
             _LOGGER.warning(
-                "WEM Portal returned a rate-limit/forbidden (403) response. "
-                "Pausing ALL requests for %s minutes to avoid making it worse.",
+                "WEM Portal refused %s with a rate-limit/forbidden (403) "
+                "response. Pausing ALL requests for %s minutes to avoid making "
+                "it worse.",
+                cause,
                 seconds // 60,
             )
 
@@ -222,14 +229,10 @@ class WemPortalTransport:
         """
         self.check_cooldown()
         if self._expert_blocked_until and time.monotonic() < self._expert_blocked_until:
-            remaining = int(self._expert_blocked_until - time.monotonic())
-            if remaining >= 60:
-                remaining_str = f"~{(remaining + 59) // 60} min"
-            else:
-                remaining_str = f"{remaining}s"
+            remaining = time_left(self._expert_blocked_until - time.monotonic())
             raise ForbiddenError(
                 f"Expert path is backing off after a previous 403 "
-                f"({remaining_str} remaining). Sensor polling is unaffected."
+                f"({remaining} remaining). Sensor polling is unaffected."
             )
 
     def is_rate_limited(self) -> bool:
@@ -255,16 +258,10 @@ class WemPortalTransport:
         advertising a private-only intent it never actually had.
         """
         if self._blocked_until and time.monotonic() < self._blocked_until:
-            remaining = int(self._blocked_until - time.monotonic())
-            # Human-readable: minutes for anything over a minute, so the
-            # message surfaced in the frontend is immediately meaningful.
-            if remaining >= 60:
-                remaining_str = f"~{(remaining + 59) // 60} min"
-            else:
-                remaining_str = f"{remaining}s"
+            remaining = time_left(self._blocked_until - time.monotonic())
             raise ForbiddenError(
                 f"Still cooling down after a previous rate-limit response "
-                f"({remaining_str} remaining). Skipping requests until then."
+                f"({remaining} remaining). Skipping requests until then."
             )
 
     def reset_transport(self):
@@ -457,8 +454,11 @@ class WemPortalTransport:
             # pause everything for a while, and surface it as ForbiddenError
             # so callers' existing 403-handling (e.g. get_parameters()'s
             # forbidden_count) still works.
-            self._activate_cooldown()
             server_status, server_message = self.get_response_details(response)
+            self._activate_cooldown(
+                f"{redact_url(url)} "
+                f"({what_the_server_said(response.status_code, server_status, server_message)})"
+            )
             # Not at odds with the "no extra request" note above: this login
             # is spent after the cooldown, when the session has idled the 15
             # minutes at which the expert path stops trusting one
@@ -748,7 +748,7 @@ class WemPortalTransport:
                 f"{server_said}"
             ) from exc
         if response.status_code == 403:
-            self._activate_cooldown()
+            self._activate_cooldown(f"{redact_url(API_LOGIN_URL)} ({server_said})")
             raise ForbiddenError(f"WemPortal forbidden error: {server_said}") from exc
         if response.status_code == 500:
             raise ServerError(f"WemPortal server error: {server_said}") from exc
@@ -800,7 +800,7 @@ class WemPortalTransport:
             # read like a network problem, invited an immediate retry, and
             # started no cooldown, so the next cycle walked into it again.
             if initial_response is not None and initial_response.status_code == 403:
-                self._activate_cooldown()
+                self._activate_cooldown(f"the web login page {redact_url(login_url)}")
                 raise ForbiddenError(
                     "Access forbidden while loading the login page."
                 ) from exc
@@ -892,6 +892,6 @@ class WemPortalTransport:
             )
         except requests.exceptions.RequestException as exc:
             if response is not None and response.status_code == 403:
-                self._activate_cooldown()
+                self._activate_cooldown(f"the web login form {redact_url(login_url)}")
                 raise ForbiddenError("Access forbidden during login.") from exc
             raise UnknownAuthError(f"Failed to submit the login form: {exc}") from exc
