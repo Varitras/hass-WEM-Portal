@@ -128,30 +128,43 @@ class HeavyFetchTurns:
     stay lined up, so every hour's extra traffic left inside one minute. One
     kind per cycle; the others stay due and take the next.
 
-    A kind turned away goes first in the next cycle. First come, first served
-    starved the statistics: a failing programme is retried every fifteen
-    minutes, on a fifteen-minute interval that is every cycle, and it comes
-    first in the cycle.
+    The kinds turned away queue up, oldest first, and only the head of the
+    queue may take the next turn. Anything less was not fair: first come,
+    first served let a programme retried every cycle - it comes first in the
+    cycle - starve the statistics, and a set of waiting kinds still let the
+    earlier caller win whenever three were waiting.
+
+    The queue moves only in cycles where some kind asked. A `both`-mode tick
+    that scrapes without reading the API asks nothing, and settling the
+    queue there wiped what the statistics were owed. A queued kind that did
+    not ask in a cycle where others did leaves the queue - it is no longer
+    due, and holding the head for it would block everyone.
     """
 
     def __init__(self) -> None:
         self._claimed: str | None = None
-        self._waiting: set[str] = set()
-        self._turned_away: set[str] = set()
+        self._queue: list[str] = []
+        self._asked: set[str] = set()
 
     def new_cycle(self) -> None:
+        if self._asked:
+            self._queue = [kind for kind in self._queue if kind in self._asked]
         self._claimed = None
-        self._waiting, self._turned_away = self._turned_away, set()
+        self._asked = set()
 
     def claim(self, kind: str) -> bool:
         """Whether `kind` may spend its burst now; claims the cycle if so."""
+        self._asked.add(kind)
         if self._claimed == kind:
             return True
-        jumping_the_queue = bool(self._waiting) and kind not in self._waiting
-        if self._claimed is not None or jumping_the_queue:
-            self._turned_away.add(kind)
+        head = self._queue[0] if self._queue else kind
+        if self._claimed is not None or head != kind:
+            if kind not in self._queue:
+                self._queue.append(kind)
             return False
         self._claimed = kind
+        if self._queue:
+            self._queue.pop(0)
         return True
 
 

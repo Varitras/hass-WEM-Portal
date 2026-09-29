@@ -744,8 +744,8 @@
   {
     "label": "discovery: a disabled device asked for its parameter definitions",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if not self._device_is_enabled(device_id, enabled_devices):\n                continue",
-    "new": "            if False:\n                continue",
+    "old": "        if not self._device_is_enabled(device_id, enabled_devices):\n            return False\n",
+    "new": "        if False:\n            return False\n",
     "tests": "a_disabled_device_is_not_asked_for_its_parameter_definitions"
   },
   {
@@ -4356,8 +4356,8 @@
   {
     "label": "heavy turns: a second kind in the same cycle is let through",
     "path": "custom_components/wemportal/models.py",
-    "old": "        if self._claimed is not None or jumping_the_queue:\n",
-    "new": "        if jumping_the_queue:\n",
+    "old": "        if self._claimed is not None or head != kind:\n",
+    "new": "        if head != kind:\n",
     "tests": "heavy_fetches_that_fall_due_together_take_turns"
   },
   {
@@ -4398,16 +4398,16 @@
   {
     "label": "heavy turns: whoever asks first takes the turn, the waiting one starves",
     "path": "custom_components/wemportal/models.py",
-    "old": "        jumping_the_queue = bool(self._waiting) and kind not in self._waiting\n",
-    "new": "        jumping_the_queue = False\n",
-    "tests": "keeps_failing_does_not_starve_the_statistics"
+    "old": "        head = self._queue[0] if self._queue else kind\n",
+    "new": "        head = kind\n",
+    "tests": "keeps_failing_does_not_starve_the_statistics or three_waiting_kinds"
   },
   {
     "label": "heavy turns: a kind turned away is forgotten by the next cycle",
     "path": "custom_components/wemportal/models.py",
-    "old": "        self._waiting, self._turned_away = self._turned_away, set()\n",
-    "new": "        self._waiting, self._turned_away = set(), set()\n",
-    "tests": "keeps_failing_does_not_starve_the_statistics"
+    "old": "        if self._asked:\n            self._queue = [kind for kind in self._queue if kind in self._asked]\n",
+    "new": "        self._queue = []\n",
+    "tests": "keeps_failing_does_not_starve_the_statistics or nobody_asks"
   },
   {
     "label": "heavy turns: missing definitions wait their turn",
@@ -4415,5 +4415,26 @@
     "old": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "tests": "missing_parameter_definitions_are_never_deferred"
+  },
+  {
+    "label": "heavy turns: a cycle nobody asked in settles the queue anyway",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        if self._asked:\n",
+    "new": "        if True:\n",
+    "tests": "nobody_asks_keeps_the_queue"
+  },
+  {
+    "label": "heavy turns: a queued kind that stopped asking holds the head",
+    "path": "custom_components/wemportal/models.py",
+    "old": "            self._queue = [kind for kind in self._queue if kind in self._asked]\n",
+    "new": "            self._queue = list(self._queue)\n",
+    "tests": "stops_asking_does_not_block_the_others"
+  },
+  {
+    "label": "discovery: an offline device makes the re-read due again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        return self.data.get(device_id, {}).get(\"ConnectionStatus\") == 0\n",
+    "new": "        return True\n",
+    "tests": "unreachable_device_does_not_make_the_parameter_read_due"
   }
 ]

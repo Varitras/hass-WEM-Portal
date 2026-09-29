@@ -9333,7 +9333,7 @@ def _api_with_every_heavy_fetch_due():
     api._first_cycle_done = True
     api.last_statistics_fetch = None
     api._last_circuit_times_fetch.clear()
-    api.data = {"1234": {}}
+    api.data = {"1234": {"ConnectionStatus": 0}}
     api.modules = {
         "1234": {
             (0, 1): {
@@ -9431,3 +9431,66 @@ def test_a_programme_that_keeps_failing_does_not_starve_the_statistics(
         clock.now += CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS
 
     assert "statistics" in heavy, f"three cycles, and only: {heavy}"
+
+
+# --- heavy turns: a real queue ------------------------------------------
+
+
+def _turns_over(cycles):
+    """Drive HeavyFetchTurns through `cycles`, each a list of the kinds that
+    ask in that cycle, in call order. Returns who got the turn per cycle."""
+    from custom_components.wemportal.models import HeavyFetchTurns
+
+    turns = HeavyFetchTurns()
+    granted = []
+    for asking in cycles:
+        turns.new_cycle()
+        granted.append([kind for kind in asking if turns.claim(kind)])
+    return granted
+
+
+def test_three_waiting_kinds_each_get_their_turn():
+    """With three kinds waiting, whoever asked first in the cycle won, so the
+    parameter re-read and the programmes took turns and the statistics - last
+    in every cycle - never ran."""
+    every_cycle = ["parameters", "schedules", "statistics"]
+
+    granted = _turns_over([every_cycle] * 3)
+
+    assert sorted(kind for cycle in granted for kind in cycle) == sorted(every_cycle), (
+        f"turns per cycle: {granted}"
+    )
+
+
+def test_a_cycle_in_which_nobody_asks_keeps_the_queue():
+    """In `both` mode a tick can scrape without reading the API. Such a tick
+    wiped the queue, and the statistics lost the turn they were owed - every
+    time, with the web polled more often than the API."""
+    granted = _turns_over(
+        [["schedules", "statistics"], [], [], ["schedules", "statistics"]]
+    )
+
+    assert granted[-1] == ["statistics"], f"turns per cycle: {granted}"
+
+
+def test_a_waiting_kind_that_stops_asking_does_not_block_the_others():
+    granted = _turns_over(
+        [["schedules", "statistics"], ["schedules"], ["schedules"], ["schedules"]]
+    )
+
+    assert ["schedules"] in granted[2:], f"turns per cycle: {granted}"
+
+
+def test_an_unreachable_device_does_not_make_the_parameter_read_due(caplog):
+    """get_parameters skips a device that is not online, but its stale
+    definitions still made the re-read due: the turn was spent on a read that
+    sent nothing, cycle after cycle."""
+    import logging
+
+    api, heavy = _api_with_every_heavy_fetch_due()
+    api.data["1234"]["ConnectionStatus"] = 50
+
+    with caplog.at_level(logging.INFO):
+        api._discover_parameters_if_due(None)
+
+    assert heavy == [], f"a re-read was started for an offline device: {heavy}"

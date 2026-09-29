@@ -854,7 +854,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         due = [
             module
             for device_id, modules in (self.modules or {}).items()
-            if self._device_is_enabled(device_id, enabled_devices)
+            if self._parameters_can_be_read(device_id, enabled_devices)
             for module in modules.values()
         ]
         missing = any("parameters" not in module for module in due)
@@ -1729,6 +1729,17 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 raise
             self._store_module_description(device_id, key, values, response)
 
+    def _parameters_can_be_read(
+        self, device_id: str, enabled_devices: list[str] | None
+    ) -> bool:
+        """Enabled and online: the one rule for whether a device's definitions
+        are due AND for whether they are read. Apart, an offline device made
+        the re-read due every cycle and spent the heavy turn on a read that
+        then skipped it."""
+        if not self._device_is_enabled(device_id, enabled_devices):
+            return False
+        return self.data.get(device_id, {}).get("ConnectionStatus") == 0
+
     def get_parameters(self, enabled_devices: list[str] | None = None) -> None:
         """Read the per-module parameter definitions of every enabled device.
 
@@ -1742,10 +1753,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 "get_parameters() called with no module data available yet; skipping."
             )
             return
-        for device_id, device_data in self.data.items():
-            if not self._device_is_enabled(device_id, enabled_devices):
-                continue
-            if device_data.get("ConnectionStatus") != 0:
+        for device_id in self.data:
+            if not self._parameters_can_be_read(device_id, enabled_devices):
                 continue
             _LOGGER.debug("Fetching api parameters data for device %s", device_id)
             self._discover_device_parameters(device_id)
