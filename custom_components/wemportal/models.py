@@ -70,6 +70,15 @@ class AccountState:
         self.refused_logins += 1
         return self.refused_logins == 1
 
+    # Expert requests refused in a row, reset by an expert login that works:
+    # the first is said as info, a repeat as a warning.
+    expert_refusals: int = 0
+
+    def note_expert_refusal(self) -> bool:
+        """Count a refused expert request; True for the first of a streak."""
+        self.expert_refusals += 1
+        return self.expert_refusals == 1
+
     # NOT here either, and that is a decision rather than an oversight: the
     # two hourly gates on statistics and schedules. They were moved here and
     # moved back out. A reload builds a new api with no readings - it gets

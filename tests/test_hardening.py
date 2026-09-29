@@ -9431,3 +9431,89 @@ def test_a_programme_that_keeps_failing_does_not_starve_the_statistics(
         clock.now += CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS
 
     assert "statistics" in heavy, f"three cycles, and only: {heavy}"
+
+
+# --- an expert refusal is said once, as one line --------------------------
+
+
+def _expert_client_and_refusal():
+    """A real expert client wired to a real api, and a refused login."""
+    from custom_components.wemportal import expert_writer
+
+    api = _api()
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org",
+        "secret",
+        cooldown_check=api.check_expert_cooldown,
+        cooldown_activate=api.activate_expert_cooldown,
+    )
+    refused = FakeResponse(
+        {}, status_code=403, url="https://www.wemportal.com/Web/Login.aspx"
+    )
+    return api, client, refused
+
+
+def _refuse(client, refused):
+    from custom_components.wemportal import transport
+
+    transport.reset_cooldowns_for_tests()  # the pause itself is not the subject
+    client._account_state.expert_blocked_until = 0.0
+    with pytest.raises(exceptions.ForbiddenError):
+        client._raise_if_forbidden(refused)
+
+
+def _expert_lines(caplog):
+    import logging
+
+    return [
+        (record.levelno, record.getMessage())
+        for record in caplog.records
+        if record.name.startswith("custom_components.wemportal")
+        and record.levelno >= logging.INFO
+    ]
+
+
+def test_one_refused_expert_login_is_one_line_and_not_a_warning(caplog):
+    """Each refused expert login wrote three warnings - the request, the
+    pause, the failed poll - for one event that the next hourly read
+    usually does not repeat: eighteen warnings in three days."""
+    import logging
+
+    _api_unused, client, refused = _expert_client_and_refusal()
+
+    with caplog.at_level(logging.INFO):
+        _refuse(client, refused)
+
+    lines = _expert_lines(caplog)
+    assert len(lines) == 1, lines
+    level, message = lines[0]
+    assert level == logging.INFO, message
+    assert "/Web/Login.aspx" in message, "the line no longer says what was refused"
+
+
+def test_a_second_refused_expert_login_in_a_row_is_a_warning(caplog):
+    import logging
+
+    _api_unused, client, refused = _expert_client_and_refusal()
+    _refuse(client, refused)
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        _refuse(client, refused)
+
+    assert [level for level, _message in _expert_lines(caplog)] == [logging.WARNING]
+
+
+def test_an_expert_login_that_worked_starts_the_count_again(caplog, monkeypatch):
+    import logging
+
+    _api_unused, client, refused = _expert_client_and_refusal()
+    _refuse(client, refused)
+    monkeypatch.setattr(client, "_try_cached_session", lambda: True)
+    client._login()
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        _refuse(client, refused)
+
+    assert [level for level, _message in _expert_lines(caplog)] == [logging.INFO]

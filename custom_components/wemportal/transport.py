@@ -220,7 +220,7 @@ class WemPortalTransport:
         new_blocked_until = time.monotonic() + seconds
         if new_blocked_until > self._expert_blocked_until:
             self._expert_blocked_until = new_blocked_until
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Expert (Fachmann) path returned 403. Pausing EXPERT requests "
                 "for %s minutes; sensor polling is unaffected.",
                 seconds // 60,

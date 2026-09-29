@@ -4415,5 +4415,40 @@
     "old": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "tests": "missing_parameter_definitions_are_never_deferred"
+  },
+  {
+    "label": "expert refusal: the first one a warning again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                logging.INFO if first else logging.WARNING,\n",
+    "new": "                logging.WARNING,\n",
+    "tests": "one_refused_expert_login_is_one_line"
+  },
+  {
+    "label": "expert refusal: a repeat stays at info",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                logging.INFO if first else logging.WARNING,\n",
+    "new": "                logging.INFO,\n",
+    "tests": "second_refused_expert_login_in_a_row"
+  },
+  {
+    "label": "expert refusal: a working login does not end the streak",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self._account_state.expert_refusals = 0\n",
+    "new": "",
+    "tests": "expert_login_that_worked_starts_the_count"
+  },
+  {
+    "label": "expert refusal: the pause says it again as a warning",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            _LOGGER.debug(\n                \"Expert (Fachmann) path returned 403. Pausing EXPERT requests \"",
+    "new": "            _LOGGER.warning(\n                \"Expert (Fachmann) path returned 403. Pausing EXPERT requests \"",
+    "tests": "one_refused_expert_login_is_one_line"
+  },
+  {
+    "label": "expert refusal: the failed poll says it a third time",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            except ForbiddenError as exc:\n",
+    "new": "            except () as exc:\n",
+    "tests": "refused_poll_is_not_announced_a_second_time"
   }
 ]

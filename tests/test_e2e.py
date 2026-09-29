@@ -3891,3 +3891,28 @@ async def test_a_login_turned_away_once_is_neither_a_warning_nor_a_password(
         and record.levelno >= logging.WARNING
     ]
     assert not ours, [record.getMessage() for record in ours]
+
+
+async def test_a_refused_poll_is_not_announced_a_second_time(hass, monkeypatch, caplog):
+    """The refusal already said itself (expert_writer). The failed poll it
+    caused was the third warning for the one event. What the missed polls
+    MEAN - values no longer current - is news of its own and stays."""
+    import logging
+
+    def refused(_ids):
+        raise ForbiddenError("WEM Portal returned 403 for an expert request.")
+
+    _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, refused)
+    caplog.clear()
+
+    with caplog.at_level(logging.WARNING):
+        await scheduled[-1](None)
+        await hass.async_block_till_done()
+
+    said = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "custom_components.wemportal.expert_controller"
+        and "read failed" in record.getMessage()
+    ]
+    assert not said, said

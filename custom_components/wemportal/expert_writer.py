@@ -762,12 +762,16 @@ class WemPortalExpertClient:
             # REDACTED: the raw url carries the full entityvalue on the
             # parameter-dialog requests (params={"entityvalue": ...}).
             where = redact_url(getattr(response, "url", None))
-            _LOGGER.warning(
-                "Expert path: the portal rejected a request with 403. "
-                "Request: %s. Note that this does not necessarily mean a rate "
-                "limit - it can equally mean the portal did not accept this "
-                "particular request.",
+            # The one line for the event: the pause and the failed poll it
+            # causes stay at debug. Info the first time - the next hourly
+            # read usually goes through - a warning when it repeats.
+            first = self._account_state.note_expert_refusal()
+            _LOGGER.log(
+                logging.INFO if first else logging.WARNING,
+                "Expert path: the portal refused %s with 403%s. Expert requests "
+                "pause briefly; sensor polling is unaffected.",
                 where,
+                "" if first else f" ({self._account_state.expert_refusals} in a row)",
             )
             # Backs off the EXPERT path only (see activate_expert_cooldown in
             # wemportalapi.py); sensor polling keeps running.
@@ -793,9 +797,9 @@ class WemPortalExpertClient:
         login; a 403 is NOT swallowed - it must reach the caller so the
         backoff engages instead of us immediately retrying with a login.
         """
-        if self._try_cached_session():
-            return
-        self._full_login()
+        if not self._try_cached_session():
+            self._full_login()
+        self._account_state.expert_refusals = 0
 
     def _try_cached_session(self) -> bool:
         """Try to continue with the cached cookies. True if we got there."""
