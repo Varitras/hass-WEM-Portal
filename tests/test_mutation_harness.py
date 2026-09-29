@@ -18,6 +18,8 @@ import tempfile
 import threading
 from pathlib import Path
 
+from collections import Counter
+
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "mutate.py"
@@ -36,6 +38,19 @@ def _load():
 
 
 mutate = _load()
+
+
+# Kept before the fixture below replaces it, for the tests that are about it.
+_names_left_undefined = mutate.names_left_undefined
+
+
+@pytest.fixture(autouse=True)
+def _no_ruff_needed(monkeypatch):
+    """main() asks ruff about undefined names before it runs anything. The
+    test jobs do not install ruff - the gate's mutation job does - and the
+    check writes a temporary tree that some tests here forbid removing. The
+    tests about the check call it directly and give ruff's answer."""
+    monkeypatch.setattr(mutate, "names_left_undefined", lambda _cases: [])
 
 
 class _Result:
@@ -203,7 +218,7 @@ def test_the_file_is_restored_even_when_the_run_explodes(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mutate,
         "run_tests",
-        lambda selector, paths=None, root=None: (_ for _ in ()).throw(
+        lambda selector, paths=None, root=None, **_: (_ for _ in ()).throw(
             RuntimeError("boom")
         ),
     )
@@ -506,7 +521,9 @@ def test_a_dead_selector_stops_before_anything_is_mutated(tmp_path, monkeypatch)
     # mutation later.
     runs = []
     monkeypatch.setattr(
-        mutate, "run_tests", lambda selector, paths=None: runs.append(paths) or True
+        mutate,
+        "run_tests",
+        lambda selector, paths=None, **_: runs.append(paths) or True,
     )
     plan = tmp_path / "plan.json"
     plan.write_text(
@@ -587,7 +604,7 @@ def test_one_job_runs_in_the_repository_itself(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mutate,
         "run_tests",
-        lambda selector, paths=None, root=None: seen.append(root) or True,
+        lambda selector, paths=None, root=None, **_: seen.append(root) or True,
     )
     copies = []
     monkeypatch.setattr(
@@ -689,7 +706,7 @@ def test_results_are_reported_in_plan_order(tmp_path, monkeypatch, capsys):
     survivor = 1
     finished = [threading.Event() for _ in range(cases)]
 
-    def slowest_first(selector, paths=None, root=None):
+    def slowest_first(selector, paths=None, root=None, **_):
         # WHICH case this is comes from the mutated file in this worker's own
         # tree, not from the worker's number: the pool hands cases to whatever
         # worker is free, so the two are only incidentally the same.
@@ -754,7 +771,7 @@ def test_the_worker_copies_are_removed_afterwards(tmp_path, monkeypatch):
         mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
     )
     monkeypatch.setattr(
-        mutate, "run_tests", lambda selector, paths=None, root=None: True
+        mutate, "run_tests", lambda selector, paths=None, root=None, **_: True
     )
     holding = []
     real_mkdtemp = tempfile.mkdtemp
@@ -783,7 +800,7 @@ def test_a_worker_tree_is_clean_again_for_the_next_case(tmp_path, monkeypatch):
 
     seen = []
 
-    def record_what_the_tree_looks_like(selector, paths=None, root=None):
+    def record_what_the_tree_looks_like(selector, paths=None, root=None, **_):
         seen.append((root / "module.py").read_text(encoding="utf-8"))
         return True
 
@@ -799,3 +816,210 @@ def test_a_worker_tree_is_clean_again_for_the_next_case(tmp_path, monkeypatch):
     assert seen == ["a = 2\nb = 1\n", "a = 1\nb = 2\n"], (
         "a case ran against a mutation left behind by the previous one"
     )
+
+
+@pytest.mark.parametrize(
+    "crash",
+    [
+        "NameError: name 'enabled_devices' is not defined",
+        "UnboundLocalError: cannot access local variable 'value'",
+        "SyntaxError: invalid syntax",
+    ],
+)
+def test_a_mutation_that_does_not_run_is_not_evidence(monkeypatch, crash):
+    """A mutation that crashes on a name its own code no longer has fails
+    every selected test - and that failure was counted as "caught". One such
+    case stood green in the plan while proving nothing: the test never got
+    as far as the behaviour it was named for."""
+    monkeypatch.setattr(
+        mutate.subprocess,
+        "run",
+        lambda *_args, **_kwargs: _Result(1, f"E       {crash}\n1 failed"),
+    )
+
+    with pytest.raises(SystemExit, match="does not run"):
+        mutate.run_tests("something")
+
+
+def test_a_crash_the_plan_declares_as_the_defect_is_caught(monkeypatch):
+    """Deleting an import IS a NameError, and a test written to notice exactly
+    that is doing its job. The plan says so for that case, and only then does
+    the crash count."""
+    monkeypatch.setattr(
+        mutate.subprocess,
+        "run",
+        lambda *_args, **_kwargs: _Result(1, "E       NameError: name 'X'\n1 failed"),
+    )
+
+    assert mutate.run_tests("something", crash_is_the_defect=True) is True
+
+
+# --- a mutation whose code cannot run is refused before it runs ----------
+
+
+def _one_case_plan(tmp_path, **extra):
+    (tmp_path / "module.py").write_text("value = 1\n", encoding="utf-8")
+    return [
+        {
+            "path": "module.py",
+            "old": "value = 1",
+            "new": "value = missing",
+            "tests": "test_real",
+            "label": "case0",
+            **extra,
+        }
+    ]
+
+
+def test_a_name_the_mutated_module_lacks_is_refused(tmp_path, monkeypatch):
+    """A handler catching Exception swallowed the NameError of one such case,
+    so its test failed for another reason and the run counted it caught. The
+    static check does not depend on what the code catches."""
+    monkeypatch.setattr(
+        mutate,
+        "_undefined_names",
+        lambda _folder: {"case_0.py": Counter(["Undefined name `missing`"])},
+    )
+
+    problems = _names_left_undefined(_one_case_plan(tmp_path), root=tmp_path)
+
+    assert problems == ["case0: Undefined name `missing`"]
+
+
+def test_a_name_the_module_already_left_undefined_is_not_the_mutation(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        mutate,
+        "_undefined_names",
+        lambda _folder: {
+            "case_0.py": Counter(["Undefined name `TYPE_ONLY`"]),
+            "original_0.py": Counter(["Undefined name `TYPE_ONLY`"]),
+        },
+    )
+
+    assert _names_left_undefined(_one_case_plan(tmp_path), root=tmp_path) == []
+
+
+def test_the_crash_flag_is_honoured_and_cannot_go_stale(tmp_path, monkeypatch):
+    plan = _one_case_plan(tmp_path, crash_is_the_defect=True)
+    monkeypatch.setattr(
+        mutate,
+        "_undefined_names",
+        lambda _folder: {"case_0.py": Counter(["Undefined name `missing`"])},
+    )
+    assert _names_left_undefined(plan, root=tmp_path) == []
+
+    monkeypatch.setattr(mutate, "_undefined_names", lambda _folder: {})
+    problems = _names_left_undefined(plan, root=tmp_path)
+    assert len(problems) == 1, f"a stale flag was not reported: {problems}"
+    assert "crash_is_the_defect" in problems[0]
+
+
+def test_the_run_stops_before_any_test_when_a_mutation_cannot_run(
+    tmp_path, monkeypatch, capsys
+):
+    ran = []
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    monkeypatch.setattr(
+        mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
+    )
+    monkeypatch.setattr(mutate, "names_left_undefined", lambda _cases: ["case0: x"])
+    monkeypatch.setattr(mutate, "run_tests", lambda *_args, **_kwargs: ran.append(1))
+    plan = _plan_of(1, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "1"])
+
+    assert mutate.main() == 1
+    assert ran == [], "tests ran for a plan with a mutation that cannot run"
+    assert "case0: x" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("jobs", ["1", "2"])
+def test_a_broken_case_is_reported_and_fails_the_run(
+    tmp_path, monkeypatch, capsys, jobs
+):
+    """Collected, not fatal - and not green either. With the run's return
+    left at 0, BROKEN was printed and the gate passed."""
+
+    def crash_on_the_first(selector, paths=None, root=None, **_):
+        mutated = ((root or tmp_path) / "module.py").read_text(encoding="utf-8")
+        if "value0 = 2" in mutated:
+            raise mutate.BrokenMutation("the mutated code does not run")
+        return True
+
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    monkeypatch.setattr(mutate, "run_tests", crash_on_the_first)
+    monkeypatch.setattr(
+        mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
+    )
+    plan = _plan_of(2, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", jobs])
+
+    assert mutate.main() == 1, "a broken case let the run pass"
+    out = capsys.readouterr().out
+    assert "BROKEN   case0" in out
+    assert "caught   case1" in out, "one broken case hid the next"
+
+
+def test_a_missing_snippet_is_named_as_one(tmp_path):
+    """Not "marked crash_is_the_defect, but defines every name": the preflight
+    runs before the check that would have said what is really wrong."""
+    plan = _one_case_plan(tmp_path)
+    plan[0]["old"] = "value = 2"
+
+    assert _names_left_undefined(plan, root=tmp_path) == [
+        "case0: snippet found 0 times, expected once"
+    ]
+
+
+# The real ruff, where it is installed: the gate's interpreter has it, the
+# test jobs do not. Everything above answers for ruff; these make sure the
+# answer is asked for and read the way ruff actually gives it.
+
+
+def test_the_real_check_names_a_name_the_mutation_left_undefined(tmp_path):
+    pytest.importorskip("ruff")
+
+    problems = _names_left_undefined(_one_case_plan(tmp_path), root=tmp_path)
+
+    assert len(problems) == 1, f"the undefined name was not reported: {problems}"
+    assert "missing" in problems[0]
+
+
+def test_the_real_check_counts_a_second_use_of_an_already_undefined_name(tmp_path):
+    pytest.importorskip("ruff")
+    (tmp_path / "module.py").write_text(
+        "def one():\n    return LEGACY\n\n\nvalue = 1\n", encoding="utf-8"
+    )
+    plan = [
+        {
+            "path": "module.py",
+            "old": "value = 1",
+            "new": "value = LEGACY",
+            "tests": "test_real",
+            "label": "case0",
+        }
+    ]
+
+    assert _names_left_undefined(plan, root=tmp_path), (
+        "a name the original already left undefined hid a new use of it"
+    )
+
+
+def test_the_real_check_leaves_files_that_are_not_python_alone(tmp_path):
+    """hacs.json read as Python is a dict - until an edit writes `true`, which
+    Python does not know. That is a JSON file being JSON, not a mutation
+    using a name its module lacks."""
+    pytest.importorskip("ruff")
+    (tmp_path / "data.json").write_text('{"render": 1}\n', encoding="utf-8")
+    plan = [
+        {
+            "path": "data.json",
+            "old": '{"render": 1}',
+            "new": '{"render": true}',
+            "tests": "test_real",
+            "label": "case0",
+        }
+    ]
+
+    assert _names_left_undefined(plan, root=tmp_path) == []

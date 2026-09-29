@@ -57,9 +57,11 @@ import json
 import os
 import queue
 import shutil
+import re
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -149,7 +151,28 @@ def files_for(selector: str, locations: dict) -> list:
     return sorted(files)
 
 
-def run_tests(selector: str, paths=None, root: Path | None = None) -> bool:
+class BrokenMutation(SystemExit):
+    """The mutated code does not run, so its failing tests prove nothing.
+
+    Collected rather than fatal: one broken case must not hide the next.
+    """
+
+
+# A failure that comes from the mutated code not running at all: a name it
+# no longer has, a local it deleted, text that does not parse. A case whose
+# defect IS such a crash - a deleted import - says so with
+# "crash_is_the_defect".
+_MUTATION_DOES_NOT_RUN = re.compile(
+    r"^E\s+(NameError|UnboundLocalError|SyntaxError|IndentationError)\b", re.MULTILINE
+)
+
+
+def run_tests(
+    selector: str,
+    paths=None,
+    root: Path | None = None,
+    crash_is_the_defect: bool = False,
+) -> bool:
     """True if the selected tests FAIL, i.e. the mutation was caught.
 
     `root` is the tree to run in, which is the repository itself unless a
@@ -198,6 +221,16 @@ def run_tests(selector: str, paths=None, root: Path | None = None) -> bool:
         raise SystemExit(f"selector {selector!r} matched no tests")
 
     if result.returncode == PYTEST_TESTS_FAILED:
+        crash = _MUTATION_DOES_NOT_RUN.search(result.stdout)
+        if crash and not crash_is_the_defect:
+            # Every selected test fails on a crash like this, whatever it was
+            # written to notice - "caught" would be the harness vouching for a
+            # test that never reached its assertion. The mutation is broken.
+            raise BrokenMutation(
+                f"selector {selector!r}: the mutated code does not run "
+                f"({crash.group(1)}), so the failure says nothing about the "
+                "behaviour under test. Fix the mutation."
+            )
         return True
     if result.returncode == PYTEST_ALL_PASSED:
         return False
@@ -213,8 +246,105 @@ def run_tests(selector: str, paths=None, root: Path | None = None) -> bool:
 _EXIT_REASON = {
     PYTEST_INTERRUPTED: "interrupted",
     PYTEST_INTERNAL_ERROR: "internal error",
-    PYTEST_USAGE_ERROR: "usage error",
+    PYTEST_USAGE_ERROR: "usage error - or a mutated module that fails to import",
 }
+
+
+# The rules for "a name the module does not define" - read, and assigned only
+# after use. Run over the plan BEFORE a single test: a mutation whose code
+# cannot run fails every selected test whatever they check, and a handler
+# that catches Exception can swallow the NameError, so the test output alone
+# does not always show it. The static answer does not depend on either.
+UNDEFINED_NAME_RULES = "F821,F823"
+
+
+def names_left_undefined(cases: list, root: Path | None = None) -> list[str]:
+    """Every case whose mutated module uses a name it does not define.
+
+    Compared against the unmutated module, and COUNTED: a name the original
+    already leaves undefined must not hide a new use of it. Only Python
+    modules - ruff reads anything else as broken Python. A case marked
+    "crash_is_the_defect" must do exactly this, and one that no longer does
+    is reported too, so the flag cannot outlive the reason it was set.
+    """
+    problems = []
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        originals: dict[str, str] = {}
+        checked = []
+        for index, case in enumerate(cases):
+            label = case.get("label", case["path"])
+            source = ((root or REPO) / case["path"]).read_text(encoding="utf-8")
+            occurrences = source.count(case["old"])
+            if occurrences != 1:
+                problems.append(
+                    f"{label}: snippet found {occurrences} times, expected once"
+                )
+                continue
+            if not case["path"].endswith(".py"):
+                continue
+            if case["path"] not in originals:
+                originals[case["path"]] = f"original_{len(originals)}.py"
+                (folder / originals[case["path"]]).write_text(source, encoding="utf-8")
+            mutated = source.replace(case["old"], case["new"], 1)
+            (folder / f"case_{index}.py").write_text(mutated, encoding="utf-8")
+            checked.append((index, case, label))
+        found = _undefined_names(folder) if checked else {}
+
+    for index, case, label in checked:
+        introduced = found.get(f"case_{index}.py", Counter()) - found.get(
+            originals[case["path"]], Counter()
+        )
+        declared = case.get("crash_is_the_defect", False)
+        if introduced and not declared:
+            problems.append(f"{label}: {', '.join(sorted(introduced))}")
+        if declared and not introduced:
+            problems.append(
+                f"{label}: marked crash_is_the_defect, but defines every name it uses"
+            )
+    return problems
+
+
+def _undefined_names(folder: Path) -> dict[str, Counter]:
+    """ruff's undefined-name findings in `folder`, counted by file name."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--isolated",
+            "--no-cache",
+            "--select",
+            UNDEFINED_NAME_RULES,
+            "--output-format",
+            "json",
+            str(folder),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    # 0: nothing found, 1: findings. Anything else - or no JSON, which is what
+    # "No module named ruff" looks like - means the question was not answered.
+    try:
+        findings = json.loads(result.stdout) if result.returncode in (0, 1) else None
+    except json.JSONDecodeError:
+        findings = None
+    if findings is None:
+        raise SystemExit(
+            "The undefined-name check needs ruff in this interpreter and did not "
+            f"get an answer (exit {result.returncode}):\n"
+            + (result.stderr or "(empty)").strip()[-2000:]
+        )
+    wanted = set(UNDEFINED_NAME_RULES.split(","))
+    found: dict[str, Counter] = {}
+    for finding in findings:
+        if finding.get("code") in wanted:
+            name = Path(finding["filename"]).name
+            found.setdefault(name, Counter())[finding["message"]] += 1
+    return found
 
 
 def apply_mutation(case: dict, root: Path | None = None) -> tuple[Path, bytes]:
@@ -297,11 +427,19 @@ def build_worktrees(count: int, into: Path, cases: list) -> list:
     return trees
 
 
-def run_case(case: dict, files: list, root: Path | None) -> bool:
+def run_case(case: dict, files: list, root: Path | None) -> bool | None:
     """One mutation, applied and reverted in `root`."""
     target, original = apply_mutation(case, root=root)
     try:
-        return run_tests(case["tests"], files, root=root)
+        return run_tests(
+            case["tests"],
+            files,
+            root=root,
+            crash_is_the_defect=case.get("crash_is_the_defect", False),
+        )
+    except BrokenMutation as broken:
+        print(f"\n{case.get('label', case['path'])}: {broken}", file=sys.stderr)
+        return None
     finally:
         target.write_bytes(original)
 
@@ -397,6 +535,14 @@ def main() -> int:
             raise SystemExit(f"selector {selector!r} matched no tests")
         targets[selector] = files
 
+    unrunnable = names_left_undefined(cases)
+    if unrunnable:
+        print(
+            "These mutations use names their module does not define, so their "
+            "failing tests would prove nothing:\n  " + "\n  ".join(unrunnable)
+        )
+        return 1
+
     jobs = max(1, args.jobs)
     if jobs == 1:
         # In the repository itself, one at a time - what this always did, and
@@ -405,17 +551,28 @@ def main() -> int:
     else:
         results = run_in_parallel(cases, targets, jobs)
 
+    broken = []
     for case, caught in zip(cases, results, strict=True):
         label = case.get("label", case["path"])
+        if caught is None:
+            print(f"BROKEN   {label}")
+            broken.append(label)
+            continue
         print(f"{'caught  ' if caught else 'SURVIVED'} {label}")
         if not caught:
             survived.append(label)
 
+    if broken:
+        print(
+            "\nThese mutations do not run - their failing tests prove "
+            "nothing:\n  " + "\n  ".join(broken)
+        )
     if survived:
         print(
             "\nThese mutations survived - the code was broken and the tests "
             "stayed green:\n  " + "\n  ".join(survived)
         )
+    if broken or survived:
         return 1
     print(f"\nall {len(cases)} mutations caught")
     return 0
