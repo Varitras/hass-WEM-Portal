@@ -9391,11 +9391,43 @@ def test_missing_parameter_definitions_are_never_deferred():
     """Without definitions there is nothing to read at all: the first read
     of a module is not a heavy fetch that can wait its turn."""
     api, heavy = _api_with_every_heavy_fetch_due()
-    api.last_statistics_fetch = None
+    # A turn the statistics were refused, so the next cycle is theirs.
+    api.heavy_fetch_turns.claim("schedules")
+    api.heavy_fetch_turns.claim("statistics")
     for module in api.modules["1234"].values():
         del module["parameters"]
-    api._fetch_device_statistics = lambda _device_id: heavy.append("statistics")
 
     api._fetch_data(enabled_devices=None)
 
-    assert heavy[0] == "parameters", heavy
+    assert heavy and heavy[0] == "parameters", heavy
+
+
+def test_a_programme_that_keeps_failing_does_not_starve_the_statistics(
+    monkeypatch,
+):
+    """A failed programme is retried after fifteen minutes - on a
+    fifteen-minute interval, that is every cycle. It came first in the cycle
+    and took the turn every time, so the statistics never ran at all while
+    one programme kept answering without a week."""
+    from custom_components.wemportal.schedule import (
+        CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
+    )
+
+    clock = _Clock()
+    monkeypatch.setattr(time, "monotonic", clock)
+    api, heavy = _api_with_every_heavy_fetch_due()
+    api.get_parameters = lambda _enabled_devices=None: None
+    for module in api.modules["1234"].values():
+        module["parameters_fetched_at"] = time.time()
+
+    def fail_schedule(device_id, module, parameter_id):
+        heavy.append("schedules")
+        api._record_schedule_attempt(device_id, module, parameter_id, clock(), False)
+
+    api._read_and_record_one_schedule = fail_schedule
+
+    for _ in range(3):
+        api._fetch_data(enabled_devices=None)
+        clock.now += CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS
+
+    assert "statistics" in heavy, f"three cycles, and only: {heavy}"

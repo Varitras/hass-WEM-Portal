@@ -49,9 +49,9 @@ LINE_BUDGETS = {
     # `both` mode is said once and its recovery once, instead of every attempt.
     # And by 15 more for a third outcome of a device's read: nothing to read,
     # which a no-op device had passed off as a successful refresh.
-    # And by 5 for opening a cycle's heavy-fetch turn and claiming it; the rule
+    # And by 6 for opening a cycle's heavy-fetch turn and claiming it; the rule
     # itself lives in models.HeavyFetchTurns.
-    "wemportalapi.py": 2600,
+    "wemportalapi.py": 2601,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     "expert_writer.py": 1912,

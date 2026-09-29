@@ -118,17 +118,29 @@ class HeavyFetchTurns:
     each cost a burst, and their guards - hourly, daily - line up and then
     stay lined up, so every hour's extra traffic left inside one minute. One
     kind per cycle; the others stay due and take the next.
+
+    A kind turned away goes first in the next cycle. First come, first served
+    starved the statistics: a failing programme is retried every fifteen
+    minutes, on a fifteen-minute interval that is every cycle, and it comes
+    first in the cycle.
     """
 
     def __init__(self) -> None:
         self._claimed: str | None = None
+        self._waiting: set[str] = set()
+        self._turned_away: set[str] = set()
 
     def new_cycle(self) -> None:
         self._claimed = None
+        self._waiting, self._turned_away = self._turned_away, set()
 
     def claim(self, kind: str) -> bool:
         """Whether `kind` may spend its burst now; claims the cycle if so."""
-        if self._claimed not in (None, kind):
+        if self._claimed == kind:
+            return True
+        jumping_the_queue = bool(self._waiting) and kind not in self._waiting
+        if self._claimed is not None or jumping_the_queue:
+            self._turned_away.add(kind)
             return False
         self._claimed = kind
         return True

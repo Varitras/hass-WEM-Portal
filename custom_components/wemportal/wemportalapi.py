@@ -861,9 +861,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         stale = any(self._parameters_are_stale(module) for module in due)
         if not (missing or (stale and self._first_cycle_done)):
             return
-        # First in the cycle, so the turn is always free; claimed so the
-        # other heavy fetches wait for the next one.
-        self.heavy_fetch_turns.claim("parameters")
+        # A MISSING definition runs even when it is not its turn: without
+        # it there is nothing to read at all.
+        if not self.heavy_fetch_turns.claim("parameters") and not missing:
+            return
         _LOGGER.info(
             "Reading parameter definitions from the portal (%s).",
             "some are missing" if missing else "the cached ones are due",

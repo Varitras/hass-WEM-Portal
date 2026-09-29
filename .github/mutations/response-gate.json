@@ -4293,8 +4293,8 @@
   {
     "label": "heavy turns: a second kind in the same cycle is let through",
     "path": "custom_components/wemportal/models.py",
-    "old": "        if self._claimed not in (None, kind):\n            return False",
-    "new": "        if False:\n            return False",
+    "old": "        if self._claimed is not None or jumping_the_queue:\n",
+    "new": "        if jumping_the_queue:\n",
     "tests": "heavy_fetches_that_fall_due_together_take_turns"
   },
   {
@@ -4321,7 +4321,7 @@
   {
     "label": "heavy turns: the parameter re-read does not take the turn",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        self.heavy_fetch_turns.claim(\"parameters\")\n",
+    "old": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n            return\n",
     "new": "",
     "tests": "heavy_fetches_that_fall_due_together_take_turns"
   },
@@ -4331,5 +4331,26 @@
     "old": "        self.heavy_fetch_turns.new_cycle()\n",
     "new": "",
     "tests": "heavy_fetches_that_fall_due_together_take_turns"
+  },
+  {
+    "label": "heavy turns: whoever asks first takes the turn, the waiting one starves",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        jumping_the_queue = bool(self._waiting) and kind not in self._waiting\n",
+    "new": "        jumping_the_queue = False\n",
+    "tests": "keeps_failing_does_not_starve_the_statistics"
+  },
+  {
+    "label": "heavy turns: a kind turned away is forgotten by the next cycle",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        self._waiting, self._turned_away = self._turned_away, set()\n",
+    "new": "        self._waiting, self._turned_away = set(), set()\n",
+    "tests": "keeps_failing_does_not_starve_the_statistics"
+  },
+  {
+    "label": "heavy turns: missing definitions wait their turn",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
+    "new": "        if not self.heavy_fetch_turns.claim(\"parameters\"):\n",
+    "tests": "missing_parameter_definitions_are_never_deferred"
   }
 ]
