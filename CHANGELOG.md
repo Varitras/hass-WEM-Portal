@@ -25,6 +25,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
   pause it caused and the failed read-back each wrote a warning for the one
   event. It is now one line naming the request - info the first time,
   since the next read usually goes through, and a warning when it repeats.
+  The options dialog's parameter search still says in its own words why it
+  could not run.
 - **The hourly extras no longer go out in one burst.** Statistics, weekly
   programmes and the daily re-read of parameter definitions each send a
   handful of requests, and they fell due in the same cycle every hour. They

@@ -70,8 +70,9 @@ class AccountState:
         self.refused_logins += 1
         return self.refused_logins == 1
 
-    # Expert requests refused in a row, reset by an expert login that works:
-    # the first is said as info, a repeat as a warning.
+    # Expert requests refused in a row, reset by an expert operation that went
+    # through (not by its login): the first is said as info, a repeat as a
+    # warning.
     expert_refusals: int = 0
 
     def note_expert_refusal(self) -> bool:

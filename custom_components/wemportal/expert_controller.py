@@ -356,9 +356,10 @@ class ExpertController:
                 _LOGGER.debug("Expert auto-poll stopped: %s", exc)
                 return
             except ForbiddenError as exc:
-                # Counted like any dead batch, but not said again: the
-                # refusal itself was the one line (expert_writer), and a
-                # pause still running is what that line announced.
+                # Counted like any dead batch, but not said again: a fresh
+                # refusal was already the one line (expert_writer), and a pause
+                # still running - the expert one or the IP-wide one - was
+                # announced when it began.
                 _LOGGER.debug("Expert auto-poll read refused: %s", exc)
                 self._register_batch_failure()
                 return
