@@ -43,6 +43,7 @@ from .exceptions import (
     ParameterChangeError,
     PollDeadlineExceeded,
     PortalMaintenanceError,
+    ScrapeHeldBack,
     ServerError,
     WebLoginRefused,
     WemPortalError,
@@ -974,8 +975,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             _LOGGER.debug("Skipping web scrape: its device is disabled.")
             return
         if self._web_login_retry_pending():
-            _LOGGER.debug("Skipping web scrape: waiting after a refused login.")
-            return
+            raise ScrapeHeldBack(
+                "Waiting before the next web login after the last was turned away."
+            )
         webscraping_data = self.fetch_webscraping_data()
         self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
 

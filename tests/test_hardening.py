@@ -9566,7 +9566,10 @@ def test_web_mode_also_waits_five_minutes_after_a_turned_away_login(monkeypatch)
     with pytest.raises(exceptions.WemPortalError):
         api._fetch_data(enabled_devices=None)
     clock.now += 60
-    api._fetch_data(enabled_devices=None)
+    # Neither a success nor a failure: nothing was fetched, so the cycle may
+    # not report the data as current ("recovered"), and nothing was refused.
+    with pytest.raises(exceptions.ApiBusyError):
+        api._fetch_data(enabled_devices=None)
 
     assert api.scrapes == 1, "the web collector retried within five minutes"
     clock.now += 300
@@ -9626,3 +9629,31 @@ def test_a_setup_web_login_that_worked_starts_the_count_again(monkeypatch):
         api.web_login()
 
     assert not api.is_rate_limited(), "refusals a working login separated added up"
+
+
+@pytest.mark.parametrize(
+    ("url", "is_the_login"),
+    [
+        ("https://www.wemportal.com/(S(abc123))/Web/Login.aspx", True),
+        (
+            "https://www.wemportal.com/Web/Login.aspx?ReturnUrl=%2fWeb%2fDefault.aspx",
+            True,
+        ),
+        (
+            "https://www.wemportal.com/Web/Default.aspx?x=https://www.wemportal.com/Web/Login.aspx",
+            False,
+        ),
+    ],
+)
+def test_the_login_page_is_known_by_its_endpoint(url, is_the_login):
+    """A cookieless session puts itself into the path, and a query can name
+    the login page without being it: the endpoint decides, not a substring."""
+    from custom_components.wemportal.exceptions import WebLoginRefused
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    scraper = WemPortalScraper("user@example.org", "secret", None)
+
+    with pytest.raises(exceptions.ForbiddenError) as refused:
+        scraper._check_response(FakeResponse({}, status_code=403, url=url), "page")
+
+    assert isinstance(refused.value, WebLoginRefused) is is_the_login

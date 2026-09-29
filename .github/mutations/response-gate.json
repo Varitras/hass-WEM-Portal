@@ -4307,8 +4307,8 @@
   {
     "label": "403 pause: a refused web page no longer names itself",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                f\"for the {what} at {redact_url(getattr(response, 'url', None))}.\"",
-    "new": "                f\"for the {what}.\"",
+    "old": "                f\"for the {what} at {where}.\"\n",
+    "new": "                f\"for the {what}.\"\n",
     "tests": "refused_web_page_names_itself"
   },
   {
@@ -4454,22 +4454,22 @@
   {
     "label": "web login grace: a page 403 taken for a turned-away login",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            refusal = WebLoginRefused if on_login else ForbiddenError\n",
-    "new": "            refusal = WebLoginRefused\n",
+    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "new": "            if True:\n",
     "tests": "only_the_login_steps_of_the_scraper_count"
   },
   {
     "label": "web login grace: the web collector does not wait the five minutes",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if self._web_login_retry_pending():\n            _LOGGER.debug(\"Skipping web scrape: waiting after a refused login.\")\n            return\n",
+    "old": "        if self._web_login_retry_pending():\n            raise ScrapeHeldBack(\n                \"Waiting before the next web login after the last was turned away.\"\n            )\n",
     "new": "",
     "tests": "web_mode_also_waits_five_minutes"
   },
   {
     "label": "web login grace: a redirect to the login page not taken for the login",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            on_login = WEB_LOGIN_URL.lower() in url.lower()\n",
-    "new": "            on_login = False\n",
+    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "new": "            if False:\n",
     "tests": "only_the_login_steps_of_the_scraper_count"
   },
   {
@@ -4485,5 +4485,19 @@
     "old": "                _LOGGER.debug(\"WEB login successful.\")\n                self._account_state.refused_web_logins = 0\n",
     "new": "                _LOGGER.debug(\"WEB login successful.\")\n",
     "tests": "setup_web_login_that_worked_starts_the_count_again"
+  },
+  {
+    "label": "web login grace: the login page recognised by a substring again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "new": "            if WEB_LOGIN_URL.lower() in str(getattr(response, 'url', '')).lower():\n",
+    "tests": "the_login_page_is_known_by_its_endpoint"
+  },
+  {
+    "label": "web login grace: the held-back web cycle reported as a success",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if self._web_login_retry_pending():\n            raise ScrapeHeldBack(\n                \"Waiting before the next web login after the last was turned away.\"\n            )\n",
+    "new": "        if self._web_login_retry_pending():\n            return\n",
+    "tests": "web_mode_also_waits_five_minutes"
   }
 ]

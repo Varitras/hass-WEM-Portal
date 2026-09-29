@@ -160,6 +160,16 @@ class ApiBusyError(WemPortalError):
     """
 
 
+class ScrapeHeldBack(ApiBusyError):
+    """`web` mode, waiting out the five minutes after a turned-away login.
+
+    Nothing was sent and nothing was refused, so the cycle is neither a
+    failure nor a success - the ApiBusyError handling says exactly that.
+    Returned as success, the old readings were published as current and
+    Home Assistant logged the integration as recovered.
+    """
+
+
 class PollDeadlineExceeded(BaseException):
     """The poll cycle used up its time budget and stopped itself.
 

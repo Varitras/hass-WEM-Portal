@@ -228,8 +228,9 @@ The integration is built around that:
 - A **login** turned away once is not taken for that block: the next login
   usually goes through. For the API login that holds when the refusal is a
   bare page with no answer from the portal itself, and it costs that one
-  cycle; a refused web login costs only the scrape, which tries again five
-  minutes later. A second refusal in a row pauses everything as above.
+  cycle; a refused web login costs only the scrape, which tries again no
+  sooner than five minutes later. A second refusal of the same login in a
+  row pauses everything as above.
 - The setup and re-authentication dialogs refuse to send anything while that
   pause is active, and say so — deleting and re-adding the integration to "fix"
   a block is the one thing that reliably prolongs it.
