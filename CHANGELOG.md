@@ -39,9 +39,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - **A whole number reads as one.** A counter the portal shows as "12" was
-  shown as "12,0": every number the portal wrote came out with a decimal.
-  A decimal now appears only where the portal writes one, and "Aus" and
-  "Ein" read as 0 and 1.
+  shown as "12,0". Every sensor now shows a whole number without the
+  decimal, from the web page and the API alike - 21.5 stays 21.5 - and "Aus"
+  and "Ein" read as 0 and 1.
 - **A login turned away once no longer pauses everything.** Now and then
   the login is refused with a bare page - no answer from the portal itself -
   and the next one goes through. Each of those was taken for the IP block:

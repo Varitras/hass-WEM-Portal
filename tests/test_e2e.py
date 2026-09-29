@@ -1301,7 +1301,7 @@ async def test_a_reading_that_appears_on_a_later_cycle_gets_an_entity(hass):
     assert len(added) == 1, (
         f"a reading that arrived after setup got no entity at all: {added}"
     )
-    assert hass.states.get(added.pop()).state == "7.0"
+    assert hass.states.get(added.pop()).state == "7"
 
 
 async def test_fresh_options_from_the_portal_reach_a_running_select(hass, monkeypatch):
