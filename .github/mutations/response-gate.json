@@ -1045,8 +1045,8 @@
   {
     "label": "discovery: the device filter dropped where the cycle starts",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                self._ensure_api_session(enabled_devices)",
-    "new": "                self._ensure_api_session()",
+    "old": "            elif self.mode == \"api\":\n                self.get_data(enabled_devices)",
+    "new": "            elif self.mode == \"api\":\n                self.get_data()",
     "tests": "the_filter_reaches_the_discovery_from_the_cycle_that_starts_it"
   },
   {
@@ -1054,7 +1054,7 @@
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        self._discover_parameters_if_due(enabled_devices)",
     "new": "        self._discover_parameters_if_due()",
-    "tests": "the_filter_survives_the_handover_to_the_session_setup"
+    "tests": "the_filter_survives_the_handover_to_the_reads"
   },
   {
     "label": "expert service: the caller's spelling sent on to the portal again",
@@ -4384,7 +4384,7 @@
   {
     "label": "heavy turns: the parameter re-read does not take the turn",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n            return\n",
+    "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n            return\n",
     "new": "",
     "tests": "heavy_fetches_that_fall_due_together_take_turns"
   },
@@ -4412,7 +4412,7 @@
   {
     "label": "heavy turns: missing definitions wait their turn",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
+    "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "tests": "missing_parameter_definitions_are_never_deferred"
   },
@@ -4436,5 +4436,19 @@
     "old": "        return self.data.get(device_id, {}).get(\"ConnectionStatus\") == 0\n",
     "new": "        return True\n",
     "tests": "unreachable_device_does_not_make_the_parameter_read_due"
+  },
+  {
+    "label": "heavy turns: the re-read asks on web-only ticks again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self._devices_fetched_this_session = True\n",
+    "new": "            self._devices_fetched_this_session = True\n        self._discover_parameters_if_due(enabled_devices)\n",
+    "tests": "statistics_run_when_a_refused_definition_reread_asks_on_web_ticks"
+  },
+  {
+    "label": "heavy turns: missing definitions queue up for a turn they do not need",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n",
+    "new": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
+    "tests": "missing_definitions_do_not_join_the_queue"
   }
 ]

@@ -861,9 +861,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         stale = any(self._parameters_are_stale(module) for module in due)
         if not (missing or (stale and self._first_cycle_done)):
             return
-        # A MISSING definition runs even when it is not its turn: without
-        # it there is nothing to read at all.
-        if not self.heavy_fetch_turns.claim("parameters") and not missing:
+        # A MISSING definition runs without asking for the turn: without it
+        # there is nothing to read at all, and a claim it did not need would
+        # only queue it behind the others as a head that never asks again.
+        if not missing and not self.heavy_fetch_turns.claim("parameters"):
             return
         _LOGGER.info(
             "Reading parameter definitions from the portal (%s).",
@@ -871,7 +872,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         )
         self.get_parameters(enabled_devices)
 
-    def _ensure_api_session(self, enabled_devices: list[str] | None = None) -> None:
+    def _ensure_api_session(self) -> None:
         """Everything the API paths need before they can read anything."""
         if not self.valid_login:
             self.api_login()
@@ -883,10 +884,6 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         if not self._devices_fetched_this_session:
             self.get_devices()
             self._devices_fetched_this_session = True
-        # Only run the slow, rate-limited per-module discovery if something
-        # actually needs it. With a valid persisted cache this is skipped
-        # entirely after a restart, which is what makes startup fast again.
-        self._discover_parameters_if_due(enabled_devices)
 
     def _scrape_is_due(self, enabled_devices: list[str] | None) -> bool:
         """Whether `both` mode should scrape this cycle.
@@ -1029,7 +1026,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         self.heavy_fetch_turns.new_cycle()
         try:
             if self.mode != "web":
-                self._ensure_api_session(enabled_devices)
+                self._ensure_api_session()
 
             if self.mode == "web":
                 self._collect_web(enabled_devices)
@@ -2036,6 +2033,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             enabled_devices if enabled_devices is not None else list(self.data.keys())
         )
         _LOGGER.debug("Computed target_devices=%s", target_devices)
+        # Here, with the reads, not with the session: in `both` mode the
+        # session is checked on web-only ticks too, and a re-read due there
+        # was the only heavy kind asking - the queue took that for a cycle in
+        # which the statistics were no longer due and dropped them. Only
+        # when anything needs it: with a valid cache this skips entirely.
+        self._discover_parameters_if_due(enabled_devices)
         successes = 0
         failures: list[str] = []
         for device_id in target_devices:
