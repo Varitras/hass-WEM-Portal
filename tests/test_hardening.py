@@ -9587,3 +9587,42 @@ def test_the_retry_time_outlives_the_api_object(monkeypatch):
     clock.now += 60
 
     assert not rebuilt._scrape_is_due(None), "a rebuilt api scraped at once"
+
+
+def test_a_setup_web_login_that_worked_starts_the_count_again(monkeypatch):
+    """A working web login in the setup ends the refusal streak. Without
+    that, one refusal days after another - with successful logins between
+    them - counted as the second in a row and paused everything."""
+
+    class _Refused(FakeResponse_html):
+        def raise_for_status(self):
+            raise real_requests.exceptions.HTTPError("403", response=self)
+
+    class _RefusingSession:
+        cookies = {}
+
+        def get(self, *_args, **_kwargs):
+            return _Refused("forbidden", status_code=403)
+
+    class _WorkingSession:
+        cookies = {}
+
+        def get(self, *_args, **_kwargs):
+            return FakeResponse_html(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse_html(
+                f"<html><body><div id='{WEB_LOGGED_IN_MARKER}'></div></body></html>"
+            )
+
+    sessions = [_RefusingSession(), _WorkingSession(), _RefusingSession()]
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: sessions.pop(0))
+    api = _api()
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api.web_login()
+    api.web_login()
+    with pytest.raises(exceptions.ForbiddenError):
+        api.web_login()
+
+    assert not api.is_rate_limited(), "refusals a working login separated added up"

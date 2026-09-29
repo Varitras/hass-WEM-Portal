@@ -4478,5 +4478,12 @@
     "old": "        if self._account_state.note_refused_web_login():\n",
     "new": "        if False:\n",
     "tests": "web_setup_does_not_call_one_turned_away_login_a_block"
+  },
+  {
+    "label": "web login grace: a working setup web login does not end the streak",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                _LOGGER.debug(\"WEB login successful.\")\n                self._account_state.refused_web_logins = 0\n",
+    "new": "                _LOGGER.debug(\"WEB login successful.\")\n",
+    "tests": "setup_web_login_that_worked_starts_the_count_again"
   }
 ]
