@@ -3731,8 +3731,11 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
     monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
     api = _api()
 
-    with pytest.raises(exceptions.ForbiddenError):
-        api.web_login()
+    # The first one in a row is let pass without the pause (WebLoginRefused);
+    # the second is the block, and the next request must not go out.
+    for _attempt in range(2):
+        with pytest.raises(exceptions.ForbiddenError):
+            api.web_login()
 
     with pytest.raises(exceptions.ForbiddenError):
         api.check_cooldown()
@@ -6084,9 +6087,6 @@ PRESERVED_FIELDS = frozenset(
         "spider_wait_interval",
         "spider_retry_count",
         "last_scraping_update",
-        # Part of the scrape backoff: a recovery must not let a scrape that
-        # was just turned away try again before its five minutes are up.
-        "_scrape_not_before",
         # Same rule as the scrape backoff above: a recovery runs after the
         # failures that caused it, and dropping the API interval there would
         # spend requests fastest at the portal that is already refusing them.
@@ -9439,19 +9439,22 @@ def test_a_programme_that_keeps_failing_does_not_starve_the_statistics(
 # --- a web login turned away once: retry the scrape in five minutes ------
 
 
-def _api_whose_web_login_answers(clock, monkeypatch, *outcomes):
-    """A `both`-mode api whose scrapes end in `outcomes` in turn: an
-    exception to raise, or a dict of scraped rows for a scrape that worked."""
+def _api_whose_web_login_answers(clock, monkeypatch, *outcomes, mode="both"):
+    """An api whose scrapes end in `outcomes` in turn: an exception to raise,
+    or a dict of scraped rows for a scrape that worked. `scrapes` on the api
+    counts how many were attempted."""
     from custom_components.wemportal.const import CONF_MODE
 
     monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
-    api = _api(config={CONF_MODE: "both"})
+    api = _api(config={CONF_MODE: mode})
     queue = list(outcomes)
+    api.scrapes = 0
 
     class _Scraper:
         cookie = {}
 
         def scrape(self):
+            api.scrapes += 1
             outcome = queue.pop(0)
             if isinstance(outcome, BaseException):
                 raise outcome
@@ -9533,9 +9536,54 @@ def test_only_the_login_steps_of_the_scraper_count_as_a_turned_away_login():
         {}, status_code=403, url="https://www.wemportal.com/Web/Default.aspx"
     )
 
+    on_the_login = FakeResponse(
+        {},
+        status_code=403,
+        url="https://www.wemportal.com/Web/Login.aspx?ReturnUrl=%2fWeb%2fDefault.aspx",
+    )
+
     with pytest.raises(exceptions.ForbiddenError) as page:
         scraper._check_response(refused, "main page")
+    # A spent session redirects the reused one to the login page: that 403 is
+    # the login being refused, on the path most scrapes take.
     with pytest.raises(WebLoginRefused):
-        scraper._check_response(refused, "login page", login=True)
+        scraper._check_response(on_the_login, "main page")
 
     assert not isinstance(page.value, WebLoginRefused)
+
+
+def test_web_mode_also_waits_five_minutes_after_a_turned_away_login(monkeypatch):
+    """`web` mode scraped on every cycle without asking the retry time, so
+    at the shortest interval the second login went out a minute later and
+    was taken for the block."""
+    clock = _Clock()
+    api = _api_whose_web_login_answers(
+        clock, monkeypatch, _web_login_refusal(), {}, mode="web"
+    )
+    api._merge_webscraping_data = lambda *_args: None
+    api.resolve_scraper_device_id = lambda: "1234"
+
+    with pytest.raises(exceptions.WemPortalError):
+        api._fetch_data(enabled_devices=None)
+    clock.now += 60
+    api._fetch_data(enabled_devices=None)
+
+    assert api.scrapes == 1, "the web collector retried within five minutes"
+    clock.now += 300
+    api._fetch_data(enabled_devices=None)
+    assert api.scrapes == 2
+
+
+def test_the_retry_time_outlives_the_api_object(monkeypatch):
+    """A reload or a repeated setup builds a new api. The refusal count
+    survived that - it lives with the account - but the retry time did not,
+    so the new object logged in again at once and a refusal became the
+    block."""
+    clock = _Clock()
+    first = _api_whose_web_login_answers(clock, monkeypatch, _web_login_refusal())
+    _scrape(first)
+
+    rebuilt = _api_whose_web_login_answers(clock, monkeypatch, {})
+    clock.now += 60
+
+    assert not rebuilt._scrape_is_due(None), "a rebuilt api scraped at once"

@@ -182,6 +182,51 @@ async def test_setup_does_not_call_one_turned_away_login_a_block(hass, monkeypat
     assert result["errors"] == {"base": "cannot_connect"}
 
 
+async def test_web_setup_does_not_call_one_turned_away_login_a_block(hass, monkeypatch):
+    """The `web` twin of the API case above: the setup's web login answered
+    403 once and paused everything for fifteen minutes, telling the user the
+    network was refused."""
+    from custom_components.wemportal import transport
+
+    from .test_hardening import FakeResponse
+
+    class TurnedAway:
+        cookies = {}
+
+        def __init__(self, *_args, **_kwargs):
+            self.headers = {}
+
+        def get(self, url, **_kwargs):
+            return FakeResponse({}, status_code=403, url=url, content=b"<html>")
+
+        def post(self, url, **_kwargs):
+            return FakeResponse({}, status_code=403, url=url, content=b"<html>")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(transport.requests, "Session", TurnedAway)
+    monkeypatch.setattr(
+        WemPortalApi, "web_login", transport.WemPortalTransport.web_login
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_USERNAME: USER,
+            CONF_PASSWORD: "secret",
+            CONF_LANGUAGE: "en",
+            CONF_MODE: "web",
+        },
+    )
+
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert not WemPortalApi(USER, "secret").is_rate_limited()
+
+
 async def test_reauthentication_names_a_blocked_ip_as_one(hass, monkeypatch):
     """The same, for the step somebody reaches after the entry has already
     failed - which is where a blocked IP sends them."""

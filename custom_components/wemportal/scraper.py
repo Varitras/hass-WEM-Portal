@@ -241,11 +241,7 @@ class WemPortalScraper:
             _LOGGER.debug("Ignoring error while closing scraper session: %s", exc)
 
     def _check_response(
-        self,
-        response: Any,
-        what: str,
-        check_maintenance: bool = False,
-        login: bool = False,
+        self, response: Any, what: str, check_maintenance: bool = False
     ) -> None:
         """The single gate every portal response passes through.
 
@@ -261,7 +257,12 @@ class WemPortalScraper:
         """
         status = getattr(response, "status_code", 200)
         if status == 403:
-            refusal = WebLoginRefused if login else ForbiddenError
+            # By the address, not by the step that asked: a reused session
+            # that ran out is redirected to the login page, and that refusal
+            # is the login's as much as the login step's own.
+            url = str(getattr(response, "url", "") or "")
+            on_login = WEB_LOGIN_URL.lower() in url.lower()
+            refusal = WebLoginRefused if on_login else ForbiddenError
             raise refusal(
                 f"WEM Portal web frontend returned 403 (rate limit/forbidden) "
                 f"for the {what} at {redact_url(getattr(response, 'url', None))}."
@@ -469,7 +470,7 @@ class WemPortalScraper:
         # No maintenance decision on this page: it looks the same before and
         # during a window, so deciding here turned every announcement into an
         # outage. The answer to the POST below decides it.
-        self._check_response(login_page, "login page", login=True)
+        self._check_response(login_page, "login page")
 
         tree = html.fromstring(login_page.text)
         viewstate_elem = tree.xpath("//*[@id='__VIEWSTATE']/@value")
@@ -515,9 +516,7 @@ class WemPortalScraper:
         # rejected these credentials" - so without this, a real window read as
         # a wrong password and fed the re-authentication counter. A login that
         # got through is not refused by a banner announcing a window.
-        self._check_response(
-            login_response, "login POST", check_maintenance=True, login=True
-        )
+        self._check_response(login_response, "login POST", check_maintenance=True)
 
         # Three outcomes, not two - the classification web_login has used all
         # along. Staying on the login URL was the whole test before, and a

@@ -367,8 +367,6 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # Used to keep track of the number of times the spider consecutively fails
         self.spider_retry_count = retry_count
         self.last_scraping_update = last_update
-        # Monotonic; the scrape waits for it after one turned-away web login.
-        self._scrape_not_before: float | None = None
 
     def _init_runtime_state(self) -> None:
         """State that always starts empty: the HTTP transport, the
@@ -911,8 +909,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return False
         if self.spider_wait_interval != 0:
             return False
-        not_before = self._scrape_not_before
-        if not_before is not None and time.monotonic() < not_before:
+        if self._web_login_retry_pending():
             return False
         if self.last_scraping_update is None:
             return True
@@ -966,10 +963,18 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # _scrape_is_due) and in the timezone Home Assistant is configured for.
         self.last_scraping_update = dt_util.now()
 
+    def _web_login_retry_pending(self) -> bool:
+        """Whether a turned-away web login's five minutes are still running."""
+        retry_at = self._account_state.web_login_retry_at
+        return retry_at is not None and time.monotonic() < retry_at
+
     def _collect_web(self, enabled_devices: list[str] | None) -> None:
         """`web` mode: the scrape is the only source there is."""
         if not self._scraper_enabled(enabled_devices):
             _LOGGER.debug("Skipping web scrape: its device is disabled.")
+            return
+        if self._web_login_retry_pending():
+            _LOGGER.debug("Skipping web scrape: waiting after a refused login.")
             return
         webscraping_data = self.fetch_webscraping_data()
         self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
@@ -1270,7 +1275,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             self._reset_scraper()
             if self._account_state.note_refused_web_login():
                 self.spider_wait_interval = 0
-                self._scrape_not_before = time.monotonic() + WEB_LOGIN_RETRY_SECONDS
+                self._account_state.web_login_retry_at = (
+                    time.monotonic() + WEB_LOGIN_RETRY_SECONDS
+                )
                 raise
             self._activate_cooldown(f"the web scrape: {exc}")
             raise
