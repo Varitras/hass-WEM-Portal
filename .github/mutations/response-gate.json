@@ -4441,7 +4441,7 @@
     "label": "heavy turns: the re-read asks on web-only ticks again",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            self._devices_fetched_this_session = True\n",
-    "new": "            self._devices_fetched_this_session = True\n        self._discover_parameters_if_due(enabled_devices)\n",
+    "new": "            self._devices_fetched_this_session = True\n        self._discover_parameters_if_due(None)\n",
     "tests": "statistics_run_when_a_refused_definition_reread_asks_on_web_ticks"
   },
   {
