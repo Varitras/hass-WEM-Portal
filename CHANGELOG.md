@@ -24,8 +24,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **The hourly extras no longer go out in one burst.** Statistics, weekly
   programmes and the daily re-read of parameter definitions each send a
   handful of requests, and they fell due in the same cycle every hour. They
-  now take turns, one per cycle, so the same requests are spread over a few
-  minutes instead of one.
+  now take turns, one per cycle and each in its order, so the same requests
+  are spread over a few minutes instead of one.
 
 ### Security
 

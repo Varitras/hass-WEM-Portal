@@ -7462,7 +7462,9 @@ def test_the_filter_reaches_the_discovery_from_the_cycle_that_starts_it():
     api.valid_login = True
     api._devices_fetched_this_session = True
     api._first_cycle_done = True
-    api.get_data = lambda *_args, **_kwargs: None
+    api._fetch_device_status = lambda _device_id: True
+    api._fetch_parameter_values = lambda _device_id: None
+    api._fetch_circuit_times = lambda _device_id: None
     api.get_statistics = lambda *_args, **_kwargs: None
 
     api.fetch_data(["1234"])
@@ -7470,23 +7472,25 @@ def test_the_filter_reaches_the_discovery_from_the_cycle_that_starts_it():
     assert asked == ["1234"], f"a disabled device was asked anyway: {asked}"
 
 
-def test_the_filter_survives_the_handover_to_the_session_setup():
+def test_the_filter_survives_the_handover_to_the_reads():
     """The leg between the two tests above, and the one nothing watched.
 
-    The filter travels fetch_data -> _ensure_api_session -> discovery. Both
-    ends were covered and the handover was not: dropping the argument here
-    left every test green while a device the user switched off was asked for
-    its definitions again. Found by an audit of THIS repair, not of the code
-    it repaired - the test sat one step behind the line that can regress.
+    The filter travels fetch_data -> get_data -> discovery. Both ends were
+    covered and the handover was not: dropping the argument here left every
+    test green while a device the user switched off was asked for its
+    definitions again. Found by an audit of THIS repair, not of the code it
+    repaired - the test sat one step behind the line that can regress.
     """
     api, asked = _two_device_discovery_api()
-    # Past the parts _ensure_api_session does before the discovery, so the
-    # handover is what this exercises and not the login.
     api.valid_login = True
     api._devices_fetched_this_session = True
     api._first_cycle_done = True
+    api._fetch_device_status = lambda _device_id: True
+    api._fetch_parameter_values = lambda _device_id: None
+    api._fetch_circuit_times = lambda _device_id: None
+    api.get_statistics = lambda *_args, **_kwargs: None
 
-    api._ensure_api_session(["1234"])
+    api.get_data(["1234"])
 
     assert asked == ["1234"], f"a disabled device was asked anyway: {asked}"
 
@@ -7739,7 +7743,12 @@ def _cycle_api(fetched_at):
     # Takes the device filter like the real one: what is under test here is
     # WHETHER the discovery runs, not which devices it covers.
     api.get_parameters = lambda *_args: read.append("read")
-    api.get_data = lambda *_args, **_kwargs: None
+    # The reads themselves stubbed, not get_data: the discovery runs inside
+    # it now, where the API is actually read.
+    api._fetch_device_status = lambda _device_id: True
+    api._fetch_parameter_values = lambda _device_id: None
+    api._fetch_circuit_times = lambda _device_id: None
+    api.get_statistics = lambda *_args, **_kwargs: None
     return api, read
 
 
@@ -9333,7 +9342,7 @@ def _api_with_every_heavy_fetch_due():
     api._first_cycle_done = True
     api.last_statistics_fetch = None
     api._last_circuit_times_fetch.clear()
-    api.data = {"1234": {}}
+    api.data = {"1234": {"ConnectionStatus": 0}}
     api.modules = {
         "1234": {
             (0, 1): {
@@ -9431,3 +9440,149 @@ def test_a_programme_that_keeps_failing_does_not_starve_the_statistics(
         clock.now += CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS
 
     assert "statistics" in heavy, f"three cycles, and only: {heavy}"
+
+
+# --- heavy turns: a real queue ------------------------------------------
+
+
+def _turns_over(cycles):
+    """Drive HeavyFetchTurns through `cycles`, each a list of the kinds that
+    ask in that cycle, in call order. Returns who got the turn per cycle."""
+    from custom_components.wemportal.models import HeavyFetchTurns
+
+    turns = HeavyFetchTurns()
+    granted = []
+    for asking in cycles:
+        turns.new_cycle()
+        granted.append([kind for kind in asking if turns.claim(kind)])
+    return granted
+
+
+def test_three_waiting_kinds_each_get_their_turn():
+    """With three kinds waiting, whoever asked first in the cycle won, so the
+    parameter re-read and the programmes took turns and the statistics - last
+    in every cycle - never ran."""
+    every_cycle = ["parameters", "schedules", "statistics"]
+
+    granted = _turns_over([every_cycle] * 3)
+
+    assert sorted(kind for cycle in granted for kind in cycle) == sorted(every_cycle), (
+        f"turns per cycle: {granted}"
+    )
+
+
+def test_a_cycle_in_which_nobody_asks_keeps_the_queue():
+    """In `both` mode a tick can scrape without reading the API. Such a tick
+    wiped the queue, and the statistics lost the turn they were owed - every
+    time, with the web polled more often than the API."""
+    granted = _turns_over(
+        [["schedules", "statistics"], [], [], ["schedules", "statistics"]]
+    )
+
+    assert granted[-1] == ["statistics"], f"turns per cycle: {granted}"
+
+
+def test_a_waiting_kind_that_stops_asking_does_not_block_the_others():
+    granted = _turns_over(
+        [["schedules", "statistics"], ["schedules"], ["schedules"], ["schedules"]]
+    )
+
+    assert ["schedules"] in granted[2:], f"turns per cycle: {granted}"
+
+
+def test_an_unreachable_device_does_not_make_the_parameter_read_due(caplog):
+    """get_parameters skips a device that is not online, but its stale
+    definitions still made the re-read due: the turn was spent on a read that
+    sent nothing, cycle after cycle."""
+    import logging
+
+    api, heavy = _api_with_every_heavy_fetch_due()
+    api.data["1234"]["ConnectionStatus"] = 50
+
+    with caplog.at_level(logging.INFO):
+        api._discover_parameters_if_due(None)
+
+    assert heavy == [], f"a re-read was started for an offline device: {heavy}"
+
+
+def test_statistics_run_when_a_refused_definition_reread_asks_on_web_ticks(
+    monkeypatch,
+):
+    """`both` mode, web every 5 minutes, API every hour. A module whose
+    description the portal refuses is re-read every hour - and discovery ran
+    on web ticks too, where it was the only kind asking. Those ticks dropped
+    the statistics from the queue, and in twelve hours they never ran."""
+    from requests import Response
+    from requests.exceptions import HTTPError
+
+    from custom_components.wemportal.const import (
+        CONF_MODE,
+        CONF_SCAN_INTERVAL_API,
+        WemDataType,
+    )
+
+    epoch, elapsed = 1_700_000_000.0, [0.0]
+    monkeypatch.setattr(time, "monotonic", lambda: 100_000.0 + elapsed[0])
+    monkeypatch.setattr(time, "time", lambda: epoch + elapsed[0])
+    api = _api(
+        config={CONF_MODE: "both", "scan_interval": 300, CONF_SCAN_INTERVAL_API: 3600}
+    )
+    api.valid_login = True
+    api._devices_fetched_this_session = True
+    api._first_cycle_done = True
+    api.data = {"1234": {"ConnectionStatus": 0}, "5678": {"ConnectionStatus": 0}}
+    api.modules = {
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Module",
+                "parameters": {"VALUE": {"ParameterID": "VALUE", "DataType": 3}},
+                "parameters_fetched_at": epoch - 86400 + 300,
+            }
+        },
+        "5678": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Programme",
+                "parameters": {
+                    "PROG": {"ParameterID": "PROG", "DataType": WemDataType.PROGRAM}
+                },
+                "parameters_fetched_at": epoch,
+            }
+        },
+    }
+    ran = []
+    api._fetch_device_status = lambda _device: True
+    api._fetch_parameter_values = lambda _device: None
+    api._scrape_is_due = lambda _enabled: True
+    api._scrape_and_merge = lambda: None
+    api._read_one_schedule = lambda *_args: ran.append("schedules") or True
+    api._fetch_device_statistics = lambda _device: ran.append("statistics")
+
+    def refused_description(*_args, **_kwargs):
+        ran.append("parameters")
+        response = Response()
+        response.status_code = 400
+        raise exceptions.WemPortalError("refused") from HTTPError(response=response)
+
+    api.make_api_call = refused_description
+    for second in range(0, 12 * 3600 + 1, 300):
+        elapsed[0] = second
+        api._fetch_data(enabled_devices=None)
+
+    assert "statistics" in ran, f"twelve hours without statistics: {sorted(set(ran))}"
+
+
+def test_missing_definitions_do_not_join_the_queue():
+    """They run without asking for the turn. Asking anyway queued them, and
+    a head that never asks again held up a whole cycle."""
+    api, _heavy = _api_with_every_heavy_fetch_due()
+    for module in api.modules["1234"].values():
+        del module["parameters"]
+    api.heavy_fetch_turns.claim("schedules")
+
+    api._discover_parameters_if_due(None)
+
+    assert "parameters" not in api.heavy_fetch_turns._queue

@@ -51,7 +51,10 @@ LINE_BUDGETS = {
     # which a no-op device had passed off as a successful refresh.
     # And by 6 for opening a cycle's heavy-fetch turn and claiming it; the rule
     # itself lives in models.HeavyFetchTurns.
-    "wemportalapi.py": 2601,
+    # And by 12 for one rule on whether a device's definitions can be read,
+    # shared by the check that makes the re-read due and the read itself,
+    # and for moving that re-read to where the API is actually read.
+    "wemportalapi.py": 2613,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
