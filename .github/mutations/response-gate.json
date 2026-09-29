@@ -4110,7 +4110,7 @@
   },
   {
     "label": "server details: empty fields quoted as an answer again",
-    "old": "    if not said:\n",
+    "old": "    if portal_said_nothing(server_status, server_message):\n",
     "new": "    if False:\n",
     "tests": "without_details or refused_without_details",
     "path": "custom_components/wemportal/mobile_protocol.py"
@@ -4310,5 +4310,47 @@
     "old": "                f\"for the {what} at {redact_url(getattr(response, 'url', None))}.\"",
     "new": "                f\"for the {what}.\"",
     "tests": "refused_web_page_names_itself"
+  },
+  {
+    "label": "login grace: a turned-away login pauses everything at once again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            if first and portal_said_nothing(response_status, response_message):\n",
+    "new": "            if False:\n",
+    "tests": "login_turned_away_once_pauses_nothing"
+  },
+  {
+    "label": "login grace: a portal's own 403 on the login let pass as a hiccup",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            if first and portal_said_nothing(response_status, response_message):\n",
+    "new": "            if first:\n",
+    "tests": "portal_itself_explains_is_the_block_at_once"
+  },
+  {
+    "label": "login grace: every refusal let pass, the block never recognised",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            if first and portal_said_nothing(response_status, response_message):\n",
+    "new": "            if portal_said_nothing(response_status, response_message):\n",
+    "tests": "second_turned_away_login_in_a_row_is_the_block"
+  },
+  {
+    "label": "login grace: a login that worked does not end the streak",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            self._account_state.refused_logins = 0\n",
+    "new": "",
+    "tests": "login_that_worked_in_between_starts_the_count_again"
+  },
+  {
+    "label": "login grace: the coordinator counts a turned-away login as a wrong password",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            except LoginRefused as exc:\n",
+    "new": "            except () as exc:\n",
+    "tests": "login_turned_away_once_is_neither_a_warning_nor_a_password"
+  },
+  {
+    "label": "login grace: setup calls a turned-away login a wrong password",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "    except LoginRefused as exc:\n",
+    "new": "    except () as exc:\n",
+    "tests": "setup_does_not_call_one_turned_away_login_a_block"
   }
 ]

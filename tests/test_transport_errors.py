@@ -336,7 +336,7 @@ def test_a_login_refused_without_details_says_what_came_back(monkeypatch):
 
     monkeypatch.setattr(wemportalapi.requests, "Session", RefusingSession)
 
-    with pytest.raises(exceptions.ForbiddenError) as excinfo:
+    with pytest.raises(exceptions.WemPortalError) as excinfo:
         WemPortalApi("user@example.org", "secret").api_login()
 
     message = str(excinfo.value)
@@ -402,16 +402,15 @@ def test_the_pause_names_the_request_the_portal_refused(caplog):
 
 
 def test_the_pause_after_a_refused_api_login_names_the_login(monkeypatch, caplog):
-    from .test_hardening import RecordingSession
+    # The portal's own refusal: a bare page is not the block on its first
+    # showing - see the tests below.
+    _login_answering(
+        monkeypatch,
+        FakeResponse({"Status": 3, "Message": "Too many requests"}, status_code=403),
+    )
 
-    class RefusingSession(RecordingSession):
-        def post(self, url, **kwargs):
-            return FakeResponse({}, status_code=403, content=b"<html>")
-
-    monkeypatch.setattr(wemportalapi.requests, "Session", RefusingSession)
-
-    with caplog.at_level(logging.WARNING), pytest.raises(exceptions.ForbiddenError):
-        WemPortalApi("user@example.org", "secret").api_login()
+    with caplog.at_level(logging.WARNING):
+        _try_login()
 
     (warning,) = _pause_warnings(caplog)
     assert "/app/Account/Login" in warning, warning
@@ -434,3 +433,94 @@ def test_a_refused_web_page_names_itself():
     message = str(excinfo.value)
     assert "/Web/Default.aspx" in message, message
     assert "abc123def456" not in message and "4711" not in message, message
+
+
+# --- a login the firewall turns away once is not a block ------------------
+
+
+def _login_answering(monkeypatch, *answers):
+    """requests.Session whose login POSTs answer in turn from `answers`."""
+    from .test_hardening import RecordingSession
+
+    queue = list(answers)
+
+    class AnsweringSession(RecordingSession):
+        def post(self, url, **kwargs):
+            return queue.pop(0)
+
+    monkeypatch.setattr(wemportalapi.requests, "Session", AnsweringSession)
+
+
+def _bare_403():
+    return FakeResponse({}, status_code=403, content=b"<html>")
+
+
+def _login_ok():
+    return FakeResponse({"Status": 0, "Version": "3.1"})
+
+
+def _try_login():
+    api = WemPortalApi("user@example.org", "secret")
+    try:
+        api.api_login()
+    except exceptions.WemPortalError as exc:
+        return api, exc
+    return api, None
+
+
+def test_a_login_turned_away_once_pauses_nothing(monkeypatch, caplog):
+    """Every login refused with a bare firewall page paused ALL requests for
+    fifteen minutes with a warning - three or four times a day, at random
+    minutes, and the next login always went through. A block that lifts by
+    itself on the very next attempt is not one; pausing the expert path and
+    the scrape with it, and saying so as a warning, was the fault."""
+    _login_answering(monkeypatch, _bare_403())
+
+    with caplog.at_level(logging.WARNING):
+        api, refused = _try_login()
+
+    assert refused is not None, "a refused login was taken for a working one"
+    assert not api.is_rate_limited(), "one turned-away login paused everything"
+    assert not _pause_warnings(caplog), _pause_warnings(caplog)
+    assert isinstance(refused, exceptions.AuthError), (
+        "the refusal has to end the cycle like any lost login: an AuthError "
+        "passes every shield on the poll path, anything else is swallowed and "
+        "the next request logs in again at once"
+    )
+
+
+def test_a_second_turned_away_login_in_a_row_is_the_block(monkeypatch, caplog):
+    _login_answering(monkeypatch, _bare_403(), _bare_403())
+
+    _try_login()
+    with caplog.at_level(logging.WARNING):
+        api, refused = _try_login()
+
+    assert isinstance(refused, exceptions.ForbiddenError), refused
+    assert api.is_rate_limited(), "two refusals in a row were still let through"
+    (warning,) = _pause_warnings(caplog)
+    assert "/app/Account/Login" in warning, warning
+
+
+def test_a_login_that_worked_in_between_starts_the_count_again(monkeypatch):
+    _login_answering(monkeypatch, _bare_403(), _login_ok(), _bare_403())
+
+    _try_login()
+    _try_login()
+    api, _refused = _try_login()
+
+    assert not api.is_rate_limited(), "refusals on different days added up to a block"
+
+
+def test_a_403_the_portal_itself_explains_is_the_block_at_once(monkeypatch):
+    """Only the bare page gets the benefit of the doubt. An answer carrying
+    the portal's own status is the portal saying no."""
+    _login_answering(
+        monkeypatch,
+        FakeResponse({"Status": 3, "Message": "Too many requests"}, status_code=403),
+    )
+
+    api, refused = _try_login()
+
+    assert isinstance(refused, exceptions.ForbiddenError), refused
+    assert api.is_rate_limited()

@@ -61,6 +61,15 @@ class AccountState:
     # Monotonic deadline of the expert (web) 403 backoff. Per account, with
     # a test pinning that one account's backoff does not spread to another.
     expert_blocked_until: float = 0.0
+    # API logins turned away in a row, reset by one that works: the first
+    # bare refusal is let pass, the next is the block. See LoginRefused.
+    refused_logins: int = 0
+
+    def note_refused_login(self) -> bool:
+        """Count a refused API login; True for the first of a streak."""
+        self.refused_logins += 1
+        return self.refused_logins == 1
+
     # NOT here either, and that is a decision rather than an oversight: the
     # two hourly gates on statistics and schedules. They were moved here and
     # moved back out. A reload builds a new api with no readings - it gets

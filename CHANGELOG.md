@@ -33,6 +33,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A login turned away once no longer pauses everything.** Now and then
+  the login is refused with a bare page - no answer from the portal itself -
+  and the next one goes through. Each of those was taken for the IP block:
+  fifteen minutes of nothing, a warning and a repair issue, several times a
+  day. The first such refusal now only fails that cycle; a second in a row,
+  or a refusal the portal itself explains, is still treated as the block.
 - **A device with nothing to read no longer hides a failed cycle.** It was
   counted as refreshed, so when every device that does have values failed to
   update, the cycle still looked successful: no backoff, no unavailable

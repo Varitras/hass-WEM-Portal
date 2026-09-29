@@ -3850,3 +3850,44 @@ async def test_an_unexpected_failure_is_warned_once_with_its_traceback(
     (first,) = said[0]
     assert first.levelno == logging.WARNING and first.exc_info, first
     assert not said[1] and not said[2], f"warned again: {said[1:]}"
+
+
+async def test_a_login_turned_away_once_is_neither_a_warning_nor_a_password(
+    hass, monkeypatch, caplog
+):
+    """The cycle failed and is counted, so the one-cycle tolerance and the
+    backoff apply as to any failure. It is not an auth failure - nothing was
+    said about the password - and not a warning of ours either: Home
+    Assistant's own "Error fetching" line already reports the failed cycle."""
+    import logging
+
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import LoginRefused
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    failures_before = coordinator.num_failed
+    coordinator.num_auth_failed = 2
+
+    def turned_away(self, *_args, **_kwargs):
+        raise LoginRefused("HTTP 403, no status or message in the answer")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", turned_away)
+    caplog.clear()
+
+    with caplog.at_level(logging.INFO), pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert coordinator.num_failed == failures_before + 1
+    assert coordinator.num_auth_failed == 2, (
+        "a firewall's refusal moved the integration towards a reauth prompt, "
+        "or cleared a streak it knows nothing about"
+    )
+    ours = [
+        record
+        for record in caplog.records
+        if record.name.startswith("custom_components.wemportal")
+        and record.levelno >= logging.WARNING
+    ]
+    assert not ours, [record.getMessage() for record in ours]

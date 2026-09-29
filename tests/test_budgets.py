@@ -50,6 +50,10 @@ LINE_BUDGETS = {
     # And by 15 more for a third outcome of a device's read: nothing to read,
     # which a no-op device had passed off as a successful refresh.
     "wemportalapi.py": 2595,
+    # Over the default by six: a login a firewall turns away once is let
+    # pass, and deciding that belongs where the login's answer is read - five
+    # of the lines are the import that grew one name too long for one line.
+    "transport.py": 906,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     "expert_writer.py": 1912,

@@ -147,6 +147,41 @@ async def test_setup_names_a_blocked_ip_as_one(hass, monkeypatch):
     assert result["errors"] == {"base": "rate_limited"}
 
 
+async def test_setup_does_not_call_one_turned_away_login_a_block(hass, monkeypatch):
+    """A bare 403 on a single login is not the IP block, and "rate limited"
+    would send somebody away for hours over a refusal the next attempt does
+    not repeat. Driven through the real login, which decides what it was."""
+    from custom_components.wemportal import transport
+
+    from .test_hardening import FakeResponse, RecordingSession
+
+    class TurnedAway(RecordingSession):
+        def post(self, url, **kwargs):
+            return FakeResponse({}, status_code=403, content=b"<html>")
+
+    monkeypatch.setattr(transport.requests, "Session", TurnedAway)
+    # The shared fixture stubs the login; this test is about the real one.
+    monkeypatch.setattr(
+        WemPortalApi, "api_login", transport.WemPortalTransport.api_login
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_USERNAME: USER,
+            CONF_PASSWORD: "secret",
+            CONF_LANGUAGE: "en",
+            CONF_MODE: "api",
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
 async def test_reauthentication_names_a_blocked_ip_as_one(hass, monkeypatch):
     """The same, for the step somebody reaches after the entry has already
     failed - which is where a blocked IP sends them."""

@@ -37,6 +37,7 @@ from .exceptions import (
     AuthError,
     ExpiredSessionError,
     ForbiddenError,
+    LoginRefused,
     PortalMaintenanceError,
     ServerError,
     UnknownAuthError,
@@ -48,7 +49,12 @@ from .exceptions import (
 # device or a reading is. The import guard in tests/test_transport_boundary
 # lists the domain modules, and neither of these is one of them - status_is_success
 # reads a status field, maintenance_blocking reads a downtime page.
-from .mobile_protocol import as_answer_dict, status_is_success, what_the_server_said
+from .mobile_protocol import (
+    as_answer_dict,
+    portal_said_nothing,
+    status_is_success,
+    what_the_server_said,
+)
 from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url
 
 _LOGGER = logging.getLogger(__name__)
@@ -189,9 +195,8 @@ class WemPortalTransport:
         already signaled it's unhappy would defeat the purpose. Never
         shortens an existing cooldown, only extends it.
 
-        `cause` names the refused request: which of a cycle's requests the
-        portal turned down is what tells a real block from a one-off refusal,
-        and without it the warning could not say.
+        `cause` names the refused request - what tells a real block from a
+        one-off refusal.
         """
         new_blocked_until = time.monotonic() + seconds
         if new_blocked_until > self._blocked_until:
@@ -680,6 +685,7 @@ class WemPortalTransport:
             # issue when asking for help.
             _LOGGER.debug("API login successful.")
             self.valid_login = True
+            self._account_state.refused_logins = 0
 
         except ValueError as exc:  # Catches JSONDecodeError if response is HTML
             # Username (email) is PII and deliberately kept out of the log
@@ -748,6 +754,9 @@ class WemPortalTransport:
                 f"{server_said}"
             ) from exc
         if response.status_code == 403:
+            first = self._account_state.note_refused_login()
+            if first and portal_said_nothing(response_status, response_message):
+                raise LoginRefused(f"The login was turned away: {server_said}") from exc
             self._activate_cooldown(f"{redact_url(API_LOGIN_URL)} ({server_said})")
             raise ForbiddenError(f"WemPortal forbidden error: {server_said}") from exc
         if response.status_code == 500:
