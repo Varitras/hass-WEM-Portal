@@ -34,6 +34,7 @@ from .const import (
 from .exceptions import (
     ApiBusyError,
     AuthError,
+    LoginRefused,
     PollDeadlineExceeded,
     PortalMaintenanceError,
     WemPortalError,
@@ -588,6 +589,15 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 self._reset_auth_failures()
                 self._announce_once("maintenance", "WEM Portal is in maintenance", exc)
                 raise UpdateFailed(f"WEM Portal maintenance: {exc}") from exc
+            except LoginRefused as exc:
+                # Before AuthError, which it only is for its propagation: a
+                # firewall turning one login away says nothing about the
+                # password, so the auth streak neither grows nor clears.
+                self._note_failed_cycle()
+                self._announce_once(
+                    "login-refused", "WEM Portal turned a login away", exc
+                )
+                raise UpdateFailed(str(exc)) from exc
             except AuthError as exc:
                 self._note_failed_cycle()
                 self.num_auth_failed += 1

@@ -35,6 +35,12 @@ def as_answer_dict(payload: Any) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def portal_said_nothing(server_status: Any, server_message: Any) -> bool:
+    """Whether an answer carries neither the portal's status nor a message -
+    a page from something in front of the portal, not the portal itself."""
+    return server_status in ("", None) and not server_message
+
+
 def what_the_server_said(
     http_status: int, server_status: Any, server_message: Any
 ) -> str:
@@ -44,13 +50,13 @@ def what_the_server_said(
     "Server returned status code:  and message: " - as if the portal had
     answered and said nothing, while the one fact there was went unsaid.
     """
+    if portal_said_nothing(server_status, server_message):
+        return f"HTTP {http_status}, no status or message in the answer"
     said = []
     if server_status not in ("", None):
         said.append(f"status code: {server_status}")
     if server_message:
         said.append(f"message: {server_message}")
-    if not said:
-        return f"HTTP {http_status}, no status or message in the answer"
     return "Server returned " + " and ".join(said)
 
 

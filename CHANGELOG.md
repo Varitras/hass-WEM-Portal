@@ -17,6 +17,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **The setup and options dialogs explain each field under it.** Labels
   carried every default, unit and warning in one long line; they are now
   short, with the explanation shown below the field in both languages.
+- **The rate-limit warning names the request the portal refused.** It said
+  only that a 403 came and everything was paused; which request earned it -
+  values, statistics, a schedule, a login or the web page - and whether the
+  answer came from the portal or a bare firewall page is now in the line.
 
 ### Security
 
@@ -29,6 +33,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A login turned away once no longer pauses everything.** Now and then
+  the login is refused with a bare page - no answer from the portal itself -
+  and the next one goes through. Each of those was taken for the IP block:
+  fifteen minutes of nothing, a warning and a repair issue, several times a
+  day. The first such refusal now only fails that cycle; a second in a row,
+  or a refusal the portal itself explains, is still treated as the block.
 - **A device with nothing to read no longer hides a failed cycle.** It was
   counted as refreshed, so when every device that does have values failed to
   update, the cycle still looked successful: no backoff, no unavailable

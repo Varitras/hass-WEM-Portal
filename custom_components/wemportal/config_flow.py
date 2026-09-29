@@ -39,7 +39,7 @@ from .const import (
     DOMAIN,
     EXPERT_SLOT_COUNT,
 )
-from .exceptions import AuthError, ForbiddenError
+from .exceptions import AuthError, ForbiddenError, LoginRefused
 from .coordinator import (
     forget_account_state_if_last_entry,
     forget_auth_failures,
@@ -93,6 +93,10 @@ async def validate_input(hass: HomeAssistant, data):
             await hass.async_add_executor_job(api.api_login)
         elif data[CONF_MODE] == "web":
             await hass.async_add_executor_job(api.web_login)
+    except LoginRefused as exc:
+        # One login turned away is not a wrong password and not the block:
+        # trying again is the right advice.
+        raise CannotConnect from exc
     except AuthError as exc:
         raise InvalidAuth from exc
     except ForbiddenError as exc:

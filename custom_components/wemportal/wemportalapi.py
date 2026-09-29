@@ -1247,7 +1247,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             self._reset_scraper()
             raise
 
-        except ForbiddenError:
+        except ForbiddenError as exc:
             # The web frontend rate-limited us (403). Activate the same
             # global cooldown the API path uses, discard the scraper
             # (fresh connection once the cooldown expires), and let the
@@ -1261,7 +1261,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # scrape delivered nothing while its last values were exempt
             # from every ageing pass in the integration.
             self._register_scrape_failure()
-            self._activate_cooldown()
+            self._activate_cooldown(f"the web scrape: {exc}")
             self._reset_scraper()
             raise
 

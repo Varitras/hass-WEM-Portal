@@ -257,7 +257,8 @@ class WemPortalScraper:
         status = getattr(response, "status_code", 200)
         if status == 403:
             raise ForbiddenError(
-                "WEM Portal web frontend returned 403 (rate limit/forbidden)."
+                f"WEM Portal web frontend returned 403 (rate limit/forbidden) "
+                f"for the {what} at {redact_url(getattr(response, 'url', None))}."
             )
         if status != 200:
             # Not `>= 400`: every request in this module asks for an HTML

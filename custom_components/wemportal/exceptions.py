@@ -54,6 +54,21 @@ class AuthError(WemPortalError):
     """
 
 
+class LoginRefused(AuthError):
+    """A login turned away with a bare 403: no portal status, no message.
+
+    What a firewall in front of the portal answers now and then - three or
+    four times a day, at random minutes, with the next login going through.
+    So the first one is not taken for the IP block; a second in a row is
+    (see WemPortalTransport._raise_login_failure).
+
+    An AuthError for its propagation, not its meaning: the session is gone,
+    and every shield on the poll path lets an AuthError through so the rest
+    of the cycle does not spend more logins on it. The coordinator and the
+    flows catch this one first and never count it as a wrong password.
+    """
+
+
 class UnknownAuthError(WemPortalError):
     """Exception to indicate an unknown authentication error."""
 
@@ -64,6 +79,15 @@ class ServerError(WemPortalError):
 
 class ForbiddenError(WemPortalError):
     """Exception to indicate a forbidden error (403)."""
+
+
+def time_left(seconds: float) -> str:
+    """How long a 403 backoff still holds, as its ForbiddenError says it:
+    minutes above one, seconds below."""
+    remaining = int(seconds)
+    if remaining >= 60:
+        return f"~{(remaining + 59) // 60} min"
+    return f"{remaining}s"
 
 
 class ExpiredSessionError(WemPortalError):
