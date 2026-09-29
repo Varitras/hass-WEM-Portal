@@ -6052,6 +6052,9 @@ PRESERVED_FIELDS = frozenset(
         "_account_state",
         "_first_cycle_done",
         "_deadline",
+        # Like _deadline, it belongs to the poll cycle in progress: which
+        # burst that cycle has spent. A new connection does not un-spend it.
+        "heavy_fetch_turns",
         "_last_device_read",
         "_module_answered_at",
         "data",
@@ -9313,3 +9316,118 @@ def test_a_read_back_that_read_nothing_does_not_verify_a_write():
     api.modules = {"1234": {}}
 
     assert isinstance(api.reread_device_values("1234"), str)
+
+
+# --- one heavy fetch per cycle ------------------------------------------
+
+
+def _api_with_every_heavy_fetch_due():
+    """An api whose statistics, weekly programme and daily parameter re-read
+    are all due at once - what the hourly guards line up to every hour, and
+    what a restart lines up to on its first cycles."""
+    from custom_components.wemportal.const import CONF_MODE, WemDataType
+
+    api = _api(config={CONF_MODE: "api"})
+    api.valid_login = True
+    api._devices_fetched_this_session = True
+    api._first_cycle_done = True
+    api.last_statistics_fetch = None
+    api._last_circuit_times_fetch.clear()
+    api.data = {"1234": {}}
+    api.modules = {
+        "1234": {
+            (0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heating circuit",
+                "parameters": {
+                    "PROG": {"ParameterID": "PROG", "DataType": WemDataType.PROGRAM}
+                },
+                "parameters_fetched_at": 0,
+            }
+        }
+    }
+    api._fetch_device_status = lambda _device_id: True
+    api._fetch_parameter_values = lambda _device_id: None
+    heavy = []
+
+    def rediscover(_enabled_devices=None):
+        heavy.append("parameters")
+        for module in api.modules["1234"].values():
+            module["parameters_fetched_at"] = time.time()
+
+    def read_schedule(device_id, module, parameter_id):
+        heavy.append("schedules")
+        api._record_schedule_attempt(
+            device_id, module, parameter_id, time.monotonic(), True
+        )
+
+    api.get_parameters = rediscover
+    api._read_and_record_one_schedule = read_schedule
+    api._fetch_device_statistics = lambda _device_id: heavy.append("statistics")
+    return api, heavy
+
+
+def test_heavy_fetches_that_fall_due_together_take_turns():
+    """The parameter re-read (a request per module), the weekly programmes
+    (two per programme) and the statistics (one per group, plus one) all ran
+    in the same cycle whenever they fell due together - and their hourly
+    guards keep them together once they have. A portal that turns away
+    bursts saw every hour's worth of extra traffic inside one minute."""
+    api, heavy = _api_with_every_heavy_fetch_due()
+
+    per_cycle = []
+    for _ in range(4):
+        heavy.clear()
+        api._fetch_data(enabled_devices=None)
+        per_cycle.append(list(heavy))
+
+    assert per_cycle == [["parameters"], ["schedules"], ["statistics"], []], (
+        f"heavy fetches per cycle: {per_cycle}"
+    )
+
+
+def test_missing_parameter_definitions_are_never_deferred():
+    """Without definitions there is nothing to read at all: the first read
+    of a module is not a heavy fetch that can wait its turn."""
+    api, heavy = _api_with_every_heavy_fetch_due()
+    # A turn the statistics were refused, so the next cycle is theirs.
+    api.heavy_fetch_turns.claim("schedules")
+    api.heavy_fetch_turns.claim("statistics")
+    for module in api.modules["1234"].values():
+        del module["parameters"]
+
+    api._fetch_data(enabled_devices=None)
+
+    assert heavy and heavy[0] == "parameters", heavy
+
+
+def test_a_programme_that_keeps_failing_does_not_starve_the_statistics(
+    monkeypatch,
+):
+    """A failed programme is retried after fifteen minutes - on a
+    fifteen-minute interval, that is every cycle. It came first in the cycle
+    and took the turn every time, so the statistics never ran at all while
+    one programme kept answering without a week."""
+    from custom_components.wemportal.schedule import (
+        CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS,
+    )
+
+    clock = _Clock()
+    monkeypatch.setattr(time, "monotonic", clock)
+    api, heavy = _api_with_every_heavy_fetch_due()
+    api.get_parameters = lambda _enabled_devices=None: None
+    for module in api.modules["1234"].values():
+        module["parameters_fetched_at"] = time.time()
+
+    def fail_schedule(device_id, module, parameter_id):
+        heavy.append("schedules")
+        api._record_schedule_attempt(device_id, module, parameter_id, clock(), False)
+
+    api._read_and_record_one_schedule = fail_schedule
+
+    for _ in range(3):
+        api._fetch_data(enabled_devices=None)
+        clock.now += CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS
+
+    assert "statistics" in heavy, f"three cycles, and only: {heavy}"

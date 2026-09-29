@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Final
 import requests
 
 from .exceptions import AuthError, ForbiddenError, WemPortalError
-from .models import Reading
+from .models import HeavyFetchTurns, Reading
 from .translations import translate
 from .utils import (
     failure_is_new,
@@ -88,6 +88,7 @@ class WemPortalStatistics:
         # Which failures have already been announced, so a portal that
         # keeps timing out is said once rather than once per cycle.
         _reported_failures: dict[str, str]
+        heavy_fetch_turns: HeavyFetchTurns
 
         # The host's transport half; the full signature so the three mixins
         # agree on it when merged into the one WemPortalApi.
@@ -374,6 +375,10 @@ class WemPortalStatistics:
             self.last_statistics_fetch is not None
             and (now - self.last_statistics_fetch) < STATISTICS_REFRESH_INTERVAL_SECONDS
         ):
+            return
+        # Before the stamp: a turn given to another heavy fetch leaves the
+        # statistics due for the next cycle.
+        if not self.heavy_fetch_turns.claim("statistics"):
             return
 
         self.last_statistics_fetch = now

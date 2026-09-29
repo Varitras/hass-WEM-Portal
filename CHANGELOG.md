@@ -21,6 +21,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   only that a 403 came and everything was paused; which request earned it -
   values, statistics, a schedule, a login or the web page - and whether the
   answer came from the portal or a bare firewall page is now in the line.
+- **The hourly extras no longer go out in one burst.** Statistics, weekly
+  programmes and the daily re-read of parameter definitions each send a
+  handful of requests, and they fell due in the same cycle every hour. They
+  now take turns, one per cycle, so the same requests are spread over a few
+  minutes instead of one.
 
 ### Security
 

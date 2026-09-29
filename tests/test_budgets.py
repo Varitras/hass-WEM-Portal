@@ -49,7 +49,9 @@ LINE_BUDGETS = {
     # `both` mode is said once and its recovery once, instead of every attempt.
     # And by 15 more for a third outcome of a device's read: nothing to read,
     # which a no-op device had passed off as a successful refresh.
-    "wemportalapi.py": 2595,
+    # And by 6 for opening a cycle's heavy-fetch turn and claiming it; the rule
+    # itself lives in models.HeavyFetchTurns.
+    "wemportalapi.py": 2601,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

@@ -13,14 +13,14 @@ exact traffic.
 import logging
 
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Final
 
 import requests
 
 from .const import WemDataType
 from .exceptions import AuthError
-from .models import ModuleRef, Reading
+from .models import HeavyFetchTurns, ModuleRef, Reading
 from .translations import friendly_name_mapper, translate
 from .utils import looks_like_schedule, portal_list, week_carries_a_programme
 
@@ -78,6 +78,7 @@ class WemPortalSchedule:
         language: str
         scraping_mapper: dict[Any, Any]
         _last_circuit_times_fetch: dict[tuple[Any, ...], float]
+        heavy_fetch_turns: HeavyFetchTurns
 
         # The host's transport half; the full signature so the three mixins
         # agree on it when merged into the one WemPortalApi.
@@ -312,21 +313,31 @@ class WemPortalSchedule:
                 device_id, module, parameter_id, attempted_at, fetched
             )
 
+    def _due_schedules(self, device_id: str) -> Iterator[tuple[Any, str]]:
+        """Every weekly programme of the device whose throttle has run out.
+
+        Lazy on purpose: each one is judged after the one before it was
+        fetched and stamped, which is what lets a throttle key that fails to
+        tell two circuits apart show up as the second one not being fetched.
+        """
+        return (
+            (module, parameter_id)
+            for module in (self.modules or {}).get(device_id, {}).values()
+            for parameter_id, parameter_data in (module.get("parameters") or {}).items()
+            if self._is_schedule_parameter(
+                device_id, module, parameter_id, parameter_data
+            )
+            and self._schedule_is_due(device_id, module, parameter_id)
+        )
+
     def _fetch_circuit_times(self, device_id: str) -> None:
         """Fetch the device's own view of every weekly programme it has,
         throttled per programme."""
         try:
-            for module in (self.modules or {}).get(device_id, {}).values():
-                for parameter_id, parameter_data in (
-                    module.get("parameters") or {}
-                ).items():
-                    if not self._is_schedule_parameter(
-                        device_id, module, parameter_id, parameter_data
-                    ):
-                        continue
-                    if not self._schedule_is_due(device_id, module, parameter_id):
-                        continue
-                    self._read_and_record_one_schedule(device_id, module, parameter_id)
+            for module, parameter_id in self._due_schedules(device_id):
+                if not self.heavy_fetch_turns.claim("schedules"):
+                    return
+                self._read_and_record_one_schedule(device_id, module, parameter_id)
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
         except AuthError:
             # The outer half of the same rule: extra detail may be lost, a
