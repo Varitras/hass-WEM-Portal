@@ -6,6 +6,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.14.0b3] – 2026-09-29
+
+A third beta. Everything from 1.14.0b2, plus: a login the portal turns away
+once no longer pauses everything, the hourly extras take turns instead of
+going out in one burst, and a whole number reads without a decimal.
+
 ### Added
 
 - **README:** prerequisites, one-click buttons for HACS and setup, a field
