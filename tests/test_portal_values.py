@@ -93,3 +93,36 @@ def _parser_line() -> int:
         if 'replace(",", ".")' in line:
             return line_number
     raise AssertionError("the parser itself no longer converts a comma")
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("12", 12),
+        ("-5", -5),
+        (30, 30),
+        ("12,0", 12.0),
+        ("21,5", 21.5),
+        (12.0, 12.0),
+    ],
+)
+def test_a_whole_number_the_portal_wrote_stays_whole(text, expected):
+    """A counter the portal shows as "12" was shown as "12,0": every number
+    came out a float, and Home Assistant prints a float with its decimal.
+    The number keeps the form the portal wrote it in - a decimal only where
+    the portal wrote one."""
+    number = utils.parse_portal_number(text)
+
+    assert number == expected
+    assert type(number) is type(expected), f"{text!r} became {number!r}"
+
+
+def test_a_scraped_count_without_a_unit_stays_whole():
+    """The two conversions a unitless scraped cell passes through: the cell
+    parser, then the unit fix-up, which cast to float again on its own."""
+    from custom_components.wemportal.scraper import _reading_and_unit
+
+    value, unit = _reading_and_unit("12")
+    fixed, _unit = utils.fix_value_and_unit(value, unit)
+
+    assert (fixed, type(fixed)) == (12, int), f"shown as {fixed!r}"

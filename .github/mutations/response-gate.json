@@ -2851,8 +2851,8 @@
   {
     "label": "values: the comma dropped from the one shared parser",
     "path": "custom_components/wemportal/utils.py",
-    "old": "        return float(str(value).strip().replace(\",\", \".\"))",
-    "new": "        return float(str(value).strip())",
+    "old": "    text = str(value).strip().replace(\",\", \".\")\n",
+    "new": "    text = str(value).strip()\n",
     "tests": "a_portal_number_reads_the_same_in_both_spellings or a_german_decimal_reaches_the_write_as_the_number_it_means"
   },
   {
@@ -4415,5 +4415,19 @@
     "old": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "tests": "missing_parameter_definitions_are_never_deferred"
+  },
+  {
+    "label": "whole numbers: every portal number a float again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    if text.lstrip(\"+-\").isdigit():\n        return int(text)\n",
+    "new": "",
+    "tests": "whole_number_the_portal_wrote_stays_whole"
+  },
+  {
+    "label": "whole numbers: a unitless count cast to float after all",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        return number, \"\"\n",
+    "new": "        return float(number), \"\"\n",
+    "tests": "scraped_count_without_a_unit_stays_whole"
   }
 ]

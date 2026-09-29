@@ -244,13 +244,21 @@ def parse_portal_number(value: object) -> float | None:
     None rather than a raise: each caller has its own answer to "no number
     here" (skip the option, keep the raw string, name the accepted words),
     and an exception would turn every one of them into a try block.
+
+    A whole number the portal wrote without decimals stays an int: as a
+    float, a counter shown as "12" on the portal read "12,0" in Home
+    Assistant, which prints a float with its decimal.
     """
     if value is None:
         return None
+    text = str(value).strip().replace(",", ".")
     try:
-        return float(str(value).strip().replace(",", "."))
+        number = float(text)
     except ValueError:
         return None
+    if text.lstrip("+-").isdigit():
+        return int(text)
+    return number
 
 
 def sanitize_value(value_str: Any) -> Any:
@@ -388,10 +396,10 @@ def fix_value_and_unit(value: Any, unit: str | None) -> tuple[Any, str | None]:
 
     # special case: empty string for unit of measurement for a number
     if unit == "":
-        try:
-            return float(value), ""
-        except ValueError, TypeError:
+        number = parse_portal_number(value)
+        if number is None:
             return value, None
+        return number, ""
 
     unit = {
         "": None,
