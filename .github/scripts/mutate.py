@@ -245,8 +245,90 @@ def run_tests(
 _EXIT_REASON = {
     PYTEST_INTERRUPTED: "interrupted",
     PYTEST_INTERNAL_ERROR: "internal error",
-    PYTEST_USAGE_ERROR: "usage error",
+    PYTEST_USAGE_ERROR: "usage error - or a mutated module that fails to import",
 }
+
+
+# The rules for "a name the module does not define" - read, and assigned only
+# after use. Run over the plan BEFORE a single test: a mutation whose code
+# cannot run fails every selected test whatever they check, and a handler
+# that catches Exception can swallow the NameError, so the test output alone
+# does not always show it. The static answer does not depend on either.
+UNDEFINED_NAME_RULES = "F821,F823"
+
+
+def names_left_undefined(cases: list, root: Path | None = None) -> list[str]:
+    """Every case whose mutated module uses a name it does not define.
+
+    Compared against the unmutated module, so what the code already leaves
+    to runtime does not count. A case marked "crash_is_the_defect" must do
+    exactly this - and one that no longer does is reported too, so the flag
+    cannot outlive the reason it was set.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        originals: dict[str, str] = {}
+        for index, case in enumerate(cases):
+            source = ((root or REPO) / case["path"]).read_text(encoding="utf-8")
+            if case["path"] not in originals:
+                originals[case["path"]] = f"original_{len(originals)}.py"
+                (folder / originals[case["path"]]).write_text(source, encoding="utf-8")
+            mutated = source.replace(case["old"], case["new"], 1)
+            (folder / f"case_{index}.py").write_text(mutated, encoding="utf-8")
+        found = _undefined_names(folder)
+
+    problems = []
+    for index, case in enumerate(cases):
+        label = case.get("label", case["path"])
+        introduced = found.get(f"case_{index}.py", set()) - found.get(
+            originals[case["path"]], set()
+        )
+        declared = case.get("crash_is_the_defect", False)
+        if introduced and not declared:
+            problems.append(f"{label}: {', '.join(sorted(introduced))}")
+        if declared and not introduced:
+            problems.append(
+                f"{label}: marked crash_is_the_defect, but defines every name it uses"
+            )
+    return problems
+
+
+def _undefined_names(folder: Path) -> dict[str, set[str]]:
+    """ruff's undefined-name findings in `folder`, by file name."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--isolated",
+            "--no-cache",
+            "--select",
+            UNDEFINED_NAME_RULES,
+            "--output-format",
+            "json",
+            str(folder),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # 0: nothing found, 1: findings. Anything else - or no JSON, which is what
+    # "No module named ruff" looks like - means the question was not answered.
+    try:
+        findings = json.loads(result.stdout) if result.returncode in (0, 1) else None
+    except json.JSONDecodeError:
+        findings = None
+    if findings is None:
+        raise SystemExit(
+            "The undefined-name check needs ruff in this interpreter and did not "
+            f"get an answer (exit {result.returncode}):\n"
+            + (result.stderr or "(empty)").strip()[-2000:]
+        )
+    found: dict[str, set[str]] = {}
+    for finding in findings:
+        found.setdefault(Path(finding["filename"]).name, set()).add(finding["message"])
+    return found
 
 
 def apply_mutation(case: dict, root: Path | None = None) -> tuple[Path, bytes]:
@@ -340,7 +422,7 @@ def run_case(case: dict, files: list, root: Path | None) -> bool | None:
             crash_is_the_defect=case.get("crash_is_the_defect", False),
         )
     except BrokenMutation as broken:
-        print(f"\n{broken}", file=sys.stderr)
+        print(f"\n{case.get('label', case['path'])}: {broken}", file=sys.stderr)
         return None
     finally:
         target.write_bytes(original)
@@ -436,6 +518,14 @@ def main() -> int:
         if not files:
             raise SystemExit(f"selector {selector!r} matched no tests")
         targets[selector] = files
+
+    unrunnable = names_left_undefined(cases)
+    if unrunnable:
+        print(
+            "These mutations use names their module does not define, so their "
+            "failing tests would prove nothing:\n  " + "\n  ".join(unrunnable)
+        )
+        return 1
 
     jobs = max(1, args.jobs)
     if jobs == 1:

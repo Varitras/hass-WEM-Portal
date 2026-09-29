@@ -809,7 +809,7 @@
     "label": "auth: a refused re-login lost inside the schedule read",
     "path": "custom_components/wemportal/schedule.py",
     "old": "        except AuthError:\n            # A refused login is not one programme failing",
-    "new": "        except UnknownAuthError:\n            # A refused login is not one programme failing",
+    "new": "        except ():\n            # A refused login is not one programme failing",
     "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
   },
   {
@@ -1607,7 +1607,7 @@
     "label": "rediscovery: deleting a module the portal rejects must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        values[\"parameters\"] = {}",
-    "new": "        if unsupported:\n            modules = self.modules[device_id]\n            del modules[next(k for k, v in modules.items() if v is values)]\n            return\n        values[\"parameters\"] = {}",
+    "new": "        if unsupported:\n            self.modules[device_id] = {\n                k: v for k, v in self.modules[device_id].items() if v is not values\n            }\n            return\n        values[\"parameters\"] = {}",
     "tests": "a_module_the_portal_rejects_is_kept_and_asked_again"
   },
   {
@@ -2404,8 +2404,8 @@
   {
     "label": "expert: a teardown reported to the caller as a successful write",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        except ExpertOperationAborted as exc:",
-    "new": "        except () as exc:",
+    "old": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._attr_name, exc)\n            raise HomeAssistantError(\n",
+    "new": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._attr_name, exc)\n            return\n            raise HomeAssistantError(\n",
     "tests": "a_write_stopped_by_a_teardown_reaches_the_caller_too"
   },
   {
@@ -3581,7 +3581,7 @@
     "label": "freshness: a merged reading aged under a key it does not live at",
     "path": "custom_components/wemportal/mapper.py",
     "old": "        merged_into = scraping_mapper.get((device_id, module_key, parameter_id)) or [\n            name\n        ]\n        entry = device_data.get(merged_into[0])",
-    "new": "        entry = device_data.get(name)",
+    "new": "        merged_into = [name]\n        entry = device_data.get(merged_into[0])",
     "tests": "merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives"
   },
   {
@@ -3645,7 +3645,8 @@
     "path": "custom_components/wemportal/transport.py",
     "old": "from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url",
     "new": "from .utils import parse_portal_number",
-    "tests": "transport_imports_only_domain_free_siblings"
+    "tests": "transport_imports_only_domain_free_siblings",
+    "crash_is_the_defect": true
   },
   {
     "label": "quality: a platform that leaves its parallel calls undeclared",
@@ -4416,5 +4417,33 @@
     "old": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "tests": "missing_parameter_definitions_are_never_deferred"
+  },
+  {
+    "label": "harness: a broken case lets the run pass",
+    "path": ".github/scripts/mutate.py",
+    "old": "    if broken or survived:\n        return 1\n",
+    "new": "    if survived:\n        return 1\n",
+    "tests": "a_broken_case_is_reported_and_fails_the_run"
+  },
+  {
+    "label": "harness: one broken case ends the run and hides the rest",
+    "path": ".github/scripts/mutate.py",
+    "old": "    except BrokenMutation as broken:\n",
+    "new": "    except () as broken:\n",
+    "tests": "a_broken_case_is_reported_and_fails_the_run"
+  },
+  {
+    "label": "harness: a mutation that cannot run is tested anyway",
+    "path": ".github/scripts/mutate.py",
+    "old": "    if unrunnable:\n",
+    "new": "    if False:\n",
+    "tests": "stops_before_any_test_when_a_mutation_cannot_run"
+  },
+  {
+    "label": "harness: a crash flag outlives the crash",
+    "path": ".github/scripts/mutate.py",
+    "old": "        if declared and not introduced:\n",
+    "new": "        if False:\n",
+    "tests": "crash_flag_is_honoured_and_cannot_go_stale"
   }
 ]

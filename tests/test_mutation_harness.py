@@ -38,6 +38,19 @@ def _load():
 mutate = _load()
 
 
+# Kept before the fixture below replaces it, for the tests that are about it.
+_names_left_undefined = mutate.names_left_undefined
+
+
+@pytest.fixture(autouse=True)
+def _no_ruff_needed(monkeypatch):
+    """main() asks ruff about undefined names before it runs anything. The
+    test jobs do not install ruff - the gate's mutation job does - and the
+    check writes a temporary tree that some tests here forbid removing. The
+    tests about the check call it directly and give ruff's answer."""
+    monkeypatch.setattr(mutate, "names_left_undefined", lambda _cases: [])
+
+
 class _Result:
     """What subprocess.run returns, as far as the harness reads it.
 
@@ -837,3 +850,109 @@ def test_a_crash_the_plan_declares_as_the_defect_is_caught(monkeypatch):
     )
 
     assert mutate.run_tests("something", crash_is_the_defect=True) is True
+
+
+# --- a mutation whose code cannot run is refused before it runs ----------
+
+
+def _one_case_plan(tmp_path, **extra):
+    (tmp_path / "module.py").write_text("value = 1\n", encoding="utf-8")
+    return [
+        {
+            "path": "module.py",
+            "old": "value = 1",
+            "new": "value = missing",
+            "tests": "test_real",
+            "label": "case0",
+            **extra,
+        }
+    ]
+
+
+def test_a_name_the_mutated_module_lacks_is_refused(tmp_path, monkeypatch):
+    """A handler catching Exception swallowed the NameError of one such case,
+    so its test failed for another reason and the run counted it caught. The
+    static check does not depend on what the code catches."""
+    monkeypatch.setattr(
+        mutate,
+        "_undefined_names",
+        lambda _folder: {"case_0.py": {"Undefined name `missing`"}},
+    )
+
+    problems = _names_left_undefined(_one_case_plan(tmp_path), root=tmp_path)
+
+    assert problems == ["case0: Undefined name `missing`"]
+
+
+def test_a_name_the_module_already_left_undefined_is_not_the_mutation(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        mutate,
+        "_undefined_names",
+        lambda _folder: {
+            "case_0.py": {"Undefined name `TYPE_ONLY`"},
+            "original_0.py": {"Undefined name `TYPE_ONLY`"},
+        },
+    )
+
+    assert _names_left_undefined(_one_case_plan(tmp_path), root=tmp_path) == []
+
+
+def test_the_crash_flag_is_honoured_and_cannot_go_stale(tmp_path, monkeypatch):
+    plan = _one_case_plan(tmp_path, crash_is_the_defect=True)
+    monkeypatch.setattr(
+        mutate,
+        "_undefined_names",
+        lambda _folder: {"case_0.py": {"Undefined name `missing`"}},
+    )
+    assert _names_left_undefined(plan, root=tmp_path) == []
+
+    monkeypatch.setattr(mutate, "_undefined_names", lambda _folder: {})
+    (stale,) = _names_left_undefined(plan, root=tmp_path)
+    assert "crash_is_the_defect" in stale
+
+
+def test_the_run_stops_before_any_test_when_a_mutation_cannot_run(
+    tmp_path, monkeypatch, capsys
+):
+    ran = []
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    monkeypatch.setattr(
+        mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
+    )
+    monkeypatch.setattr(mutate, "names_left_undefined", lambda _cases: ["case0: x"])
+    monkeypatch.setattr(mutate, "run_tests", lambda *_args, **_kwargs: ran.append(1))
+    plan = _plan_of(1, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", "1"])
+
+    assert mutate.main() == 1
+    assert ran == [], "tests ran for a plan with a mutation that cannot run"
+    assert "case0: x" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("jobs", ["1", "2"])
+def test_a_broken_case_is_reported_and_fails_the_run(
+    tmp_path, monkeypatch, capsys, jobs
+):
+    """Collected, not fatal - and not green either. With the run's return
+    left at 0, BROKEN was printed and the gate passed."""
+
+    def crash_on_the_first(selector, paths=None, root=None, **_):
+        mutated = ((root or tmp_path) / "module.py").read_text(encoding="utf-8")
+        if "value0 = 2" in mutated:
+            raise mutate.BrokenMutation("the mutated code does not run")
+        return True
+
+    monkeypatch.setattr(mutate, "REPO", tmp_path)
+    monkeypatch.setattr(mutate, "run_tests", crash_on_the_first)
+    monkeypatch.setattr(
+        mutate, "collect_test_locations", lambda: {"test_real": {"tests/x.py"}}
+    )
+    plan = _plan_of(2, tmp_path)
+    monkeypatch.setattr("sys.argv", ["mutate.py", str(plan), "--jobs", jobs])
+
+    assert mutate.main() == 1, "a broken case let the run pass"
+    out = capsys.readouterr().out
+    assert "BROKEN   case0" in out
+    assert "caught   case1" in out, "one broken case hid the next"

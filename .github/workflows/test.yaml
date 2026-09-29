@@ -139,6 +139,11 @@ jobs:
       # rather than by reading the test. Only on one job: the answer does not
       # depend on the Home Assistant version, and the mutations edit files in
       # the workspace, so running it twice in parallel would be unsound.
+      # The plan is checked for names a mutation leaves undefined before any
+      # test runs, and ruff answers that. Same pin as the ruff job above.
+      - name: Install ruff for the mutation plan's name check
+        if: matrix.name == 'current HA'
+        run: pip install "ruff==0.15.22"
       - name: Verify the tests actually catch a broken fix
         if: matrix.name == 'current HA'
         run: python .github/scripts/mutate.py .github/mutations/response-gate.json

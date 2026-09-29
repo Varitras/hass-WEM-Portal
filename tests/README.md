@@ -53,10 +53,14 @@ blind and no longer looks where the code moved.
 
 A mutation that is **broken** does not run at all: it names something the
 mutated code does not have, so every selected test fails on a `NameError`
-before reaching what it was written to notice. That failure is not evidence,
-and the run reports it instead of counting it as caught. Where the crash IS
-the defect under test - a deleted import - the case says so with
-`"crash_is_the_defect": true`.
+before reaching what it was written to notice - or a handler catching
+`Exception` swallows the error and the test fails for yet another reason.
+Neither is evidence. Before any test runs, ruff checks every mutated module
+for names it does not define and the run stops on one; a crash seen only at
+runtime is reported as BROKEN instead of caught. Where the crash IS the
+defect under test - a deleted import - the case says so with
+`"crash_is_the_defect": true`, and a flag whose mutation no longer crashes
+is reported too.
 
 When you add a behaviour worth keeping, add a mutation for it. When you
 move code, the `path` fields move with it.
