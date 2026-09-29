@@ -90,6 +90,17 @@ def time_left(seconds: float) -> str:
     return f"{remaining}s"
 
 
+class WebLoginRefused(ForbiddenError):
+    """The web login answered 403 - the scraper's, not a page behind it.
+
+    Like the API's LoginRefused, a firewall does this now and then and the
+    next login goes through, so the first one in a row costs only the
+    scrape and is retried five minutes on; a second in a row is the block.
+    A ForbiddenError, so every handler that does not know it treats it as
+    the refusal it always was.
+    """
+
+
 class ExpiredSessionError(WemPortalError):
     """
     Custom exception for expired session errors

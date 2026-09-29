@@ -225,6 +225,11 @@ The integration is built around that:
   minutes. One on an expert request pauses only that feature - it is not
   proof of an IP-wide block (see
   [Expert write access (web)](#expert-write-access-web)).
+- A **login** turned away with a bare page - no answer from the portal
+  itself - is not taken for that block the first time: the next login
+  usually goes through. The API's costs that one cycle; the web page's costs
+  only the scrape, which tries again five minutes later. A second one in a
+  row pauses everything as above.
 - The setup and re-authentication dialogs refuse to send anything while that
   pause is active, and say so — deleting and re-adding the integration to "fix"
   a block is the one thing that reliably prolongs it.

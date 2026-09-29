@@ -44,6 +44,7 @@ from .exceptions import (
     PollDeadlineExceeded,
     PortalMaintenanceError,
     ServerError,
+    WebLoginRefused,
     WemPortalError,
 )
 from .mapper import WemPortalDataMapper, forget_dropped_parameters
@@ -181,6 +182,9 @@ SCRAPER_FALLBACK_DEVICE_ID: Final = "0000"
 # that is never run - because its device is disabled - leaves the values
 # alone; nothing was asked, so nothing was refused.
 SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE: Final = 3
+# After the first web login turned away in a row: the scrape alone waits this
+# long instead of every request waiting fifteen minutes - see WebLoginRefused.
+WEB_LOGIN_RETRY_SECONDS: Final = 300
 
 _SCRAPE_FAILURE_KEY: Final = "web-scrape"
 
@@ -363,6 +367,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # Used to keep track of the number of times the spider consecutively fails
         self.spider_retry_count = retry_count
         self.last_scraping_update = last_update
+        # Monotonic; the scrape waits for it after one turned-away web login.
+        self._scrape_not_before: float | None = None
 
     def _init_runtime_state(self) -> None:
         """State that always starts empty: the HTTP transport, the
@@ -905,6 +911,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return False
         if self.spider_wait_interval != 0:
             return False
+        not_before = self._scrape_not_before
+        if not_before is not None and time.monotonic() < not_before:
+            return False
         if self.last_scraping_update is None:
             return True
         # POSIX timestamps, not a datetime subtraction: two aware stamps with
@@ -1253,6 +1262,19 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             self._reset_scraper()
             raise
 
+        except WebLoginRefused as exc:
+            # Counted like any failed scrape, but the first in a row neither
+            # pauses the API nor waits a cycle: five minutes, and the next
+            # login usually goes through. A second in a row is the block.
+            self._register_scrape_failure()
+            self._reset_scraper()
+            if self._account_state.note_refused_web_login():
+                self.spider_wait_interval = 0
+                self._scrape_not_before = time.monotonic() + WEB_LOGIN_RETRY_SECONDS
+                raise
+            self._activate_cooldown(f"the web scrape: {exc}")
+            raise
+
         except ForbiddenError as exc:
             # The web frontend rate-limited us (403). Activate the same
             # global cooldown the API path uses, discard the scraper
@@ -1309,6 +1331,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # Reset retry count and wait interval after a successful operation
         self.spider_retry_count = 0
         self.spider_wait_interval = 0
+        self._account_state.refused_web_logins = 0
 
         # Return the scraped data
         return data

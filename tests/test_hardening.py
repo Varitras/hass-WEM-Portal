@@ -6084,6 +6084,9 @@ PRESERVED_FIELDS = frozenset(
         "spider_wait_interval",
         "spider_retry_count",
         "last_scraping_update",
+        # Part of the scrape backoff: a recovery must not let a scrape that
+        # was just turned away try again before its five minutes are up.
+        "_scrape_not_before",
         # Same rule as the scrape backoff above: a recovery runs after the
         # failures that caused it, and dropping the API interval there would
         # spend requests fastest at the portal that is already refusing them.
@@ -9431,3 +9434,108 @@ def test_a_programme_that_keeps_failing_does_not_starve_the_statistics(
         clock.now += CIRCUIT_TIMES_RETRY_INTERVAL_SECONDS
 
     assert "statistics" in heavy, f"three cycles, and only: {heavy}"
+
+
+# --- a web login turned away once: retry the scrape in five minutes ------
+
+
+def _api_whose_web_login_answers(clock, monkeypatch, *outcomes):
+    """A `both`-mode api whose scrapes end in `outcomes` in turn: an
+    exception to raise, or a dict of scraped rows for a scrape that worked."""
+    from custom_components.wemportal.const import CONF_MODE
+
+    monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
+    api = _api(config={CONF_MODE: "both"})
+    queue = list(outcomes)
+
+    class _Scraper:
+        cookie = {}
+
+        def scrape(self):
+            outcome = queue.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return [outcome]
+
+        def close(self):
+            pass
+
+    api._reset_scraper = lambda: None
+    api._scraper = _Scraper()
+    return api
+
+
+def _web_login_refusal():
+    from custom_components.wemportal.exceptions import WebLoginRefused
+
+    return WebLoginRefused("returned 403 for the login page")
+
+
+def _scrape(api):
+    try:
+        api.fetch_webscraping_data()
+    except exceptions.WemPortalError:
+        return False
+    return True
+
+
+def test_a_web_login_turned_away_once_retries_in_five_minutes(monkeypatch):
+    """Every refused web login paused ALL requests for fifteen minutes, the
+    API included, and the scrape then waited a full cycle on top. The first
+    refusal now costs the scrape alone, and it tries again five minutes on."""
+    clock = _Clock()
+    api = _api_whose_web_login_answers(clock, monkeypatch, _web_login_refusal())
+
+    _scrape(api)
+
+    assert not api.is_rate_limited(), "one refused web login paused the API too"
+    clock.now += 299
+    assert not api._scrape_is_due(None), "retried before five minutes were up"
+    clock.now += 2
+    assert api._scrape_is_due(None), "made to wait a full cycle instead of five minutes"
+
+
+def test_a_second_turned_away_web_login_in_a_row_is_the_block(monkeypatch):
+    clock = _Clock()
+    api = _api_whose_web_login_answers(
+        clock, monkeypatch, _web_login_refusal(), _web_login_refusal()
+    )
+
+    _scrape(api)
+    _scrape(api)
+
+    assert api.is_rate_limited(), "two refusals in a row were let through"
+
+
+def test_a_scrape_that_worked_in_between_starts_the_web_count_again(monkeypatch):
+    clock = _Clock()
+    api = _api_whose_web_login_answers(
+        clock, monkeypatch, _web_login_refusal(), {}, _web_login_refusal()
+    )
+    api._merge_webscraping_data = lambda *_args: None
+    api.resolve_scraper_device_id = lambda: "1234"
+
+    _scrape(api)
+    api._scrape_and_merge()
+    _scrape(api)
+
+    assert not api.is_rate_limited(), "refusals a working scrape separated added up"
+
+
+def test_only_the_login_steps_of_the_scraper_count_as_a_turned_away_login():
+    """A 403 on a page behind the login is not the login being refused: it
+    stays the block it always was."""
+    from custom_components.wemportal.exceptions import WebLoginRefused
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    scraper = WemPortalScraper("user@example.org", "secret", None)
+    refused = FakeResponse(
+        {}, status_code=403, url="https://www.wemportal.com/Web/Default.aspx"
+    )
+
+    with pytest.raises(exceptions.ForbiddenError) as page:
+        scraper._check_response(refused, "main page")
+    with pytest.raises(WebLoginRefused):
+        scraper._check_response(refused, "login page", login=True)
+
+    assert not isinstance(page.value, WebLoginRefused)

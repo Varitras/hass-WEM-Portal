@@ -44,6 +44,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   fifteen minutes of nothing, a warning and a repair issue, several times a
   day. The first such refusal now only fails that cycle; a second in a row,
   or a refusal the portal itself explains, is still treated as the block.
+- **A web login turned away once no longer pauses everything either.** In
+  `web` and `both` mode the scraper's login met the same bare refusal, and
+  it paused the API with it for fifteen minutes and then waited a cycle.
+  The first one now costs only the scrape, which tries again five minutes
+  later; a second in a row is still the block.
 - **A device with nothing to read no longer hides a failed cycle.** It was
   counted as refreshed, so when every device that does have values failed to
   update, the cycle still looked successful: no backoff, no unavailable

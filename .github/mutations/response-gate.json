@@ -2501,8 +2501,8 @@
   {
     "label": "scrape: downtime answering the login POST read as a wrong password",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        self._check_response(login_response, \"login POST\", check_maintenance=True)",
-    "new": "        self._check_response(login_response, \"login POST\")",
+    "old": "            login_response, \"login POST\", check_maintenance=True, login=True\n",
+    "new": "            login_response, \"login POST\", login=True\n",
     "tests": "maintenance_answering_the_login_post_is_not_a_wrong_password"
   },
   {
@@ -3796,8 +3796,8 @@
   {
     "label": "announcement: the scraper deciding maintenance on the login page again",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        self._check_response(login_page, \"login page\")",
-    "new": "        self._check_response(login_page, \"login page\", check_maintenance=True)",
+    "old": "        self._check_response(login_page, \"login page\", login=True)",
+    "new": "        self._check_response(login_page, \"login page\", check_maintenance=True, login=True)",
     "tests": "an_announcement_does_not_stop_the_scraper_login"
   },
   {
@@ -4415,5 +4415,47 @@
     "old": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "tests": "missing_parameter_definitions_are_never_deferred"
+  },
+  {
+    "label": "web login grace: a turned-away web login pauses everything at once again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if self._account_state.note_refused_web_login():\n",
+    "new": "            if False:\n",
+    "tests": "web_login_turned_away_once_retries_in_five_minutes"
+  },
+  {
+    "label": "web login grace: every web refusal let pass, the block never recognised",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if self._account_state.note_refused_web_login():\n",
+    "new": "            if self._account_state.note_refused_web_login() or True:\n",
+    "tests": "second_turned_away_web_login_in_a_row_is_the_block"
+  },
+  {
+    "label": "web login grace: the retry waits a whole cycle after all",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                self.spider_wait_interval = 0\n",
+    "new": "",
+    "tests": "web_login_turned_away_once_retries_in_five_minutes"
+  },
+  {
+    "label": "web login grace: the retry does not wait the five minutes",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not_before is not None and time.monotonic() < not_before:\n",
+    "new": "        if False:\n",
+    "tests": "web_login_turned_away_once_retries_in_five_minutes"
+  },
+  {
+    "label": "web login grace: a working scrape does not end the streak",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self._account_state.refused_web_logins = 0\n",
+    "new": "",
+    "tests": "scrape_that_worked_in_between_starts_the_web_count_again"
+  },
+  {
+    "label": "web login grace: a page 403 taken for a turned-away login",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            refusal = WebLoginRefused if login else ForbiddenError\n",
+    "new": "            refusal = WebLoginRefused\n",
+    "tests": "only_the_login_steps_of_the_scraper_count"
   }
 ]

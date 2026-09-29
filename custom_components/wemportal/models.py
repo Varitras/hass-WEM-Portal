@@ -70,6 +70,15 @@ class AccountState:
         self.refused_logins += 1
         return self.refused_logins == 1
 
+    # Web (scraper) logins turned away in a row, reset by a scrape that
+    # works: the first retries in five minutes, the next is the block.
+    refused_web_logins: int = 0
+
+    def note_refused_web_login(self) -> bool:
+        """Count a refused web login; True for the first of a streak."""
+        self.refused_web_logins += 1
+        return self.refused_web_logins == 1
+
     # NOT here either, and that is a decision rather than an oversight: the
     # two hourly gates on statistics and schedules. They were moved here and
     # moved back out. A reload builds a new api with no readings - it gets
