@@ -799,6 +799,14 @@ class WemPortalExpertClient:
         """
         if not self._try_cached_session():
             self._full_login()
+
+    def _went_through(self) -> None:
+        """End a refusal streak: this operation's own requests were answered.
+
+        Not at the login, which works before the request that is refused - a
+        dialog the portal refused on every read then stayed "the first time"
+        for good and never became a warning.
+        """
         self._account_state.expert_refusals = 0
 
     def _try_cached_session(self) -> bool:
@@ -1518,6 +1526,7 @@ class WemPortalExpertClient:
                         exc,
                     )
                     result[entityvalue] = None
+            self._went_through()
         finally:
             self.close()
         return result
@@ -1533,7 +1542,9 @@ class WemPortalExpertClient:
         self._check_gates()
         try:
             self._login()
-            return parse_module_list(self._nav_html or "")
+            modules = parse_module_list(self._nav_html or "")
+            self._went_through()
+            return modules
         finally:
             self.close()
 
@@ -1572,6 +1583,7 @@ class WemPortalExpertClient:
                         continue
                     seen.add(entityvalue)
                     result.append(parameter)
+            self._went_through()
         finally:
             self.close()
         return result
@@ -1724,6 +1736,7 @@ class WemPortalExpertClient:
                 short_entityvalue(entityvalue),
                 wanted,
             )
+            self._went_through()
             return verify
         finally:
             self.close()

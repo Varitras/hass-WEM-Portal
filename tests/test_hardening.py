@@ -9504,16 +9504,53 @@ def test_a_second_refused_expert_login_in_a_row_is_a_warning(caplog):
     assert [level for level, _message in _expert_lines(caplog)] == [logging.WARNING]
 
 
-def test_an_expert_login_that_worked_starts_the_count_again(caplog, monkeypatch):
+def _read_back(client, monkeypatch, fetch):
+    """One read-back through the real read_many, with the login taken as
+    working and each parameter dialog answered by `fetch`."""
+    from custom_components.wemportal import transport
+
+    transport.reset_cooldowns_for_tests()
+    client._account_state.expert_blocked_until = 0.0
+    # The real _login, on a reused session that works - what an hourly
+    # read-back meets, and where the count used to be reset.
+    monkeypatch.setattr(client, "_try_cached_session", lambda: True)
+    monkeypatch.setattr(client, "_fetch_form", fetch)
+    try:
+        client.read_many(["a" * 36])
+    except exceptions.ForbiddenError:
+        pass
+
+
+def test_an_expert_read_that_worked_starts_the_count_again(caplog, monkeypatch):
     import logging
 
     _api_unused, client, refused = _expert_client_and_refusal()
     _refuse(client, refused)
-    monkeypatch.setattr(client, "_try_cached_session", lambda: True)
-    client._login()
+    _read_back(client, monkeypatch, lambda _entityvalue: object())
 
     caplog.clear()
     with caplog.at_level(logging.INFO):
         _refuse(client, refused)
 
     assert [level for level, _message in _expert_lines(caplog)] == [logging.INFO]
+
+
+def test_a_dialog_refused_after_every_working_login_is_said_as_a_warning(
+    caplog, monkeypatch
+):
+    """The count was reset by the login, which works before the request that
+    is refused: a parameter dialog the portal refuses on every read stayed
+    "the first time" forever and never became a warning."""
+    import logging
+
+    _api_unused, client, refused = _expert_client_and_refusal()
+
+    def refuse_the_dialog(_entityvalue):
+        client._raise_if_forbidden(refused)
+
+    _read_back(client, monkeypatch, refuse_the_dialog)
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        _read_back(client, monkeypatch, refuse_the_dialog)
+
+    assert [level for level, _message in _expert_lines(caplog)] == [logging.WARNING]

@@ -4431,11 +4431,11 @@
     "tests": "second_refused_expert_login_in_a_row"
   },
   {
-    "label": "expert refusal: a working login does not end the streak",
+    "label": "expert refusal: an operation that went through does not end the streak",
     "path": "custom_components/wemportal/expert_writer.py",
     "old": "        self._account_state.expert_refusals = 0\n",
     "new": "",
-    "tests": "expert_login_that_worked_starts_the_count"
+    "tests": "expert_read_that_worked_starts_the_count_again"
   },
   {
     "label": "expert refusal: the pause says it again as a warning",
@@ -4450,5 +4450,19 @@
     "old": "            except ForbiddenError as exc:\n",
     "new": "            except () as exc:\n",
     "tests": "refused_poll_is_not_announced_a_second_time"
+  },
+  {
+    "label": "expert refusal: the streak ends at the login again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if not self._try_cached_session():\n            self._full_login()\n",
+    "new": "        if not self._try_cached_session():\n            self._full_login()\n        self._account_state.expert_refusals = 0\n",
+    "tests": "dialog_refused_after_every_working_login_is_said_as_a_warning"
+  },
+  {
+    "label": "expert refusal: a read-back that went through leaves the streak standing",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                    result[entityvalue] = None\n            self._went_through()\n",
+    "new": "                    result[entityvalue] = None\n",
+    "tests": "expert_read_that_worked_starts_the_count_again"
   }
 ]
