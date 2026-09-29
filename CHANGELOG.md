@@ -38,6 +38,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A whole number reads as one.** A counter the portal shows as "12" was
+  shown as "12,0". Every sensor now shows a whole number without the
+  decimal, from the web page and the API alike - 21.5 stays 21.5 - and "Aus"
+  and "Ein" read as 0 and 1. **Check automations and templates that compare
+  a state as text** with "0.0", "1.0" or "12.0": the text is now "0", "1",
+  "12". Numeric comparisons (`numeric_state`, `| float`) are unaffected.
 - **A login turned away once no longer pauses everything.** Now and then
   the login is refused with a bare page - no answer from the portal itself -
   and the next one goes through. Each of those was taken for the IP block:

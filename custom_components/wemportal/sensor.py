@@ -327,6 +327,19 @@ def _schedule_summary(row):
     )
 
 
+def _whole_number_shown_whole(value: Any) -> Any:
+    """12.0 as 12, 21.5 as it is.
+
+    A counter the portal shows as 12 read "12,0" in Home Assistant, which
+    prints a float with its decimal. Decided where every reading leaves for
+    Home Assistant, so a row the web page and the API both fill - one writes
+    12, the other 12.0 - cannot switch between the two spellings.
+    """
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
 class WemPortalSensor(WemPortalEntity, RestoreSensor):
     """Representation of a WEM Portal Sensor."""
 
@@ -403,7 +416,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 )
                 return None
 
-        return value
+        return _whole_number_shown_whole(value)
 
     def __init__(
         self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data

@@ -9586,3 +9586,33 @@ def test_missing_definitions_do_not_join_the_queue():
     api._discover_parameters_if_due(None)
 
     assert "parameters" not in api.heavy_fetch_turns._queue
+@pytest.mark.parametrize(
+    ("value", "unit", "shown"),
+    [
+        (12.0, "", 12),  # a counter, scraped or read from the API
+        (13988.0, "", 13988),
+        (25.0, "°C", 25),  # a merged row: web and API now show it alike
+        (21.5, "°C", 21.5),
+        (0, "", 0),  # "Aus"
+    ],
+)
+def test_a_whole_number_is_shown_as_one(value, unit, shown):
+    """A counter the portal shows as "12" read "12,0" in Home Assistant, and
+    a row both sources fill switched between the two spellings depending on
+    which wrote last. One rule, where every reading leaves for Home
+    Assistant: a whole number is shown whole, from either source."""
+    sensor = _sensor_from_row(
+        "counter",
+        Reading(
+            value=value,
+            unit=unit,
+            friendly_name="Counter",
+            parameter_id="counter",
+            platform="sensor",
+        ),
+    )
+
+    assert (sensor._attr_native_value, type(sensor._attr_native_value)) == (
+        shown,
+        type(shown),
+    )

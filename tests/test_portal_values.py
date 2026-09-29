@@ -93,3 +93,12 @@ def _parser_line() -> int:
         if 'replace(",", ".")' in line:
             return line_number
     raise AssertionError("the parser itself no longer converts a comma")
+
+
+@pytest.mark.parametrize(("word", "expected"), [("Aus", 0), ("Ein", 1), ("off", 0)])
+def test_an_on_off_word_reads_as_a_whole_number(word, expected):
+    """ "Aus" means nothing, not nothing to one decimal: shown as "0.0" it
+    was the one zero on the device that still carried a decimal."""
+    number = utils.sanitize_value(word)
+
+    assert (number, type(number)) == (expected, int), f"{word!r} became {number!r}"

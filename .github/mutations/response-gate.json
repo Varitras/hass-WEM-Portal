@@ -4450,5 +4450,19 @@
     "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
     "tests": "missing_definitions_do_not_join_the_queue"
+  },
+  {
+    "label": "whole numbers: an on/off word read as a float again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    if value_lower in BOOLEAN_OFF_STRINGS:\n        return 0\n",
+    "new": "    if value_lower in BOOLEAN_OFF_STRINGS:\n        return 0.0\n",
+    "tests": "on_off_word_reads_as_a_whole_number"
+  },
+  {
+    "label": "whole numbers: a whole reading shown with its decimal again",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    if isinstance(value, float) and value.is_integer():\n        return int(value)\n",
+    "new": "",
+    "tests": "whole_number_is_shown_as_one"
   }
 ]
