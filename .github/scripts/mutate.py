@@ -61,6 +61,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -260,28 +261,39 @@ UNDEFINED_NAME_RULES = "F821,F823"
 def names_left_undefined(cases: list, root: Path | None = None) -> list[str]:
     """Every case whose mutated module uses a name it does not define.
 
-    Compared against the unmutated module, so what the code already leaves
-    to runtime does not count. A case marked "crash_is_the_defect" must do
-    exactly this - and one that no longer does is reported too, so the flag
-    cannot outlive the reason it was set.
+    Compared against the unmutated module, and COUNTED: a name the original
+    already leaves undefined must not hide a new use of it. Only Python
+    modules - ruff reads anything else as broken Python. A case marked
+    "crash_is_the_defect" must do exactly this, and one that no longer does
+    is reported too, so the flag cannot outlive the reason it was set.
     """
+    problems = []
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp)
         originals: dict[str, str] = {}
+        checked = []
         for index, case in enumerate(cases):
+            label = case.get("label", case["path"])
             source = ((root or REPO) / case["path"]).read_text(encoding="utf-8")
+            occurrences = source.count(case["old"])
+            if occurrences != 1:
+                problems.append(
+                    f"{label}: snippet found {occurrences} times, expected once"
+                )
+                continue
+            if not case["path"].endswith(".py"):
+                continue
             if case["path"] not in originals:
                 originals[case["path"]] = f"original_{len(originals)}.py"
                 (folder / originals[case["path"]]).write_text(source, encoding="utf-8")
             mutated = source.replace(case["old"], case["new"], 1)
             (folder / f"case_{index}.py").write_text(mutated, encoding="utf-8")
-        found = _undefined_names(folder)
+            checked.append((index, case, label))
+        found = _undefined_names(folder) if checked else {}
 
-    problems = []
-    for index, case in enumerate(cases):
-        label = case.get("label", case["path"])
-        introduced = found.get(f"case_{index}.py", set()) - found.get(
-            originals[case["path"]], set()
+    for index, case, label in checked:
+        introduced = found.get(f"case_{index}.py", Counter()) - found.get(
+            originals[case["path"]], Counter()
         )
         declared = case.get("crash_is_the_defect", False)
         if introduced and not declared:
@@ -293,8 +305,8 @@ def names_left_undefined(cases: list, root: Path | None = None) -> list[str]:
     return problems
 
 
-def _undefined_names(folder: Path) -> dict[str, set[str]]:
-    """ruff's undefined-name findings in `folder`, by file name."""
+def _undefined_names(folder: Path) -> dict[str, Counter]:
+    """ruff's undefined-name findings in `folder`, counted by file name."""
     result = subprocess.run(
         [
             sys.executable,
@@ -311,6 +323,7 @@ def _undefined_names(folder: Path) -> dict[str, set[str]]:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     # 0: nothing found, 1: findings. Anything else - or no JSON, which is what
@@ -325,9 +338,12 @@ def _undefined_names(folder: Path) -> dict[str, set[str]]:
             f"get an answer (exit {result.returncode}):\n"
             + (result.stderr or "(empty)").strip()[-2000:]
         )
-    found: dict[str, set[str]] = {}
+    wanted = set(UNDEFINED_NAME_RULES.split(","))
+    found: dict[str, Counter] = {}
     for finding in findings:
-        found.setdefault(Path(finding["filename"]).name, set()).add(finding["message"])
+        if finding.get("code") in wanted:
+            name = Path(finding["filename"]).name
+            found.setdefault(name, Counter())[finding["message"]] += 1
     return found
 
 

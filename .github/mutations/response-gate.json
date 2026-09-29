@@ -3644,9 +3644,8 @@
     "label": "boundary: the transport reaching for utils again must be caught",
     "path": "custom_components/wemportal/transport.py",
     "old": "from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url",
-    "new": "from .utils import parse_portal_number",
-    "tests": "transport_imports_only_domain_free_siblings",
-    "crash_is_the_defect": true
+    "new": "from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url\nfrom .utils import parse_portal_number",
+    "tests": "transport_imports_only_domain_free_siblings"
   },
   {
     "label": "quality: a platform that leaves its parallel calls undeclared",
@@ -4445,5 +4444,33 @@
     "old": "        if declared and not introduced:\n",
     "new": "        if False:\n",
     "tests": "crash_flag_is_honoured_and_cannot_go_stale"
+  },
+  {
+    "label": "harness: the preflight checks the module it did not mutate",
+    "path": ".github/scripts/mutate.py",
+    "old": "            mutated = source.replace(case[\"old\"], case[\"new\"], 1)\n",
+    "new": "            mutated = source\n",
+    "tests": "real_check_names_a_name_the_mutation_left_undefined"
+  },
+  {
+    "label": "harness: the preflight reads a JSON file as Python",
+    "path": ".github/scripts/mutate.py",
+    "old": "            if not case[\"path\"].endswith(\".py\"):\n                continue\n",
+    "new": "",
+    "tests": "real_check_leaves_files_that_are_not_python_alone"
+  },
+  {
+    "label": "harness: an undefined name the original has hides a new use of it",
+    "path": ".github/scripts/mutate.py",
+    "old": "            found.setdefault(name, Counter())[finding[\"message\"]] += 1\n",
+    "new": "            found.setdefault(name, Counter())[finding[\"message\"]] = 1\n",
+    "tests": "real_check_counts_a_second_use_of_an_already_undefined_name"
+  },
+  {
+    "label": "harness: a missing snippet explained as a stale flag",
+    "path": ".github/scripts/mutate.py",
+    "old": "            if occurrences != 1:\n",
+    "new": "            if False:\n",
+    "tests": "missing_snippet_is_named_as_one"
   }
 ]

@@ -18,6 +18,8 @@ import tempfile
 import threading
 from pathlib import Path
 
+from collections import Counter
+
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "mutate.py"
@@ -876,7 +878,7 @@ def test_a_name_the_mutated_module_lacks_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mutate,
         "_undefined_names",
-        lambda _folder: {"case_0.py": {"Undefined name `missing`"}},
+        lambda _folder: {"case_0.py": Counter(["Undefined name `missing`"])},
     )
 
     problems = _names_left_undefined(_one_case_plan(tmp_path), root=tmp_path)
@@ -891,8 +893,8 @@ def test_a_name_the_module_already_left_undefined_is_not_the_mutation(
         mutate,
         "_undefined_names",
         lambda _folder: {
-            "case_0.py": {"Undefined name `TYPE_ONLY`"},
-            "original_0.py": {"Undefined name `TYPE_ONLY`"},
+            "case_0.py": Counter(["Undefined name `TYPE_ONLY`"]),
+            "original_0.py": Counter(["Undefined name `TYPE_ONLY`"]),
         },
     )
 
@@ -904,13 +906,14 @@ def test_the_crash_flag_is_honoured_and_cannot_go_stale(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mutate,
         "_undefined_names",
-        lambda _folder: {"case_0.py": {"Undefined name `missing`"}},
+        lambda _folder: {"case_0.py": Counter(["Undefined name `missing`"])},
     )
     assert _names_left_undefined(plan, root=tmp_path) == []
 
     monkeypatch.setattr(mutate, "_undefined_names", lambda _folder: {})
-    (stale,) = _names_left_undefined(plan, root=tmp_path)
-    assert "crash_is_the_defect" in stale
+    problems = _names_left_undefined(plan, root=tmp_path)
+    assert len(problems) == 1, f"a stale flag was not reported: {problems}"
+    assert "crash_is_the_defect" in problems[0]
 
 
 def test_the_run_stops_before_any_test_when_a_mutation_cannot_run(
@@ -956,3 +959,67 @@ def test_a_broken_case_is_reported_and_fails_the_run(
     out = capsys.readouterr().out
     assert "BROKEN   case0" in out
     assert "caught   case1" in out, "one broken case hid the next"
+
+
+def test_a_missing_snippet_is_named_as_one(tmp_path):
+    """Not "marked crash_is_the_defect, but defines every name": the preflight
+    runs before the check that would have said what is really wrong."""
+    plan = _one_case_plan(tmp_path)
+    plan[0]["old"] = "value = 2"
+
+    assert _names_left_undefined(plan, root=tmp_path) == [
+        "case0: snippet found 0 times, expected once"
+    ]
+
+
+# The real ruff, where it is installed: the gate's interpreter has it, the
+# test jobs do not. Everything above answers for ruff; these make sure the
+# answer is asked for and read the way ruff actually gives it.
+
+
+def test_the_real_check_names_a_name_the_mutation_left_undefined(tmp_path):
+    pytest.importorskip("ruff")
+
+    problems = _names_left_undefined(_one_case_plan(tmp_path), root=tmp_path)
+
+    assert len(problems) == 1, f"the undefined name was not reported: {problems}"
+    assert "missing" in problems[0]
+
+
+def test_the_real_check_counts_a_second_use_of_an_already_undefined_name(tmp_path):
+    pytest.importorskip("ruff")
+    (tmp_path / "module.py").write_text(
+        "def one():\n    return LEGACY\n\n\nvalue = 1\n", encoding="utf-8"
+    )
+    plan = [
+        {
+            "path": "module.py",
+            "old": "value = 1",
+            "new": "value = LEGACY",
+            "tests": "test_real",
+            "label": "case0",
+        }
+    ]
+
+    assert _names_left_undefined(plan, root=tmp_path), (
+        "a name the original already left undefined hid a new use of it"
+    )
+
+
+def test_the_real_check_leaves_files_that_are_not_python_alone(tmp_path):
+    """hacs.json read as Python is a dict - until an edit writes `true`, which
+    Python does not know. That is a JSON file being JSON, not a mutation
+    using a name its module lacks."""
+    pytest.importorskip("ruff")
+    (tmp_path / "data.json").write_text('{"render": 1}\n', encoding="utf-8")
+    plan = [
+        {
+            "path": "data.json",
+            "old": '{"render": 1}',
+            "new": '{"render": true}',
+            "tests": "test_real",
+            "label": "case0",
+        }
+    ]
+
+    assert _names_left_undefined(plan, root=tmp_path) == []
