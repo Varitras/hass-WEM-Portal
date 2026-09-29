@@ -1794,7 +1794,7 @@
   {
     "label": "login: a refused login PAGE reported as a network problem",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                self._activate_cooldown(f\"the web login page {redact_url(login_url)}\")\n                raise ForbiddenError(\n                    \"Access forbidden while loading the login page.\"\n                ) from exc\n            raise UnknownAuthError",
+    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                raise self._refused_web_login(\n                    f\"the web login page {redact_url(login_url)}\",\n                    \"Access forbidden while loading the login page.\",\n                ) from exc\n            raise UnknownAuthError",
     "new": "            raise UnknownAuthError",
     "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
   },
@@ -3796,8 +3796,8 @@
   {
     "label": "announcement: the scraper deciding maintenance on the login page again",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        self._check_response(login_page, \"login page\")",
-    "new": "        self._check_response(login_page, \"login page\", check_maintenance=True)",
+    "old": "        self._check_response(login_page, \"login page\")\n",
+    "new": "        self._check_response(login_page, \"login page\", check_maintenance=True)\n",
     "tests": "an_announcement_does_not_stop_the_scraper_login"
   },
   {
@@ -4307,8 +4307,8 @@
   {
     "label": "403 pause: a refused web page no longer names itself",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                f\"for the {what} at {redact_url(getattr(response, 'url', None))}.\"",
-    "new": "                f\"for the {what}.\"",
+    "old": "                f\"for the {what} at {where}.\"\n",
+    "new": "                f\"for the {what}.\"\n",
     "tests": "refused_web_page_names_itself"
   },
   {
@@ -4349,7 +4349,7 @@
   {
     "label": "login grace: setup calls a turned-away login a wrong password",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "    except LoginRefused as exc:\n",
+    "old": "    except (LoginRefused, WebLoginRefused) as exc:\n",
     "new": "    except () as exc:\n",
     "tests": "setup_does_not_call_one_turned_away_login_a_block"
   },
@@ -4513,5 +4513,89 @@
     "old": "                    result[entityvalue] = None\n            self._went_through()\n",
     "new": "                    result[entityvalue] = None\n",
     "tests": "expert_read_that_worked_starts_the_count_again"
+  },
+  {
+    "label": "web login grace: a turned-away web login pauses everything at once again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if self._account_state.note_refused_web_login():\n",
+    "new": "            if False:\n",
+    "tests": "web_login_turned_away_once_retries_in_five_minutes"
+  },
+  {
+    "label": "web login grace: every web refusal let pass, the block never recognised",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if self._account_state.note_refused_web_login():\n",
+    "new": "            if self._account_state.note_refused_web_login() or True:\n",
+    "tests": "second_turned_away_web_login_in_a_row_is_the_block"
+  },
+  {
+    "label": "web login grace: the retry waits a whole cycle after all",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                self.spider_wait_interval = 0\n",
+    "new": "",
+    "tests": "web_login_turned_away_once_retries_in_five_minutes"
+  },
+  {
+    "label": "web login grace: the retry does not wait the five minutes",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if self._web_login_retry_pending():\n            return False\n",
+    "new": "        if False:\n            return False\n",
+    "tests": "web_login_turned_away_once_retries_in_five_minutes"
+  },
+  {
+    "label": "web login grace: a working scrape does not end the streak",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self._account_state.refused_web_logins = 0\n",
+    "new": "",
+    "tests": "scrape_that_worked_in_between_starts_the_web_count_again"
+  },
+  {
+    "label": "web login grace: a page 403 taken for a turned-away login",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "new": "            if True:\n",
+    "tests": "only_the_login_steps_of_the_scraper_count"
+  },
+  {
+    "label": "web login grace: the web collector does not wait the five minutes",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if self._web_login_retry_pending():\n            raise ScrapeHeldBack(\n                \"Waiting before the next web login after the last was turned away.\"\n            )\n",
+    "new": "",
+    "tests": "web_mode_also_waits_five_minutes"
+  },
+  {
+    "label": "web login grace: a redirect to the login page not taken for the login",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "new": "            if False:\n",
+    "tests": "only_the_login_steps_of_the_scraper_count"
+  },
+  {
+    "label": "web login grace: the setup's web login pauses everything at once again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if self._account_state.note_refused_web_login():\n",
+    "new": "        if False:\n",
+    "tests": "web_setup_does_not_call_one_turned_away_login_a_block"
+  },
+  {
+    "label": "web login grace: a working setup web login does not end the streak",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                _LOGGER.debug(\"WEB login successful.\")\n                self._account_state.refused_web_logins = 0\n",
+    "new": "                _LOGGER.debug(\"WEB login successful.\")\n",
+    "tests": "setup_web_login_that_worked_starts_the_count_again"
+  },
+  {
+    "label": "web login grace: the login page recognised by a substring again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "new": "            if WEB_LOGIN_URL.lower() in str(getattr(response, 'url', '')).lower():\n",
+    "tests": "the_login_page_is_known_by_its_endpoint"
+  },
+  {
+    "label": "web login grace: the held-back web cycle reported as a success",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if self._web_login_retry_pending():\n            raise ScrapeHeldBack(\n                \"Waiting before the next web login after the last was turned away.\"\n            )\n",
+    "new": "        if self._web_login_retry_pending():\n            return\n",
+    "tests": "web_mode_also_waits_five_minutes"
   }
 ]

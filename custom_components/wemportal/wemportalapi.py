@@ -43,7 +43,9 @@ from .exceptions import (
     ParameterChangeError,
     PollDeadlineExceeded,
     PortalMaintenanceError,
+    ScrapeHeldBack,
     ServerError,
+    WebLoginRefused,
     WemPortalError,
 )
 from .mapper import WemPortalDataMapper, forget_dropped_parameters
@@ -181,6 +183,9 @@ SCRAPER_FALLBACK_DEVICE_ID: Final = "0000"
 # that is never run - because its device is disabled - leaves the values
 # alone; nothing was asked, so nothing was refused.
 SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE: Final = 3
+# After the first web login turned away in a row: the scrape alone waits this
+# long instead of every request waiting fifteen minutes - see WebLoginRefused.
+WEB_LOGIN_RETRY_SECONDS: Final = 300
 
 _SCRAPE_FAILURE_KEY: Final = "web-scrape"
 
@@ -902,6 +907,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return False
         if self.spider_wait_interval != 0:
             return False
+        if self._web_login_retry_pending():
+            return False
         if self.last_scraping_update is None:
             return True
         # POSIX timestamps, not a datetime subtraction: two aware stamps with
@@ -954,11 +961,20 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # _scrape_is_due) and in the timezone Home Assistant is configured for.
         self.last_scraping_update = dt_util.now()
 
+    def _web_login_retry_pending(self) -> bool:
+        """Whether a turned-away web login's five minutes are still running."""
+        retry_at = self._account_state.web_login_retry_at
+        return retry_at is not None and time.monotonic() < retry_at
+
     def _collect_web(self, enabled_devices: list[str] | None) -> None:
         """`web` mode: the scrape is the only source there is."""
         if not self._scraper_enabled(enabled_devices):
             _LOGGER.debug("Skipping web scrape: its device is disabled.")
             return
+        if self._web_login_retry_pending():
+            raise ScrapeHeldBack(
+                "Waiting before the next web login after the last was turned away."
+            )
         webscraping_data = self.fetch_webscraping_data()
         self._merge_webscraping_data(self.resolve_scraper_device_id(), webscraping_data)
 
@@ -1250,6 +1266,21 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             self._reset_scraper()
             raise
 
+        except WebLoginRefused as exc:
+            # Counted like any failed scrape, but the first in a row neither
+            # pauses the API nor waits a cycle: five minutes, and the next
+            # login usually goes through. A second in a row is the block.
+            self._register_scrape_failure()
+            self._reset_scraper()
+            if self._account_state.note_refused_web_login():
+                self.spider_wait_interval = 0
+                self._account_state.web_login_retry_at = (
+                    time.monotonic() + WEB_LOGIN_RETRY_SECONDS
+                )
+                raise
+            self._activate_cooldown(f"the web scrape: {exc}")
+            raise
+
         except ForbiddenError as exc:
             # The web frontend rate-limited us (403). Activate the same
             # global cooldown the API path uses, discard the scraper
@@ -1306,6 +1337,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # Reset retry count and wait interval after a successful operation
         self.spider_retry_count = 0
         self.spider_wait_interval = 0
+        self._account_state.refused_web_logins = 0
 
         # Return the scraped data
         return data

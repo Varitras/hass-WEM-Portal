@@ -27,6 +27,7 @@ from .exceptions import (
     PollDeadlineExceeded,
     PortalMaintenanceError,
     ServerError,
+    WebLoginRefused,
 )
 from .models import Reading, account_state
 from .utils import (
@@ -256,9 +257,20 @@ class WemPortalScraper:
         """
         status = getattr(response, "status_code", 200)
         if status == 403:
+            # By the endpoint answered, not by the step that asked: a reused
+            # session that ran out is redirected to the login page, and that
+            # refusal is the login's too. The endpoint, not a substring: a
+            # cookieless session puts itself into the path, and a query can
+            # name the login page without being it.
+            where = redact_url(getattr(response, "url", None))
+            if where.lower() == WEB_LOGIN_URL.lower():
+                raise WebLoginRefused(
+                    f"The WEM Portal turned the web login away (403 for the "
+                    f"{what} at {where})."
+                )
             raise ForbiddenError(
                 f"WEM Portal web frontend returned 403 (rate limit/forbidden) "
-                f"for the {what} at {redact_url(getattr(response, 'url', None))}."
+                f"for the {what} at {where}."
             )
         if status != 200:
             # Not `>= 400`: every request in this module asks for an HTML

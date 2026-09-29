@@ -90,6 +90,17 @@ def time_left(seconds: float) -> str:
     return f"{remaining}s"
 
 
+class WebLoginRefused(ForbiddenError):
+    """The web login answered 403 - the scraper's, not a page behind it.
+
+    Like the API's LoginRefused, a firewall does this now and then and the
+    next login goes through, so the first one in a row costs only the
+    scrape and is retried five minutes on; a second in a row is the block.
+    A ForbiddenError, so every handler that does not know it treats it as
+    the refusal it always was.
+    """
+
+
 class ExpiredSessionError(WemPortalError):
     """
     Custom exception for expired session errors
@@ -146,6 +157,16 @@ class ApiBusyError(WemPortalError):
     using, and hand the next poll a FRESH lock, removing the very
     serialization this error reports. The condition is the opposite of a
     broken session: everything works, it is just still busy.
+    """
+
+
+class ScrapeHeldBack(ApiBusyError):
+    """`web` mode, waiting out the five minutes after a turned-away login.
+
+    Nothing was sent and nothing was refused, so the cycle is neither a
+    failure nor a success - the ApiBusyError handling says exactly that.
+    Returned as success, the old readings were published as current and
+    Home Assistant logged the integration as recovered.
     """
 
 

@@ -54,11 +54,17 @@ LINE_BUDGETS = {
     # And by 12 for one rule on whether a device's definitions can be read,
     # shared by the check that makes the re-read due and the read itself,
     # and for moving that re-read to where the API is actually read.
-    "wemportalapi.py": 2613,
+    # And by 23 for a web login turned away once: the scrape's own failure
+    # handling is where it is told apart from the block, and where the five
+    # minutes it waits instead are set and read.
+    # And by 9 for one check of the retry time, asked by both collectors.
+    "wemportalapi.py": 2645,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
-    "transport.py": 906,
+    # And by 12 for the setup's web login following the scraper's rule, so a
+    # single refusal there no longer pauses everything either.
+    "transport.py": 918,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     "expert_writer.py": 1912,

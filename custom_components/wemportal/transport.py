@@ -38,6 +38,7 @@ from .exceptions import (
     ExpiredSessionError,
     ForbiddenError,
     LoginRefused,
+    WebLoginRefused,
     PortalMaintenanceError,
     ServerError,
     UnknownAuthError,
@@ -767,6 +768,14 @@ class WemPortalTransport:
             f"{server_said}"
         ) from exc
 
+    def _refused_web_login(self, cause: str, message: str) -> ForbiddenError:
+        """The error for a web login answered 403: not yet the block the
+        first time in a row (see WebLoginRefused), the block from then on."""
+        if self._account_state.note_refused_web_login():
+            return WebLoginRefused(message)
+        self._activate_cooldown(cause)
+        return ForbiddenError(message)
+
     def web_login(self):
         """Log into the web interface, or raise saying why it did not work.
 
@@ -809,9 +818,9 @@ class WemPortalTransport:
             # read like a network problem, invited an immediate retry, and
             # started no cooldown, so the next cycle walked into it again.
             if initial_response is not None and initial_response.status_code == 403:
-                self._activate_cooldown(f"the web login page {redact_url(login_url)}")
-                raise ForbiddenError(
-                    "Access forbidden while loading the login page."
+                raise self._refused_web_login(
+                    f"the web login page {redact_url(login_url)}",
+                    "Access forbidden while loading the login page.",
                 ) from exc
             raise UnknownAuthError(f"Failed to load the login page: {exc}") from exc
 
@@ -880,6 +889,7 @@ class WemPortalTransport:
             # Step 4: Read the answer. Three outcomes, not two.
             if WEB_LOGGED_IN_MARKER in response.text:
                 _LOGGER.debug("WEB login successful.")
+                self._account_state.refused_web_logins = 0
                 return
             # Maintenance is decided here, after the success test above: a
             # login that got through is not refused by a banner announcing a
@@ -901,6 +911,8 @@ class WemPortalTransport:
             )
         except requests.exceptions.RequestException as exc:
             if response is not None and response.status_code == 403:
-                self._activate_cooldown(f"the web login form {redact_url(login_url)}")
-                raise ForbiddenError("Access forbidden during login.") from exc
+                raise self._refused_web_login(
+                    f"the web login form {redact_url(login_url)}",
+                    "Access forbidden during login.",
+                ) from exc
             raise UnknownAuthError(f"Failed to submit the login form: {exc}") from exc
