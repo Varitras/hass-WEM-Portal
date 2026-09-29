@@ -38,7 +38,7 @@ from .const import (
     DOMAIN,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
 )
-from .exceptions import ExpertOperationAborted
+from .exceptions import ExpertOperationAborted, ForbiddenError
 from .expert_options import canonical_entityvalue, entityvalue_digest
 
 _LOGGER = logging.getLogger(__name__)
@@ -354,6 +354,14 @@ class ExpertController:
                 # gone. Feeding it through the counters below would blame
                 # every configured id for an unload.
                 _LOGGER.debug("Expert auto-poll stopped: %s", exc)
+                return
+            except ForbiddenError as exc:
+                # Counted like any dead batch, but not said again: a fresh
+                # refusal was already the one line (expert_writer), and a pause
+                # still running - the expert one or the IP-wide one - was
+                # announced when it began.
+                _LOGGER.debug("Expert auto-poll read refused: %s", exc)
+                self._register_batch_failure()
                 return
             except Exception as exc:  # noqa: BLE001
                 # Returns instead of falling through with an empty result:
