@@ -32,7 +32,7 @@ from .const import (
     MIN_SCAN_INTERVAL_SECONDS,
     WemDataType,
 )
-from .models import ModuleRef, Reading, account_state
+from .models import HeavyFetchTurns, ModuleRef, Reading, account_state
 from .schedule import WemPortalSchedule
 from .statistics import WemPortalStatistics
 from .transport import WemPortalTransport
@@ -374,6 +374,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # module) turns every restart with an expired cache into a slow
         # startup.
         self._first_cycle_done = False
+        self.heavy_fetch_turns = HeavyFetchTurns()
         # When the mobile API was last read, for the `both`-mode gate. None
         # rather than 0.0: zero on the monotonic clock is the moment the
         # machine booted, which would read as "long overdue" only by luck.
@@ -860,6 +861,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         stale = any(self._parameters_are_stale(module) for module in due)
         if not (missing or (stale and self._first_cycle_done)):
             return
+        # First in the cycle, so the turn is always free; claimed so the
+        # other heavy fetches wait for the next one.
+        self.heavy_fetch_turns.claim("parameters")
         _LOGGER.info(
             "Reading parameter definitions from the portal (%s).",
             "some are missing" if missing else "the cached ones are due",
@@ -1021,6 +1025,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # once up front avoids even starting a cycle (login attempts,
         # etc.) that we already know will be aborted immediately.
         self.check_cooldown()
+        self.heavy_fetch_turns.new_cycle()
         try:
             if self.mode != "web":
                 self._ensure_api_session(enabled_devices)

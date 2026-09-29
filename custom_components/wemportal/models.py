@@ -111,6 +111,29 @@ def reset_account_states_for_tests() -> None:
     _ACCOUNT_STATES.clear()
 
 
+class HeavyFetchTurns:
+    """Which burst of requests a poll cycle has already spent.
+
+    The daily parameter re-read, the weekly programmes and the statistics
+    each cost a burst, and their guards - hourly, daily - line up and then
+    stay lined up, so every hour's extra traffic left inside one minute. One
+    kind per cycle; the others stay due and take the next.
+    """
+
+    def __init__(self) -> None:
+        self._claimed: str | None = None
+
+    def new_cycle(self) -> None:
+        self._claimed = None
+
+    def claim(self, kind: str) -> bool:
+        """Whether `kind` may spend its burst now; claims the cycle if so."""
+        if self._claimed not in (None, kind):
+            return False
+        self._claimed = kind
+        return True
+
+
 class ModuleRef(NamedTuple):
     """One module of one device, as the portal addresses it.
 

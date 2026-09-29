@@ -17,6 +17,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **The setup and options dialogs explain each field under it.** Labels
   carried every default, unit and warning in one long line; they are now
   short, with the explanation shown below the field in both languages.
+- **The hourly extras no longer go out in one burst.** Statistics, weekly
+  programmes and the daily re-read of parameter definitions each send a
+  handful of requests, and they fell due in the same cycle every hour. They
+  now take turns, one per cycle, so the same requests are spread over a few
+  minutes instead of one.
 
 ### Security
 

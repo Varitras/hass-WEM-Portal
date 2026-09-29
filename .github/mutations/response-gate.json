@@ -4289,5 +4289,47 @@
     "new": "                return None\n",
     "tests": "read_back_that_read_nothing_does_not_verify",
     "path": "custom_components/wemportal/wemportalapi.py"
+  },
+  {
+    "label": "heavy turns: a second kind in the same cycle is let through",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        if self._claimed not in (None, kind):\n            return False",
+    "new": "        if False:\n            return False",
+    "tests": "heavy_fetches_that_fall_due_together_take_turns"
+  },
+  {
+    "label": "heavy turns: the statistics ignore whose turn it is",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        if not self.heavy_fetch_turns.claim(\"statistics\"):\n            return\n\n        self.last_statistics_fetch = now\n",
+    "new": "\n        self.last_statistics_fetch = now\n",
+    "tests": "heavy_fetches_that_fall_due_together_take_turns"
+  },
+  {
+    "label": "heavy turns: a statistics run that waits its turn is stamped as done",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        if not self.heavy_fetch_turns.claim(\"statistics\"):\n            return\n\n        self.last_statistics_fetch = now\n",
+    "new": "        self.last_statistics_fetch = now\n        if not self.heavy_fetch_turns.claim(\"statistics\"):\n            return\n\n",
+    "tests": "heavy_fetches_that_fall_due_together_take_turns"
+  },
+  {
+    "label": "heavy turns: the weekly programmes ignore whose turn it is",
+    "path": "custom_components/wemportal/schedule.py",
+    "old": "                if not self.heavy_fetch_turns.claim(\"schedules\"):\n                    return\n",
+    "new": "",
+    "tests": "heavy_fetches_that_fall_due_together_take_turns"
+  },
+  {
+    "label": "heavy turns: the parameter re-read does not take the turn",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.heavy_fetch_turns.claim(\"parameters\")\n",
+    "new": "",
+    "tests": "heavy_fetches_that_fall_due_together_take_turns"
+  },
+  {
+    "label": "heavy turns: a cycle inherits the previous cycle's turn",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.heavy_fetch_turns.new_cycle()\n",
+    "new": "",
+    "tests": "heavy_fetches_that_fall_due_together_take_turns"
   }
 ]
