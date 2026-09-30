@@ -41,6 +41,7 @@ from .exceptions import (
 from .models import account_state
 from .utils import parse_portal_number
 from .web_protocol import (
+    is_login_page,
     maintenance_blocking,
     maintenance_notice,
     note_maintenance_announcement,
@@ -974,7 +975,7 @@ class WemPortalExpertClient:
         # The login page first, for the reason the scraper's reuse path has:
         # it decides nothing about maintenance, and a cached session that ran
         # out lands there - which is a reason to log in fresh, not an outage.
-        on_login_page = WEB_LOGIN_URL.lower() in main_page.url.lower()
+        on_login_page = is_login_page(main_page.url)
         self._check_response(
             main_page, "main page", check_maintenance=not on_login_page
         )
@@ -1329,7 +1330,7 @@ class WemPortalExpertClient:
                 headers=headers,
             )
         self._check_response(response, "navigation postback")
-        if WEB_LOGIN_URL.lower() in response.url.lower():
+        if is_login_page(response.url):
             raise AuthError("Expert client: session expired during navigation.")
         _LOGGER.debug(
             "Expert navigation: postback %s (async=%s) -> %d bytes, delta=%s, pagestate=%s",
@@ -1843,7 +1844,7 @@ class WemPortalExpertClient:
                 },
             )
             self._check_response(response, "parameter dialog")
-            if WEB_LOGIN_URL.lower() in response.url.lower():
+            if is_login_page(response.url):
                 raise AuthError(
                     "Expert client: redirected to login when fetching the form."
                 )

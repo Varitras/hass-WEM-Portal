@@ -913,17 +913,23 @@ _ANNOUNCED_LOGIN_PAGE = (
 )
 
 
-def test_an_expired_session_during_an_announcement_falls_back_to_a_login():
+@pytest.mark.parametrize(
+    "login_url",
+    [
+        "https://www.wemportal.com/Web/Login.aspx",
+        "https://www.wemportal.com/(S(abc123))/Web/Login.aspx?ReturnUrl=%2fWeb",
+    ],
+    ids=["plain", "cookieless"],
+)
+def test_an_expired_session_during_an_announcement_falls_back_to_a_login(login_url):
     """Sessions run out after about fifteen minutes and the scrape runs every
     thirty, so the reuse path lands on the login page almost every time. With
     an announcement on that page the marker was read BEFORE the redirect, and
     the reuse path re-raises maintenance instead of logging in fresh - the
     same four hours of outage, one layer down. A login page on the reuse path
-    is an expired session; the full login decides the rest."""
-    scraper = _reuse_scraper(
-        _ReuseResponse(
-            _ANNOUNCED_LOGIN_PAGE, url="https://www.wemportal.com/Web/Login.aspx"
-        )
-    )
+    is an expired session; the full login decides the rest - also when a
+    cookieless session puts itself into the path, which a substring test of
+    the login URL missed."""
+    scraper = _reuse_scraper(_ReuseResponse(_ANNOUNCED_LOGIN_PAGE, url=login_url))
 
     assert scraper._load_expert_page() is None

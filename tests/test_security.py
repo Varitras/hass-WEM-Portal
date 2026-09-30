@@ -532,3 +532,27 @@ def test_the_parameter_read_does_not_log_the_whole_account(caplog):
 
     assert "1234" in caplog.text, "a log that names nothing is not worth writing"
     assert "23.5" not in caplog.text, "the account's readings went into the log"
+
+
+def test_the_login_page_is_recognised_by_the_one_rule_everywhere():
+    """The 403 path learned the endpoint rule and four other checks kept a
+    substring test, so a cookieless session sent the reuse paths into the
+    announced-maintenance error instead of a fresh login. Any comparison
+    against the login URL outside the rule is that bug waiting again."""
+    import ast
+    import pathlib
+
+    package = pathlib.Path(wemportalapi.__file__).parent
+    offenders = []
+    for source_file in sorted(package.glob("*.py")):
+        if source_file.name == "web_protocol.py":
+            continue
+        tree = ast.parse(source_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Compare) and any(
+                isinstance(name, ast.Name) and name.id == "WEB_LOGIN_URL"
+                for name in ast.walk(node)
+            ):
+                offenders.append(f"{source_file.name}:{node.lineno}")
+
+    assert not offenders, f"login page compared outside is_login_page: {offenders}"

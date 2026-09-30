@@ -9024,7 +9024,15 @@ def test_the_client_tells_a_value_it_does_not_offer_from_an_unconfirmed_write():
     )
 
 
-def test_an_expired_expert_session_during_an_announcement_logs_in_again(monkeypatch):
+@pytest.mark.parametrize(
+    "login_url",
+    [
+        "https://www.wemportal.com/Web/Login.aspx",
+        "https://www.wemportal.com/(S(abc123))/Web/Login.aspx",
+    ],
+    ids=["plain", "cookieless"],
+)
+def test_an_expired_expert_session_during_an_announcement_logs_in_again(login_url):
     """The expert client's cached session has the same shape: the main page
     of an expired session is the login page, with the banner on it during an
     announcement. Read as maintenance, the cached path gave up instead of
@@ -9033,7 +9041,7 @@ def test_an_expired_expert_session_during_an_announcement_logs_in_again(monkeypa
 
     class _Response:
         status_code = 200
-        url = "https://www.wemportal.com/Web/Login.aspx"
+        url = login_url
         text = MAINTENANCE_PAGE
 
     client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
@@ -9983,3 +9991,23 @@ def test_the_login_page_is_known_by_its_endpoint(url, is_the_login):
         scraper._check_response(FakeResponse({}, status_code=403, url=url), "page")
 
     assert isinstance(refused.value, WebLoginRefused) is is_the_login
+
+
+@pytest.mark.parametrize(
+    ("url", "is_the_login"),
+    [
+        ("https://www.wemportal.com/Web/Login.aspx", True),
+        ("https://www.wemportal.com/(S(abc123))/Web/Login.aspx", True),
+        ("https://WWW.WEMPORTAL.COM/Web/login.aspx?ReturnUrl=%2fWeb", True),
+        ("https://www.wemportal.com/Web/Default.aspx", False),
+        (
+            "https://www.wemportal.com/Web/Default.aspx?x=https://www.wemportal.com/Web/Login.aspx",
+            False,
+        ),
+        (None, False),
+    ],
+)
+def test_one_rule_knows_the_login_page(url, is_the_login):
+    from custom_components.wemportal.web_protocol import is_login_page
+
+    assert is_login_page(url) is is_the_login

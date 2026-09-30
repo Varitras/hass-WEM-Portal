@@ -4553,7 +4553,7 @@
   {
     "label": "web login grace: a page 403 taken for a turned-away login",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "old": "            if is_login_page(where):\n",
     "new": "            if True:\n",
     "tests": "only_the_login_steps_of_the_scraper_count"
   },
@@ -4567,7 +4567,7 @@
   {
     "label": "web login grace: a redirect to the login page not taken for the login",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "old": "            if is_login_page(where):\n",
     "new": "            if False:\n",
     "tests": "only_the_login_steps_of_the_scraper_count"
   },
@@ -4588,7 +4588,7 @@
   {
     "label": "web login grace: the login page recognised by a substring again",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "old": "            if is_login_page(where):\n",
     "new": "            if WEB_LOGIN_URL.lower() in str(getattr(response, 'url', '')).lower():\n",
     "tests": "the_login_page_is_known_by_its_endpoint"
   },
@@ -4675,5 +4675,26 @@
     "old": "            self._register_scrape_failure()\n            self.webscraping_cookie = None\n            self._reset_scraper()\n            if self._account_state.note_refused_web_login():\n",
     "new": "            self._register_scrape_failure()\n            self._reset_scraper()\n            if self._account_state.note_refused_web_login():\n",
     "tests": "dead_cookie_to_the_retry"
+  },
+  {
+    "label": "login page rule: a substring again",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    return redact_url(url).lower() == WEB_LOGIN_URL.lower()\n",
+    "new": "    return WEB_LOGIN_URL.lower() in str(url).lower()\n",
+    "tests": "one_rule_knows_the_login_page"
+  },
+  {
+    "label": "login page rule: the scraper's reuse path back on its substring",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        on_login_page = is_login_page(r_expert.url)\n",
+    "new": "        on_login_page = WEB_LOGIN_URL.lower() in r_expert.url.lower()\n",
+    "tests": "during_an_announcement_falls_back_to_a_login or recognised_by_the_one_rule_everywhere"
+  },
+  {
+    "label": "login page rule: the expert main page back on its substring",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        on_login_page = is_login_page(main_page.url)\n",
+    "new": "        on_login_page = WEB_LOGIN_URL.lower() in main_page.url.lower()\n",
+    "tests": "expert_session_during_an_announcement_logs_in_again or recognised_by_the_one_rule_everywhere"
   }
 ]

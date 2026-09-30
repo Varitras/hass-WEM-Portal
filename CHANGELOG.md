@@ -16,6 +16,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **A web login turned away once is retried without its dead session.**
   The retry five minutes later first tried the old session cookie, which
   cost two requests - one of them to the login page that had just refused.
+- **The login page is recognised the same way everywhere.** Four checks
+  still looked for its address as a substring, and a session the portal
+  keeps in the address instead of a cookie slipped past them: an expired
+  session during an announced maintenance window then read as the outage
+  itself, instead of logging in again.
 
 ## [1.14.0b3] – 2026-09-29
 
