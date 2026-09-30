@@ -907,6 +907,26 @@ def test_the_full_login_path_still_warns_about_an_empty_page(scraper, caplog):
     assert [record.levelname for record in _empty_page_reports(caplog)] == ["WARNING"]
 
 
+def test_a_reuse_found_dead_is_forgotten_even_if_the_fresh_login_fails():
+    """The cookie was dropped only when the retry was a turned-away login.
+    A fresh login failing any other way - a timeout, maintenance, a server
+    error - kept it, and every retry spent two requests on it first."""
+    scraper = WemPortalScraper(
+        "user@example.org", "secret", {"ASP.NET_SessionId": "expired"}
+    )
+    scraper.session = _ReuseSession(
+        _ReuseResponse(
+            "<html><body>login</body></html>",
+            url="https://www.wemportal.com/Web/Login.aspx",
+        )
+    )
+
+    with pytest.raises(Exception):  # noqa: B017 - whichever way the login fails
+        scraper.scrape()
+
+    assert scraper.cookie == {}, "the dead session is still offered to the retry"
+
+
 _ANNOUNCED_LOGIN_PAGE = (
     "<html><body><div class='offlinecontent'>Wartungsarbeiten zwischen 17:00 "
     "und 20:00 Uhr</div><input name='ctl00$content$tbxPassword'></body></html>"

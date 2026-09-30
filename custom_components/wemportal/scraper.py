@@ -447,6 +447,8 @@ class WemPortalScraper:
                 _LOGGER.debug(
                     "Cached WEM Portal session is no longer valid, logging in again."
                 )
+                # Dead for any retry too, however the login below ends.
+                self.cookie = {}
                 try:
                     self.session.cookies.clear()
                 except Exception as exc:  # noqa: BLE001

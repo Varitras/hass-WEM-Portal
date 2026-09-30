@@ -9832,6 +9832,31 @@ def test_a_turned_away_web_login_does_not_hand_its_dead_cookie_to_the_retry(
     assert not api.webscraping_cookie, "the retry starts from the dead session"
 
 
+def test_a_session_the_scraper_found_dead_is_not_handed_back_to_it():
+    """The api re-syncs its cookie into the scraper every cycle, so what the
+    scraper learnt about the session has to reach the api too - on the
+    failures as well, not only on the turned-away login."""
+    api = _api()
+    api.webscraping_cookie = {"ASP.NET_SessionId": "expired"}
+
+    class _Scraper:
+        cookie = {"ASP.NET_SessionId": "expired"}
+
+        def scrape(self):
+            self.cookie = {}
+            raise exceptions.ServerError("the fresh login timed out")
+
+        def close(self):
+            pass
+
+    api._scraper = _Scraper()
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.fetch_webscraping_data()
+
+    assert not api.webscraping_cookie
+
+
 def test_a_second_turned_away_web_login_in_a_row_is_the_block(monkeypatch):
     clock = _Clock()
     api = _api_whose_web_login_answers(

@@ -15,9 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   then. The login is given up now only when the session is really gone -
   also when the redirect to the login page ends on an error page - or when
   the portal's refusal pauses everything.
-- **A web login turned away once is retried without its dead session.**
-  The retry five minutes later first tried the old session cookie, which
-  cost two requests - one of them to the login page that had just refused.
+- **A web session found dead is not tried again.** After a turned-away web
+  login, and after a fresh login that failed any other way, the next
+  attempt first tried the old session cookie, which cost two requests - one
+  of them to the login page.
 - **The login page is recognised the same way everywhere.** Five checks
   still looked for its address as a substring, and a session the portal
   keeps in the address instead of a cookie slipped past them: an expired

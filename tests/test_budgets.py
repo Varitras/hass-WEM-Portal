@@ -58,8 +58,9 @@ LINE_BUDGETS = {
     # handling is where it is told apart from the block, and where the five
     # minutes it waits instead are set and read.
     # And by 9 for one check of the retry time, asked by both collectors.
-    # And by 1 for dropping the dead cookie of a turned-away web login.
-    "wemportalapi.py": 2646,
+    # And by 1 for dropping the dead cookie of a turned-away web login, and
+    # by 9 for learning it from the scraper on every other failure too.
+    "wemportalapi.py": 2655,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

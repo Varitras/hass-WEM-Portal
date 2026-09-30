@@ -4724,5 +4724,19 @@
     "old": "        if alias.name == \"WEB_LOGIN_URL\" and alias.asname\n",
     "new": "        if False\n",
     "tests": "login_page_guard_sees_every_shape_of_the_old_test"
+  },
+  {
+    "label": "scraper: a reuse found dead offered to the retry again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                # Dead for any retry too, however the login below ends.\n                self.cookie = {}\n",
+    "new": "",
+    "tests": "reuse_found_dead_is_forgotten_even_if_the_fresh_login_fails"
+  },
+  {
+    "label": "web scrape: what the scraper learnt about the session lost on a failure",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if not scraper.cookie:\n                self.webscraping_cookie = None\n",
+    "new": "            pass\n",
+    "tests": "session_the_scraper_found_dead_is_not_handed_back_to_it"
   }
 ]
