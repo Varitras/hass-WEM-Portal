@@ -59,7 +59,9 @@ LINE_BUDGETS = {
     # minutes it waits instead are set and read.
     # And by 9 for one check of the retry time, asked by both collectors.
     # And by 4 for a scrape keeping the programme week the API found.
-    "wemportalapi.py": 2649,
+    # And by 8 for telling the forgetting of a dropped parameter where the
+    # merge put its value, and whether the scrape still feeds that row.
+    "wemportalapi.py": 2657,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

@@ -7121,6 +7121,52 @@ def test_a_parameter_the_portal_stopped_describing_stops_being_published():
     assert device_data["ConnectionStatus"] == 0
 
 
+def _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it):
+    api = _api()
+    api.modules = {
+        "1234": {
+            ModuleRef(0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heizkreis",
+                "parameters": {
+                    "P1": {"ParameterID": "P1"},
+                    "P2": {"ParameterID": "P2"},
+                },
+            }
+        }
+    }
+    api.data = {"1234": {"heizkreis-p2": Reading(value=21.5, parameter_id="P2")}}
+    api.scraping_mapper = {("1234", ModuleRef(0, 1), "P2"): ["heizkreis-p2"]}
+    api._previous_scraper_keys = ["heizkreis-p2"]
+    api.spider_retry_count = 0 if scrape_feeds_it else 3
+    api._store_module_description(
+        "1234",
+        ModuleRef(0, 1),
+        api.modules["1234"][ModuleRef(0, 1)],
+        FakeResponse({"Parameters": [{"ParameterID": "P1"}]}),
+    )
+    return api.data["1234"]["heizkreis-p2"]
+
+
+def test_a_dropped_parameter_is_cleared_where_the_merge_put_it():
+    """In `both` mode its value lives in the scraped row it was merged into,
+    and only its own key was dropped. With the scrape failing nothing else
+    refreshed that row, and the last value of a parameter the portal no
+    longer has stood there as current, its module stamps moving on."""
+    row = _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it=False)
+
+    assert row.value is None
+
+
+def test_a_dropped_parameter_leaves_a_row_the_scrape_still_feeds():
+    """The row is the page's too; while the scrape delivers it, its value is
+    the page's, not the dropped parameter's."""
+    row = _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it=True)
+
+    assert row.value == 21.5
+
+
 def test_a_device_with_parameters_is_still_read():
     """The guard must not swallow the ordinary case."""
     api = _api()

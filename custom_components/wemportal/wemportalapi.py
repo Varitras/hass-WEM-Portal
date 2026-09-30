@@ -1707,7 +1707,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return
 
         # Before the replacement: it needs the list as it stands today.
-        forget_dropped_parameters(self.data.get(device_id), values, parameters)
+        forget_dropped_parameters(
+            self.data.get(device_id),
+            values,
+            parameters,
+            lambda parameter_id: self.scraping_mapper.get(
+                (device_id, key, parameter_id), []
+            ),
+            self._kept_fresh_by_the_scrape,
+        )
         # Non-None here: this path runs only under get_parameters, which
         # returns early while the module list is still None.
         modules = self.modules or {}

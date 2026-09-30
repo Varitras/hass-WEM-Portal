@@ -4682,5 +4682,19 @@
     "old": "            row.possible_values = previous.possible_values\n",
     "new": "",
     "tests": "scrape_keeps_the_programme_details"
+  },
+  {
+    "label": "discovery: a dropped parameter left standing where the merge put it",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if isinstance(row, Reading) and not scrape_still_feeds(row_name):\n                row.value = None\n",
+    "new": "            if False:\n                row.value = None\n",
+    "tests": "dropped_parameter_is_cleared_where_the_merge_put_it"
+  },
+  {
+    "label": "discovery: a dropped parameter blanks a row the scrape still feeds",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if isinstance(row, Reading) and not scrape_still_feeds(row_name):\n                row.value = None\n",
+    "new": "            if isinstance(row, Reading):\n                row.value = None\n",
+    "tests": "dropped_parameter_leaves_a_row_the_scrape_still_feeds"
   }
 ]

@@ -564,7 +564,9 @@ def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
     )
 
 
-def forget_dropped_parameters(device_data, module, described) -> None:
+def forget_dropped_parameters(
+    device_data, module, described, merged, scrape_still_feeds
+) -> None:
     """Take the readings of dropped parameters down with the description.
 
     Sibling of `_clear_unanswered` below, and the case that one cannot see.
@@ -583,7 +585,9 @@ def forget_dropped_parameters(device_data, module, described) -> None:
     still exists and keeps its unit and name, while this one is gone.
 
     Only what was described and no longer is. A scraped row filed under the
-    same module was never in that list and is not this function's to delete.
+    same module was never in that list and is not this function's to delete -
+    but where the merge put a dropped parameter's value into one, `merged`
+    names it, and its value goes unless the scrape still delivers it.
 
     Takes the module as it stands and the description that is about to
     replace it, rather than the difference: working out what left is the
@@ -597,6 +601,10 @@ def forget_dropped_parameters(device_data, module, described) -> None:
     module_name = module.get("Name", "")
     for parameter_id in dropped:
         device_data.pop(f"{module_name}-{parameter_id}", None)
+        for row_name in merged(parameter_id):
+            row = device_data.get(row_name)
+            if isinstance(row, Reading) and not scrape_still_feeds(row_name):
+                row.value = None
     _LOGGER.info(
         "Module %s stopped describing %s; dropping the last value instead "
         "of publishing it on as current.",
