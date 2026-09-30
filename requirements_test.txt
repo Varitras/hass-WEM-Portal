@@ -15,9 +15,9 @@
 # a beta and nothing tested the release people run. See
 # .github/workflows/test.yaml and .github/scripts/resolve_phcc.py.
 #
-# The mypy job DOES install it - it needs Home Assistant's own type
-# information, and which HA version it type-checks against does not decide
-# what the test suite runs on.
+# The mypy job does not install it either: it needs Home Assistant's own
+# type information from the same plugin release the current test job
+# runs, and installs that directly.
 #
 # The OPPOSITE mistake - using an API that does not exist yet on the declared
 # minimum - is caught by the "minimum" job of the test workflow, which pins

@@ -538,7 +538,7 @@ def main() -> int:
     unrunnable = names_left_undefined(cases)
     if unrunnable:
         print(
-            "These mutations use names their module does not define, so their "
+            "These mutations cannot run as written, so their "
             "failing tests would prove nothing:\n  " + "\n  ".join(unrunnable)
         )
         return 1

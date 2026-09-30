@@ -1127,8 +1127,9 @@ class WemPortalExpertClient:
 
         Used by _fetch_form to advance the server's live-value loading when
         the parameter dialog still comes back empty, replacing the former
-        fixed pre-poll loop in _establish_context. Safe no-op if navigation
-        state is unavailable (e.g. the module-nav skip path).
+        fixed pre-poll loop in _establish_context. A no-op before any
+        navigation; after it - the module-nav skip path included - every
+        call is one more request.
         """
         if not self._nav_html:
             return

@@ -1,6 +1,6 @@
 """The service that writes a holiday as one range.
 
-The reason it exists is measured, not assumed (see date.py and the runbook):
+The reason it exists is measured, not assumed (see date.py):
 the portal refuses a holiday parameter written on its own, and answers a pair
 whose begin falls after its end with Status 0 while storing nothing. Setting
 the two date entities one after the other therefore depends on the order the
