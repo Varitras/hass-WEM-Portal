@@ -4705,10 +4705,10 @@
     "tests": "dropped_programme_takes_its_week_with_it"
   },
   {
-    "label": "scrape: a week carried on for a device that is not online",
+    "label": "scrape: a week carried onto a row the merge no longer maps",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if isinstance(previous, Reading) and device_online:\n",
+    "old": "        if isinstance(previous, Reading) and merged:\n",
     "new": "        if isinstance(previous, Reading):\n",
-    "tests": "not_online_drops_the_week"
+    "tests": "scrape_that_empties_the_merge_map_drops_the_week"
   }
 ]

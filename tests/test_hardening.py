@@ -4648,7 +4648,7 @@ def test_a_scrape_keeps_the_programme_details_the_schedule_fetch_found():
     api = _api()
     api.data = {
         "0000": {
-            "ConnectionStatus": 0,
+            "ConnectionStatus": 8,  # busy: still the device's week
             "pump-programme": Reading(
                 value='{"MO-1":"06:00-10:10"}',
                 circuit_times_day=A_FED_WEEK,
@@ -4656,6 +4656,8 @@ def test_a_scrape_keeps_the_programme_details_the_schedule_fetch_found():
             ),
         }
     }
+    api.scraping_mapper = {("0000", ModuleRef(1, 1), "Programme"): ["pump-programme"]}
+    api._previous_scraper_keys = {"pump-programme"}
 
     api._merge_webscraping_data(
         "0000", {"pump-programme": Reading(value='{"MO-1":"06:00-10:10"}')}
@@ -4666,22 +4668,29 @@ def test_a_scrape_keeps_the_programme_details_the_schedule_fetch_found():
     assert row.possible_values == [1, 2, 3]
 
 
-def test_a_scrape_of_a_device_that_is_not_online_drops_the_week():
-    """Offline, the schedule fetch does not run for the device, so nothing
-    would ever clear a week carried on - the pre-outage programme stood over
-    the plan the page showed now."""
+def test_a_scrape_that_empties_the_merge_map_drops_the_week():
+    """A changed page empties the map, and a programme dropped in the same
+    cycle then has no row to take its week from: carried on by every scrape
+    after, it outlived the programme for good. Dropped with the map, the week
+    comes back with the next schedule read."""
     api = _api()
     api.data = {
         "0000": {
-            "ConnectionStatus": 50,
+            "ConnectionStatus": 0,
             "pump-programme": Reading(
                 value='{"MO-1":"06:00-10:10"}', circuit_times_day=A_FED_WEEK
             ),
         }
     }
+    api.scraping_mapper = {("0000", ModuleRef(1, 1), "Programme"): ["pump-programme"]}
+    api._previous_scraper_keys = {"pump-programme"}
 
     api._merge_webscraping_data(
-        "0000", {"pump-programme": Reading(value='{"MO-1":"07:00-11:00"}')}
+        "0000",
+        {
+            "pump-programme": Reading(value='{"MO-1":"07:00-11:00"}'),
+            "pump-new-row": Reading(value=1.0),
+        },
     )
 
     assert api.data["0000"]["pump-programme"].circuit_times_day is None
