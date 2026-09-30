@@ -13,6 +13,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
   the session, so the next cycle logged in again - about 24 extra logins a
   day, each one a chance for the bare refusal the portal gives logins now and
   then. Only a session that is really gone is given up now.
+- **A web login turned away once is retried without its dead session.**
+  The retry five minutes later first tried the old session cookie, which
+  cost two requests - one of them to the login page that had just refused.
 
 ## [1.14.0b3] – 2026-09-29
 

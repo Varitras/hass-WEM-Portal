@@ -4668,5 +4668,12 @@
     "old": "        if is_session_error:\n            self.valid_login = False\n",
     "new": "        if False:\n            self.valid_login = False\n",
     "tests": "session_that_stays_expired_is_given_up"
+  },
+  {
+    "label": "web login grace: a turned-away login keeps its dead cookie",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self._register_scrape_failure()\n            self.webscraping_cookie = None\n            self._reset_scraper()\n            if self._account_state.note_refused_web_login():\n",
+    "new": "            self._register_scrape_failure()\n            self._reset_scraper()\n            if self._account_state.note_refused_web_login():\n",
+    "tests": "dead_cookie_to_the_retry"
   }
 ]

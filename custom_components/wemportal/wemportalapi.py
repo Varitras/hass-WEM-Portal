@@ -1271,6 +1271,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # pauses the API nor waits a cycle: five minutes, and the next
             # login usually goes through. A second in a row is the block.
             self._register_scrape_failure()
+            self.webscraping_cookie = None
             self._reset_scraper()
             if self._account_state.note_refused_web_login():
                 self.spider_wait_interval = 0

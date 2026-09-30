@@ -9808,6 +9808,22 @@ def test_a_web_login_turned_away_once_retries_in_five_minutes(monkeypatch):
     assert api._scrape_is_due(None), "made to wait a full cycle instead of five minutes"
 
 
+def test_a_turned_away_web_login_does_not_hand_its_dead_cookie_to_the_retry(
+    monkeypatch,
+):
+    """The refusal means the session is gone - the reuse was sent to the
+    login page, or a full login was needed anyway. Kept, the retry tried the
+    dead cookie first: two more requests, one of them to the login page that
+    had just refused."""
+    clock = _Clock()
+    api = _api_whose_web_login_answers(clock, monkeypatch, _web_login_refusal())
+    api.webscraping_cookie = {"ASP.NET_SessionId": "expired"}
+
+    _scrape(api)
+
+    assert not api.webscraping_cookie, "the retry starts from the dead session"
+
+
 def test_a_second_turned_away_web_login_in_a_row_is_the_block(monkeypatch):
     clock = _Clock()
     api = _api_whose_web_login_answers(
