@@ -910,15 +910,16 @@ def test_the_full_login_path_still_warns_about_an_empty_page(scraper, caplog):
 def test_a_reuse_found_dead_is_forgotten_even_if_the_fresh_login_fails():
     """The cookie was dropped only when the retry was a turned-away login.
     A fresh login failing any other way - a timeout, maintenance, a server
-    error - kept it, and every retry spent two requests on it first."""
+    error - kept it, and every retry spent two requests on it first.
+
+    Not sent to the login page: the portal answering the expert tab with the
+    main page is the other way a reused session turns out dead, and only
+    the scrape itself sees that one."""
     scraper = WemPortalScraper(
         "user@example.org", "secret", {"ASP.NET_SessionId": "expired"}
     )
     scraper.session = _ReuseSession(
-        _ReuseResponse(
-            "<html><body>login</body></html>",
-            url="https://www.wemportal.com/Web/Login.aspx",
-        )
+        _ReuseResponse("<html><body>main page, no expert view</body></html>")
     )
 
     with pytest.raises(Exception):  # noqa: B017 - whichever way the login fails
