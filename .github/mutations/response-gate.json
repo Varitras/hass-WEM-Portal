@@ -4668,5 +4668,19 @@
     "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n",
     "new": "            if True:\n",
     "tests": "empty_api_value_does_not_erase_the_scraped_one"
+  },
+  {
+    "label": "scrape: the programme week thrown away with the row",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            row.circuit_times_day = previous.circuit_times_day\n",
+    "new": "",
+    "tests": "scrape_keeps_the_programme_details"
+  },
+  {
+    "label": "scrape: the programme's possible values thrown away with the row",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            row.possible_values = previous.possible_values\n",
+    "new": "",
+    "tests": "scrape_keeps_the_programme_details"
   }
 ]

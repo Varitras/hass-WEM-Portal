@@ -14,6 +14,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   scrape had stopped delivering that row, or never had. The last reading
   then stood as current for as long as the API kept answering empty. It
   is now kept only while the scrape still delivers it.
+- **In `both` mode a web scrape no longer drops a weekly programme's
+  phases.** The scrape replaced the whole reading, and the switching times
+  the API had read from the device went with it: the sensor showed a bare
+  time window until the next hourly schedule read.
 
 ## [1.14.0b3] – 2026-09-29
 

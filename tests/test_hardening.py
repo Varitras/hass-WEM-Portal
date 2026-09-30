@@ -4640,6 +4640,31 @@ def _scraped(*keys):
     return {key: Reading(value=1, unit="°C", platform="sensor") for key in keys}
 
 
+def test_a_scrape_keeps_the_programme_details_the_schedule_fetch_found():
+    """The scrape replaced the whole row, and with it the week the schedule
+    fetch had read from the device. The API merge after it brings the value
+    back but not the week, and the hourly gate still counts the fetch as
+    recent: the sensor showed a bare window until the next schedule read."""
+    api = _api()
+    api.data = {
+        "0000": {
+            "pump-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}',
+                circuit_times_day=A_FED_WEEK,
+                possible_values=[1, 2, 3],
+            )
+        }
+    }
+
+    api._merge_webscraping_data(
+        "0000", {"pump-programme": Reading(value='{"MO-1":"06:00-10:10"}')}
+    )
+
+    row = api.data["0000"]["pump-programme"]
+    assert row.circuit_times_day == A_FED_WEEK, "the scrape threw the week away"
+    assert row.possible_values == [1, 2, 3]
+
+
 def test_a_relabelled_scraper_row_is_reported(caplog):
     """Scraped sensors are keyed by their portal labels - there is no stable
     id to use instead, since the row's entityvalue embeds the current VALUE

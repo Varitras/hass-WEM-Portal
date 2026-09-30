@@ -1132,7 +1132,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         return gone
 
     def _prepare_scraped_row(self, row: Reading, previous: Any) -> None:
-        """Translate the row's name and keep a unit this scrape did not bring.
+        """Translate the row's name; keep a unit or programme it did not bring.
 
         Mutates `row` in place, which is what the caller stores. Split out of
         the merge loop, where it sat two levels deep and pushed the unit test
@@ -1157,6 +1157,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         if row.friendly_name is not None:
             row.friendly_name = translate(self.language, row.friendly_name)
+        # The page never has a programme's week; the schedule fetch owns it.
+        if isinstance(previous, Reading):
+            row.circuit_times_day = previous.circuit_times_day
+            row.possible_values = previous.possible_values
 
         # Preserve the old unit if the current scrape is missing it (e.g. value
         # is "--"). This prevents Home Assistant from complaining about unit
