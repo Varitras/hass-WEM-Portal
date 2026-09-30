@@ -422,7 +422,14 @@ def _scraped_entities_naming_the_same_thing(
 
 
 def _merge_into_scraped(
-    device_id, key, sensor, language, scraping_mapper, api_data, scraped_rows
+    device_id,
+    key,
+    sensor,
+    language,
+    scraping_mapper,
+    api_data,
+    scraped_rows,
+    scrape_still_feeds,
 ) -> None:
     """Feed an API reading into the scraped entity that shows the same value,
     so both sources keep one entity instead of two that drift apart."""
@@ -492,11 +499,10 @@ def _merge_into_scraped(
         previous = api_data[device_id].get(scraped_entity)
         target = previous if isinstance(previous, Reading) else None
 
-        # An API read that came back empty must not erase a
-        # web value that was scraped successfully in the same
-        # cycle. Both paths feed this one entity, and writing
-        # None over a good reading turned a partial API
-        # failure into an unknown sensor.
+        # An API read that came back empty must not erase a web value the
+        # scrape still delivers: writing None over it turned a partial API
+        # failure into an unknown sensor. Only then - kept against every
+        # empty answer, a row nothing else refreshes stood as current.
         api_value = sensor.value
         if target is None:
             target = Reading(parameter_id=scraped_entity)
@@ -510,7 +516,7 @@ def _merge_into_scraped(
             # only the value flows in, and everything the row carries beyond
             # these fields (a schedule detail, say) stays untouched, exactly
             # as dict.update() on a fixed key set left it before.
-            if api_value is not None:
+            if api_value is not None or not scrape_still_feeds(scraped_entity):
                 target.value = api_value
             target.parameter_id = scraped_entity
             target.platform = "sensor"
@@ -787,6 +793,8 @@ class WemPortalDataMapper:
                     scraping_mapper,
                     api_data,
                     scraped_rows,
+                    # No word from the scrape: nothing counts as its delivery.
+                    scrape_still_feeds or (lambda _row_name: False),
                 )
             else:
                 _emit_plain_sensor(device_id, key, sensor, api_data)

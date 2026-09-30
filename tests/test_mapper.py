@@ -1006,9 +1006,52 @@ def test_an_empty_api_value_does_not_erase_the_scraped_one():
         _values(_value("Outside", numeric=None, string="")),
         mode="both",
         existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
+        scrape_still_feeds=lambda key: key == "heat_pump-outside",
     )
 
     assert data["heat_pump-outside"].value == 11.0
+
+
+def test_an_empty_api_value_clears_a_merged_row_the_scrape_stopped_feeding():
+    """The protection above is for a value the scrape still delivers. With
+    the scrape gone, the empty answer is the only news there is - kept
+    against it, the last reading stood as current for as long as the API
+    kept answering empty, its module and device stamps moving on."""
+    data = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=None, string="")),
+        mode="both",
+        existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
+        scrape_still_feeds=lambda key: False,
+    )
+
+    assert data["heat_pump-outside"].value is None
+
+
+def test_an_empty_api_value_clears_a_row_only_the_api_feeds():
+    """`both` mode without a scraped counterpart: the reading lives under its
+    own key and goes through the merge all the same - and kept its last
+    value against every empty answer after it."""
+    scraping_mapper = {}
+    first = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=21.5, unit="°C")),
+        mode="both",
+        scraping_mapper=scraping_mapper,
+        scrape_still_feeds=lambda key: False,
+    )
+    assert first["Heat pump-Outside"].value == 21.5
+
+    data = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=None, string="")),
+        mode="both",
+        existing=first,
+        scraping_mapper=scraping_mapper,
+        scrape_still_feeds=lambda key: False,
+    )
+
+    assert data["Heat pump-Outside"].value is None
 
 
 def test_a_real_api_value_still_wins_over_the_scraped_one():

@@ -107,8 +107,8 @@
   {
     "label": "net: falsy scraped fields must not fall back to the api value",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if api_value is not None:\n                target.value = api_value",
-    "new": "            if api_value is not None:\n                target.value = api_value\n            target.unit = target.unit or sensor.unit",
+    "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n                target.value = api_value",
+    "new": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n                target.value = api_value\n            target.unit = target.unit or sensor.unit",
     "tests": "extra_mapper_output_is_unchanged"
   },
   {
@@ -4654,5 +4654,19 @@
     "old": "            if occurrences != 1:\n",
     "new": "            if False:\n",
     "tests": "missing_snippet_is_named_as_one"
+  },
+  {
+    "label": "merge: an empty API value kept against a row the scrape no longer feeds",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n",
+    "new": "            if api_value is not None:\n",
+    "tests": "empty_api_value_clears"
+  },
+  {
+    "label": "merge: an empty API value erases a row the scrape delivers",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n",
+    "new": "            if True:\n",
+    "tests": "empty_api_value_does_not_erase_the_scraped_one"
   }
 ]

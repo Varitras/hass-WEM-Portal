@@ -6,6 +6,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **In `both` mode an empty API answer no longer keeps an old value
+  forever.** An empty answer was never allowed to overwrite a reading, so
+  the web page's value would survive it - but that also held when the web
+  scrape had stopped delivering that row, or never had. The last reading
+  then stood as current for as long as the API kept answering empty. It
+  is now kept only while the scrape still delivers it.
+
 ## [1.14.0b3] – 2026-09-29
 
 A third beta. Everything from 1.14.0b2, plus: a login the portal turns away
