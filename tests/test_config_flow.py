@@ -607,6 +607,29 @@ async def test_discovery_on_an_entry_that_is_not_loaded_honours_the_403_pause(
         client._check_gates()
 
 
+async def test_discovery_on_an_entry_that_is_not_loaded_starts_the_pause(
+    hass, monkeypatch
+):
+    """The other half: a 403 the search itself meets has to pause the
+    account's expert path, or the next search walks straight into it."""
+    import time
+
+    from custom_components.wemportal.models import account_state
+    from custom_components.wemportal.options_flow import WemportalOptionsFlow
+
+    entry = _entry(hass, {CONF_EXPERT_WRITE: True})
+    flow = WemportalOptionsFlow()
+    monkeypatch.setattr(type(flow), "config_entry", property(lambda self: entry))
+    account_state(USER).expert_blocked_until = 0.0
+
+    refused = type("Refused", (), {"status_code": 403, "url": "", "text": ""})()
+
+    with pytest.raises(ForbiddenError):
+        flow._expert_client()._raise_if_forbidden(refused)
+
+    assert account_state(USER).expert_blocked_until > time.monotonic()
+
+
 async def test_discovery_on_an_entry_that_is_not_loaded_waits_its_turn(
     hass, monkeypatch
 ):

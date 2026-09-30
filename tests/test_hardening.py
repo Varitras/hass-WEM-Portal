@@ -8867,6 +8867,34 @@ async def test_the_unit_survives_a_restart_that_begins_with_the_pump_off(monkeyp
     )
 
 
+async def test_a_word_after_a_restart_is_checked_against_the_restored_unit(
+    monkeypatch,
+):
+    """The value was checked when the entity was built, and the unit it had
+    before the restart came back only afterwards: "Stop" passed as text,
+    then stood on a sensor with a unit, and Home Assistant refused the very
+    first state."""
+    from homeassistant.components.sensor import SensorExtraStoredData
+    from homeassistant.helpers.restore_state import RestoreEntity
+
+    sensor = _sensor_from_row("Power", _power_row("Stop", None))
+    sensor.hass = None
+    sensor.entity_id = "sensor.power"
+
+    async def last_sensor_data():
+        return SensorExtraStoredData(native_value=11.1, native_unit_of_measurement="kW")
+
+    async def no_home_assistant(_self):
+        return None
+
+    sensor.async_get_last_sensor_data = last_sensor_data
+    monkeypatch.setattr(RestoreEntity, "async_added_to_hass", no_home_assistant)
+    await sensor.async_added_to_hass()
+
+    assert sensor.native_value is None
+    assert sensor.state is None
+
+
 # --- an announced maintenance window is not a maintenance window -----------
 #
 # Measured on a live portal on 2026-09-23: the notice for a 17:00-20:00 window

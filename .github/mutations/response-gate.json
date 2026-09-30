@@ -2377,7 +2377,7 @@
     "label": "expert: the write going back to fire-and-forget",
     "path": "custom_components/wemportal/expert_number.py",
     "old": "        await self._async_write(value)",
-    "new": "        self._pending = self._async_write(value)",
+    "new": "        __import__(\"asyncio\").get_running_loop().create_task(self._async_write(value))",
     "tests": "a_failed_write_reaches_whoever_asked_for_it"
   },
   {
@@ -4675,5 +4675,19 @@
     "old": "            or self.native_unit_of_measurement is not None\n            or self.state_class is not None\n            or self.device_class is not None\n",
     "new": "            or self._attr_state_class is not None\n            or self._attr_device_class is not None\n",
     "tests": "word_after_a_number_on_a_sensor_without_a_unit_is_unknown"
+  },
+  {
+    "label": "discovery: a 403 met on an entry that is not loaded starts no pause",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "            cooldown_activate=api.activate_expert_cooldown,\n",
+    "new": "            cooldown_activate=api.activate_expert_cooldown if data is not None else None,\n",
+    "tests": "not_loaded_starts_the_pause"
+  },
+  {
+    "label": "sensor: a word after a restart left beside the restored unit",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "                self._attr_native_value = self._validated_native_value(\n                    self._attr_native_value, None\n                )\n",
+    "new": "",
+    "tests": "checked_against_the_restored_unit"
   }
 ]

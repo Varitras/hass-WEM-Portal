@@ -455,6 +455,11 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 self._attr_native_unit_of_measurement = (
                     last_sensor_data.native_unit_of_measurement
                 )
+                # Checked again: the value was checked without this unit, and
+                # a word that passed as text must not stand beside it.
+                self._attr_native_value = self._validated_native_value(
+                    self._attr_native_value, None
+                )
                 _LOGGER.debug(
                     "Restored unit %s for %s from previous session",
                     self._attr_native_unit_of_measurement,

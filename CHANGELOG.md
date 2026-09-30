@@ -16,7 +16,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **A sensor without a unit no longer fails on a word after a number.**
   A reading such as "Stop" arriving on a sensor that had shown numbers was
   refused by Home Assistant on every cycle, and the last number stayed on
-  screen. It now shows as unknown, like the same word on any other number.
+  screen. It now shows as unknown, like the same word on any other number -
+  also when the word is the first reading after a restart.
 
 ## [1.14.0b3] – 2026-09-29
 
