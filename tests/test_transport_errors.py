@@ -243,6 +243,47 @@ def test_a_session_that_stays_expired_is_given_up():
     assert api.valid_login is False
 
 
+@pytest.mark.parametrize("http_status", [404, 405, 500])
+def test_a_login_redirect_that_lands_on_an_error_is_still_an_expired_session(
+    http_status,
+):
+    """The status was checked before the address, so a redirect to the login
+    page that ended in an error page read as a plain failure: no re-login,
+    and - since a failure no longer drops the session - the dead session
+    kept for good."""
+    session = FlakySession(
+        failures=0,
+        final=FakeResponse(
+            {}, status_code=http_status, url="https://www.wemportal.com/Account/Login"
+        ),
+    )
+    api = _api(session)
+    api.valid_login = True
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.make_api_call("https://example.invalid/read", data={"x": 1})
+
+    assert api.logins == [1], "the dead session was not replaced"
+    assert api.valid_login is False
+
+
+def test_a_403_on_the_login_redirect_is_still_the_block(monkeypatch):
+    """The refusal outranks the address: a 403 is the pause, not a login."""
+    monkeypatch.setattr("custom_components.wemportal.transport._BLOCKED_UNTIL", 0.0)
+    session = FlakySession(
+        failures=0,
+        final=FakeResponse(
+            {}, status_code=403, url="https://www.wemportal.com/Account/Login"
+        ),
+    )
+    api = _api(session)
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api.make_api_call("https://example.invalid/read", data={"x": 1})
+
+    assert api.logins == []
+
+
 def test_expired_session_still_re_authenticates_and_retries():
     """The pre-existing retry must keep its own behaviour: this one DOES
     re-login, which is exactly what the transport retry must not do."""

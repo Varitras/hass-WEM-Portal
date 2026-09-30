@@ -4696,5 +4696,19 @@
     "old": "        on_login_page = is_login_page(main_page.url)\n",
     "new": "        on_login_page = WEB_LOGIN_URL.lower() in main_page.url.lower()\n",
     "tests": "expert_session_during_an_announcement_logs_in_again or recognised_by_the_one_rule_everywhere"
+  },
+  {
+    "label": "session: a login redirect ending on an error page taken for a plain failure",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                if sent_to_the_login and response.status_code != 403:\n                    raise ExpiredSessionError(\"Redirected to Account/Login\")\n                response.raise_for_status()\n",
+    "new": "                response.raise_for_status()\n                if sent_to_the_login:\n                    raise ExpiredSessionError(\"Redirected to Account/Login\")\n",
+    "tests": "login_redirect_that_lands_on_an_error_is_still_an_expired_session"
+  },
+  {
+    "label": "session: a 403 on the login redirect taken for an expired session",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                if sent_to_the_login and response.status_code != 403:\n",
+    "new": "                if sent_to_the_login:\n",
+    "tests": "403_on_the_login_redirect_is_still_the_block"
   }
 ]

@@ -12,11 +12,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   group the heat pump does not have is refused every hour, and that dropped
   the session, so the next cycle logged in again - about 24 extra logins a
   day, each one a chance for the bare refusal the portal gives logins now and
-  then. Only a session that is really gone is given up now.
+  then. The login is given up now only when the session is really gone -
+  also when the redirect to the login page ends on an error page - or when
+  the portal's refusal pauses everything.
 - **A web login turned away once is retried without its dead session.**
   The retry five minutes later first tried the old session cookie, which
   cost two requests - one of them to the login page that had just refused.
-- **The login page is recognised the same way everywhere.** Four checks
+- **The login page is recognised the same way everywhere.** Five checks
   still looked for its address as a substring, and a session the portal
   keeps in the address instead of a cookie slipped past them: an expired
   session during an announced maintenance window then read as the outage

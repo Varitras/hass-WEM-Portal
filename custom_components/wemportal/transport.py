@@ -596,15 +596,16 @@ class WemPortalTransport:
             try:
                 response = self._send(url, current_headers, data)
 
-                response.raise_for_status()
-
-                # Check for stealthy session expiration (HTML redirect)
-                if "Account/Login" in response.url or (
+                # Session expiry by redirect, asked before the status: one that
+                # ends on an error page is still one. A 403 stays the block.
+                sent_to_the_login = "Account/Login" in response.url or (
                     hasattr(response, "redirect_url")
                     and response.redirect_url
                     and "Account/Login" in str(response.redirect_url)
-                ):
+                )
+                if sent_to_the_login and response.status_code != 403:
                     raise ExpiredSessionError("Redirected to Account/Login")
+                response.raise_for_status()
 
                 _LOGGER.debug(response)
                 return response
