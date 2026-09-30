@@ -512,11 +512,10 @@ class WemPortalTransport:
         # Out of retries, or an error of a completely different kind:
         server_status, server_message = self.get_response_details(response)
 
-        # The old logic recreated the entire API instance when this happened.
-        # To emulate that recovery mechanism without losing cached metadata,
-        # we invalidate the login state so the next cycle creates a fresh
-        # requests.Session.
-        self.valid_login = False
+        # Any other answer is about the request: 400/3001 comes hourly and is
+        # swallowed, and dropping the login for it cost one the next cycle.
+        if is_session_error:
+            self.valid_login = False
 
         if is_transport_error:
             # There was no server and no answer, so there is no status code

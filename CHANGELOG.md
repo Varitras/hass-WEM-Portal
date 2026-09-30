@@ -6,6 +6,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A refused request no longer costs a login the next cycle.** A statistics
+  group the heat pump does not have is refused every hour, and that dropped
+  the session, so the next cycle logged in again - about 24 extra logins a
+  day, each one a chance for the bare refusal the portal gives logins now and
+  then. Only a session that is really gone is given up now.
+
 ## [1.14.0b3] – 2026-09-29
 
 A third beta. Everything from 1.14.0b2, plus: a login the portal turns away

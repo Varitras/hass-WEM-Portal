@@ -203,6 +203,46 @@ def test_a_real_server_error_still_reports_the_server():
     assert excinfo.value.server_status == 9
 
 
+@pytest.mark.parametrize(
+    "final",
+    [
+        FakeResponse({"Status": 3001, "Message": "invalid group"}, status_code=400),
+        FakeResponse({"Status": 9, "Message": "nope"}, status_code=500),
+        None,
+    ],
+    ids=["refused request", "server error", "never arrived"],
+)
+def test_an_answer_about_the_request_keeps_the_session(final):
+    """A statistics group the module does not have answers 400/3001 on every
+    hourly run, and the caller swallows it. Dropping the login for it made
+    the next cycle log in again - one login an hour, each one a chance for
+    the bare 403 the portal gives logins now and then."""
+    session = FlakySession(failures=0 if final is not None else 99, final=final)
+    api = _api(session)
+    api.valid_login = True
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.make_api_call("https://example.invalid/stats", data={"x": 1})
+
+    assert api.valid_login is True, "an answer about one request dropped the login"
+
+
+def test_a_session_that_stays_expired_is_given_up():
+    """The one failure that says the session is gone: the retry's own login
+    did not help either."""
+    session = FlakySession(
+        failures=0,
+        final=FakeResponse({}, url="https://www.wemportal.com/Account/Login"),
+    )
+    api = _api(session)
+    api.valid_login = True
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.make_api_call("https://example.invalid/read", data={"x": 1})
+
+    assert api.valid_login is False
+
+
 def test_expired_session_still_re_authenticates_and_retries():
     """The pre-existing retry must keep its own behaviour: this one DOES
     re-login, which is exactly what the transport retry must not do."""

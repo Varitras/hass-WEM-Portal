@@ -4654,5 +4654,19 @@
     "old": "            if occurrences != 1:\n",
     "new": "            if False:\n",
     "tests": "missing_snippet_is_named_as_one"
+  },
+  {
+    "label": "login kept: any failed request drops the login again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if is_session_error:\n            self.valid_login = False\n",
+    "new": "        self.valid_login = False\n",
+    "tests": "an_answer_about_the_request_keeps_the_session"
+  },
+  {
+    "label": "login kept: a session that stays expired is kept too",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if is_session_error:\n            self.valid_login = False\n",
+    "new": "        if False:\n            self.valid_login = False\n",
+    "tests": "session_that_stays_expired_is_given_up"
   }
 ]
