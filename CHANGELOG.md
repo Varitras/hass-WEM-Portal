@@ -14,6 +14,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   before a single value was read, and the next cycle tried again - no
   readings for as long as the portal kept failing it. The known list is now
   kept and asked again an hour later, while the values are read as usual.
+- **In `both` mode the API is read at its interval again.** Home Assistant
+  can start a cycle up to a second before the interval is complete, and the
+  API read then waited a whole further cycle: set to five minutes, it came
+  every seven and a half to nine and a half.
 
 ## [1.14.0b3] – 2026-09-29
 

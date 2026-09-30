@@ -9142,6 +9142,33 @@ def test_a_different_curl_error_is_still_news():
     assert failure_is_new(reported, "scrape", "curl: (7) Failed to connect")
 
 
+def test_a_tick_that_lands_a_fraction_early_still_reads_the_api(monkeypatch):
+    """Home Assistant plans the next tick as int(loop time) + a fixed fraction
+    + the interval, so it can land up to a second before stamp + interval.
+    Measured with a bare `>=`, that tick skipped the read and the next one
+    came a whole interval later: 75 to 97 reads in twelve hours instead of
+    144 at five minutes."""
+    from datetime import timedelta
+
+    api = _api()
+    api.scan_interval_api = timedelta(seconds=300)
+    monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: 10_000.0)
+    api._last_api_read = 10_000.0 - 299.1
+
+    assert api._api_read_is_due(), "a tick 0.9 s early skipped the API read"
+
+
+def test_half_an_api_interval_is_still_not_due(monkeypatch):
+    from datetime import timedelta
+
+    api = _api()
+    api.scan_interval_api = timedelta(seconds=300)
+    monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: 10_000.0)
+    api._last_api_read = 10_000.0 - 150
+
+    assert not api._api_read_is_due()
+
+
 def _both_mode_api_whose_scrape(outcome):
     api = _api()
     api._scrape_is_due = lambda _enabled: True

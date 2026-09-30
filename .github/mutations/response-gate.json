@@ -2157,11 +2157,11 @@
     "tests": "a_failed_api_read_still_counts_against_the_interval"
   },
   {
-    "label": "both mode: a tick exactly on the API interval counts as early",
+    "label": "both mode: a tick a fraction early skips the API read",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        return waited >= self.scan_interval_api.total_seconds()",
-    "new": "        return waited > self.scan_interval_api.total_seconds()",
-    "tests": "both_mode_reads_the_api_on_every_cycle_when_that_is_the_shorter_one"
+    "old": "        return waited + TICK_TOLERANCE_SECONDS >= self.scan_interval_api.total_seconds()",
+    "new": "        return waited >= self.scan_interval_api.total_seconds()",
+    "tests": "tick_that_lands_a_fraction_early_still_reads_the_api"
   },
   {
     "label": "scrape: a naive timestamp that hides the DST jump",
@@ -4675,5 +4675,12 @@
     "old": "        if isinstance(exc, (AuthError, ForbiddenError)) or not values.get(\"parameters\"):\n            raise exc\n",
     "new": "        if isinstance(exc, (AuthError, ForbiddenError)):\n            raise exc\n",
     "tests": "missing_list_the_portal_fails_still_fails_the_cycle"
+  },
+  {
+    "label": "both mode: the tick tolerance hands out early API reads",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "TICK_TOLERANCE_SECONDS: Final = 10\n",
+    "new": "TICK_TOLERANCE_SECONDS: Final = 200\n",
+    "tests": "half_an_api_interval_is_still_not_due"
   }
 ]

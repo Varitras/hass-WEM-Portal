@@ -139,6 +139,8 @@ PARAMETER_REDISCOVERY_INTERVAL_SECONDS: Final = 24 * 3600  # 1 day
 # above, but not immediate: a portal that just refused must not be asked once
 # per cycle. Same shape as the statistics and schedule retries.
 PARAMETER_REDISCOVERY_RETRY_SECONDS: Final = 3600  # 1 hour
+# A coordinator tick lands up to a second early; see _api_read_is_due.
+TICK_TOLERANCE_SECONDS: Final = 10
 
 # How long one poll cycle may spend before it stops itself.
 #
@@ -920,7 +922,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         elapsed: float = (
             dt_util.now().timestamp() - self.last_scraping_update.timestamp()
         )
-        return elapsed + 10 > self.scan_interval.total_seconds()
+        return elapsed + TICK_TOLERANCE_SECONDS > self.scan_interval.total_seconds()
 
     def _api_read_is_due(self) -> bool:
         """Whether `both` mode should read the mobile API this cycle.
@@ -935,16 +937,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         persists this stamp, so it has no restart to survive, and a clock
         change must not hand out a free read (or withhold one for hours).
 
-        `>=` and no jitter tolerance, unlike the scrape gate: the stamp is
-        taken inside the cycle, and Home Assistant plans the next tick from
-        when that cycle ENDED - so the grid drifts along with the stamp
-        rather than away from it. Measured with `>`, an installation whose
-        API interval IS the tick would lose every second reading.
+        With the same tolerance as the scrape gate. Home Assistant plans the
+        next tick from when the cycle ended, but rounds the loop time down
+        first, so a tick lands up to a second early; measured without the
+        tolerance, a five-minute API read came every 7.5 to 9.5 minutes.
         """
         if self._last_api_read is None:
             return True
         waited: float = time.monotonic() - self._last_api_read
-        return waited >= self.scan_interval_api.total_seconds()
+        return waited + TICK_TOLERANCE_SECONDS >= self.scan_interval_api.total_seconds()
 
     def _count_down_scrape_backoff(self) -> None:
         """One cycle closer to the next scrape attempt."""
