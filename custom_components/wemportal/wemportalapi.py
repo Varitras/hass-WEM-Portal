@@ -381,6 +381,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # module) turns every restart with an expired cache into a slow
         # startup.
         self._first_cycle_done = False
+        # A `both`-mode tick can end with neither source read, which is no
+        # sign of recovery.
+        self.last_cycle_read_nothing = False
         self.heavy_fetch_turns = HeavyFetchTurns()
         # When the mobile API was last read, for the `both`-mode gate. None
         # rather than 0.0: zero on the monotonic clock is the moment the
@@ -994,8 +997,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         else:
             _LOGGER.debug("Web scraper still failing: %s", reason)
 
-    def _collect_both(self, enabled_devices: list[str] | None) -> None:
-        """`both` mode: scrape when due, then read the API either way."""
+    def _collect_both(self, enabled_devices: list[str] | None) -> bool:
+        """`both` mode: scrape, then read the API, each when due; True if
+        either delivered."""
+        scraped = False
         if self._scrape_is_due(enabled_devices):
             try:
                 self._scrape_and_merge()
@@ -1005,13 +1010,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 # this deliberately does not re-raise.
                 self._note_scrape_failure(exc)
             else:
+                scraped = True
                 if failure_is_over(self._reported_failures, _SCRAPE_FAILURE_KEY):
                     _LOGGER.info("The web scraper works again.")
         else:
             self._count_down_scrape_backoff()
 
         if not self._api_read_is_due():
-            return
+            return scraped
         try:
             self.get_data(enabled_devices)
         finally:
@@ -1029,6 +1035,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # next tick from when the cycle ENDED, so the stamp and the grid
             # drift together instead of apart.
             self._last_api_read = time.monotonic()
+        return True
 
     def _fetch_data(
         self, enabled_devices: list[str] | None = None
@@ -1041,6 +1048,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # etc.) that we already know will be aborted immediately.
         self.check_cooldown()
         self.heavy_fetch_turns.new_cycle()
+        self.last_cycle_read_nothing = False
         try:
             if self.mode != "web":
                 self._ensure_api_session()
@@ -1049,8 +1057,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 self._collect_web(enabled_devices)
             elif self.mode == "api":
                 self.get_data(enabled_devices)
-            else:
-                self._collect_both(enabled_devices)
+            elif not self._collect_both(enabled_devices):
+                self.last_cycle_read_nothing = True
+                return self.data
 
             # Set only after a cycle got this far, so a setup that fails
             # halfway does not let the next attempt count as "not the first

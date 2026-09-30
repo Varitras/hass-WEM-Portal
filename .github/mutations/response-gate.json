@@ -4682,5 +4682,26 @@
     "old": "TICK_TOLERANCE_SECONDS: Final = 10\n",
     "new": "TICK_TOLERANCE_SECONDS: Final = 200\n",
     "tests": "half_an_api_interval_is_still_not_due"
+  },
+  {
+    "label": "both mode: a tick that read nothing passes for a recovery",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                if self.api.last_cycle_read_nothing:\n                    # `both` mode with nothing due or the scrape failed:\n                    # no evidence either way, so no counter moves.\n                    return fetched\n",
+    "new": "",
+    "tests": "tick_that_read_nothing_does_not_end_an_outage"
+  },
+  {
+    "label": "both mode: a failed scrape counts as a delivery",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            else:\n                scraped = True\n",
+    "new": "            finally:\n                scraped = True\n",
+    "tests": "both_mode_tick_says_whether_it_read_anything"
+  },
+  {
+    "label": "both mode: a tick with the API not due always reads as nothing",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not self._api_read_is_due():\n            return scraped\n",
+    "new": "        if not self._api_read_is_due():\n            return False\n",
+    "tests": "both_mode_tick_says_whether_it_read_anything"
   }
 ]

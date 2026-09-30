@@ -18,6 +18,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   can start a cycle up to a second before the interval is complete, and the
   API read then waited a whole further cycle: set to five minutes, it came
   every seven and a half to nine and a half.
+- **In `both` mode a cycle that read nothing no longer ends an outage.**
+  When the API was not due and the web scrape failed or was held back, the
+  cycle still counted as a working one, so the failure count of an API that
+  failed every time it was due went back to zero in between - its outage
+  never reached the point where the entities show it.
 
 ## [1.14.0b3] – 2026-09-29
 

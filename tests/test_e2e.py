@@ -2301,6 +2301,27 @@ async def test_a_busy_api_does_not_trigger_the_recovery_swap(hass, monkeypatch):
     assert coordinator.api is api_before, "a busy api was replaced as if broken"
 
 
+async def test_a_tick_that_read_nothing_does_not_end_an_outage(hass, monkeypatch):
+    """`both` mode with the API not due and the scrape failed or held back:
+    nothing was read, and counting it as a working cycle cleared the failure
+    count of an API that failed on every tick it was due."""
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_failed = 2
+    coordinator.num_auth_failed = 2
+
+    def read_nothing(self, *_args, **_kwargs):
+        self.last_cycle_read_nothing = True
+        return self.data
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", read_nothing)
+
+    await coordinator._async_update_data()
+
+    assert coordinator.num_failed == 2, "a tick that read nothing ended the outage"
+    assert coordinator.num_auth_failed == 2
+
+
 async def test_a_busy_api_counts_neither_for_nor_against_the_credentials(
     hass, monkeypatch
 ):

@@ -6058,6 +6058,9 @@ PRESERVED_FIELDS = frozenset(
         # Like _deadline, it belongs to the poll cycle in progress: which
         # burst that cycle has spent. A new connection does not un-spend it.
         "heavy_fetch_turns",
+        # What the cycle that just ended read; a recovery after it does not
+        # change that, and the coordinator asks it right after the fetch.
+        "last_cycle_read_nothing",
         "_last_device_read",
         "_module_answered_at",
         "data",
@@ -9175,6 +9178,40 @@ def _both_mode_api_whose_scrape(outcome):
     api._api_read_is_due = lambda: False
     api._scrape_and_merge = outcome
     return api
+
+
+def _fails():
+    raise exceptions.WemPortalError("Could not open the expert view")
+
+
+@pytest.mark.parametrize(
+    ("scrape_due", "scrape", "api_due", "read_nothing"),
+    [
+        (True, _fails, False, True),
+        (False, None, False, True),
+        (True, lambda: None, False, False),
+        (False, None, True, False),
+    ],
+    ids=["scrape failed", "nothing due", "scrape worked", "api read"],
+)
+def test_a_both_mode_tick_says_whether_it_read_anything(
+    scrape_due, scrape, api_due, read_nothing
+):
+    """With the API not due, a tick returned the cached data whether or not
+    the scrape worked - or even ran - and the coordinator took that for a
+    working cycle: the failure count of an API that kept failing went back to
+    zero in between, and its outage never reached the tolerance."""
+    api = _api()
+    api.mode = "both"
+    api._ensure_api_session = lambda: None
+    api._scrape_is_due = lambda _enabled: scrape_due
+    api._scrape_and_merge = scrape
+    api._api_read_is_due = lambda: api_due
+    api.get_data = lambda _enabled: None
+
+    api._fetch_data(None)
+
+    assert api.last_cycle_read_nothing is read_nothing
 
 
 def test_a_scrape_that_keeps_failing_is_announced_once_and_healed_once(caplog):

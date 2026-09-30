@@ -571,6 +571,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 fetched = await self.hass.async_add_executor_job(
                     self.api.fetch_data, device_filter
                 )
+                if self.api.last_cycle_read_nothing:
+                    # `both` mode with nothing due or the scrape failed:
+                    # no evidence either way, so no counter moves.
+                    return fetched
                 self.num_failed = 0
                 self._reset_auth_failures()
                 # Home Assistant's own coordinator announces the recovery, so
