@@ -4738,5 +4738,19 @@
     "old": "            if not scraper.cookie:\n                self.webscraping_cookie = None\n",
     "new": "            pass\n",
     "tests": "session_the_scraper_found_dead_is_not_handed_back_to_it"
+  },
+  {
+    "label": "scraper: a reuse sent to a failing login page kept for the retry",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            # Dead whatever the status says, and before the status is asked.\n            self.cookie = {}\n",
+    "new": "            pass\n",
+    "tests": "login_page_that_errors_is_forgotten_too"
+  },
+  {
+    "label": "expert: a dead session left in the account's shared cache",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            self._cookie_jar.pop(\"cookies\", None)\n",
+    "new": "",
+    "tests": "expert_session_found_dead_leaves_the_shared_cache"
   }
 ]

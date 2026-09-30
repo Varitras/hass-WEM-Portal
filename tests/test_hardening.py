@@ -9857,6 +9857,26 @@ def test_a_session_the_scraper_found_dead_is_not_handed_back_to_it():
     assert not api.webscraping_cookie
 
 
+def test_an_expert_session_found_dead_leaves_the_shared_cache(monkeypatch):
+    """The cache is shared by every expert operation of the account. A
+    session found dead stayed in it, so the next operation within the
+    fifteen minutes probed it again before logging in - two requests more."""
+    from custom_components.wemportal import expert_writer
+
+    jar = {"cookies": {"ASP.NET_SessionId": "expired"}, "saved_at": time.monotonic()}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+
+    def dead():
+        raise exceptions.AuthError("session not accepted")
+
+    monkeypatch.setattr(client, "_establish_context", dead)
+
+    assert client._try_cached_session() is False
+    assert not jar.get("cookies"), "the dead session is still offered"
+
+
 def test_a_second_turned_away_web_login_in_a_row_is_the_block(monkeypatch):
     clock = _Clock()
     api = _api_whose_web_login_answers(

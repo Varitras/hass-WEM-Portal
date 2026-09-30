@@ -927,6 +927,31 @@ def test_a_reuse_found_dead_is_forgotten_even_if_the_fresh_login_fails():
     assert scraper.cookie == {}, "the dead session is still offered to the retry"
 
 
+def test_a_reuse_sent_to_a_login_page_that_errors_is_forgotten_too():
+    """The status was asked before the address, so a login page answering
+    500 raised as a server error and the dead session stayed for the retry."""
+    from custom_components.wemportal.exceptions import ServerError
+
+    scraper = WemPortalScraper(
+        "user@example.org", "secret", {"ASP.NET_SessionId": "expired"}
+    )
+
+    class _Session(_ReuseSession):
+        def get(self, *_args, **_kwargs):
+            return _ReuseResponse(
+                "<html>error</html>",
+                status_code=500,
+                url="https://www.wemportal.com/Web/Login.aspx",
+            )
+
+    scraper.session = _Session(None)
+
+    with pytest.raises(ServerError):
+        scraper.scrape()
+
+    assert scraper.cookie == {}
+
+
 _ANNOUNCED_LOGIN_PAGE = (
     "<html><body><div class='offlinecontent'>Wartungsarbeiten zwischen 17:00 "
     "und 20:00 Uhr</div><input name='ctl00$content$tbxPassword'></body></html>"

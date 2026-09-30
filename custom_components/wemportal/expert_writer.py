@@ -857,6 +857,8 @@ class WemPortalExpertClient:
             _LOGGER.debug(
                 "Cached expert session no longer usable (%s), logging in fresh.", exc
             )
+            # Out of the account's shared cache too, however the login ends.
+            self._cookie_jar.pop("cookies", None)
             self.close()
             return False
 

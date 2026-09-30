@@ -320,6 +320,9 @@ class WemPortalScraper:
         # A 500 has no __VIEWSTATE, so without this it fell through to
         # `return None` - which the full login reports as an AuthError, i.e. a
         # server outage blamed on the credentials.
+        if is_login_page(r_main.url):
+            # Dead whatever the status says, and before the status is asked.
+            self.cookie = {}
         self._check_response(r_main, "main page")
         if is_login_page(r_main.url):
             return None
@@ -359,6 +362,8 @@ class WemPortalScraper:
         # window. Asked first, an announcement on it re-raised as maintenance
         # here, and the reuse path passes that on instead of logging in fresh.
         on_login_page = is_login_page(r_expert.url)
+        if on_login_page:
+            self.cookie = {}
         self._check_response(
             r_expert, "expert page", check_maintenance=not on_login_page
         )
