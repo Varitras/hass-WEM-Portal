@@ -7365,12 +7365,20 @@ def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
 
     api._publish_accepted_values = traced_publish
 
-    api.change_value(
-        "1234", "HolidayBegin", 0, 1, 2.0, together_with=lambda: {"HolidayEnd": 3.0}
-    )
+    locked_at_resolve = {}
+
+    def companions():
+        locked_at_resolve["held"] = api._api_lock.locked()
+        return {"HolidayEnd": 3.0}
+
+    api.change_value("1234", "HolidayBegin", 0, 1, 2.0, together_with=companions)
 
     assert seen["sent"] == {"HolidayEnd": 3.0}, (
         f"the callable companion set was not resolved before the write: {seen['sent']}"
+    )
+    assert locked_at_resolve.get("held"), (
+        "the companions were read before the lock, so a writer ahead of this "
+        "one had not published yet and its dates went back out stale"
     )
     assert locked_at_publish.get("held"), (
         "the values were published after the lock was released, so a writer "
