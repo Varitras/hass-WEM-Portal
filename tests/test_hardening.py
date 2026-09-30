@@ -7612,7 +7612,8 @@ def test_a_re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle(known):
 def test_a_re_read_the_real_transport_fails_keeps_the_cycle(monkeypatch):
     """Through the transport itself, not a stub: a failed request may drop
     the login on the way, and the discovery must not read that as the
-    session being gone - a 500 is about the request."""
+    session being gone - a 500 is about the request. Dropped here by hand
+    as well, so the test holds whichever transport decides that."""
     monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
     stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, _calls = _discovery_api([], fetched_at=stale)
@@ -7620,6 +7621,7 @@ def test_a_re_read_the_real_transport_fails_keeps_the_cycle(monkeypatch):
 
     class _Failing:
         def post(self, *_args, **_kwargs):
+            api.valid_login = False
             return FakeResponse({"Status": 9}, status_code=500)
 
     api.session = _Failing()
