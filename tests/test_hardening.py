@@ -4648,11 +4648,12 @@ def test_a_scrape_keeps_the_programme_details_the_schedule_fetch_found():
     api = _api()
     api.data = {
         "0000": {
+            "ConnectionStatus": 0,
             "pump-programme": Reading(
                 value='{"MO-1":"06:00-10:10"}',
                 circuit_times_day=A_FED_WEEK,
                 possible_values=[1, 2, 3],
-            )
+            ),
         }
     }
 
@@ -4663,6 +4664,27 @@ def test_a_scrape_keeps_the_programme_details_the_schedule_fetch_found():
     row = api.data["0000"]["pump-programme"]
     assert row.circuit_times_day == A_FED_WEEK, "the scrape threw the week away"
     assert row.possible_values == [1, 2, 3]
+
+
+def test_a_scrape_of_a_device_that_is_not_online_drops_the_week():
+    """Offline, the schedule fetch does not run for the device, so nothing
+    would ever clear a week carried on - the pre-outage programme stood over
+    the plan the page showed now."""
+    api = _api()
+    api.data = {
+        "0000": {
+            "ConnectionStatus": 50,
+            "pump-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}', circuit_times_day=A_FED_WEEK
+            ),
+        }
+    }
+
+    api._merge_webscraping_data(
+        "0000", {"pump-programme": Reading(value='{"MO-1":"07:00-11:00"}')}
+    )
+
+    assert api.data["0000"]["pump-programme"].circuit_times_day is None
 
 
 def test_a_relabelled_scraper_row_is_reported(caplog):
@@ -7136,7 +7158,16 @@ def _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it):
             }
         }
     }
-    api.data = {"1234": {"heizkreis-p2": Reading(value=21.5, parameter_id="P2")}}
+    api.data = {
+        "1234": {
+            "heizkreis-p2": Reading(
+                value=21.5,
+                parameter_id="P2",
+                circuit_times_day=A_FED_WEEK,
+                possible_values=[1, 2, 3],
+            )
+        }
+    }
     api.scraping_mapper = {("1234", ModuleRef(0, 1), "P2"): ["heizkreis-p2"]}
     api._previous_scraper_keys = ["heizkreis-p2"]
     api.spider_retry_count = 0 if scrape_feeds_it else 3
@@ -7160,11 +7191,22 @@ def test_a_dropped_parameter_is_cleared_where_the_merge_put_it():
 
 
 def test_a_dropped_parameter_leaves_a_row_the_scrape_still_feeds():
-    """The row is the page's too; while the scrape delivers it, its value is
-    the page's, not the dropped parameter's."""
+    """The row is the page's too; while the scrape delivers it, the next
+    scrape refreshes its value - blanking it now would only flicker."""
     row = _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it=True)
 
     assert row.value == 21.5
+
+
+@pytest.mark.parametrize("scrape_feeds_it", [True, False])
+def test_a_dropped_programme_takes_its_week_with_it(scrape_feeds_it):
+    """The week is the schedule fetch's, and that fetch walks the parameters
+    still described: kept on the row, and carried on by every scrape, it
+    outlived the programme it belonged to for good."""
+    row = _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it)
+
+    assert row.circuit_times_day is None
+    assert row.possible_values is None
 
 
 def test_a_device_with_parameters_is_still_read():

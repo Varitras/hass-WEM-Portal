@@ -1131,7 +1131,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             )
         return gone
 
-    def _prepare_scraped_row(self, row: Reading, previous: Any) -> None:
+    def _prepare_scraped_row(
+        self, row: Reading, previous: Any, device_online: bool
+    ) -> None:
         """Translate the row's name; keep a unit or programme it did not bring.
 
         Mutates `row` in place, which is what the caller stores. Split out of
@@ -1157,8 +1159,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         if row.friendly_name is not None:
             row.friendly_name = translate(self.language, row.friendly_name)
-        # The page never has a programme's week; the schedule fetch owns it.
-        if isinstance(previous, Reading):
+        # The page never has a programme's week; the schedule fetch owns it,
+        # and runs only for a device that is online.
+        if isinstance(previous, Reading) and device_online:
             row.circuit_times_day = previous.circuit_times_day
             row.possible_values = previous.possible_values
 
@@ -1182,7 +1185,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
 
         for key, new_val in webscraping_data.items():
             if isinstance(new_val, Reading):
-                self._prepare_scraped_row(new_val, self.data[str(device_id)].get(key))
+                self._prepare_scraped_row(
+                    new_val,
+                    self.data[str(device_id)].get(key),
+                    self.data[str(device_id)].get("ConnectionStatus") == 0,
+                )
             self.data[str(device_id)][key] = new_val
 
         # Same reasoning for a row that stopped coming back entirely: it is

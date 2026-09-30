@@ -17,11 +17,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **In `both` mode a web scrape no longer drops a weekly programme's
   phases.** The scrape replaced the whole reading, and the switching times
   the API had read from the device went with it: the sensor showed a bare
-  time window until the next hourly schedule read.
+  time window until the next hourly schedule read. They are kept only
+  while the device is online, where that read still runs.
 - **A parameter the portal stops describing no longer lingers in `both`
   mode.** Its value was removed only under the parameter's own name, not
   from the web row it had been merged into; with the web scrape failing,
-  that row went on showing the last value as current.
+  that row went on showing the last value as current. A weekly programme
+  that goes takes its phases with it.
 
 ## [1.14.0b3] – 2026-09-29
 

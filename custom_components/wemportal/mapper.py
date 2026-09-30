@@ -603,7 +603,13 @@ def forget_dropped_parameters(
         device_data.pop(f"{module_name}-{parameter_id}", None)
         for row_name in merged(parameter_id):
             row = device_data.get(row_name)
-            if isinstance(row, Reading) and not scrape_still_feeds(row_name):
+            if not isinstance(row, Reading):
+                continue
+            # The week is the schedule fetch's, which no longer walks this
+            # parameter; only the value may still be the page's.
+            row.circuit_times_day = None
+            row.possible_values = None
+            if not scrape_still_feeds(row_name):
                 row.value = None
     _LOGGER.info(
         "Module %s stopped describing %s; dropping the last value instead "

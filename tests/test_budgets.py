@@ -61,7 +61,9 @@ LINE_BUDGETS = {
     # And by 4 for a scrape keeping the programme week the API found.
     # And by 8 for telling the forgetting of a dropped parameter where the
     # merge put its value, and whether the scrape still feeds that row.
-    "wemportalapi.py": 2657,
+    # And by 7 for carrying the programme week only for a device that
+    # is online, where the schedule fetch still runs.
+    "wemportalapi.py": 2664,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
