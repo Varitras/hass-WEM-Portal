@@ -4710,5 +4710,19 @@
     "old": "                if sent_to_the_login and response.status_code != 403:\n",
     "new": "                if sent_to_the_login:\n",
     "tests": "403_on_the_login_redirect_is_still_the_block"
+  },
+  {
+    "label": "login page guard: blind to a startswith",
+    "path": "tests/test_security.py",
+    "old": "            and node.func.attr in _STRING_TESTS\n",
+    "new": "            and node.func.attr in ()\n",
+    "tests": "login_page_guard_sees_every_shape_of_the_old_test"
+  },
+  {
+    "label": "login page guard: blind to an alias",
+    "path": "tests/test_security.py",
+    "old": "        if alias.name == \"WEB_LOGIN_URL\" and alias.asname\n",
+    "new": "        if False\n",
+    "tests": "login_page_guard_sees_every_shape_of_the_old_test"
   }
 ]

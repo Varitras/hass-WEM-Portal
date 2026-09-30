@@ -534,25 +534,76 @@ def test_the_parameter_read_does_not_log_the_whole_account(caplog):
     assert "23.5" not in caplog.text, "the account's readings went into the log"
 
 
-def test_the_login_page_is_recognised_by_the_one_rule_everywhere():
-    """The 403 path learned the endpoint rule and four other checks kept a
-    substring test, so a cookieless session sent the reuse paths into the
-    announced-maintenance error instead of a fresh login. Any comparison
-    against the login URL outside the rule is that bug waiting again."""
+_STRING_TESTS = {"startswith", "endswith", "find", "rfind", "index"}
+
+
+def _login_url_tests(source):
+    """Line numbers where `source` tests a URL against the login address by
+    itself: a comparison or a string test naming WEB_LOGIN_URL - as a name,
+    through the const module, or under another name it was imported as."""
     import ast
+
+    tree = ast.parse(source)
+    names = {"WEB_LOGIN_URL"} | {
+        alias.asname
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if alias.name == "WEB_LOGIN_URL" and alias.asname
+    }
+
+    def names_it(node):
+        return any(
+            (isinstance(part, ast.Name) and part.id in names)
+            or (isinstance(part, ast.Attribute) and part.attr == "WEB_LOGIN_URL")
+            for part in ast.walk(node)
+        )
+
+    found = []
+    for node in ast.walk(tree):
+        is_a_string_test = (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _STRING_TESTS
+        )
+        if (isinstance(node, ast.Compare) or is_a_string_test) and names_it(node):
+            found.append(node.lineno)
+    return found
+
+
+def test_the_login_page_is_recognised_by_the_one_rule_everywhere():
+    """The 403 path learned the endpoint rule and five other checks kept a
+    substring test, so a cookieless session sent the reuse paths into the
+    announced-maintenance error instead of a fresh login. Any test of a URL
+    against the login address outside the rule is that bug waiting again."""
     import pathlib
 
     package = pathlib.Path(wemportalapi.__file__).parent
-    offenders = []
-    for source_file in sorted(package.glob("*.py")):
-        if source_file.name == "web_protocol.py":
-            continue
-        tree = ast.parse(source_file.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Compare) and any(
-                isinstance(name, ast.Name) and name.id == "WEB_LOGIN_URL"
-                for name in ast.walk(node)
-            ):
-                offenders.append(f"{source_file.name}:{node.lineno}")
+    offenders = [
+        f"{source_file.name}:{line}"
+        for source_file in sorted(package.rglob("*.py"))
+        if source_file.name != "web_protocol.py"
+        for line in _login_url_tests(source_file.read_text(encoding="utf-8"))
+    ]
 
     assert not offenders, f"login page compared outside is_login_page: {offenders}"
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "if WEB_LOGIN_URL in url: pass",
+        "if url.lower() == WEB_LOGIN_URL.lower(): pass",
+        "if url.startswith(WEB_LOGIN_URL): pass",
+        "if const.WEB_LOGIN_URL in url: pass",
+        "from .const import WEB_LOGIN_URL as LOGIN\nif LOGIN in url: pass",
+    ],
+)
+def test_the_login_page_guard_sees_every_shape_of_the_old_test(shape):
+    """It saw one shape, a comparison naming the bare constant; a
+    startswith, the const module or an alias walked past it."""
+    assert _login_url_tests(shape), f"the guard missed: {shape}"
+
+
+def test_the_login_page_guard_leaves_a_request_to_the_login_page_alone():
+    assert not _login_url_tests("session.get(WEB_LOGIN_URL, timeout=10)")
