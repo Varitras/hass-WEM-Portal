@@ -6061,6 +6061,7 @@ PRESERVED_FIELDS = frozenset(
         # What the cycle that just ended read; a recovery after it does not
         # change that, and the coordinator asks it right after the fetch.
         "last_cycle_read_nothing",
+        "last_cycle_logged_in",
         "_last_device_read",
         "_module_answered_at",
         "data",
@@ -8512,10 +8513,9 @@ def test_both_mode_does_not_read_the_api_on_every_web_cycle(monkeypatch):
 def test_both_mode_reads_the_api_on_every_cycle_when_that_is_the_shorter_one(
     monkeypatch,
 ):
-    """The control case, and what decides how the gate compares: on the
-    default settings (web 30min, API 5min) the coordinator ticks at exactly
-    the API interval, so a `>` would find each tick a hair too early and
-    halve the polling the user configured.
+    """The control case: on the default settings (web 30min, API 5min) the
+    coordinator ticks at exactly the API interval, and every tick has to
+    read - see TICK_TOLERANCE_SECONDS for the ticks that land a little early.
     """
     clock = _Clock()
     monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
@@ -9222,6 +9222,21 @@ def test_half_an_api_interval_is_still_not_due(monkeypatch):
     assert not api._api_read_is_due()
 
 
+def test_a_tick_well_before_the_api_interval_is_not_due(monkeypatch):
+    """The tolerance is for a tick that lands a second or so early, not for
+    reading ahead: any wider and an interval just past a multiple of the tick
+    is read a tick early, every time."""
+    from datetime import timedelta
+
+    api = _api()
+    api.scan_interval_api = timedelta(seconds=300)
+    monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: 10_000.0)
+    api._last_api_read = 10_000.0 - (300 - wemportalapi.TICK_TOLERANCE_SECONDS - 1)
+
+    assert not api._api_read_is_due()
+    assert wemportalapi.TICK_TOLERANCE_SECONDS <= 10
+
+
 def _both_mode_api_whose_scrape(outcome):
     api = _api()
     api._scrape_is_due = lambda _enabled: True
@@ -9262,6 +9277,20 @@ def test_a_both_mode_tick_says_whether_it_read_anything(
     api._fetch_data(None)
 
     assert api.last_cycle_read_nothing is read_nothing
+
+
+@pytest.mark.parametrize("logged_in_before", [False, True])
+def test_a_tick_says_whether_it_logged_in(logged_in_before):
+    api = _api()
+    api.mode = "both"
+    api.valid_login = logged_in_before
+    api._ensure_api_session = lambda: setattr(api, "valid_login", True)
+    api._scrape_is_due = lambda _enabled: False
+    api._api_read_is_due = lambda: False
+
+    api._fetch_data(None)
+
+    assert api.last_cycle_logged_in is not logged_in_before
 
 
 def test_a_scrape_that_keeps_failing_is_announced_once_and_healed_once(caplog):

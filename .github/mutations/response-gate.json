@@ -4686,7 +4686,7 @@
   {
     "label": "both mode: a tick that read nothing passes for a recovery",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "                if self.api.last_cycle_read_nothing:\n                    # `both` mode with nothing due or the scrape failed:\n                    # no evidence either way, so no counter moves.\n                    return fetched\n",
+    "old": "                if self.api.last_cycle_read_nothing:\n                    return self._a_tick_that_read_nothing(fetched)\n",
     "new": "",
     "tests": "tick_that_read_nothing_does_not_end_an_outage"
   },
@@ -4724,5 +4724,33 @@
     "old": "            unsupported=values.get(\"description_refused\", False),\n",
     "new": "            unsupported=True,\n",
     "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
+  },
+  {
+    "label": "both mode: a login that worked leaves the auth streak standing",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if self.api.last_cycle_logged_in:\n            self._reset_auth_failures()\n",
+    "new": "",
+    "tests": "login_that_worked_ends_the_auth_streak_even_if_nothing_was_read"
+  },
+  {
+    "label": "both mode: a tick that read nothing tells Home Assistant it recovered",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if not self.last_update_success:\n            # Caught as busy below",
+    "new": "        if False:\n            # Caught as busy below",
+    "tests": "read_nothing_leaves_home_assistant_in_its_outage"
+  },
+  {
+    "label": "both mode: every tick claims a login",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                self.last_cycle_logged_in = not logged_in_before\n",
+    "new": "                self.last_cycle_logged_in = True\n",
+    "tests": "tick_says_whether_it_logged_in"
+  },
+  {
+    "label": "both mode: a tick margin wide enough to read ahead",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "TICK_TOLERANCE_SECONDS: Final = 10\n",
+    "new": "TICK_TOLERANCE_SECONDS: Final = 30\n",
+    "tests": "tick_well_before_the_api_interval_is_not_due"
   }
 ]

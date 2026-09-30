@@ -139,7 +139,9 @@ PARAMETER_REDISCOVERY_INTERVAL_SECONDS: Final = 24 * 3600  # 1 day
 # above, but not immediate: a portal that just refused must not be asked once
 # per cycle. Same shape as the statistics and schedule retries.
 PARAMETER_REDISCOVERY_RETRY_SECONDS: Final = 3600  # 1 hour
-# A coordinator tick lands up to a second early; see _api_read_is_due.
+# A coordinator tick lands up to a second early (see _api_read_is_due). Ten,
+# the scrape gate's margin from before: an interval up to that far past a
+# multiple of the tick is read one tick early - a few percent, measured.
 TICK_TOLERANCE_SECONDS: Final = 10
 
 # How long one poll cycle may spend before it stops itself.
@@ -384,6 +386,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # A `both`-mode tick can end with neither source read, which is no
         # sign of recovery.
         self.last_cycle_read_nothing = False
+        # And whether it logged in: a login that went through ends the auth
+        # streak, read or not.
+        self.last_cycle_logged_in = False
         self.heavy_fetch_turns = HeavyFetchTurns()
         # When the mobile API was last read, for the `both`-mode gate. None
         # rather than 0.0: zero on the monotonic clock is the moment the
@@ -1049,9 +1054,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         self.check_cooldown()
         self.heavy_fetch_turns.new_cycle()
         self.last_cycle_read_nothing = False
+        self.last_cycle_logged_in = False
         try:
             if self.mode != "web":
+                logged_in_before = self.valid_login
                 self._ensure_api_session()
+                self.last_cycle_logged_in = not logged_in_before
 
             if self.mode == "web":
                 self._collect_web(enabled_devices)

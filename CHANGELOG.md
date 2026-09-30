@@ -22,7 +22,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
   When the API was not due and the web scrape failed or was held back, the
   cycle still counted as a working one, so the failure count of an API that
   failed every time it was due went back to zero in between - its outage
-  never reached the point where the entities show it.
+  never reached the point where the entities show it. Home Assistant no
+  longer reports such a cycle as recovered either.
 
 ## [1.14.0b3] – 2026-09-29
 

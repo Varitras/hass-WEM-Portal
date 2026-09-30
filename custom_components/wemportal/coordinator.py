@@ -559,6 +559,19 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         if self.num_failed == API_FAILURES_TOLERATED + 1:
             self.async_update_listeners()
 
+    def _a_tick_that_read_nothing(self, fetched: Any) -> Any:
+        """`both` mode with nothing due, or only a failed scrape: no reading
+        says the portal recovered, so neither the failure count nor Home
+        Assistant's own view moves. A login that went through still ends the
+        auth streak - those count refusals in a row."""
+        if self.api.last_cycle_logged_in:
+            self._reset_auth_failures()
+        if not self.last_update_success:
+            # Caught as busy below: no counter moves, and Home Assistant says
+            # nothing about a failure following a failure.
+            raise ApiBusyError(str(self.last_exception))
+        return fetched
+
     async def _update_within_timeout(self, device_filter: list[str] | None) -> Any:
         """The guarded update itself. Split out so the timeout can be caught
         around it without moving the error handling one level in."""
@@ -572,9 +585,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     self.api.fetch_data, device_filter
                 )
                 if self.api.last_cycle_read_nothing:
-                    # `both` mode with nothing due or the scrape failed:
-                    # no evidence either way, so no counter moves.
-                    return fetched
+                    return self._a_tick_that_read_nothing(fetched)
                 self.num_failed = 0
                 self._reset_auth_failures()
                 # Home Assistant's own coordinator announces the recovery, so

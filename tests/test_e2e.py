@@ -2322,6 +2322,52 @@ async def test_a_tick_that_read_nothing_does_not_end_an_outage(hass, monkeypatch
     assert coordinator.num_auth_failed == 2
 
 
+def _read_nothing(logged_in):
+    def fetch(self, *_args, **_kwargs):
+        self.last_cycle_read_nothing = True
+        self.last_cycle_logged_in = logged_in
+        return self.data
+
+    return fetch
+
+
+async def test_a_login_that_worked_ends_the_auth_streak_even_if_nothing_was_read(
+    hass, monkeypatch
+):
+    """The streak counts logins refused IN A ROW, and a login that went
+    through ends it whatever else the tick read. Left standing across such a
+    tick, a later refusal asked for new credentials that had just worked."""
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_failed = 2
+    coordinator.num_auth_failed = 2
+    monkeypatch.setattr(WemPortalApi, "fetch_data", _read_nothing(logged_in=True))
+
+    await coordinator._async_update_data()
+
+    assert coordinator.num_auth_failed == 0
+    assert coordinator.num_failed == 2
+
+
+async def test_a_tick_that_read_nothing_leaves_home_assistant_in_its_outage(
+    hass, monkeypatch
+):
+    """Returned normally, it told Home Assistant the outage was over: a
+    "recovered" line, and a fresh error the next time the API failed."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_failed = 2
+    coordinator.last_update_success = False
+    coordinator.last_exception = UpdateFailed("the portal answered 500")
+    monkeypatch.setattr(WemPortalApi, "fetch_data", _read_nothing(logged_in=False))
+
+    with pytest.raises(UpdateFailed, match="answered 500"):
+        await coordinator._async_update_data()
+    assert coordinator.num_failed == 2
+
+
 async def test_a_busy_api_counts_neither_for_nor_against_the_credentials(
     hass, monkeypatch
 ):
