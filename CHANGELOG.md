@@ -13,6 +13,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   parameter search opened in that time logged in and navigated the portal
   without asking the pause, and beside any other expert operation of the
   same account.
+- **A sensor without a unit no longer fails on a word after a number.**
+  A reading such as "Stop" arriving on a sensor that had shown numbers was
+  refused by Home Assistant on every cycle, and the last number stayed on
+  screen. It now shows as unknown, like the same word on any other number.
 
 ## [1.14.0b3] – 2026-09-29
 

@@ -4668,5 +4668,12 @@
     "old": "        lock = account_state(self.config_entry.data.get(CONF_USERNAME)).expert_lock\n",
     "new": "        lock = type(account_state(self.config_entry.data.get(CONF_USERNAME)).expert_lock)()\n",
     "tests": "not_loaded_waits_its_turn"
+  },
+  {
+    "label": "sensor: a number asked of the stored classes only, not Home Assistant's",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            or self.native_unit_of_measurement is not None\n            or self.state_class is not None\n            or self.device_class is not None\n",
+    "new": "            or self._attr_state_class is not None\n            or self._attr_device_class is not None\n",
+    "tests": "word_after_a_number_on_a_sensor_without_a_unit_is_unknown"
   }
 ]

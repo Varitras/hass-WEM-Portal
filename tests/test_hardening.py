@@ -7902,6 +7902,30 @@ def test_a_word_that_is_not_a_number_shows_as_unknown():
     assert _numeric_sensor("Stop").native_value is None
 
 
+def test_a_word_after_a_number_on_a_sensor_without_a_unit_is_unknown():
+    """A row whose unit is empty read a number first, and the empty unit
+    made Home Assistant treat the sensor as a measurement. The word that
+    came later was checked against the unit alone, passed as text, and Home
+    Assistant refused the state on every cycle while the old number stood."""
+    row = Reading(
+        value=30.0,
+        unit="",
+        friendly_name="Push",
+        parameter_id="Push",
+        module_index=0,
+        module_type=1,
+    )
+    sensor = _sensor_from_row("Push", row)
+    sensor.entity_id = "sensor.push"
+    sensor.async_write_ha_state = lambda: None
+
+    row.value = "Stop"
+    sensor._handle_coordinator_update()
+
+    assert sensor.native_value is None
+    assert sensor.state is None
+
+
 def test_an_unreadable_word_is_reported_once_not_every_cycle(caplog):
     """It arrives on every cycle for as long as the condition lasts, and a
     warning each time buries everything else in the log."""

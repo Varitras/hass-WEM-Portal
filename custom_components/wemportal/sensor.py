@@ -345,23 +345,17 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
 
     def _validated_native_value(self, value, unit):
         """Return a Home Assistant-safe native value."""
-        effective_unit = unit
-        if effective_unit in (None, ""):
-            effective_unit = getattr(self, "_attr_native_unit_of_measurement", None)
-        # A sensor is "numeric" if it has a real unit OR if it's tagged
-        # with a device_class/state_class that requires a numeric state
-        # (Home Assistant enforces this - see the entity's own state
-        # property). Checking device_class/state_class too, not just
-        # unit, closes a gap where fix_value_and_unit() can legitimately
-        # return an empty/None unit for a given reading (e.g. a boolean
-        # placeholder string with no unit attached) even though the
-        # entity itself is declared as a numeric power/energy/etc.
-        # sensor - which would otherwise let a non-numeric string like
-        # "Off" slip through uncaught and crash entity setup entirely.
+        # Home Assistant's own rule, asked through the same properties it
+        # reads: any unit, the empty one included, or a state or device
+        # class. The unit alone missed a sensor whose empty unit earned it a
+        # measurement class - a word there passed as text and Home Assistant
+        # refused the state on every cycle. `unit` is the one about to be
+        # stored, which only ever replaces the old one with a real unit.
         is_numeric_sensor = (
-            effective_unit not in (None, "")
-            or getattr(self, "_attr_device_class", None) is not None
-            or getattr(self, "_attr_state_class", None) is not None
+            unit not in (None, "")
+            or self.native_unit_of_measurement is not None
+            or self.state_class is not None
+            or self.device_class is not None
         )
 
         # A MISSING reading is expected, not invalid: the portal regularly
