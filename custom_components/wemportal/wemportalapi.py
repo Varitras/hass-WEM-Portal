@@ -39,6 +39,7 @@ from .transport import WemPortalTransport
 from .exceptions import (
     ApiBusyError,
     AuthError,
+    ExpiredSessionError,
     ForbiddenError,
     ParameterChangeError,
     PollDeadlineExceeded,
@@ -1781,9 +1782,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 device_id, values, "the portal rejected the request", unsupported=True
             )
             return
-        # A 401 arrives here as a plain portal error; the transport gave the
-        # session up, and asking the next module on it would only repeat it.
-        refused_for_the_account = not self.valid_login or isinstance(
+        # A dead session arrives here as a plain portal error - a 401, or the
+        # redirect to the login page - and asking the next module on it would
+        # only repeat it. Known by its cause: `valid_login` also drops for
+        # failures that say nothing about the session.
+        session_gone = status_code == 401 or isinstance(
+            exc.__cause__, ExpiredSessionError
+        )
+        refused_for_the_account = session_gone or isinstance(
             exc, (AuthError, ForbiddenError)
         )
         if refused_for_the_account or "parameters" not in values:

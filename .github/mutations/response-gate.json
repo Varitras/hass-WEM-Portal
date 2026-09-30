@@ -4714,8 +4714,8 @@
   {
     "label": "discovery: a dead session asked module after module",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        refused_for_the_account = not self.valid_login or isinstance(\n",
-    "new": "        refused_for_the_account = isinstance(\n",
+    "old": "        session_gone = status_code == 401 or isinstance(\n",
+    "new": "        session_gone = False and isinstance(\n",
     "tests": "session_that_ran_out_stops_the_re_read_at_the_first_module"
   },
   {
@@ -4752,5 +4752,12 @@
     "old": "TICK_TOLERANCE_SECONDS: Final = 10\n",
     "new": "TICK_TOLERANCE_SECONDS: Final = 30\n",
     "tests": "tick_well_before_the_api_interval_is_not_due"
+  },
+  {
+    "label": "discovery: a dropped login read as a dead session",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        session_gone = status_code == 401 or isinstance(\n",
+    "new": "        session_gone = not self.valid_login or isinstance(\n",
+    "tests": "re_read_the_real_transport_fails_keeps_the_cycle"
   }
 ]

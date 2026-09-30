@@ -67,7 +67,8 @@ LINE_BUDGETS = {
     # that same refresh.
     # And by 6 for a tick saying whether it logged in, which ends the auth
     # streak even when nothing was read, and 2 for why the tick margin is ten.
-    "wemportalapi.py": 2684,
+    # And by 6 for knowing a dead session by its cause, not by the login flag.
+    "wemportalapi.py": 2690,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

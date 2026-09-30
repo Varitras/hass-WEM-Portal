@@ -7609,6 +7609,26 @@ def test_a_re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle(known):
     assert len(calls) == 1, "the failed re-read was asked again the next cycle"
 
 
+def test_a_re_read_the_real_transport_fails_keeps_the_cycle(monkeypatch):
+    """Through the transport itself, not a stub: a failed request may drop
+    the login on the way, and the discovery must not read that as the
+    session being gone - a 500 is about the request."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, _calls = _discovery_api([], fetched_at=stale)
+    del api.make_api_call  # the real one
+
+    class _Failing:
+        def post(self, *_args, **_kwargs):
+            return FakeResponse({"Status": 9}, status_code=500)
+
+    api.session = _Failing()
+
+    api.get_parameters()
+
+    assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known"}
+
+
 def test_a_session_that_ran_out_stops_the_re_read_at_the_first_module():
     """A 401 comes back from discovery as a plain portal error - it does not
     log in again - and was booked as that one module's failure, so every
