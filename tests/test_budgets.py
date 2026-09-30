@@ -68,13 +68,14 @@ LINE_BUDGETS = {
     # And by 6 for a tick saying whether it logged in, which ends the auth
     # streak even when nothing was read, and 2 for why the tick margin is ten.
     # And by 6 for knowing a dead session by its cause, not by the login flag.
-    "wemportalapi.py": 2690,
+    "wemportalapi.py": 2689,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
     # And by 12 for the setup's web login following the scraper's rule, so a
     # single refusal there no longer pauses everything either.
-    "transport.py": 918,
+    # And by 3 for a login saying it went through, whoever made it.
+    "transport.py": 921,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     "expert_writer.py": 1912,

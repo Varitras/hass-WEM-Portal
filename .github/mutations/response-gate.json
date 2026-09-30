@@ -4679,7 +4679,7 @@
   {
     "label": "both mode: the tick tolerance hands out early API reads",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "TICK_TOLERANCE_SECONDS: Final = 10\n",
+    "old": "TICK_TOLERANCE_SECONDS: Final = 2\n",
     "new": "TICK_TOLERANCE_SECONDS: Final = 200\n",
     "tests": "half_an_api_interval_is_still_not_due"
   },
@@ -4728,9 +4728,9 @@
   {
     "label": "both mode: a login that worked leaves the auth streak standing",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "        if self.api.last_cycle_logged_in:\n            self._reset_auth_failures()\n",
-    "new": "",
-    "tests": "login_that_worked_ends_the_auth_streak_even_if_nothing_was_read"
+    "old": "        if self.api.login_went_through:\n            self.api.login_went_through = False\n            self._reset_auth_failures()\n",
+    "new": "        if False:\n            self.api.login_went_through = False\n            self._reset_auth_failures()\n",
+    "tests": "login_that_worked_ends_the_auth_streak_even_if_nothing_was_read or login_made_by_a_write_ends_the_auth_streak"
   },
   {
     "label": "both mode: a tick that read nothing tells Home Assistant it recovered",
@@ -4740,16 +4740,16 @@
     "tests": "read_nothing_leaves_home_assistant_in_its_outage"
   },
   {
-    "label": "both mode: every tick claims a login",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                self.last_cycle_logged_in = not logged_in_before\n",
-    "new": "                self.last_cycle_logged_in = True\n",
-    "tests": "tick_says_whether_it_logged_in"
+    "label": "login: a login that went through keeps quiet about it",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            self.login_went_through = True\n",
+    "new": "",
+    "tests": "login_that_went_through_says_so"
   },
   {
     "label": "both mode: a tick margin wide enough to read ahead",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "TICK_TOLERANCE_SECONDS: Final = 10\n",
+    "old": "TICK_TOLERANCE_SECONDS: Final = 2\n",
     "new": "TICK_TOLERANCE_SECONDS: Final = 30\n",
     "tests": "tick_well_before_the_api_interval_is_not_due"
   },
@@ -4759,5 +4759,19 @@
     "old": "        session_gone = status_code == 401 or isinstance(\n",
     "new": "        session_gone = not self.valid_login or isinstance(\n",
     "tests": "re_read_the_real_transport_fails_keeps_the_cycle"
+  },
+  {
+    "label": "both mode: what a tick that read nothing changed kept from the entities",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            self.async_update_listeners()\n            raise NothingReadThisCycle(\n",
+    "new": "            raise NothingReadThisCycle(\n",
+    "tests": "read_nothing_still_publishes_what_it_changed"
+  },
+  {
+    "label": "auth streak: a write's login between two refused cycles ignored",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                # Before the fetch too: a write may have logged in since.\n                self._end_the_auth_streak_after_a_login()\n",
+    "new": "",
+    "tests": "login_made_by_a_write_ends_the_auth_streak"
   }
 ]

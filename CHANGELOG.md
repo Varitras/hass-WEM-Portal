@@ -24,6 +24,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
   failed every time it was due went back to zero in between - its outage
   never reached the point where the entities show it. Home Assistant no
   longer reports such a cycle as recovered either.
+- **A login that worked resets the count towards re-authentication.** Three
+  refused logins in a row ask for new credentials; a login made in between -
+  by a cycle that read nothing, or by a write - did not break the row.
 
 ## [1.14.0b3] – 2026-09-29
 

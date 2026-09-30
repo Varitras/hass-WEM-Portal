@@ -6061,7 +6061,7 @@ PRESERVED_FIELDS = frozenset(
         # What the cycle that just ended read; a recovery after it does not
         # change that, and the coordinator asks it right after the fetch.
         "last_cycle_read_nothing",
-        "last_cycle_logged_in",
+        "login_went_through",
         "_last_device_read",
         "_module_answered_at",
         "data",
@@ -9251,10 +9251,11 @@ def test_a_tick_well_before_the_api_interval_is_not_due(monkeypatch):
     api = _api()
     api.scan_interval_api = timedelta(seconds=300)
     monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: 10_000.0)
-    api._last_api_read = 10_000.0 - (300 - wemportalapi.TICK_TOLERANCE_SECONDS - 1)
+    # Three seconds early: more than a tick is ever early, less than the ten
+    # this gate once allowed - web 300 and API 309 read nine seconds early.
+    api._last_api_read = 10_000.0 - 297
 
     assert not api._api_read_is_due()
-    assert wemportalapi.TICK_TOLERANCE_SECONDS <= 10
 
 
 def _both_mode_api_whose_scrape(outcome):
@@ -9299,18 +9300,16 @@ def test_a_both_mode_tick_says_whether_it_read_anything(
     assert api.last_cycle_read_nothing is read_nothing
 
 
-@pytest.mark.parametrize("logged_in_before", [False, True])
-def test_a_tick_says_whether_it_logged_in(logged_in_before):
+def test_a_login_that_went_through_says_so(monkeypatch):
+    """Whoever called it: the auth streak is the coordinator's, and a write's
+    login is as good a proof of the credentials as the poll's."""
+    session = RecordingSession()
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
     api = _api()
-    api.mode = "both"
-    api.valid_login = logged_in_before
-    api._ensure_api_session = lambda: setattr(api, "valid_login", True)
-    api._scrape_is_due = lambda _enabled: False
-    api._api_read_is_due = lambda: False
 
-    api._fetch_data(None)
+    api.api_login()
 
-    assert api.last_cycle_logged_in is not logged_in_before
+    assert api.login_went_through is True
 
 
 def test_a_scrape_that_keeps_failing_is_announced_once_and_healed_once(caplog):

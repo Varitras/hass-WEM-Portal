@@ -140,10 +140,12 @@ PARAMETER_REDISCOVERY_INTERVAL_SECONDS: Final = 24 * 3600  # 1 day
 # above, but not immediate: a portal that just refused must not be asked once
 # per cycle. Same shape as the statistics and schedule retries.
 PARAMETER_REDISCOVERY_RETRY_SECONDS: Final = 3600  # 1 hour
-# A coordinator tick lands up to a second early (see _api_read_is_due). Ten,
-# the scrape gate's margin from before: an interval up to that far past a
-# multiple of the tick is read one tick early - a few percent, measured.
-TICK_TOLERANCE_SECONDS: Final = 10
+# A coordinator tick lands up to a second early (see _api_read_is_due), and
+# the API gate allows for that and no more: wider, an interval just past a
+# multiple of the tick was read a whole tick early.
+TICK_TOLERANCE_SECONDS: Final = 2
+# The scrape gate's own margin, older than the API gate and left as it was.
+SCRAPE_TICK_TOLERANCE_SECONDS: Final = 10
 
 # How long one poll cycle may spend before it stops itself.
 #
@@ -387,9 +389,6 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # A `both`-mode tick can end with neither source read, which is no
         # sign of recovery.
         self.last_cycle_read_nothing = False
-        # And whether it logged in: a login that went through ends the auth
-        # streak, read or not.
-        self.last_cycle_logged_in = False
         self.heavy_fetch_turns = HeavyFetchTurns()
         # When the mobile API was last read, for the `both`-mode gate. None
         # rather than 0.0: zero on the monotonic clock is the moment the
@@ -401,6 +400,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # coordinator update - only the initial discovery/refresh needs it.
         self._devices_fetched_this_session = False
         self.valid_login = False
+        self.login_went_through = False
         self.session = None
         # Serialises a full poll cycle (fetch_data) against on-demand writes
         # (change_value): both run in executor threads and share self.session
@@ -931,7 +931,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         elapsed: float = (
             dt_util.now().timestamp() - self.last_scraping_update.timestamp()
         )
-        return elapsed + TICK_TOLERANCE_SECONDS > self.scan_interval.total_seconds()
+        return (
+            elapsed + SCRAPE_TICK_TOLERANCE_SECONDS > self.scan_interval.total_seconds()
+        )
 
     def _api_read_is_due(self) -> bool:
         """Whether `both` mode should read the mobile API this cycle.
@@ -1055,12 +1057,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         self.check_cooldown()
         self.heavy_fetch_turns.new_cycle()
         self.last_cycle_read_nothing = False
-        self.last_cycle_logged_in = False
         try:
             if self.mode != "web":
-                logged_in_before = self.valid_login
                 self._ensure_api_session()
-                self.last_cycle_logged_in = not logged_in_before
 
             if self.mode == "web":
                 self._collect_web(enabled_devices)

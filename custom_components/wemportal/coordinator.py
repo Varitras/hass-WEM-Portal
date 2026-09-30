@@ -35,6 +35,7 @@ from .exceptions import (
     ApiBusyError,
     AuthError,
     LoginRefused,
+    NothingReadThisCycle,
     PollDeadlineExceeded,
     PortalMaintenanceError,
     WemPortalError,
@@ -564,13 +565,22 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         says the portal recovered, so neither the failure count nor Home
         Assistant's own view moves. A login that went through still ends the
         auth streak - those count refusals in a row."""
-        if self.api.last_cycle_logged_in:
-            self._reset_auth_failures()
+        self._end_the_auth_streak_after_a_login()
         if not self.last_update_success:
             # Caught as busy below: no counter moves, and Home Assistant says
-            # nothing about a failure following a failure.
-            raise ApiBusyError(str(self.last_exception))
+            # nothing about a failure following a failure. What the cycle
+            # did change - a scrape's values aged out - is still published.
+            self.async_update_listeners()
+            raise NothingReadThisCycle(
+                f"Nothing was read this cycle; still: {self.last_exception}"
+            )
         return fetched
+
+    def _end_the_auth_streak_after_a_login(self) -> None:
+        """A login that went through - from any caller - ends the streak."""
+        if self.api.login_went_through:
+            self.api.login_went_through = False
+            self._reset_auth_failures()
 
     async def _update_within_timeout(self, device_filter: list[str] | None) -> Any:
         """The guarded update itself. Split out so the timeout can be caught
@@ -581,6 +591,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # seven exits is a moment where the backoff either holds or
                 # does not, and a branch added later would otherwise silently
                 # skip the report.
+                # Before the fetch too: a write may have logged in since.
+                self._end_the_auth_streak_after_a_login()
                 fetched = await self.hass.async_add_executor_job(
                     self.api.fetch_data, device_filter
                 )
@@ -671,6 +683,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # and nothing was learnt about the credentials either - the
                 # auth streak is reset by cycles that REACHED the portal
                 # without an auth failure, which is evidence this one lacks.
+                # NothingReadThisCycle comes here for the same silences.
                 _LOGGER.debug("Skipping this cycle: %s", exc)
                 raise UpdateFailed(str(exc)) from exc
             except WemPortalError as exc:
