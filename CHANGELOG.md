@@ -6,6 +6,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failed daily re-read of the parameter list no longer stops all
+  readings.** The list is refreshed once a day; when the portal answered
+  that refresh with a server error or not at all, the whole cycle failed
+  before a single value was read, and the next cycle tried again - no
+  readings for as long as the portal kept failing it. The known list is now
+  kept and asked again an hour later, while the values are read as usual.
+
 ## [1.14.0b3] – 2026-09-29
 
 A third beta. Everything from 1.14.0b2, plus: a login the portal turns away

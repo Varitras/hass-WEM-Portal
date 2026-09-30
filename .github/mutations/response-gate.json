@@ -1011,8 +1011,8 @@
   {
     "label": "discovery: a refused network walked into module after module",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                        device_id,\n                    )\n                    raise\n                if status_code == 400:",
-    "new": "                        device_id,\n                    )\n                    continue\n                if status_code == 400:",
+    "old": "                device_id,\n            )\n            raise exc\n        if status_code == 400:",
+    "new": "                device_id,\n            )\n            return\n        if status_code == 400:",
     "tests": "a_refused_discovery_stops_at_the_first_module"
   },
   {
@@ -4654,5 +4654,26 @@
     "old": "            if occurrences != 1:\n",
     "new": "            if False:\n",
     "tests": "missing_snippet_is_named_as_one"
+  },
+  {
+    "label": "discovery: a failed refresh of a working list fails the cycle again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if isinstance(exc, (AuthError, ForbiddenError)) or not values.get(\"parameters\"):\n            raise exc\n",
+    "new": "        if True:\n            raise exc\n",
+    "tests": "re_read_the_portal_fails_keeps_the_cycle_and_the_list"
+  },
+  {
+    "label": "discovery: a refused account shrugged off as one module",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if isinstance(exc, (AuthError, ForbiddenError)) or not values.get(\"parameters\"):\n            raise exc\n",
+    "new": "        if not values.get(\"parameters\"):\n            raise exc\n",
+    "tests": "re_read_refused_for_the_account_still_stops_the_cycle"
+  },
+  {
+    "label": "discovery: a list still missing shrugged off",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if isinstance(exc, (AuthError, ForbiddenError)) or not values.get(\"parameters\"):\n            raise exc\n",
+    "new": "        if isinstance(exc, (AuthError, ForbiddenError)):\n            raise exc\n",
+    "tests": "missing_list_the_portal_fails_still_fails_the_cycle"
   }
 ]

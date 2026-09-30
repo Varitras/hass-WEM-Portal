@@ -1731,32 +1731,41 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                     API_EVENT_TYPE_READ_URL, data=data, do_retry=False
                 )
             except WemPortalError as exc:
-                status_code = self._http_status(exc)
-                if status_code == 403:
-                    # One refusal is the whole budget, and the code used to
-                    # promise three: make_api_call activates the shared
-                    # cooldown as soon as the portal answers 403, so the next
-                    # module's request is refused before it is sent - by a
-                    # ForbiddenError carrying no HTTP status, which misses
-                    # this branch and re-raises below. The counter could
-                    # never reach two while the log said "strike 1 of 3".
-                    _LOGGER.error(
-                        "Rate limited (403) while reading parameters for "
-                        "device %s. Discovery stops here: the portal is "
-                        "refusing this network, not this request.",
-                        device_id,
-                    )
-                    raise
-                if status_code == 400:
-                    self._note_undescribed_module(
-                        device_id,
-                        values,
-                        "the portal rejected the request",
-                        unsupported=True,
-                    )
-                    continue
-                raise
+                self._survive_a_failed_description(device_id, values, exc)
+                continue
             self._store_module_description(device_id, key, values, response)
+
+    def _survive_a_failed_description(
+        self, device_id: str, values: dict[str, Any], exc: WemPortalError
+    ) -> None:
+        """Book a module the portal would not describe, or raise what the whole
+        cycle must hear: a refusal of the account, or a list still missing. A
+        failed refresh of a list that works raised too, and no value was read
+        at all - every cycle, as nothing booked the attempt."""
+        status_code = self._http_status(exc)
+        if status_code == 403:
+            # One refusal is the whole budget, and the code used to
+            # promise three: make_api_call activates the shared
+            # cooldown as soon as the portal answers 403, so the next
+            # module's request is refused before it is sent - by a
+            # ForbiddenError carrying no HTTP status, which misses
+            # this branch and re-raises below. The counter could
+            # never reach two while the log said "strike 1 of 3".
+            _LOGGER.error(
+                "Rate limited (403) while reading parameters for "
+                "device %s. Discovery stops here: the portal is "
+                "refusing this network, not this request.",
+                device_id,
+            )
+            raise exc
+        if status_code == 400:
+            self._note_undescribed_module(
+                device_id, values, "the portal rejected the request", unsupported=True
+            )
+            return
+        if isinstance(exc, (AuthError, ForbiddenError)) or not values.get("parameters"):
+            raise exc
+        self._note_undescribed_module(device_id, values, str(exc), unsupported=True)
 
     def _parameters_can_be_read(
         self, device_id: str, enabled_devices: list[str] | None

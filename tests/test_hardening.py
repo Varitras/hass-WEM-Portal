@@ -7549,6 +7549,59 @@ def test_a_failed_re_read_keeps_the_parameters_it_had():
     assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known"}
 
 
+def _portal_error(http_status=None):
+    error = exceptions.WemPortalError("Server returned status code: 9")
+    if http_status is not None:
+        error.__cause__ = real_requests.exceptions.HTTPError(
+            response=FakeResponse({}, status_code=http_status)
+        )
+    return error
+
+
+@pytest.mark.parametrize("http_status", [500, None], ids=["server error", "timeout"])
+def test_a_re_read_the_portal_fails_keeps_the_cycle_and_the_list(http_status):
+    """Only 400 and 403 were handled; anything else raised out of get_data,
+    before a single value was read. Nothing booked the attempt, so the next
+    cycle asked again and failed again - no readings at all for as long as
+    the portal kept failing an optional refresh of a list that still works."""
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, calls = _discovery_api(
+        [_portal_error(http_status), _portal_error(http_status)], fetched_at=stale
+    )
+
+    api.get_parameters()
+    api.get_parameters()
+
+    assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known"}
+    assert len(calls) == 1, "the failed re-read was asked again the next cycle"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        exceptions.ForbiddenError("in the 403 cooldown"),
+        exceptions.AuthError("session gone"),
+    ],
+    ids=["cooldown", "auth"],
+)
+def test_a_re_read_refused_for_the_account_still_stops_the_cycle(error):
+    """Those say something about the account, not about one module."""
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, _calls = _discovery_api([error], fetched_at=stale)
+
+    with pytest.raises(type(error)):
+        api.get_parameters()
+
+
+def test_a_missing_list_the_portal_fails_still_fails_the_cycle():
+    """Without it there is nothing to read at all."""
+    api, _calls = _discovery_api([_portal_error(500)])
+    del api.modules["1234"][(0, 1)]["parameters"]
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.get_parameters()
+
+
 def test_a_failed_re_read_is_not_retried_on_the_very_next_cycle():
     stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api(

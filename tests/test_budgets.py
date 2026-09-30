@@ -58,7 +58,9 @@ LINE_BUDGETS = {
     # handling is where it is told apart from the block, and where the five
     # minutes it waits instead are set and read.
     # And by 9 for one check of the retry time, asked by both collectors.
-    "wemportalapi.py": 2645,
+    # And by 9 for telling a failed refresh of a working parameter list from
+    # a refusal of the account, in a helper of its own.
+    "wemportalapi.py": 2654,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
