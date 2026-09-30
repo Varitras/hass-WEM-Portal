@@ -6,6 +6,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The parameter search respects a 403 pause while the integration is not
+  loaded.** After a refusal the integration waits to start again, and a
+  parameter search opened in that time logged in and navigated the portal
+  without asking the pause, and beside any other expert operation of the
+  same account.
+
 ## [1.14.0b3] – 2026-09-29
 
 A third beta. Everything from 1.14.0b2, plus: a login the portal turns away

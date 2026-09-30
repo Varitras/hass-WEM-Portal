@@ -72,6 +72,8 @@ from .config_flow import (
     login_commit_lock,
     validate_input,
 )
+from .models import account_state
+from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -511,7 +513,13 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
         entry = self.config_entry
         client_options = expert_client_options(entry.options)
         data = getattr(entry, "runtime_data", None)
-        api = data.api if data is not None else None
+        # Not loaded - the setup retry after a 403 is the likely case -
+        # still asks the pauses: they are the account's and the network's.
+        api = (
+            data.api
+            if data is not None
+            else WemPortalApi(entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD])
+        )
 
         def abort_if_the_entry_is_gone():
             """The gate every other expert caller already had.
@@ -531,9 +539,9 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
         return WemPortalExpertClient(
             entry.data.get(CONF_USERNAME),
             entry.data.get(CONF_PASSWORD),
-            cooldown_check=api.check_expert_cooldown if api is not None else None,
-            cooldown_activate=api.activate_expert_cooldown if api is not None else None,
-            cookie_jar=api.expert_cookies if api is not None else None,
+            cooldown_check=api.check_expert_cooldown,
+            cooldown_activate=api.activate_expert_cooldown,
+            cookie_jar=api.expert_cookies,
             abort_check=abort_if_the_entry_is_gone,
             **client_options,
         )
@@ -549,18 +557,17 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
         a threading lock on the event loop would stall Home Assistant for as
         long as the other operation runs.
         """
-        data = getattr(self.config_entry, "runtime_data", None)
-        controller = getattr(data, "expert", None) if data is not None else None
-        lock = getattr(controller, "lock", None) if controller is not None else None
+        # The account's, loaded or not: a sibling entry's write or poll
+        # holds the same one.
+        lock = account_state(self.config_entry.data.get(CONF_USERNAME)).expert_lock
 
         def run_locked():
-            if lock is not None and not lock.acquire(blocking=False):
+            if not lock.acquire(blocking=False):
                 raise ExpertBusy("another expert operation is running for this account")
             try:
                 return work(*arguments)
             finally:
-                if lock is not None:
-                    lock.release()
+                lock.release()
 
         try:
             return await self.hass.async_add_executor_job(run_locked)

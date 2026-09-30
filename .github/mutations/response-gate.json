@@ -4654,5 +4654,19 @@
     "old": "            if occurrences != 1:\n",
     "new": "            if False:\n",
     "tests": "missing_snippet_is_named_as_one"
+  },
+  {
+    "label": "discovery: an entry that is not loaded asks no pause",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "            cooldown_check=api.check_expert_cooldown,\n",
+    "new": "            cooldown_check=api.check_expert_cooldown if data is not None else None,\n",
+    "tests": "not_loaded_honours_the_403_pause"
+  },
+  {
+    "label": "discovery: a lock of its own instead of the account's",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "        lock = account_state(self.config_entry.data.get(CONF_USERNAME)).expert_lock\n",
+    "new": "        lock = type(account_state(self.config_entry.data.get(CONF_USERNAME)).expert_lock)()\n",
+    "tests": "not_loaded_waits_its_turn"
   }
 ]
