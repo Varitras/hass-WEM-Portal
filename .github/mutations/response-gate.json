@@ -4658,22 +4658,22 @@
   {
     "label": "discovery: a failed refresh of a working list fails the cycle again",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if isinstance(exc, (AuthError, ForbiddenError)) or not values.get(\"parameters\"):\n            raise exc\n",
+    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
     "new": "        if True:\n            raise exc\n",
     "tests": "re_read_the_portal_fails_keeps_the_cycle_and_the_list"
   },
   {
     "label": "discovery: a refused account shrugged off as one module",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if isinstance(exc, (AuthError, ForbiddenError)) or not values.get(\"parameters\"):\n            raise exc\n",
-    "new": "        if not values.get(\"parameters\"):\n            raise exc\n",
+    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
+    "new": "        if \"parameters\" not in values:\n            raise exc\n",
     "tests": "re_read_refused_for_the_account_still_stops_the_cycle"
   },
   {
     "label": "discovery: a list still missing shrugged off",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if isinstance(exc, (AuthError, ForbiddenError)) or not values.get(\"parameters\"):\n            raise exc\n",
-    "new": "        if isinstance(exc, (AuthError, ForbiddenError)):\n            raise exc\n",
+    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
+    "new": "        if refused_for_the_account:\n            raise exc\n",
     "tests": "missing_list_the_portal_fails_still_fails_the_cycle"
   },
   {
@@ -4703,5 +4703,26 @@
     "old": "        if not self._api_read_is_due():\n            return scraped\n",
     "new": "        if not self._api_read_is_due():\n            return False\n",
     "tests": "both_mode_tick_says_whether_it_read_anything"
+  },
+  {
+    "label": "discovery: an empty list's failed refresh fails the cycle again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
+    "new": "        if refused_for_the_account or not values.get(\"parameters\"):\n            raise exc\n",
+    "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
+  },
+  {
+    "label": "discovery: a dead session asked module after module",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        refused_for_the_account = not self.valid_login or isinstance(\n",
+    "new": "        refused_for_the_account = isinstance(\n",
+    "tests": "session_that_ran_out_stops_the_re_read_at_the_first_module"
+  },
+  {
+    "label": "discovery: a failed refresh rewrites what the portal said",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            unsupported=values.get(\"description_refused\", False),\n",
+    "new": "            unsupported=True,\n",
+    "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
   }
 ]

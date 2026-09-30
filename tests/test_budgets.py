@@ -63,7 +63,9 @@ LINE_BUDGETS = {
     # And by 1 for the tick tolerance both `both`-mode gates now share.
     # And by 9 for a `both`-mode tick saying it read nothing, so it does not
     # pass for a recovery.
-    "wemportalapi.py": 2664,
+    # And by 12 for keeping an empty list and stopping on a dead session in
+    # that same refresh.
+    "wemportalapi.py": 2676,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

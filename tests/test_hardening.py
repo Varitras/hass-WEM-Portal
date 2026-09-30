@@ -7147,8 +7147,10 @@ def test_a_device_with_parameters_is_still_read():
 
 
 def _discovery_api(answers, fetched_at=None):
-    """An api with one cached module, answering EventType/Read from `answers`."""
-    api = _api()
+    """An api with one cached module, answering EventType/Read from `answers`.
+
+    Logged in, as discovery always is: it runs behind the session check."""
+    api = _api_after_a_poll()
     api.data = {"1234": {"ConnectionStatus": 0}}
     module = {
         "Index": 0,
@@ -7577,6 +7579,54 @@ def test_a_re_read_the_portal_fails_keeps_the_cycle_and_the_list(http_status):
 
     assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known"}
     assert len(calls) == 1, "the failed re-read was asked again the next cycle"
+
+
+@pytest.mark.parametrize(
+    "known",
+    [{}, {"description_refused": True}],
+    ids=["described as empty", "refused before"],
+)
+def test_a_re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle(known):
+    """An empty list is a known answer too, and the check read it as a
+    missing one: the failed refresh of a module that has nothing to poll
+    raised out of get_data every cycle, exactly like the case fixed above."""
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, calls = _discovery_api(
+        [_portal_error(500), _portal_error(500)], fetched_at=stale
+    )
+    module = api.modules["1234"][(0, 1)]
+    module["parameters"] = {}
+    module.update(known)
+
+    api.get_parameters()
+    api.get_parameters()
+
+    assert module["parameters"] == {}
+    assert module.get("description_refused", False) == bool(known), (
+        "a timeout rewrote what the portal had said about the module"
+    )
+    assert len(calls) == 1, "the failed re-read was asked again the next cycle"
+
+
+def test_a_session_that_ran_out_stops_the_re_read_at_the_first_module():
+    """A 401 comes back from discovery as a plain portal error - it does not
+    log in again - and was booked as that one module's failure, so every
+    further stale module was asked on the same dead session."""
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, calls = _discovery_api([], fetched_at=stale)
+    api.modules["1234"][(1, 1)] = dict(api.modules["1234"][(0, 1)], Index=1)
+    api.valid_login = True
+
+    def session_gone(url, **_kwargs):
+        calls.append(url)
+        api.valid_login = False
+        raise _portal_error(401)
+
+    api.make_api_call = session_gone
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.get_parameters()
+    assert len(calls) == 1, "discovery went on asking on a dead session"
 
 
 @pytest.mark.parametrize(

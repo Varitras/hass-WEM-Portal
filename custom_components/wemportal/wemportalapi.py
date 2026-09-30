@@ -1773,9 +1773,21 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 device_id, values, "the portal rejected the request", unsupported=True
             )
             return
-        if isinstance(exc, (AuthError, ForbiddenError)) or not values.get("parameters"):
+        # A 401 arrives here as a plain portal error; the transport gave the
+        # session up, and asking the next module on it would only repeat it.
+        refused_for_the_account = not self.valid_login or isinstance(
+            exc, (AuthError, ForbiddenError)
+        )
+        if refused_for_the_account or "parameters" not in values:
             raise exc
-        self._note_undescribed_module(device_id, values, str(exc), unsupported=True)
+        # An empty list is a known answer too; what the portal said about the
+        # module stands, only the timestamp moves.
+        self._note_undescribed_module(
+            device_id,
+            values,
+            str(exc),
+            unsupported=values.get("description_refused", False),
+        )
 
     def _parameters_can_be_read(
         self, device_id: str, enabled_devices: list[str] | None
