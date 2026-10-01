@@ -8,6 +8,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A reused web session that lands on the user view logs in fresh.** When
+  the portal does not take a reused session's switch to the expert view, it
+  answers with the page a login starts on - for a single installation, the
+  user view - and no error. The web scrape then published only the readings
+  that view shows, about a third, and the rest went to unknown; the expert
+  parameters read nothing at all. Both now recognise the expert view and
+  log in fresh when they did not get it.
 - **The hourly expert read reuses its session instead of logging in each
   time.** The cached web session was given up after fifteen minutes, an
   assumed lifetime, so every hourly read began with a full login - the

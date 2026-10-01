@@ -37,6 +37,7 @@ from .utils import (
 )
 from .web_protocol import (
     log_refusal,
+    is_expert_view,
     is_login_page,
     maintenance_blocking,
     maintenance_notice,
@@ -439,7 +440,9 @@ class WemPortalScraper:
                     panels = self.parse_expert_page(
                         reused_html, source="the reused session", required=False
                     )
-                    if panels is not None:
+                    # The user view has panels too, a third of the readings:
+                    # taken for the expert view, the rest went to unknown.
+                    if panels is not None and is_expert_view(reused_html):
                         _LOGGER.debug(
                             "Reused existing WEM Portal web session (skipped full login)."
                         )

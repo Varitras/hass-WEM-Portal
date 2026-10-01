@@ -1200,7 +1200,7 @@
   {
     "label": "reuse: logging in although the reused page worked must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                    if panels is not None:",
+    "old": "                    if panels is not None and is_expert_view(reused_html):",
     "new": "                    if False:",
     "tests": "reused_session_that_worked_does_not_log_in"
   },
@@ -5116,5 +5116,33 @@
     "old": "        if response.status_code == 403:\n            log_refusal(redact_url(API_LOGIN_URL), response)\n",
     "new": "",
     "tests": "maintenance_message_still_says_who_answered"
+  },
+  {
+    "label": "expert session: a reuse on the user level kept",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if not is_expert_view(self._expert_level_html or \"\"):\n",
+    "new": "            if False:\n",
+    "tests": "kept_only_on_the_fachmann_level"
+  },
+  {
+    "label": "expert session: the page the Fachmann postback got not kept for the check",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self._expert_level_html = current_html\n",
+    "new": "",
+    "tests": "kept_only_on_the_fachmann_level"
+  },
+  {
+    "label": "reuse: the user view taken for the expert view",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                    if panels is not None and is_expert_view(reused_html):",
+    "new": "                    if panels is not None:",
+    "tests": "on_the_user_view_logs_in_fresh"
+  },
+  {
+    "label": "expert view: told by the panels the user view has too",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "EXPERT_VIEW_MARKER: Final = \"CodeExpertsDetails.aspx\"\n",
+    "new": "EXPERT_VIEW_MARKER: Final = \"rpbSimpleData\"\n",
+    "tests": "only_the_fachmann_page_is_the_expert_view"
   }
 ]

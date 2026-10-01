@@ -42,6 +42,7 @@ from .models import account_state
 from .utils import parse_portal_number
 from .web_protocol import (
     log_refusal,
+    is_expert_view,
     is_login_page,
     maintenance_blocking,
     maintenance_notice,
@@ -693,6 +694,9 @@ class WemPortalExpertClient:
         # the old fixed pre-poll loop with a demand-driven one (early exit
         # as soon as the dropdown is populated). Updated as polls advance.
         self._nav_html: str | None = None
+        # The page the Fachmann submenu postback answered with; see
+        # _try_cached_session for why it is kept apart from _nav_html.
+        self._expert_level_html: str | None = None
 
     # ------------------------------------------------------------------
     def _check_gates(self):
@@ -845,6 +849,14 @@ class WemPortalExpertClient:
 
         try:
             self._establish_context()
+            # A reused session's submenu postback the portal no longer
+            # honours comes back HTTP 200 on the user level: kept, every read
+            # was empty and the next operation reused it again. Only here -
+            # after a fresh login there is nothing fresher to fall back to.
+            if not is_expert_view(self._expert_level_html or ""):
+                raise AuthError(
+                    "Expert client: the reused session stayed on the user level."
+                )
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
         except ForbiddenError, PortalMaintenanceError, ServerError:
             # All three are ANSWERS, not signs that the cached session went
@@ -1027,6 +1039,7 @@ class WemPortalExpertClient:
                 EXPERT_SUBMENU_CLIENTSTATE_FIELD: EXPERT_SUBMENU_CLIENTSTATE_VALUE,
             },
         )
+        self._expert_level_html = current_html
         # --- Fachmann security-code sub-sequence (retained safety net) ---
         # DISABLED by default (EXPERT_SKIP_SECURITY_CODE, at the top of THIS
         # file - const.py has never held it).

@@ -178,6 +178,20 @@ def log_refusal(where: str, response: object) -> None:
     _LOGGER.debug("403 for %s: %s", where, describe_refusal(response))
 
 
+# What only the Fachmann (expert) level carries in the server's answer: the
+# configuration of its security-code window. Measured on a live account,
+# the user view a session lands on after its login and the overview have
+# none, and both views carry the same four panels - one with 25 readings,
+# the other 67. A path, not a label, so it reads the same in every language.
+EXPERT_VIEW_MARKER: Final = "CodeExpertsDetails.aspx"
+
+
+def is_expert_view(html_text: str) -> bool:
+    """Whether a page is the Fachmann level rather than the user view or the
+    overview, which a postback the portal did not honour answers with."""
+    return EXPERT_VIEW_MARKER in (html_text or "")
+
+
 def is_login_page(url: object) -> bool:
     """Whether a response came from the web login page.
 
