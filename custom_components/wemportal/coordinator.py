@@ -563,9 +563,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
     def _a_tick_that_read_nothing(self, fetched: Any) -> Any:
         """`both` mode with nothing due, or only a failed scrape: no reading
         says the portal recovered, so neither the failure count nor Home
-        Assistant's own view moves. A login that went through still ends the
-        auth streak - those count refusals in a row."""
-        self._end_the_auth_streak_after_a_login()
+        Assistant's own view moves."""
         if not self.last_update_success:
             # Caught as busy below: no counter moves, and Home Assistant says
             # nothing about a failure following a failure. What the cycle
@@ -582,6 +580,20 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             self.api.login_went_through = False
             self._reset_auth_failures()
 
+    async def _fetch(self, device_filter: list[str] | None) -> Any:
+        """The fetch, and the login proof it leaves, however it ends.
+
+        Settled here, before any outcome is counted: asked per outcome, a
+        refused relogin left the proof on the api, and a failed setup threw
+        that api away while the account kept the count.
+        """
+        try:
+            return await self.hass.async_add_executor_job(
+                self.api.fetch_data, device_filter
+            )
+        finally:
+            self._end_the_auth_streak_after_a_login()
+
     async def _update_within_timeout(self, device_filter: list[str] | None) -> Any:
         """The guarded update itself. Split out so the timeout can be caught
         around it without moving the error handling one level in."""
@@ -591,9 +603,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # seven exits is a moment where the backoff either holds or
                 # does not, and a branch added later would otherwise silently
                 # skip the report.
-                fetched = await self.hass.async_add_executor_job(
-                    self.api.fetch_data, device_filter
-                )
+                fetched = await self._fetch(device_filter)
                 if self.api.last_cycle_read_nothing:
                     return self._a_tick_that_read_nothing(fetched)
                 self.num_failed = 0
@@ -617,7 +627,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             except LoginRefused as exc:
                 # Before AuthError, which it only is for its propagation: a
                 # firewall turning one login away says nothing about the
-                # password, so the auth streak neither grows nor clears.
+                # password, so the auth streak does not grow - and clears
+                # only for a login that went through first (see _fetch).
                 self._note_failed_cycle()
                 self._announce_once(
                     "login-refused", "WEM Portal turned a login away", exc
@@ -625,9 +636,6 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed(str(exc)) from exc
             except AuthError as exc:
                 self._note_failed_cycle()
-                # A login earlier in this same cycle broke the row before
-                # this refusal: it starts a new streak, not the old one's end.
-                self._end_the_auth_streak_after_a_login()
                 self.num_auth_failed += 1
                 self._account_state.auth_failures = self.num_auth_failed
                 # Escalate to reauth only after several CONSECUTIVE auth

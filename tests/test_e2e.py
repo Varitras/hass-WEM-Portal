@@ -2399,6 +2399,35 @@ async def test_a_login_earlier_in_the_refused_cycle_ends_the_auth_streak(
     assert coordinator.num_auth_failed == 1
 
 
+async def test_a_login_before_a_turned_away_relogin_ends_the_auth_streak(
+    hass, monkeypatch
+):
+    """The firewall's refusal says nothing about the password, but the login
+    before it did. Left on the api, that proof went with it when a failed
+    setup rebuilt the api, while the account kept the count - and the next
+    setup's refusal asked for new credentials that had just worked."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import LoginRefused
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_auth_failed = 2
+    coordinator._account_state.auth_failures = 2
+
+    def logged_in_then_turned_away(self, *_args, **_kwargs):
+        self.login_went_through = True
+        raise LoginRefused("HTTP 403, no status or message in the answer")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", logged_in_then_turned_away)
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert coordinator._account_state.auth_failures == 0
+    assert coordinator.num_auth_failed == 0
+
+
 async def test_a_tick_that_read_nothing_still_publishes_what_it_changed(
     hass, monkeypatch
 ):

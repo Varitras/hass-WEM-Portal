@@ -4768,11 +4768,11 @@
     "tests": "read_nothing_still_publishes_what_it_changed"
   },
   {
-    "label": "auth streak: a login earlier in the refused cycle ignored",
+    "label": "auth streak: the login proof left unsettled when the fetch ends",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "                # this refusal: it starts a new streak, not the old one's end.\n                self._end_the_auth_streak_after_a_login()\n",
-    "new": "",
-    "tests": "login_earlier_in_the_refused_cycle_ends_the_auth_streak or login_made_by_a_write_ends_the_auth_streak"
+    "old": "        finally:\n            self._end_the_auth_streak_after_a_login()\n",
+    "new": "        finally:\n            pass\n",
+    "tests": "login_earlier_in_the_refused_cycle_ends_the_auth_streak or login_made_by_a_write_ends_the_auth_streak or login_before_a_turned_away_relogin_ends_the_auth_streak or login_that_worked_ends_the_auth_streak_even_if_nothing_was_read"
   },
   {
     "label": "both mode: a tick that read nothing wraps the reason it keeps",
