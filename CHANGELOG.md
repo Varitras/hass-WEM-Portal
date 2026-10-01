@@ -8,6 +8,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The hourly expert read reuses its session instead of logging in each
+  time.** The cached web session was given up after fifteen minutes, an
+  assumed lifetime, so every hourly read began with a full login - the
+  request the portal turns away most often. A session measurably lasts
+  longer; it is now reused for up to two hours.
 - **A refused request no longer costs a login the next cycle.** A statistics
   group the heat pump does not have is refused every hour, and that dropped
   the session, so the next cycle logged in again - about 24 extra logins a

@@ -404,8 +404,8 @@ exist and the integration behaves exactly as without it.
 ### How it works
 
 - Reaching a parameter is a **minimal** web navigation: the Fachmann submenu,
-  then the parameter's edit form. The session is cached in memory for up to 15
-  minutes and reused — the login is the request the portal is most likely to
+  then the parameter's edit form. The session is cached in memory for up to two
+  hours and reused — the login is the request the portal is most likely to
   reject.
 - The new value is validated against the option list of **your device's own**
   edit form, so only values it actually accepts are sent.

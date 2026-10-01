@@ -467,11 +467,10 @@ class WemPortalTransport:
                 f"({what_the_server_said(response.status_code, server_status, server_message)})"
             )
             # Not at odds with the "no extra request" note above: this login
-            # is spent after the cooldown, when the session has idled the 15
-            # minutes at which the expert path stops trusting one
-            # (EXPERT_SESSION_MAX_AGE_SECONDS) - and a failed reuse costs two
-            # requests where a fresh login costs one. Assumed, not measured:
-            # that number is the web session's, this is the mobile API's.
+            # is spent after the cooldown, and a failed reuse costs two
+            # requests where a fresh login costs one. How long this mobile-API
+            # session outlives an idle spell is not measured; the expert
+            # path's cap (EXPERT_SESSION_MAX_AGE_SECONDS) is the web session's.
             self.valid_login = False
             forbidden_error = ForbiddenError(
                 f"{DATA_GATHERING_ERROR} "

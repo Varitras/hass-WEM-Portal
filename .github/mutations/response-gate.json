@@ -5046,5 +5046,12 @@
     "old": "            rows[0]\n            for key, rows in self.scraping_mapper.items()\n            if still_described(*key)\n        }\n",
     "new": "            row\n            for key, rows in self.scraping_mapper.items()\n            if still_described(*key)\n            for row in rows\n        }\n",
     "tests": "carries_the_week_only_on_the_row_its_fetch_maintains"
+  },
+  {
+    "label": "expert session: the hourly poll's session given up as too old",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "EXPERT_SESSION_MAX_AGE_SECONDS: Final = 2 * 3600\n",
+    "new": "EXPERT_SESSION_MAX_AGE_SECONDS: Final = 900\n",
+    "tests": "the_session_of_the_last_hourly_poll_is_reused"
   }
 ]

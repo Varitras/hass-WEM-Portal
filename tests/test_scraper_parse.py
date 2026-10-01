@@ -302,6 +302,37 @@ def test_expert_session_is_reused_instead_of_logging_in():
     assert jar["saved_at"] > before, "session cache was not refreshed"
 
 
+def test_the_session_of_the_last_hourly_poll_is_reused():
+    """The cap was fifteen minutes, an assumed session lifetime, while the
+    auto-poll runs hourly: every poll logged in afresh, and a full login is
+    what the portal turns away. Measured, a session idle for seventy minutes
+    was still logged in."""
+    from custom_components.wemportal import expert_controller, expert_writer
+    from custom_components.wemportal.const import DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+
+    longest_gap = (
+        DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+        * 60
+        * (1 + expert_controller.JITTER_FRACTION)
+    )
+    jar = {
+        "cookies": {"ASP.NET_SessionId": "abc"},
+        "saved_at": time.monotonic() - longest_gap,
+    }
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    logins = []
+    attempts = []
+    client._full_login = lambda: logins.append(True)
+    client._establish_context = lambda: attempts.append(True)
+
+    client._login()
+
+    assert attempts == [True], "the session of the last poll was not tried"
+    assert logins == []
+
+
 def test_expired_cache_logs_in_again():
     """Past the age cap we do not spend two requests on a probably-dead
     session - we log in directly."""
