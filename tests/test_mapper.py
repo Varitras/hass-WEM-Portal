@@ -473,6 +473,35 @@ def test_a_scraper_arriving_later_takes_the_programme_week_with_the_row():
     assert row.possible_values == [1, 2, 3]
 
 
+def test_the_programme_week_goes_only_to_the_row_its_fetch_maintains():
+    """A reading may merge into two scraped rows, but the schedule fetch
+    refreshes and drops the week on the first alone: handed to both, the
+    second kept the old week for the session over the plan its value showed."""
+    modules = _modules(_parameter("Heizprogramm1", DataType=WemDataType.PROGRAM))
+    answer = _values(_value("Heizprogramm1", string='{"MO-1": "06:00-22:00"}'))
+    api_only = _process(modules, answer, mode="both")
+    api_only["Heat pump-Heizprogramm1"].circuit_times_day = A_FED_WEEK
+    scraping_mapper = {}
+
+    merged = _process(
+        modules,
+        answer,
+        mode="both",
+        existing={
+            **api_only,
+            **_scraped("heat_pump-heizprogramm1", "Heat pump - Heizprogramm1"),
+            **_scraped("circuit-heizprogramm1", "Heizprogramm1"),
+        },
+        scraping_mapper=scraping_mapper,
+    )
+
+    (owner, other) = next(iter(scraping_mapper.values()))
+    assert merged[owner].circuit_times_day == A_FED_WEEK
+    assert merged[other].circuit_times_day is None, (
+        "a row no schedule fetch maintains was handed the week"
+    )
+
+
 def test_a_merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives():
     """The ageing pass looked under the API key, and the value is not there.
 

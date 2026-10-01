@@ -495,7 +495,7 @@ def _merge_into_scraped(
             # frozen at the last value the api put in it.
             _hand_the_week_on(
                 api_data[device_id].pop(key, None),
-                scraping_mapper[cache_key],
+                scraping_mapper[cache_key][0],
                 api_data[device_id],
             )
 
@@ -533,18 +533,21 @@ def _merge_into_scraped(
         target.module_type = sensor.module_type
 
 
-def _hand_the_week_on(left, targets, device_data) -> None:
+def _hand_the_week_on(left, owner, device_data) -> None:
     """The schedule fetch wrote the programme week under the api's own key,
     and the row taking its place has none: the page never shows one, and
     the hourly gate counts the fetch as recent, so nothing brings it back
-    for up to an hour."""
+    for up to an hour.
+
+    To the first target only, the row the fetch refreshes and drops the
+    week on (see _schedule_row_key): handed to every target, the others
+    kept the old week for the session."""
     if not isinstance(left, Reading) or left.circuit_times_day is None:
         return
-    for name in targets:
-        row = device_data.get(name)
-        if isinstance(row, Reading):
-            row.circuit_times_day = left.circuit_times_day
-            row.possible_values = left.possible_values
+    row = device_data.get(owner)
+    if isinstance(row, Reading):
+        row.circuit_times_day = left.circuit_times_day
+        row.possible_values = left.possible_values
 
 
 def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:

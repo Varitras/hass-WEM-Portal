@@ -4669,6 +4669,39 @@ def test_a_scrape_keeps_the_programme_details_the_schedule_fetch_found():
     assert row.possible_values == [1, 2, 3]
 
 
+def test_a_scrape_carries_the_week_only_on_the_row_its_fetch_maintains():
+    """The fetch refreshes and drops the week on the first mapped row alone;
+    carried on a second one too, that copy was never refreshed again."""
+    api = _api()
+    api.data = {
+        "0000": {
+            "ConnectionStatus": 0,
+            "pump-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}', circuit_times_day=A_FED_WEEK
+            ),
+            "circuit-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}', circuit_times_day=A_FED_WEEK
+            ),
+        }
+    }
+    api.modules = {"0000": {ModuleRef(1, 1): {"parameters": {"Programme": {}}}}}
+    api.scraping_mapper = {
+        ("0000", ModuleRef(1, 1), "Programme"): ["pump-programme", "circuit-programme"]
+    }
+    api._previous_scraper_keys = {"pump-programme", "circuit-programme"}
+
+    api._merge_webscraping_data(
+        "0000",
+        {
+            "pump-programme": Reading(value='{"MO-1":"06:00-10:10"}'),
+            "circuit-programme": Reading(value='{"MO-1":"06:00-10:10"}'),
+        },
+    )
+
+    assert api.data["0000"]["pump-programme"].circuit_times_day == A_FED_WEEK
+    assert api.data["0000"]["circuit-programme"].circuit_times_day is None
+
+
 def test_a_scrape_that_empties_the_merge_map_drops_the_week():
     """A changed page empties the map, and a programme dropped in the same
     cycle then has no row to take its week from: carried on by every scrape

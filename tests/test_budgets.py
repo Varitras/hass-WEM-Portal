@@ -63,9 +63,10 @@ LINE_BUDGETS = {
     # merge put its value, and whether the scrape still feeds that row.
     # And by 5 for carrying the programme week only onto a row the merge
     # still maps, where its fetch and its forgetting can find it.
-    # And by 20 for mapping it only through a parameter some module still
-    # describes: the map outlives a module gone from the device list.
-    "wemportalapi.py": 2682,
+    # And by 21 for carrying it only through a parameter some module still
+    # describes, onto the row its fetch maintains: the map outlives a module
+    # gone from the device list, and lists more rows than the fetch keeps.
+    "wemportalapi.py": 2683,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

@@ -4721,8 +4721,22 @@
   {
     "label": "merge: the row replacing the api's own drops its programme week",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            row.circuit_times_day = left.circuit_times_day\n            row.possible_values = left.possible_values\n",
-    "new": "            pass\n",
+    "old": "        row.circuit_times_day = left.circuit_times_day\n        row.possible_values = left.possible_values\n",
+    "new": "        pass\n",
     "tests": "scraper_arriving_later_takes_the_programme_week_with_the_row"
+  },
+  {
+    "label": "merge: the week handed to a row its fetch does not maintain",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                scraping_mapper[cache_key][0],\n",
+    "new": "                scraping_mapper[cache_key][-1],\n",
+    "tests": "the_programme_week_goes_only_to_the_row_its_fetch_maintains"
+  },
+  {
+    "label": "scrape: the week carried onto every row the merge maps",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            rows[0]\n            for key, rows in self.scraping_mapper.items()\n            if still_described(*key)\n        }\n",
+    "new": "            row\n            for key, rows in self.scraping_mapper.items()\n            if still_described(*key)\n            for row in rows\n        }\n",
+    "tests": "carries_the_week_only_on_the_row_its_fetch_maintains"
   }
 ]
