@@ -39,6 +39,7 @@ from .transport import WemPortalTransport
 from .exceptions import (
     ApiBusyError,
     AuthError,
+    ExpiredSessionError,
     ForbiddenError,
     ParameterChangeError,
     PollDeadlineExceeded,
@@ -139,6 +140,12 @@ PARAMETER_REDISCOVERY_INTERVAL_SECONDS: Final = 24 * 3600  # 1 day
 # above, but not immediate: a portal that just refused must not be asked once
 # per cycle. Same shape as the statistics and schedule retries.
 PARAMETER_REDISCOVERY_RETRY_SECONDS: Final = 3600  # 1 hour
+# A coordinator tick lands up to a second early (see _api_read_is_due), and
+# the API gate allows for that and no more: wider, an interval just past a
+# multiple of the tick was read a whole tick early.
+TICK_TOLERANCE_SECONDS: Final = 2
+# The scrape gate's own margin, older than the API gate and left as it was.
+SCRAPE_TICK_TOLERANCE_SECONDS: Final = 10
 
 # How long one poll cycle may spend before it stops itself.
 #
@@ -379,6 +386,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # module) turns every restart with an expired cache into a slow
         # startup.
         self._first_cycle_done = False
+        # A `both`-mode tick can end with neither source read, which is no
+        # sign of recovery.
+        self.last_cycle_read_nothing = False
         self.heavy_fetch_turns = HeavyFetchTurns()
         # When the mobile API was last read, for the `both`-mode gate. None
         # rather than 0.0: zero on the monotonic clock is the moment the
@@ -390,6 +400,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # coordinator update - only the initial discovery/refresh needs it.
         self._devices_fetched_this_session = False
         self.valid_login = False
+        self.login_went_through = False
         self.session = None
         # Serialises a full poll cycle (fetch_data) against on-demand writes
         # (change_value): both run in executor threads and share self.session
@@ -920,7 +931,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         elapsed: float = (
             dt_util.now().timestamp() - self.last_scraping_update.timestamp()
         )
-        return elapsed + 10 > self.scan_interval.total_seconds()
+        return (
+            elapsed + SCRAPE_TICK_TOLERANCE_SECONDS > self.scan_interval.total_seconds()
+        )
 
     def _api_read_is_due(self) -> bool:
         """Whether `both` mode should read the mobile API this cycle.
@@ -935,16 +948,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         persists this stamp, so it has no restart to survive, and a clock
         change must not hand out a free read (or withhold one for hours).
 
-        `>=` and no jitter tolerance, unlike the scrape gate: the stamp is
-        taken inside the cycle, and Home Assistant plans the next tick from
-        when that cycle ENDED - so the grid drifts along with the stamp
-        rather than away from it. Measured with `>`, an installation whose
-        API interval IS the tick would lose every second reading.
+        With a tolerance narrower than the scrape gate's. HA plans the
+        next tick from when the cycle ended, but rounds the loop time down
+        first, so a tick lands up to a second early; measured without the
+        tolerance, a five-minute API read came every 7.5 to 9.5 minutes.
         """
         if self._last_api_read is None:
             return True
         waited: float = time.monotonic() - self._last_api_read
-        return waited >= self.scan_interval_api.total_seconds()
+        return waited + TICK_TOLERANCE_SECONDS >= self.scan_interval_api.total_seconds()
 
     def _count_down_scrape_backoff(self) -> None:
         """One cycle closer to the next scrape attempt."""
@@ -993,8 +1005,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         else:
             _LOGGER.debug("Web scraper still failing: %s", reason)
 
-    def _collect_both(self, enabled_devices: list[str] | None) -> None:
-        """`both` mode: scrape when due, then read the API either way."""
+    def _collect_both(self, enabled_devices: list[str] | None) -> bool:
+        """`both` mode: scrape, then read the API, each when due; True if
+        either delivered."""
+        scraped = False
         if self._scrape_is_due(enabled_devices):
             try:
                 self._scrape_and_merge()
@@ -1004,13 +1018,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 # this deliberately does not re-raise.
                 self._note_scrape_failure(exc)
             else:
+                scraped = True
                 if failure_is_over(self._reported_failures, _SCRAPE_FAILURE_KEY):
                     _LOGGER.info("The web scraper works again.")
         else:
             self._count_down_scrape_backoff()
 
         if not self._api_read_is_due():
-            return
+            return scraped
         try:
             self.get_data(enabled_devices)
         finally:
@@ -1028,6 +1043,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # next tick from when the cycle ENDED, so the stamp and the grid
             # drift together instead of apart.
             self._last_api_read = time.monotonic()
+        return True
 
     def _fetch_data(
         self, enabled_devices: list[str] | None = None
@@ -1040,6 +1056,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # etc.) that we already know will be aborted immediately.
         self.check_cooldown()
         self.heavy_fetch_turns.new_cycle()
+        self.last_cycle_read_nothing = False
         try:
             if self.mode != "web":
                 self._ensure_api_session()
@@ -1048,8 +1065,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 self._collect_web(enabled_devices)
             elif self.mode == "api":
                 self.get_data(enabled_devices)
-            else:
-                self._collect_both(enabled_devices)
+            elif not self._collect_both(enabled_devices):
+                self.last_cycle_read_nothing = True
+                return self.data
 
             # Set only after a cycle got this far, so a setup that fails
             # halfway does not let the next attempt count as "not the first
@@ -1741,32 +1759,58 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                     API_EVENT_TYPE_READ_URL, data=data, do_retry=False
                 )
             except WemPortalError as exc:
-                status_code = self._http_status(exc)
-                if status_code == 403:
-                    # One refusal is the whole budget, and the code used to
-                    # promise three: make_api_call activates the shared
-                    # cooldown as soon as the portal answers 403, so the next
-                    # module's request is refused before it is sent - by a
-                    # ForbiddenError carrying no HTTP status, which misses
-                    # this branch and re-raises below. The counter could
-                    # never reach two while the log said "strike 1 of 3".
-                    _LOGGER.error(
-                        "Rate limited (403) while reading parameters for "
-                        "device %s. Discovery stops here: the portal is "
-                        "refusing this network, not this request.",
-                        device_id,
-                    )
-                    raise
-                if status_code == 400:
-                    self._note_undescribed_module(
-                        device_id,
-                        values,
-                        "the portal rejected the request",
-                        unsupported=True,
-                    )
-                    continue
-                raise
+                self._survive_a_failed_description(device_id, values, exc)
+                continue
             self._store_module_description(device_id, key, values, response)
+
+    def _survive_a_failed_description(
+        self, device_id: str, values: dict[str, Any], exc: WemPortalError
+    ) -> None:
+        """Book a module the portal would not describe, or raise what the whole
+        cycle must hear: a refusal of the account, or a list still missing. A
+        failed refresh of a list that works raised too, and no value was read
+        at all - every cycle, as nothing booked the attempt."""
+        status_code = self._http_status(exc)
+        if status_code == 403:
+            # One refusal is the whole budget, and the code used to
+            # promise three: make_api_call activates the shared
+            # cooldown as soon as the portal answers 403, so the next
+            # module's request is refused before it is sent - by a
+            # ForbiddenError carrying no HTTP status, which misses
+            # this branch and re-raises below. The counter could
+            # never reach two while the log said "strike 1 of 3".
+            _LOGGER.error(
+                "Rate limited (403) while reading parameters for "
+                "device %s. Discovery stops here: the portal is "
+                "refusing this network, not this request.",
+                device_id,
+            )
+            raise exc
+        if status_code == 400:
+            self._note_undescribed_module(
+                device_id, values, "the portal rejected the request", unsupported=True
+            )
+            return
+        # A dead session arrives here as a plain portal error - a 401, or the
+        # redirect to the login page - and asking the next module on it would
+        # only repeat it. Known by its cause: `valid_login` also drops for
+        # failures that say nothing about the session.
+        session_gone = status_code == 401 or isinstance(
+            exc.__cause__, ExpiredSessionError
+        )
+        refused_for_the_account = session_gone or isinstance(
+            exc, (AuthError, ForbiddenError)
+        )
+        if refused_for_the_account or "parameters" not in values:
+            raise exc
+        # An empty list is a known answer too; what the portal said about the
+        # module stands, only the timestamp moves.
+        self._note_undescribed_module(
+            device_id,
+            values,
+            str(exc),
+            unsupported=values.get("description_refused", False),
+        )
 
     def _parameters_can_be_read(
         self, device_id: str, enabled_devices: list[str] | None

@@ -29,6 +29,26 @@ versioning follows [Semantic Versioning](https://semver.org/).
   keeps in the address instead of a cookie slipped past them: an expired
   session during an announced maintenance window then read as the outage
   itself, instead of logging in again.
+- **A failed daily re-read of the parameter list no longer stops all
+  readings.** The list is refreshed once a day; when the portal answered
+  that refresh with a server error or not at all, the whole cycle failed
+  before a single value was read, and the next cycle tried again - no
+  readings for as long as the portal kept failing it. The known list is now
+  kept and asked again an hour later, while the values are read as usual.
+- **In `both` mode the API is read at its interval again.** Home Assistant
+  can start a cycle up to a second before the interval is complete, and the
+  API read then waited a whole further cycle: set to five minutes, it came
+  every seven and a half to nine and a half.
+- **In `both` mode a cycle that read nothing no longer ends an outage.**
+  When the API was not due and the web scrape failed or was held back, the
+  cycle still counted as a working one, so the failure count of an API that
+  failed every time it was due went back to zero in between - its outage
+  never reached the point where the entities show it. Home Assistant no
+  longer reports such a cycle as recovered either.
+- **A login that worked resets the count towards re-authentication.** Three
+  refused logins in a row ask for new credentials; a login made in between -
+  by a write, or earlier in the cycle whose next login was refused - did not
+  break the row.
 
 ## [1.14.0b3] – 2026-09-29
 

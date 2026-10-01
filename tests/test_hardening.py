@@ -6101,6 +6101,10 @@ PRESERVED_FIELDS = frozenset(
         # Like _deadline, it belongs to the poll cycle in progress: which
         # burst that cycle has spent. A new connection does not un-spend it.
         "heavy_fetch_turns",
+        # What the cycle that just ended read; a recovery after it does not
+        # change that, and the coordinator asks it right after the fetch.
+        "last_cycle_read_nothing",
+        "login_went_through",
         "_last_device_read",
         "_module_answered_at",
         "data",
@@ -7187,8 +7191,10 @@ def test_a_device_with_parameters_is_still_read():
 
 
 def _discovery_api(answers, fetched_at=None):
-    """An api with one cached module, answering EventType/Read from `answers`."""
-    api = _api()
+    """An api with one cached module, answering EventType/Read from `answers`.
+
+    Logged in, as discovery always is: it runs behind the session check."""
+    api = _api_after_a_poll()
     api.data = {"1234": {"ConnectionStatus": 0}}
     module = {
         "Index": 0,
@@ -7590,6 +7596,152 @@ def test_a_failed_re_read_keeps_the_parameters_it_had():
 
     assert (0, 1) in api.modules["1234"], "a working module was deleted"
     assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known"}
+
+
+def _portal_error(http_status=None):
+    error = exceptions.WemPortalError("Server returned status code: 9")
+    if http_status is not None:
+        error.__cause__ = real_requests.exceptions.HTTPError(
+            response=FakeResponse({}, status_code=http_status)
+        )
+    return error
+
+
+@pytest.mark.parametrize("http_status", [500, None], ids=["server error", "timeout"])
+def test_a_re_read_the_portal_fails_keeps_the_cycle_and_the_list(http_status):
+    """Only 400 and 403 were handled; anything else raised out of get_data,
+    before a single value was read. Nothing booked the attempt, so the next
+    cycle asked again and failed again - no readings at all for as long as
+    the portal kept failing an optional refresh of a list that still works."""
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, calls = _discovery_api(
+        [_portal_error(http_status), _portal_error(http_status)], fetched_at=stale
+    )
+
+    api.get_parameters()
+    api.get_parameters()
+
+    assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known"}
+    assert len(calls) == 1, "the failed re-read was asked again the next cycle"
+
+
+@pytest.mark.parametrize(
+    "known",
+    [{}, {"description_refused": True}],
+    ids=["described as empty", "refused before"],
+)
+def test_a_re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle(known):
+    """An empty list is a known answer too, and the check read it as a
+    missing one: the failed refresh of a module that has nothing to poll
+    raised out of get_data every cycle, exactly like the case fixed above."""
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, calls = _discovery_api(
+        [_portal_error(500), _portal_error(500)], fetched_at=stale
+    )
+    module = api.modules["1234"][(0, 1)]
+    module["parameters"] = {}
+    module.update(known)
+
+    api.get_parameters()
+    api.get_parameters()
+
+    assert module["parameters"] == {}
+    assert module.get("description_refused", False) == bool(known), (
+        "a timeout rewrote what the portal had said about the module"
+    )
+    assert len(calls) == 1, "the failed re-read was asked again the next cycle"
+
+
+def test_a_re_read_the_real_transport_fails_keeps_the_cycle(monkeypatch):
+    """Through the transport itself, not a stub: a failed request may drop
+    the login on the way, and the discovery must not read that as the
+    session being gone - a 500 is about the request. Dropped here by hand
+    as well, so the test holds whichever transport decides that."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, _calls = _discovery_api([], fetched_at=stale)
+    del api.make_api_call  # the real one
+
+    class _Failing:
+        def post(self, *_args, **_kwargs):
+            api.valid_login = False
+            return FakeResponse({"Status": 9}, status_code=500)
+
+    api.session = _Failing()
+
+    api.get_parameters()
+
+    assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known"}
+
+
+def test_a_session_that_ran_out_stops_the_re_read_at_the_first_module():
+    """A 401 comes back from discovery as a plain portal error - it does not
+    log in again - and was booked as that one module's failure, so every
+    further stale module was asked on the same dead session."""
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, calls = _discovery_api([], fetched_at=stale)
+    api.modules["1234"][(1, 1)] = dict(api.modules["1234"][(0, 1)], Index=1)
+    api.valid_login = True
+
+    def session_gone(url, **_kwargs):
+        calls.append(url)
+        api.valid_login = False
+        raise _portal_error(401)
+
+    api.make_api_call = session_gone
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.get_parameters()
+    assert len(calls) == 1, "discovery went on asking on a dead session"
+
+
+def test_a_session_redirected_to_the_login_stops_the_re_read(monkeypatch):
+    """The other face of a dead session: a 200 that landed on the login page.
+    Through the real transport, which is what turns that redirect into the
+    plain portal error discovery sees - with the expiry as its cause."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, _calls = _discovery_api([], fetched_at=stale)
+    api.modules["1234"][(1, 1)] = dict(api.modules["1234"][(0, 1)], Index=1)
+    del api.make_api_call  # the real one
+    posts = []
+
+    class _RedirectedToLogin:
+        def post(self, *_args, **_kwargs):
+            posts.append(1)
+            return FakeResponse(url="https://www.wemportal.com/Account/Login")
+
+    api.session = _RedirectedToLogin()
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.get_parameters()
+    assert len(posts) == 1, "discovery went on asking on a dead session"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        exceptions.ForbiddenError("in the 403 cooldown"),
+        exceptions.AuthError("session gone"),
+    ],
+    ids=["cooldown", "auth"],
+)
+def test_a_re_read_refused_for_the_account_still_stops_the_cycle(error):
+    """Those say something about the account, not about one module."""
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, _calls = _discovery_api([error], fetched_at=stale)
+
+    with pytest.raises(type(error)):
+        api.get_parameters()
+
+
+def test_a_missing_list_the_portal_fails_still_fails_the_cycle():
+    """Without it there is nothing to read at all."""
+    api, _calls = _discovery_api([_portal_error(500)])
+    del api.modules["1234"][(0, 1)]["parameters"]
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.get_parameters()
 
 
 def test_a_failed_re_read_is_not_retried_on_the_very_next_cycle():
@@ -8449,10 +8601,9 @@ def test_both_mode_does_not_read_the_api_on_every_web_cycle(monkeypatch):
 def test_both_mode_reads_the_api_on_every_cycle_when_that_is_the_shorter_one(
     monkeypatch,
 ):
-    """The control case, and what decides how the gate compares: on the
-    default settings (web 30min, API 5min) the coordinator ticks at exactly
-    the API interval, so a `>` would find each tick a hair too early and
-    halve the polling the user configured.
+    """The control case: on the default settings (web 30min, API 5min) the
+    coordinator ticks at exactly the API interval, and every tick has to
+    read - see TICK_TOLERANCE_SECONDS for the ticks that land a little early.
     """
     clock = _Clock()
     monkeypatch.setattr(wemportalapi.time, "monotonic", clock)
@@ -9140,12 +9291,101 @@ def test_a_different_curl_error_is_still_news():
     assert failure_is_new(reported, "scrape", "curl: (7) Failed to connect")
 
 
+def test_a_tick_that_lands_a_fraction_early_still_reads_the_api(monkeypatch):
+    """Home Assistant plans the next tick as int(loop time) + a fixed fraction
+    + the interval, so it can land up to a second before stamp + interval.
+    Measured with a bare `>=`, that tick skipped the read and the next one
+    came a whole interval later: 75 to 97 reads in twelve hours instead of
+    144 at five minutes."""
+    from datetime import timedelta
+
+    api = _api()
+    api.scan_interval_api = timedelta(seconds=300)
+    monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: 10_000.0)
+    api._last_api_read = 10_000.0 - 299.1
+
+    assert api._api_read_is_due(), "a tick 0.9 s early skipped the API read"
+
+
+def test_half_an_api_interval_is_still_not_due(monkeypatch):
+    from datetime import timedelta
+
+    api = _api()
+    api.scan_interval_api = timedelta(seconds=300)
+    monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: 10_000.0)
+    api._last_api_read = 10_000.0 - 150
+
+    assert not api._api_read_is_due()
+
+
+def test_a_tick_well_before_the_api_interval_is_not_due(monkeypatch):
+    """The tolerance is for a tick that lands a second or so early, not for
+    reading ahead: any wider and an interval just past a multiple of the tick
+    is read a tick early, every time."""
+    from datetime import timedelta
+
+    api = _api()
+    api.scan_interval_api = timedelta(seconds=300)
+    monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: 10_000.0)
+    # Three seconds early: more than a tick is ever early, less than the ten
+    # this gate once allowed - web 300 and API 309 read nine seconds early.
+    api._last_api_read = 10_000.0 - 297
+
+    assert not api._api_read_is_due()
+
+
 def _both_mode_api_whose_scrape(outcome):
     api = _api()
     api._scrape_is_due = lambda _enabled: True
     api._api_read_is_due = lambda: False
     api._scrape_and_merge = outcome
     return api
+
+
+def _fails():
+    raise exceptions.WemPortalError("Could not open the expert view")
+
+
+@pytest.mark.parametrize(
+    ("scrape_due", "scrape", "api_due", "read_nothing"),
+    [
+        (True, _fails, False, True),
+        (False, None, False, True),
+        (True, lambda: None, False, False),
+        (False, None, True, False),
+    ],
+    ids=["scrape failed", "nothing due", "scrape worked", "api read"],
+)
+def test_a_both_mode_tick_says_whether_it_read_anything(
+    scrape_due, scrape, api_due, read_nothing
+):
+    """With the API not due, a tick returned the cached data whether or not
+    the scrape worked - or even ran - and the coordinator took that for a
+    working cycle: the failure count of an API that kept failing went back to
+    zero in between, and its outage never reached the tolerance."""
+    api = _api()
+    api.mode = "both"
+    api._ensure_api_session = lambda: None
+    api._scrape_is_due = lambda _enabled: scrape_due
+    api._scrape_and_merge = scrape
+    api._api_read_is_due = lambda: api_due
+    api.get_data = lambda _enabled: None
+
+    api._fetch_data(None)
+
+    assert api.last_cycle_read_nothing is read_nothing
+
+
+def test_a_login_that_went_through_says_so(monkeypatch):
+    """Whoever called it: the auth streak is the coordinator's, and a write's
+    login is as good a proof of the credentials as the poll's."""
+    session = RecordingSession()
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    api = _api()
+
+    api.api_login()
+
+    assert api.login_went_through is True
 
 
 def test_a_scrape_that_keeps_failing_is_announced_once_and_healed_once(caplog):

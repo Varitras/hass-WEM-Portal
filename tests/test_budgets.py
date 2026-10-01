@@ -60,13 +60,24 @@ LINE_BUDGETS = {
     # And by 9 for one check of the retry time, asked by both collectors.
     # And by 1 for dropping the dead cookie of a turned-away web login, and
     # by 9 for learning it from the scraper on every other failure too.
-    "wemportalapi.py": 2655,
+    # And by 9 for telling a failed refresh of a working parameter list from
+    # a refusal of the account, in a helper of its own.
+    # And by 1 for the API gate's own tick tolerance.
+    # And by 9 for a `both`-mode tick saying it read nothing, so it does not
+    # pass for a recovery.
+    # And by 12 for keeping an empty list and stopping on a dead session in
+    # that same refresh.
+    # And by 6 for a login ending the auth streak even on a tick that read
+    # nothing, and 2 for why the two gates' tick margins differ.
+    # And by 6 for knowing a dead session by its cause, not by the login flag.
+    "wemportalapi.py": 2699,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
     # And by 12 for the setup's web login following the scraper's rule, so a
     # single refusal there no longer pauses everything either.
-    "transport.py": 918,
+    # And by 3 for a login saying it went through, whoever made it.
+    "transport.py": 921,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     "expert_writer.py": 1912,

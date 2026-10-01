@@ -170,6 +170,13 @@ class ScrapeHeldBack(ApiBusyError):
     """
 
 
+class NothingReadThisCycle(ApiBusyError):
+    """`both` mode, a cycle with nothing due or only a failed scrape, during
+    an outage Home Assistant already knows about. Raised so that it stays
+    one: returned, it was logged as recovered and the next failure as new.
+    """
+
+
 class PollDeadlineExceeded(BaseException):
     """The poll cycle used up its time budget and stopped itself.
 

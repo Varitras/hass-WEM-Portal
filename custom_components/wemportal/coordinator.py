@@ -35,6 +35,7 @@ from .exceptions import (
     ApiBusyError,
     AuthError,
     LoginRefused,
+    NothingReadThisCycle,
     PollDeadlineExceeded,
     PortalMaintenanceError,
     WemPortalError,
@@ -559,6 +560,41 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         if self.num_failed == API_FAILURES_TOLERATED + 1:
             self.async_update_listeners()
 
+    def _a_tick_that_read_nothing(self, fetched: Any) -> Any:
+        """`both` mode with nothing due, or only a failed scrape: no reading
+        says the portal recovered, so neither the failure count nor Home
+        Assistant's own view moves."""
+        if not self.last_update_success:
+            # Caught as busy below: no counter moves, and Home Assistant says
+            # nothing about a failure following a failure. What the cycle
+            # did change - a scrape's values aged out - is still published.
+            # The reason as it was: Home Assistant keeps it as the
+            # coordinator's last_exception, and wrapping it nested one layer
+            # deeper on every cycle of the outage.
+            self.async_update_listeners()
+            raise NothingReadThisCycle(str(self.last_exception))
+        return fetched
+
+    def _end_the_auth_streak_after_a_login(self) -> None:
+        """A login that went through - from any caller - ends the streak."""
+        if self.api.login_went_through:
+            self.api.login_went_through = False
+            self._reset_auth_failures()
+
+    async def _fetch(self, device_filter: list[str] | None) -> Any:
+        """The fetch, and the login proof it leaves, however it ends.
+
+        Settled here, before any outcome is counted: asked per outcome, a
+        refused relogin left the proof on the api, and a failed setup threw
+        that api away while the account kept the count.
+        """
+        try:
+            return await self.hass.async_add_executor_job(
+                self.api.fetch_data, device_filter
+            )
+        finally:
+            self._end_the_auth_streak_after_a_login()
+
     async def _update_within_timeout(self, device_filter: list[str] | None) -> Any:
         """The guarded update itself. Split out so the timeout can be caught
         around it without moving the error handling one level in."""
@@ -568,9 +604,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # seven exits is a moment where the backoff either holds or
                 # does not, and a branch added later would otherwise silently
                 # skip the report.
-                fetched = await self.hass.async_add_executor_job(
-                    self.api.fetch_data, device_filter
-                )
+                fetched = await self._fetch(device_filter)
+                if self.api.last_cycle_read_nothing:
+                    return self._a_tick_that_read_nothing(fetched)
                 self.num_failed = 0
                 self._reset_auth_failures()
                 # Home Assistant's own coordinator announces the recovery, so
@@ -592,7 +628,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             except LoginRefused as exc:
                 # Before AuthError, which it only is for its propagation: a
                 # firewall turning one login away says nothing about the
-                # password, so the auth streak neither grows nor clears.
+                # password, so the auth streak does not grow - and clears
+                # only for a login that went through first (see _fetch).
                 self._note_failed_cycle()
                 self._announce_once(
                     "login-refused", "WEM Portal turned a login away", exc
@@ -640,6 +677,12 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 self._announce_once(
                     "deadline", "Poll cycle stopped on its own deadline", exc
                 )
+                raise UpdateFailed(str(exc)) from exc
+            except NothingReadThisCycle as exc:
+                # Before the busy handler, whose silences it shares but not its
+                # line: this cycle ran, and the reason is the outage's, not why
+                # the cycle stopped.
+                _LOGGER.debug("Nothing read this cycle; the outage goes on: %s", exc)
                 raise UpdateFailed(str(exc)) from exc
             except ApiBusyError as exc:
                 # NOT a corrupted session: a previous poll is still running.

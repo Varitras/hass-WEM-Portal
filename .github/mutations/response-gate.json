@@ -1011,8 +1011,8 @@
   {
     "label": "discovery: a refused network walked into module after module",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                        device_id,\n                    )\n                    raise\n                if status_code == 400:",
-    "new": "                        device_id,\n                    )\n                    continue\n                if status_code == 400:",
+    "old": "                device_id,\n            )\n            raise exc\n        if status_code == 400:",
+    "new": "                device_id,\n            )\n            return\n        if status_code == 400:",
     "tests": "a_refused_discovery_stops_at_the_first_module"
   },
   {
@@ -2155,13 +2155,6 @@
     "old": "        try:\n            self.get_data(enabled_devices)\n        finally:",
     "new": "        if True:\n            self.get_data(enabled_devices)\n        if True:",
     "tests": "a_failed_api_read_still_counts_against_the_interval"
-  },
-  {
-    "label": "both mode: a tick exactly on the API interval counts as early",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        return waited >= self.scan_interval_api.total_seconds()",
-    "new": "        return waited > self.scan_interval_api.total_seconds()",
-    "tests": "both_mode_reads_the_api_on_every_cycle_when_that_is_the_shorter_one"
   },
   {
     "label": "scrape: a naive timestamp that hides the DST jump",
@@ -4787,5 +4780,152 @@
     "old": "        if is_login_page(getattr(response, \"url\", None)):\n",
     "new": "        if True:\n",
     "tests": "expert_error_from_another_page_keeps_the_shared_cache"
+  },
+  {
+    "label": "both mode: a tick a fraction early skips the API read",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        return waited + TICK_TOLERANCE_SECONDS >= self.scan_interval_api.total_seconds()",
+    "new": "        return waited >= self.scan_interval_api.total_seconds()",
+    "tests": "tick_that_lands_a_fraction_early_still_reads_the_api"
+  },
+  {
+    "label": "discovery: a failed refresh of a working list fails the cycle again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
+    "new": "        if True:\n            raise exc\n",
+    "tests": "re_read_the_portal_fails_keeps_the_cycle_and_the_list"
+  },
+  {
+    "label": "discovery: a refused account shrugged off as one module",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
+    "new": "        if \"parameters\" not in values:\n            raise exc\n",
+    "tests": "re_read_refused_for_the_account_still_stops_the_cycle"
+  },
+  {
+    "label": "discovery: a list still missing shrugged off",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
+    "new": "        if refused_for_the_account:\n            raise exc\n",
+    "tests": "missing_list_the_portal_fails_still_fails_the_cycle"
+  },
+  {
+    "label": "both mode: the tick tolerance hands out early API reads",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "TICK_TOLERANCE_SECONDS: Final = 2\n",
+    "new": "TICK_TOLERANCE_SECONDS: Final = 200\n",
+    "tests": "half_an_api_interval_is_still_not_due"
+  },
+  {
+    "label": "both mode: a tick that read nothing passes for a recovery",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                if self.api.last_cycle_read_nothing:\n                    return self._a_tick_that_read_nothing(fetched)\n",
+    "new": "",
+    "tests": "tick_that_read_nothing_does_not_end_an_outage"
+  },
+  {
+    "label": "both mode: a failed scrape counts as a delivery",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            else:\n                scraped = True\n",
+    "new": "            finally:\n                scraped = True\n",
+    "tests": "both_mode_tick_says_whether_it_read_anything"
+  },
+  {
+    "label": "both mode: a tick with the API not due always reads as nothing",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not self._api_read_is_due():\n            return scraped\n",
+    "new": "        if not self._api_read_is_due():\n            return False\n",
+    "tests": "both_mode_tick_says_whether_it_read_anything"
+  },
+  {
+    "label": "discovery: an empty list's failed refresh fails the cycle again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
+    "new": "        if refused_for_the_account or not values.get(\"parameters\"):\n            raise exc\n",
+    "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
+  },
+  {
+    "label": "discovery: a dead session asked module after module",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        session_gone = status_code == 401 or isinstance(\n",
+    "new": "        session_gone = False and isinstance(\n",
+    "tests": "session_that_ran_out_stops_the_re_read_at_the_first_module"
+  },
+  {
+    "label": "discovery: a failed refresh rewrites what the portal said",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            unsupported=values.get(\"description_refused\", False),\n",
+    "new": "            unsupported=True,\n",
+    "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
+  },
+  {
+    "label": "both mode: a login that worked leaves the auth streak standing",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if self.api.login_went_through:\n            self.api.login_went_through = False\n            self._reset_auth_failures()\n",
+    "new": "        if False:\n            self.api.login_went_through = False\n            self._reset_auth_failures()\n",
+    "tests": "login_that_worked_ends_the_auth_streak_even_if_nothing_was_read or login_made_by_a_write_ends_the_auth_streak"
+  },
+  {
+    "label": "both mode: a tick that read nothing tells Home Assistant it recovered",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if not self.last_update_success:\n            # Caught as busy below",
+    "new": "        if False:\n            # Caught as busy below",
+    "tests": "read_nothing_leaves_home_assistant_in_its_outage"
+  },
+  {
+    "label": "login: a login that went through keeps quiet about it",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            self.login_went_through = True\n",
+    "new": "",
+    "tests": "login_that_went_through_says_so"
+  },
+  {
+    "label": "both mode: a tick margin wide enough to read ahead",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "TICK_TOLERANCE_SECONDS: Final = 2\n",
+    "new": "TICK_TOLERANCE_SECONDS: Final = 30\n",
+    "tests": "tick_well_before_the_api_interval_is_not_due"
+  },
+  {
+    "label": "discovery: a dropped login read as a dead session",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        session_gone = status_code == 401 or isinstance(\n",
+    "new": "        session_gone = not self.valid_login or isinstance(\n",
+    "tests": "re_read_the_real_transport_fails_keeps_the_cycle"
+  },
+  {
+    "label": "both mode: what a tick that read nothing changed kept from the entities",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            self.async_update_listeners()\n            raise NothingReadThisCycle(str(",
+    "new": "            raise NothingReadThisCycle(str(",
+    "tests": "read_nothing_still_publishes_what_it_changed"
+  },
+  {
+    "label": "auth streak: the login proof left unsettled when the fetch ends",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        finally:\n            self._end_the_auth_streak_after_a_login()\n",
+    "new": "        finally:\n            pass\n",
+    "tests": "login_earlier_in_the_refused_cycle_ends_the_auth_streak or login_made_by_a_write_ends_the_auth_streak or login_before_a_turned_away_relogin_ends_the_auth_streak or login_that_worked_ends_the_auth_streak_even_if_nothing_was_read"
+  },
+  {
+    "label": "both mode: a tick that read nothing wraps the reason it keeps",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            raise NothingReadThisCycle(str(self.last_exception))\n",
+    "new": "            raise NothingReadThisCycle(f\"Nothing was read; still: {self.last_exception}\")\n",
+    "tests": "ticks_that_read_nothing_keep_the_outage_reason_as_it_was"
+  },
+  {
+    "label": "discovery: a session redirected to the login read as one module's failure",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        session_gone = status_code == 401 or isinstance(\n            exc.__cause__, ExpiredSessionError\n        )\n",
+    "new": "        session_gone = status_code == 401\n",
+    "tests": "session_redirected_to_the_login_stops_the_re_read"
+  },
+  {
+    "label": "both mode: a tick that read nothing logged as a skipped cycle",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            except NothingReadThisCycle as exc:\n                # Before the busy handler, whose silences it shares but not its\n                # line: this cycle ran, and the reason is the outage's, not why\n                # the cycle stopped.\n                _LOGGER.debug(\"Nothing read this cycle; the outage goes on: %s\", exc)\n                raise UpdateFailed(str(exc)) from exc\n",
+    "new": "",
+    "tests": "tick_that_read_nothing_is_not_logged_as_skipped"
   }
 ]

@@ -143,6 +143,7 @@ class WemPortalTransport:
         username: str
         password: str
         valid_login: bool
+        login_went_through: bool
         api_version: str | None
         _api_lock: threading.Lock
         session: requests.Session | None
@@ -686,6 +687,8 @@ class WemPortalTransport:
             # issue when asking for help.
             _LOGGER.debug("API login successful.")
             self.valid_login = True
+            # Ends the coordinator's auth streak, whoever logged in.
+            self.login_went_through = True
             self._account_state.refused_logins = 0
 
         except ValueError as exc:  # Catches JSONDecodeError if response is HTML

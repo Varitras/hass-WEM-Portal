@@ -11,6 +11,7 @@ everyday run deselects them (see pytest.ini), CI runs them with `-m ""`.
 """
 
 import asyncio
+import logging
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -2299,6 +2300,216 @@ async def test_a_busy_api_does_not_trigger_the_recovery_swap(hass, monkeypatch):
         await coordinator._async_update_data()
 
     assert coordinator.api is api_before, "a busy api was replaced as if broken"
+
+
+async def test_a_tick_that_read_nothing_does_not_end_an_outage(hass, monkeypatch):
+    """`both` mode with the API not due and the scrape failed or held back:
+    nothing was read, and counting it as a working cycle cleared the failure
+    count of an API that failed on every tick it was due."""
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_failed = 2
+    coordinator.num_auth_failed = 2
+
+    def read_nothing(self, *_args, **_kwargs):
+        self.last_cycle_read_nothing = True
+        return self.data
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", read_nothing)
+
+    await coordinator._async_update_data()
+
+    assert coordinator.num_failed == 2, "a tick that read nothing ended the outage"
+    assert coordinator.num_auth_failed == 2
+
+
+def _read_nothing(logged_in):
+    def fetch(self, *_args, **_kwargs):
+        self.last_cycle_read_nothing = True
+        self.login_went_through = logged_in
+        return self.data
+
+    return fetch
+
+
+async def test_a_login_that_worked_ends_the_auth_streak_even_if_nothing_was_read(
+    hass, monkeypatch
+):
+    """The streak counts logins refused IN A ROW, and a login that went
+    through ends it whatever else the tick read. Left standing across such a
+    tick, a later refusal asked for new credentials that had just worked."""
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_failed = 2
+    coordinator.num_auth_failed = 2
+    monkeypatch.setattr(WemPortalApi, "fetch_data", _read_nothing(logged_in=True))
+
+    await coordinator._async_update_data()
+
+    assert coordinator.num_auth_failed == 0
+    assert coordinator.num_failed == 2
+
+
+async def test_a_login_made_by_a_write_ends_the_auth_streak(hass, monkeypatch):
+    """The streak counts refusals IN A ROW. A write that logged in between two
+    refused cycles broke the row, and the next refusal was still counted as
+    the third - asking for new credentials that had just worked."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import AuthError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_auth_failed = 2
+    coordinator.api.login_went_through = True  # what the write's login left
+
+    def refused(self, *_args, **_kwargs):
+        raise AuthError("login refused")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", refused)
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert coordinator.num_auth_failed == 1
+
+
+async def test_a_login_earlier_in_the_refused_cycle_ends_the_auth_streak(
+    hass, monkeypatch
+):
+    """A cycle that logged in, then had its relogin after a 401 refused: the
+    login broke the row, yet the refusal was counted onto the old streak as
+    the third - asking for new credentials that had worked moments before."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import AuthError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_auth_failed = 2
+
+    def logged_in_then_refused(self, *_args, **_kwargs):
+        self.login_went_through = True
+        raise AuthError("relogin refused")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", logged_in_then_refused)
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert coordinator.num_auth_failed == 1
+
+
+async def test_a_login_before_a_turned_away_relogin_ends_the_auth_streak(
+    hass, monkeypatch
+):
+    """The firewall's refusal says nothing about the password, but the login
+    before it did. Left on the api, that proof went with it when a failed
+    setup rebuilt the api, while the account kept the count - and the next
+    setup's refusal asked for new credentials that had just worked."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import LoginRefused
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_auth_failed = 2
+    coordinator._account_state.auth_failures = 2
+
+    def logged_in_then_turned_away(self, *_args, **_kwargs):
+        self.login_went_through = True
+        raise LoginRefused("HTTP 403, no status or message in the answer")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", logged_in_then_turned_away)
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert coordinator._account_state.auth_failures == 0
+    assert coordinator.num_auth_failed == 0
+
+
+async def test_a_tick_that_read_nothing_still_publishes_what_it_changed(
+    hass, monkeypatch
+):
+    """A scrape failing for the third time blanks its values in place, in a
+    cycle that read nothing. Staying in the outage must not keep that from
+    the entities, which went on showing the old values."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.last_update_success = False
+    coordinator.last_exception = UpdateFailed("the portal answered 500")
+    told = []
+    coordinator.async_add_listener(lambda: told.append(1))
+    monkeypatch.setattr(WemPortalApi, "fetch_data", _read_nothing(logged_in=False))
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert told, "the entities were not told"
+
+
+async def test_a_tick_that_read_nothing_leaves_home_assistant_in_its_outage(
+    hass, monkeypatch
+):
+    """Returned normally, it told Home Assistant the outage was over: a
+    "recovered" line, and a fresh error the next time the API failed."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_failed = 2
+    coordinator.last_update_success = False
+    coordinator.last_exception = UpdateFailed("the portal answered 500")
+    monkeypatch.setattr(WemPortalApi, "fetch_data", _read_nothing(logged_in=False))
+
+    with pytest.raises(UpdateFailed, match="answered 500"):
+        await coordinator._async_update_data()
+    assert coordinator.num_failed == 2
+
+
+async def test_ticks_that_read_nothing_keep_the_outage_reason_as_it_was(
+    hass, monkeypatch
+):
+    """Each such tick wrapped the reason Home Assistant held, which was the
+    previous tick's own wrapping: "still: still: still: ..." as the
+    coordinator's last_exception, one layer per cycle of the outage."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.last_update_success = False
+    coordinator.last_exception = UpdateFailed("the portal answered 500")
+    monkeypatch.setattr(WemPortalApi, "fetch_data", _read_nothing(logged_in=False))
+
+    await coordinator.async_refresh()
+    await coordinator.async_refresh()
+
+    assert str(coordinator.last_exception) == "the portal answered 500"
+
+
+async def test_a_tick_that_read_nothing_is_not_logged_as_skipped(
+    hass, monkeypatch, caplog
+):
+    """It ran - only nothing was due or the scrape failed - yet the debug log
+    said "Skipping this cycle" with an error from cycles ago, as if that error
+    had stopped this one."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.last_update_success = False
+    coordinator.last_exception = UpdateFailed("the portal answered 500")
+    monkeypatch.setattr(WemPortalApi, "fetch_data", _read_nothing(logged_in=False))
+    caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert "Skipping this cycle" not in caplog.text
+    assert "Nothing read this cycle" in caplog.text
 
 
 async def test_a_busy_api_counts_neither_for_nor_against_the_credentials(
