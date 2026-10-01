@@ -568,8 +568,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             # Caught as busy below: no counter moves, and Home Assistant says
             # nothing about a failure following a failure. What the cycle
             # did change - a scrape's values aged out - is still published.
-            # The reason as it was: it is what the entry shows, and wrapping
-            # it nested one layer deeper on every cycle of the outage.
+            # The reason as it was: Home Assistant keeps it as the
+            # coordinator's last_exception, and wrapping it nested one layer
+            # deeper on every cycle of the outage.
             self.async_update_listeners()
             raise NothingReadThisCycle(str(self.last_exception))
         return fetched
@@ -677,6 +678,12 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                     "deadline", "Poll cycle stopped on its own deadline", exc
                 )
                 raise UpdateFailed(str(exc)) from exc
+            except NothingReadThisCycle as exc:
+                # Before the busy handler, whose silences it shares but not its
+                # line: this cycle ran, and the reason is the outage's, not why
+                # the cycle stopped.
+                _LOGGER.debug("Nothing read this cycle; the outage goes on: %s", exc)
+                raise UpdateFailed(str(exc)) from exc
             except ApiBusyError as exc:
                 # NOT a corrupted session: a previous poll is still running.
                 # Must be caught BEFORE the WemPortalError handler below, or
@@ -692,7 +699,6 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # and nothing was learnt about the credentials either - the
                 # auth streak is reset by cycles that REACHED the portal
                 # without an auth failure, which is evidence this one lacks.
-                # NothingReadThisCycle comes here for the same silences.
                 _LOGGER.debug("Skipping this cycle: %s", exc)
                 raise UpdateFailed(str(exc)) from exc
             except WemPortalError as exc:

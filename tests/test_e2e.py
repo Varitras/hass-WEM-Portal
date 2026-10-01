@@ -11,6 +11,7 @@ everyday run deselects them (see pytest.ini), CI runs them with `-m ""`.
 """
 
 import asyncio
+import logging
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -2473,8 +2474,8 @@ async def test_ticks_that_read_nothing_keep_the_outage_reason_as_it_was(
     hass, monkeypatch
 ):
     """Each such tick wrapped the reason Home Assistant held, which was the
-    previous tick's own wrapping: "still: still: still: ..." on the entry,
-    one layer per cycle of the outage."""
+    previous tick's own wrapping: "still: still: still: ..." as the
+    coordinator's last_exception, one layer per cycle of the outage."""
     from homeassistant.helpers.update_coordinator import UpdateFailed
 
     entry = await _setup(hass, _entry(hass))
@@ -2487,6 +2488,28 @@ async def test_ticks_that_read_nothing_keep_the_outage_reason_as_it_was(
     await coordinator.async_refresh()
 
     assert str(coordinator.last_exception) == "the portal answered 500"
+
+
+async def test_a_tick_that_read_nothing_is_not_logged_as_skipped(
+    hass, monkeypatch, caplog
+):
+    """It ran - only nothing was due or the scrape failed - yet the debug log
+    said "Skipping this cycle" with an error from cycles ago, as if that error
+    had stopped this one."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.last_update_success = False
+    coordinator.last_exception = UpdateFailed("the portal answered 500")
+    monkeypatch.setattr(WemPortalApi, "fetch_data", _read_nothing(logged_in=False))
+    caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert "Skipping this cycle" not in caplog.text
+    assert "Nothing read this cycle" in caplog.text
 
 
 async def test_a_busy_api_counts_neither_for_nor_against_the_credentials(

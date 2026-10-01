@@ -4787,5 +4787,12 @@
     "old": "        session_gone = status_code == 401 or isinstance(\n            exc.__cause__, ExpiredSessionError\n        )\n",
     "new": "        session_gone = status_code == 401\n",
     "tests": "session_redirected_to_the_login_stops_the_re_read"
+  },
+  {
+    "label": "both mode: a tick that read nothing logged as a skipped cycle",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            except NothingReadThisCycle as exc:\n                # Before the busy handler, whose silences it shares but not its\n                # line: this cycle ran, and the reason is the outage's, not why\n                # the cycle stopped.\n                _LOGGER.debug(\"Nothing read this cycle; the outage goes on: %s\", exc)\n                raise UpdateFailed(str(exc)) from exc\n",
+    "new": "",
+    "tests": "tick_that_read_nothing_is_not_logged_as_skipped"
   }
 ]
