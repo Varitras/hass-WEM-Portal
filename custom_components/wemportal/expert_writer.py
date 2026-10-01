@@ -217,10 +217,10 @@ EXPERT_SECURITY_CODE_FIELD: Final = "ctl00$DialogContent$tbxSecurityCode"
 # The age cap is deliberate: a reuse attempt that fails costs two extra
 # requests before falling back to a login, so we only try while the session is
 # plausibly still alive. It was fifteen minutes, an assumed lifetime, which
-# sent every hourly auto-poll to a full login. Measured instead: a web
-# session idle for seventy minutes was still logged in, and its login cookie
-# carries an eight-hour expiry. Two hours covers the hourly poll and its
-# jitter with room to spare. Kept in memory only - a session cookie is as
+# sent every hourly auto-poll to a full login. Measured instead: sessions idle
+# 70 and 80 minutes were still logged in, one idle 130 was not; the hourly poll
+# (at most 72 minutes apart) stays inside, and past the window a reuse costs
+# one request before the login. Kept in memory only - a session cookie is as
 # good as a credential and has no business on disk.
 EXPERT_SESSION_MAX_AGE_SECONDS: Final = 2 * 3600
 
