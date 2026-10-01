@@ -948,7 +948,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         persists this stamp, so it has no restart to survive, and a clock
         change must not hand out a free read (or withhold one for hours).
 
-        With the same tolerance as the scrape gate. Home Assistant plans the
+        With a tolerance narrower than the scrape gate's. HA plans the
         next tick from when the cycle ended, but rounds the loop time down
         first, so a tick lands up to a second early; measured without the
         tolerance, a five-minute API read came every 7.5 to 9.5 minutes.

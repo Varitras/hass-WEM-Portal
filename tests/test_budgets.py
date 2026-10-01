@@ -60,13 +60,13 @@ LINE_BUDGETS = {
     # And by 9 for one check of the retry time, asked by both collectors.
     # And by 9 for telling a failed refresh of a working parameter list from
     # a refusal of the account, in a helper of its own.
-    # And by 1 for the tick tolerance both `both`-mode gates now share.
+    # And by 1 for the API gate's own tick tolerance.
     # And by 9 for a `both`-mode tick saying it read nothing, so it does not
     # pass for a recovery.
     # And by 12 for keeping an empty list and stopping on a dead session in
     # that same refresh.
-    # And by 6 for a tick saying whether it logged in, which ends the auth
-    # streak even when nothing was read, and 2 for why the tick margin is ten.
+    # And by 6 for a login ending the auth streak even on a tick that read
+    # nothing, and 2 for why the two gates' tick margins differ.
     # And by 6 for knowing a dead session by its cause, not by the login flag.
     "wemportalapi.py": 2689,
     # Over the default by six: a login a firewall turns away once is let
