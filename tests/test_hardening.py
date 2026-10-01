@@ -7652,6 +7652,29 @@ def test_a_session_that_ran_out_stops_the_re_read_at_the_first_module():
     assert len(calls) == 1, "discovery went on asking on a dead session"
 
 
+def test_a_session_redirected_to_the_login_stops_the_re_read(monkeypatch):
+    """The other face of a dead session: a 200 that landed on the login page.
+    Through the real transport, which is what turns that redirect into the
+    plain portal error discovery sees - with the expiry as its cause."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
+    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    api, _calls = _discovery_api([], fetched_at=stale)
+    api.modules["1234"][(1, 1)] = dict(api.modules["1234"][(0, 1)], Index=1)
+    del api.make_api_call  # the real one
+    posts = []
+
+    class _RedirectedToLogin:
+        def post(self, *_args, **_kwargs):
+            posts.append(1)
+            return FakeResponse(url="https://www.wemportal.com/Account/Login")
+
+    api.session = _RedirectedToLogin()
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.get_parameters()
+    assert len(posts) == 1, "discovery went on asking on a dead session"
+
+
 @pytest.mark.parametrize(
     "error",
     [

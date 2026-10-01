@@ -4780,5 +4780,12 @@
     "old": "            raise NothingReadThisCycle(str(self.last_exception))\n",
     "new": "            raise NothingReadThisCycle(f\"Nothing was read; still: {self.last_exception}\")\n",
     "tests": "ticks_that_read_nothing_keep_the_outage_reason_as_it_was"
+  },
+  {
+    "label": "discovery: a session redirected to the login read as one module's failure",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        session_gone = status_code == 401 or isinstance(\n            exc.__cause__, ExpiredSessionError\n        )\n",
+    "new": "        session_gone = status_code == 401\n",
+    "tests": "session_redirected_to_the_login_stops_the_re_read"
   }
 ]
