@@ -85,10 +85,15 @@ LINE_BUDGETS = {
     # And by 12 for the setup's web login following the scraper's rule, so a
     # single refusal there no longer pauses everything either.
     # And by 3 for a login saying it went through, whoever made it.
-    "transport.py": 921,
+    # And by 11 for saying who answered each of its four 403s, gateway or
+    # portal - five of them the import that no longer fits one line, three
+    # the login's, said before a maintenance wording can raise past it.
+    "transport.py": 932,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
-    "expert_writer.py": 1912,
+    # And by 12 for keeping a reused session only once it reached the
+    # Fachmann level, which the portal can quietly answer with the user one.
+    "expert_writer.py": 1924,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to
@@ -118,7 +123,9 @@ COMPLEXITY_BUDGETS = {
     # guard and a busy handler. Extracting it would be the pass-through helper
     # this file's header warns against.
     "__init__.py::_async_register_expert_service": 28,
-    "scraper.py::WemPortalScraper.scrape": 22,
+    # 23 since a reused page must also be the expert view, not the user
+    # view with its own panels.
+    "scraper.py::WemPortalScraper.scrape": 23,
     "sensor.py::_parse_schedule": 21,
     # 19 before the AuthError shield in front of its catch-all, which is
     # exactly the one branch.

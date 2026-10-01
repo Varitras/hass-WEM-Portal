@@ -1200,7 +1200,7 @@
   {
     "label": "reuse: logging in although the reused page worked must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                    if panels is not None:",
+    "old": "                    if panels is not None and is_expert_view(reused_html):",
     "new": "                    if False:",
     "tests": "reused_session_that_worked_does_not_log_in"
   },
@@ -1795,7 +1795,7 @@
   {
     "label": "login: a refused login PAGE reported as a network problem",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                raise self._refused_web_login(\n                    f\"the web login page {redact_url(login_url)}\",\n                    \"Access forbidden while loading the login page.\",\n                ) from exc\n            raise UnknownAuthError",
+    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                log_refusal(redact_url(login_url), initial_response)\n                raise self._refused_web_login(\n                    f\"the web login page {redact_url(login_url)}\",\n                    \"Access forbidden while loading the login page.\",\n                ) from exc\n            raise UnknownAuthError",
     "new": "            raise UnknownAuthError",
     "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
   },
@@ -3636,8 +3636,8 @@
   {
     "label": "boundary: the transport reaching for utils again must be caught",
     "path": "custom_components/wemportal/transport.py",
-    "old": "from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url",
-    "new": "from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url\nfrom .utils import parse_portal_number",
+    "old": "from .web_protocol import (\n    log_refusal,\n",
+    "new": "from .utils import parse_portal_number\nfrom .web_protocol import (\n    log_refusal,\n",
     "tests": "transport_imports_only_domain_free_siblings"
   },
   {
@@ -5046,5 +5046,117 @@
     "old": "            rows[0]\n            for key, rows in self.scraping_mapper.items()\n            if still_described(*key)\n        }\n",
     "new": "            row\n            for key, rows in self.scraping_mapper.items()\n            if still_described(*key)\n            for row in rows\n        }\n",
     "tests": "carries_the_week_only_on_the_row_its_fetch_maintains"
+  },
+  {
+    "label": "expert session: the hourly poll's session given up as too old",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "EXPERT_SESSION_MAX_AGE_SECONDS: Final = 2 * 3600\n",
+    "new": "EXPERT_SESSION_MAX_AGE_SECONDS: Final = 900\n",
+    "tests": "the_session_of_the_last_hourly_poll_is_reused"
+  },
+  {
+    "label": "expert session: a reuse that worked does not say the session's age",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            \"Expert path reused the cached session after %.0fs (no login needed).\",\n            age,\n",
+    "new": "            \"Expert path reused the cached session after %.0fs (no login needed).\",\n            0,\n",
+    "tests": "a_reuse_says_how_old_the_session_was"
+  },
+  {
+    "label": "expert session: a dead reuse does not say the session's age",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                \"logging in fresh.\",\n                age,\n",
+    "new": "                \"logging in fresh.\",\n                0,\n",
+    "tests": "a_reuse_says_how_old_the_session_was"
+  },
+  {
+    "label": "refusal: the scraper's 403 says nothing of who answered",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            log_refusal(where, response)\n",
+    "new": "",
+    "tests": "the_scraper_says_who_refused_it"
+  },
+  {
+    "label": "refusal: the gateway's page described without its markup removed",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    excerpt = \" \".join(_MARKUP_RE.sub(\" \", str(text)).split())\n",
+    "new": "    excerpt = \" \".join(str(text).split())\n",
+    "tests": "a_refusal_names_who_answered"
+  },
+  {
+    "label": "refusal: an unreadable answer breaks the handling it describes",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    try:\n        server = (getattr(response, \"headers\", None) or {}).get(\"Server\")\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n",
+    "new": "    server = (getattr(response, \"headers\", None) or {}).get(\"Server\")\n    try:\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n",
+    "tests": "a_refusal_description_is_short_and_never_raises"
+  },
+  {
+    "label": "refusal: a long page logged whole",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "excerpt[:REFUSAL_EXCERPT_CHARS]",
+    "new": "excerpt",
+    "tests": "a_refusal_description_is_short_and_never_raises"
+  },
+  {
+    "label": "refusal: an API request's 403 says nothing of who answered",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            log_refusal(redact_url(url), response)\n",
+    "new": "",
+    "tests": "every_refusal_says_who_answered"
+  },
+  {
+    "label": "refusal: the web login form's 403 says nothing of who answered",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                log_refusal(redact_url(login_url), response)\n",
+    "new": "",
+    "tests": "every_refusal_says_who_answered"
+  },
+  {
+    "label": "refusal: a login refused in maintenance wording says nothing of who answered",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if response.status_code == 403:\n            log_refusal(redact_url(API_LOGIN_URL), response)\n",
+    "new": "",
+    "tests": "maintenance_message_still_says_who_answered"
+  },
+  {
+    "label": "expert session: a reuse on the user level kept",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if not is_expert_view(self._expert_level_html or \"\"):\n",
+    "new": "            if False:\n",
+    "tests": "kept_only_on_the_fachmann_level"
+  },
+  {
+    "label": "expert session: the page the Fachmann postback got not kept for the check",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self._expert_level_html = current_html\n",
+    "new": "",
+    "tests": "kept_only_on_the_fachmann_level"
+  },
+  {
+    "label": "reuse: the user view taken for the expert view",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                    if panels is not None and is_expert_view(reused_html):",
+    "new": "                    if panels is not None:",
+    "tests": "on_the_user_view_logs_in_fresh"
+  },
+  {
+    "label": "expert view: the user view's key taken for the Fachmann level",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "EXPERT_VIEW_KEY: Final = \"223\"\n",
+    "new": "EXPERT_VIEW_KEY: Final = \"222\"\n",
+    "tests": "only_the_fachmann_page_is_the_expert_view"
+  },
+  {
+    "label": "refusal: an unreadable body costs the server that sent it",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "        return f\"server={server or 'not named'}, body=unreadable\"\n",
+    "new": "        return \"server=not named, body=unreadable\"\n",
+    "tests": "unreadable_body_keeps_the_server_that_sent_it"
+  },
+  {
+    "label": "expert view: a longer key that merely starts like the Fachmann one",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    return value is not None and value[1].startswith(f\"{EXPERT_VIEW_KEY}###\")\n",
+    "new": "    return value is not None and value[1].startswith(EXPERT_VIEW_KEY)\n",
+    "tests": "only_the_fachmann_page_is_the_expert_view"
   }
 ]

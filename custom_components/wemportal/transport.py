@@ -56,7 +56,12 @@ from .mobile_protocol import (
     status_is_success,
     what_the_server_said,
 )
-from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url
+from .web_protocol import (
+    log_refusal,
+    maintenance_blocking,
+    message_reports_maintenance,
+    redact_url,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -454,6 +459,7 @@ class WemPortalTransport:
         )
 
         if status_code == 403:
+            log_refusal(redact_url(url), response)
             # A 403 means the server is already unhappy with our request
             # rate - immediately retrying with a fresh login (as we do for a
             # plain expired session below) would itself be an extra request
@@ -467,11 +473,10 @@ class WemPortalTransport:
                 f"({what_the_server_said(response.status_code, server_status, server_message)})"
             )
             # Not at odds with the "no extra request" note above: this login
-            # is spent after the cooldown, when the session has idled the 15
-            # minutes at which the expert path stops trusting one
-            # (EXPERT_SESSION_MAX_AGE_SECONDS) - and a failed reuse costs two
-            # requests where a fresh login costs one. Assumed, not measured:
-            # that number is the web session's, this is the mobile API's.
+            # is spent after the cooldown, and a failed reuse costs two
+            # requests where a fresh login costs one. How long this mobile-API
+            # session outlives an idle spell is not measured; the expert
+            # path's cap (EXPERT_SESSION_MAX_AGE_SECONDS) is the web session's.
             self.valid_login = False
             forbidden_error = ForbiddenError(
                 f"{DATA_GATHERING_ERROR} "
@@ -736,6 +741,10 @@ class WemPortalTransport:
             response.status_code, response_status, response_message
         )
 
+        # Before the maintenance check, which raises on the wording alone: a
+        # refusal phrased as downtime still says which server sent it.
+        if response.status_code == 403:
+            log_refusal(redact_url(API_LOGIN_URL), response)
         if message_reports_maintenance(response_message):
             # A login refused during planned downtime, not a credential problem.
             # The API carries no offlinecontent marker like the web page - only
@@ -821,6 +830,7 @@ class WemPortalTransport:
             # read like a network problem, invited an immediate retry, and
             # started no cooldown, so the next cycle walked into it again.
             if initial_response is not None and initial_response.status_code == 403:
+                log_refusal(redact_url(login_url), initial_response)
                 raise self._refused_web_login(
                     f"the web login page {redact_url(login_url)}",
                     "Access forbidden while loading the login page.",
@@ -914,6 +924,7 @@ class WemPortalTransport:
             )
         except requests.exceptions.RequestException as exc:
             if response is not None and response.status_code == 403:
+                log_refusal(redact_url(login_url), response)
                 raise self._refused_web_login(
                     f"the web login form {redact_url(login_url)}",
                     "Access forbidden during login.",

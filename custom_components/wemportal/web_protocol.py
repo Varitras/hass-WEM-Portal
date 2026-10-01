@@ -149,6 +149,58 @@ def redact_url(url: object) -> str:
         return _UNKNOWN_URL
 
 
+# The portal sits behind an Azure Application Gateway, whose firewall answers
+# a request it refuses with a page of its own. Whether a bare 403 came from
+# there or from the portal decides what the refusal is about, and nothing
+# logged which. Short: it goes into a debug line, not into a dump.
+REFUSAL_EXCERPT_CHARS: Final = 160
+_MARKUP_RE = re.compile(r"<[^>]*>")
+
+
+def describe_refusal(response: object) -> str:
+    """Who answered a 403: the Server header and the start of the body,
+    markup and runs of whitespace removed.
+
+    Never raises - it runs inside the handling of the refusal it describes.
+    """
+    # Read apart: an unreadable body must not cost the header read before it.
+    server = None
+    try:
+        server = (getattr(response, "headers", None) or {}).get("Server")
+        text = getattr(response, "text", "") or ""
+    except Exception:  # noqa: BLE001
+        return f"server={server or 'not named'}, body=unreadable"
+    server = server or "not named"
+    excerpt = " ".join(_MARKUP_RE.sub(" ", str(text)).split())
+    return f"server={server}, body={excerpt[:REFUSAL_EXCERPT_CHARS] or 'empty'}"
+
+
+def log_refusal(where: str, response: object) -> None:
+    """The debug line every 403 gets, wherever it is met."""
+    _LOGGER.debug("403 for %s: %s", where, describe_refusal(response))
+
+
+# The view a page shows, as the server writes it: the page state field starts
+# with the view's submenu key - measured on a live account, 222### on the user
+# view a session lands on after its login, 223### on the Fachmann level, 110###
+# on the overview. The panels cannot tell user view and Fachmann level apart
+# (four each, 25 readings against 67), and the Fachmann page's security-code
+# window is only set while the code is still to be entered.
+EXPERT_VIEW_KEY: Final = "223"
+_PAGE_STATE_TAG_RE = re.compile(r'<input\b[^>]*\bname="__ECNPAGEVIEWSTATE"[^>]*>')
+_VALUE_ATTRIBUTE_RE = re.compile(r'\bvalue="([^"]*)"')
+
+
+def is_expert_view(html_text: str) -> bool:
+    """Whether a page is the Fachmann level rather than the user view or the
+    overview, which a postback the portal did not honour answers with."""
+    tag = _PAGE_STATE_TAG_RE.search(html_text or "")
+    if tag is None:
+        return False
+    value = _VALUE_ATTRIBUTE_RE.search(tag[0])
+    return value is not None and value[1].startswith(f"{EXPERT_VIEW_KEY}###")
+
+
 def is_login_page(url: object) -> bool:
     """Whether a response came from the web login page.
 

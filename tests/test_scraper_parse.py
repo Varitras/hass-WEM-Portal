@@ -11,6 +11,7 @@ LOGIC; it does not prove the real portal still emits this structure.
 """
 
 import contextlib
+import logging
 import time
 import types
 
@@ -43,6 +44,27 @@ def _panel(header, rows, value_cell_class="simpleDataValueCell"):
         <table class="simpleDataTable"><tbody>{row_html}</tbody></table>
       </div>
     </div>"""
+
+
+# How the Fachmann page announces itself in the server's own answer: the
+# configuration of its security-code window. The user view and the overview
+# carry the same panels or none, but never this.
+def _view_state(view_key):
+    """The page state field as the portal renders it: the key of the view
+    the page shows (110 overview, 222 user, 223 Fachmann) comes first."""
+    return (
+        '<input type="hidden" name="__ECNPAGEVIEWSTATE" '
+        f'id="__ECNPAGEVIEWSTATE" value="{view_key}###state" />'
+    )
+
+
+# The Fachmann page's security-code window, which the server only sets while
+# the code is still to be entered: no evidence of the level on its own.
+CODE_WINDOW = (
+    '<script>$create(Telerik.Web.UI.RadWindow, {"name":"RDWindow",'
+    '"navigateUrl":"UControls/Weishaupt/DataDisplay/CodeExpertsDetails.aspx",'
+    '"visibleOnPageLoad":true});</script>'
+)
 
 
 def _page(*panels):
@@ -255,6 +277,7 @@ def test_session_cache_round_trip_survives_a_new_client():
     )
     second._full_login = lambda: _fail("cached session must be reused")
     second._establish_context = lambda: restored.update(second.session.cookies)
+    second._expert_level_html = _expert_page()
 
     second._login()
 
@@ -294,12 +317,126 @@ def test_expert_session_is_reused_instead_of_logging_in():
     before = jar["saved_at"]
     client = _client_with_jar(jar)
     client._establish_context = lambda: None
+    client._expert_level_html = _expert_page()
 
     client._login()
 
     # `saved_at >= 0` proved nothing - monotonic() is always >= 0 and the
     # fixture had just set it. Assert the cache was really refreshed.
     assert jar["saved_at"] > before, "session cache was not refreshed"
+
+
+@pytest.mark.parametrize(
+    ("view", "kept"),
+    [("fachmann", True), ("user-level", False)],
+    ids=["fachmann", "user-level"],
+)
+def test_a_reused_expert_session_is_kept_only_on_the_fachmann_level(
+    monkeypatch, view, kept
+):
+    """The submenu postback a reused session sends is answered with the user
+    level when the portal no longer honours it - HTTP 200, no redirect. The
+    session was kept and refreshed, and every read came back empty. Through
+    the real navigation: the page it checks is the one that postback got."""
+    from custom_components.wemportal import expert_writer
+
+    class _Answer:
+        status_code = 200
+        url = "https://www.wemportal.com/Web/Default.aspx"
+
+        def __init__(self, text):
+            self.text = text
+
+    class _Portal:
+        cookies = {}
+
+        def get(self, *_args, **_kwargs):
+            return _Answer("<html><input name='__VIEWSTATE' value='vs'/></html>")
+
+        def post(self, *_args, **_kwargs):
+            return _Answer(
+                {"fachmann": _expert_page, "user-level": _user_view_page}[view]()
+            )
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_kwargs: _Portal())
+    jar = {"cookies": {"ASP.NET_SessionId": "abc"}, "saved_at": time.monotonic() - 100}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+
+    assert client._try_cached_session() is kept
+    assert bool(jar.get("cookies")) is kept
+
+
+def test_the_session_of_the_last_hourly_poll_is_reused():
+    """The cap was fifteen minutes, an assumed session lifetime, while the
+    auto-poll runs hourly: every poll logged in afresh, and a full login is
+    what the portal turns away. Measured, a session idle for seventy minutes
+    was still logged in."""
+    from custom_components.wemportal import expert_controller, expert_writer
+    from custom_components.wemportal.const import DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+
+    longest_gap = (
+        DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+        * 60
+        * (1 + expert_controller.JITTER_FRACTION)
+    )
+    jar = {
+        "cookies": {"ASP.NET_SessionId": "abc"},
+        "saved_at": time.monotonic() - longest_gap,
+    }
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    logins = []
+    attempts = []
+    client._full_login = lambda: logins.append(True)
+    client._establish_context = lambda: attempts.append(True)
+    client._expert_level_html = _expert_page()
+
+    client._login()
+
+    assert attempts == [True], "the session of the last poll was not tried"
+    assert logins == []
+
+
+@pytest.mark.parametrize("alive", [True, False], ids=["reused", "dead"])
+def test_a_reuse_says_how_old_the_session_was(alive, caplog):
+    """The cap rests on one measurement in a browser. The age at which a
+    session is still taken or already gone is what the log has to show to
+    check it in operation."""
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import AuthError
+
+    jar = {
+        "cookies": {"ASP.NET_SessionId": "abc"},
+        "saved_at": time.monotonic() - 4200,
+    }
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+
+    def establish():
+        if not alive:
+            raise AuthError("session not accepted")
+
+    client._establish_context = establish
+    client._expert_level_html = _expert_page()
+    client._save_session = lambda: None
+    client.close = lambda: None
+    caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")
+
+    client._try_cached_session()
+
+    said = (
+        "reused the cached session after 4200s"
+        if alive
+        else "no longer usable after 4200s"
+    )
+    assert said in caplog.text
 
 
 def test_expired_cache_logs_in_again():
@@ -682,7 +819,18 @@ def test_a_portal_answer_does_not_trigger_a_full_login(answer):
 
 
 def _expert_page():
-    return _page(_panel("Heat pump", [("Outside temperature", "12.3 C")]))
+    """The Fachmann level - without the code window, as it is once the code
+    has been entered or where an account is never asked for it."""
+    return _page(
+        _panel("Heat pump", [("Outside temperature", "12.3 C")]), _view_state(223)
+    )
+
+
+def _user_view_page():
+    """The user view: panels like the expert view, but fewer rows."""
+    return _page(
+        _panel("Heat pump", [("Outside temperature", "12.3 C")]), _view_state(222)
+    )
 
 
 def _with_cached_session(scraper, reused_html):
@@ -721,6 +869,36 @@ def test_a_reused_session_that_missed_the_expert_page_logs_in_fresh(scraper, cap
     assert "no readable panels" not in str(excinfo.value).lower()
     assert "login page" in str(excinfo.value)
     assert "the reused session" in caplog.text
+
+
+def test_only_the_fachmann_page_is_the_expert_view():
+    """The panels were the test, and the user view has them too: on a live
+    account both views showed four, one with 25 readings, the other 67."""
+    from custom_components.wemportal.web_protocol import is_expert_view
+
+    assert is_expert_view(_expert_page())
+    assert is_expert_view(_page(_view_state(223), CODE_WINDOW))
+    assert not is_expert_view(_user_view_page())
+    assert not is_expert_view(_page(_view_state(110)))
+    assert not is_expert_view(_page(_view_state(2230)))
+    assert not is_expert_view("")
+
+
+def test_a_reused_session_on_the_user_view_logs_in_fresh(scraper):
+    """The main page a session lands on after a login is the user view. A
+    reuse whose Expert-tab postback is not honoured gets that page back -
+    with panels, so it passed, and the scrape published a third of its
+    readings while the rest went to unknown."""
+    from custom_components.wemportal.exceptions import ServerError
+
+    _with_cached_session(scraper, _user_view_page())
+
+    with pytest.raises(ServerError) as excinfo:
+        scraper.scrape()
+
+    assert "login page" in str(excinfo.value), (
+        "the user view was taken as the expert view"
+    )
 
 
 def test_a_reused_session_that_worked_does_not_log_in(scraper):
@@ -1005,8 +1183,7 @@ _ANNOUNCED_LOGIN_PAGE = (
     ids=["plain", "cookieless"],
 )
 def test_an_expired_session_during_an_announcement_falls_back_to_a_login(login_url):
-    """Sessions run out after about fifteen minutes and the scrape runs every
-    thirty, so the reuse path lands on the login page almost every time. With
+    """A reused session that ran out lands on the login page. With
     an announcement on that page the marker was read BEFORE the redirect, and
     the reuse path re-raises maintenance instead of logging in fresh - the
     same four hours of outage, one layer down. A login page on the reuse path

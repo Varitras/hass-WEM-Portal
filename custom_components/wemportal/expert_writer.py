@@ -41,6 +41,8 @@ from .exceptions import (
 from .models import account_state
 from .utils import parse_portal_number
 from .web_protocol import (
+    log_refusal,
+    is_expert_view,
     is_login_page,
     maintenance_blocking,
     maintenance_notice,
@@ -214,9 +216,13 @@ EXPERT_SECURITY_CODE_FIELD: Final = "ctl00$DialogContent$tbxSecurityCode"
 #
 # The age cap is deliberate: a reuse attempt that fails costs two extra
 # requests before falling back to a login, so we only try while the session is
-# plausibly still alive. Kept in memory only - a session cookie is as good as
-# a credential and has no business on disk.
-EXPERT_SESSION_MAX_AGE_SECONDS: Final = 900  # 15 minutes
+# plausibly still alive. It was fifteen minutes, an assumed lifetime, which
+# sent every hourly auto-poll to a full login. Measured instead: sessions idle
+# 70 and 80 minutes were still logged in, one idle 130 was not; the hourly poll
+# (at most 72 minutes apart) stays inside, and past the window a reuse costs
+# one request before the login. Kept in memory only - a session cookie is as
+# good as a credential and has no business on disk.
+EXPERT_SESSION_MAX_AGE_SECONDS: Final = 2 * 3600
 
 # Skip the module-select postback (True by default). A live read proved
 # the parameter dialog comes back fully populated WITHOUT selecting a
@@ -688,6 +694,9 @@ class WemPortalExpertClient:
         # the old fixed pre-poll loop with a demand-driven one (early exit
         # as soon as the dropdown is populated). Updated as polls advance.
         self._nav_html: str | None = None
+        # The page the Fachmann submenu postback answered with; see
+        # _try_cached_session for why it is kept apart from _nav_html.
+        self._expert_level_html: str | None = None
 
     # ------------------------------------------------------------------
     def _check_gates(self):
@@ -768,6 +777,7 @@ class WemPortalExpertClient:
             # REDACTED: the raw url carries the full entityvalue on the
             # parameter-dialog requests (params={"entityvalue": ...}).
             where = redact_url(getattr(response, "url", None))
+            log_refusal(where, response)
             # The one line for the event: the pause and the failed poll it
             # causes stay at debug. Info the first time - the next hourly
             # read usually goes through - a warning when it repeats.
@@ -839,6 +849,14 @@ class WemPortalExpertClient:
 
         try:
             self._establish_context()
+            # A reused session's submenu postback the portal no longer
+            # honours comes back HTTP 200 on the user level: kept, every read
+            # was empty and the next operation reused it again. Only here -
+            # after a fresh login there is nothing fresher to fall back to.
+            if not is_expert_view(self._expert_level_html or ""):
+                raise AuthError(
+                    "Expert client: the reused session stayed on the user level."
+                )
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
         except ForbiddenError, PortalMaintenanceError, ServerError:
             # All three are ANSWERS, not signs that the cached session went
@@ -859,8 +877,13 @@ class WemPortalExpertClient:
             # re-raised above. What is left really is a stale session -
             # AuthError, a dropped connection - and a fresh login is the
             # right answer to those.
+            # The age either way: the cap rests on one measurement, and these
+            # two lines are how it is checked in operation.
             _LOGGER.debug(
-                "Cached expert session no longer usable (%s), logging in fresh.", exc
+                "Cached expert session no longer usable after %.0fs (%s), "
+                "logging in fresh.",
+                age,
+                exc,
             )
             # Out of the account's shared cache too, however the login ends.
             self._cookie_jar.pop("cookies", None)
@@ -868,7 +891,10 @@ class WemPortalExpertClient:
             return False
 
         self._save_session()
-        _LOGGER.debug("Expert path reused the cached session (no login needed).")
+        _LOGGER.debug(
+            "Expert path reused the cached session after %.0fs (no login needed).",
+            age,
+        )
         return True
 
     def _save_session(self):
@@ -1013,6 +1039,7 @@ class WemPortalExpertClient:
                 EXPERT_SUBMENU_CLIENTSTATE_FIELD: EXPERT_SUBMENU_CLIENTSTATE_VALUE,
             },
         )
+        self._expert_level_html = current_html
         # --- Fachmann security-code sub-sequence (retained safety net) ---
         # DISABLED by default (EXPERT_SKIP_SECURITY_CODE, at the top of THIS
         # file - const.py has never held it).

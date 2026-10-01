@@ -607,3 +607,326 @@ def test_the_login_page_guard_sees_every_shape_of_the_old_test(shape):
 
 def test_the_login_page_guard_leaves_a_request_to_the_login_page_alone():
     assert not _login_url_tests("session.get(WEB_LOGIN_URL, timeout=10)")
+
+
+# The Azure Application Gateway in front of the portal answers a request its
+# firewall refuses with a page of its own; this is how that page ends.
+_GATEWAY_REFUSAL_PAGE = (
+    "<html>\r\n<head><title>403 Forbidden</title></head>\r\n<body>\r\n"
+    "<center><h1>403 Forbidden</h1></center>\r\n"
+    "<hr><center>Microsoft-Azure-Application-Gateway/v2</center>\r\n"
+    "</body>\r\n</html>\r\n"
+)
+
+
+class _Refusal:
+    def __init__(self, text="", headers=None, url="https://www.wemportal.com/x"):
+        self.status_code = 403
+        self.text = text
+        self.headers = headers or {}
+        self.url = url
+
+
+def test_a_refusal_names_who_answered():
+    """A bare 403 came from the gateway's firewall or from the portal, and
+    the two mean different things; nothing logged which."""
+    from custom_components.wemportal.web_protocol import describe_refusal
+
+    said = describe_refusal(
+        _Refusal(
+            _GATEWAY_REFUSAL_PAGE,
+            {"Server": "Microsoft-Azure-Application-Gateway/v2"},
+        )
+    )
+
+    assert "server=Microsoft-Azure-Application-Gateway/v2" in said
+    assert "403 Forbidden 403 Forbidden Microsoft-Azure-Application-Gateway/v2" in said
+
+
+def test_a_refusal_description_is_short_and_never_raises():
+    """It runs inside error handling: a long page is cut, and a response
+    that cannot even be read still yields a line rather than an exception."""
+    from custom_components.wemportal.web_protocol import describe_refusal
+
+    class _Unreadable:
+        @property
+        def text(self):
+            raise UnicodeDecodeError("utf-8", b"", 0, 1, "bad")
+
+    class _UnreadableHeaders:
+        text = "fine"
+
+        @property
+        def headers(self):
+            raise RuntimeError("no headers here")
+
+    long_page = describe_refusal(_Refusal("x" * 5000))
+
+    assert len(long_page) < 300
+    assert describe_refusal(_Unreadable()) == "server=not named, body=unreadable"
+    assert describe_refusal(_UnreadableHeaders()) == "server=not named, body=unreadable"
+    assert describe_refusal(object()) == "server=not named, body=empty"
+
+
+def test_an_unreadable_body_keeps_the_server_that_sent_it():
+    """Who answered is the point of the line: an unreadable body cost the
+    header that had been read before it."""
+    from custom_components.wemportal.web_protocol import describe_refusal
+
+    class _GatewayWithAnUnreadableBody:
+        headers = {"Server": "Microsoft-Azure-Application-Gateway/v2"}
+
+        @property
+        def text(self):
+            raise UnicodeDecodeError("utf-8", b"", 0, 1, "bad")
+
+    assert describe_refusal(_GatewayWithAnUnreadableBody()) == (
+        "server=Microsoft-Azure-Application-Gateway/v2, body=unreadable"
+    )
+
+
+def test_the_scraper_says_who_refused_it(caplog):
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")
+
+    with pytest.raises(exceptions.ForbiddenError):
+        scraper._check_response(
+            _Refusal(_GATEWAY_REFUSAL_PAGE, {"Server": "Microsoft-IIS/10.0"}),
+            "main page",
+        )
+
+    assert "server=Microsoft-IIS/10.0" in caplog.text
+
+
+def _refusal_checks_without_a_description(source):
+    """Functions where a 403 can be met without saying who answered.
+
+    Per branch: one taken on a 403 must log before anything leaves it, or
+    follow an EARLIER branch on the identical condition that did, with the
+    names it compares not rebound in between. A 403 tested any other way -
+    `!=`, a condition kept in a variable, `match`, HTTPStatus.FORBIDDEN -
+    is beyond this check, so the function has to be declared instead.
+    """
+    import ast
+
+    def is_403(node):
+        return isinstance(node, ast.Constant) and node.value == 403
+
+    def compares_403(node):
+        return isinstance(node, ast.Compare) and any(
+            is_403(leaf)
+            for side in [node.left, *node.comparators]
+            for leaf in ast.walk(side)
+        )
+
+    def taken_on_403(test):
+        return any(
+            compares_403(part) and isinstance(part.ops[0], (ast.Eq, ast.In))
+            for part in ast.walk(test)
+        )
+
+    def calls_log_refusal(node):
+        return any(
+            isinstance(part, ast.Call)
+            and getattr(part.func, "id", getattr(part.func, "attr", None))
+            == "log_refusal"
+            for part in ast.walk(node)
+        )
+
+    def logs_first(branch):
+        for statement in branch.body:
+            if calls_log_refusal(statement):
+                return True
+            if isinstance(statement, (ast.Raise, ast.Return)):
+                return False
+        return False
+
+    def names(nodes):
+        return {
+            part.id
+            for node in nodes
+            for part in ast.walk(node)
+            if isinstance(part, ast.Name)
+        }
+
+    def rebound(function, wanted, after, before):
+        for node in ast.walk(function):
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.NamedExpr)):
+                targets = [node.target]
+            else:
+                continue
+            if after < node.lineno < before and names(targets) & wanted:
+                return True
+        return False
+
+    def untraceable(function, branch_tests):
+        in_a_branch = {id(part) for test in branch_tests for part in ast.walk(test)}
+        for node in ast.walk(function):
+            if compares_403(node) and (
+                id(node) not in in_a_branch
+                or not isinstance(node.ops[0], (ast.Eq, ast.In))
+            ):
+                return True
+            if isinstance(node, ast.MatchValue) and is_403(node.value):
+                return True
+            if isinstance(node, ast.Attribute) and node.attr == "FORBIDDEN":
+                return True
+        return False
+
+    def described_above(function, branch, earlier):
+        return any(
+            ast.dump(previous.test) == ast.dump(branch.test)
+            and logs_first(previous)
+            and not rebound(
+                function, names([branch.test]), previous.lineno, branch.lineno
+            )
+            for previous in earlier
+        )
+
+    found = []
+    for function in ast.walk(ast.parse(source)):
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        ifs = [node for node in ast.walk(function) if isinstance(node, ast.If)]
+        branches = sorted(
+            (node for node in ifs if taken_on_403(node.test)),
+            key=lambda node: node.lineno,
+        )
+        silent = untraceable(function, [node.test for node in ifs]) or any(
+            not logs_first(branch)
+            and not described_above(function, branch, branches[:index])
+            for index, branch in enumerate(branches)
+        )
+        if silent:
+            found.append(function.name)
+    return found
+
+
+# Functions that look at a 403 without holding the answer that carried it.
+_REFUSALS_SAID_ELSEWHERE = {
+    # Lets a 403 through (`!= 403`) to raise_for_status and _recover_or_raise,
+    # which says it.
+    ("transport.py", "make_api_call"),
+    # Reads the status off an exception; the answer was described where it
+    # arrived.
+    ("wemportalapi.py", "_survive_a_failed_description"),
+}
+
+
+def test_every_refusal_says_who_answered():
+    """Over the whole package: a seventh place that meets a 403 would
+    otherwise log nothing about whether the gateway or the portal refused."""
+    import pathlib
+
+    from custom_components import wemportal
+
+    package = pathlib.Path(wemportal.__file__).parent
+    silent = {
+        (source_file.name, name)
+        for source_file in sorted(package.glob("*.py"))
+        for name in _refusal_checks_without_a_description(
+            source_file.read_text(encoding="utf-8")
+        )
+    }
+
+    assert silent - _REFUSALS_SAID_ELSEWHERE == set()
+    assert _REFUSALS_SAID_ELSEWHERE <= silent, "an exemption no longer needed"
+
+
+def test_the_refusal_guard_looks_at_each_branch():
+    """One call anywhere in a function satisfied it, so the web login's
+    second 403 branch could go silent with the suite green. A condition
+    already described above may repeat without a second call."""
+    two_branches_one_silent = (
+        "def login(page, form):\n"
+        "    if page.status_code == 403:\n"
+        "        log_refusal(where, page)\n"
+        "    if form.status_code == 403:\n"
+        "        raise X\n"
+    )
+    a_tuple = "def handle(response):\n    if response.status_code in (403, 429):\n        raise X\n"
+    said_above = (
+        "def handle(response):\n"
+        "    if response.status_code == 403:\n"
+        "        log_refusal(where, response)\n"
+        "    if maintenance:\n"
+        "        raise M\n"
+        "    if response.status_code == 403:\n"
+        "        raise X\n"
+    )
+
+    assert _refusal_checks_without_a_description(two_branches_one_silent) == ["login"]
+    assert _refusal_checks_without_a_description(a_tuple) == ["handle"]
+    assert _refusal_checks_without_a_description(said_above) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # The identical branch that logs comes after the silent one.
+        "def handle(response):\n"
+        "    if response.status_code == 403:\n"
+        "        raise X\n"
+        "    if response.status_code == 403:\n"
+        "        log_refusal(where, response)\n",
+        # The call sits behind the raise and never runs.
+        "def handle(response):\n"
+        "    if response.status_code == 403:\n"
+        "        raise X\n"
+        "        log_refusal(where, response)\n",
+        # The same condition, but about another answer by then.
+        "def handle(response):\n"
+        "    if response.status_code == 403:\n"
+        "        log_refusal(where, response)\n"
+        "    response = post()\n"
+        "    if response.status_code == 403:\n"
+        "        raise X\n",
+        # Shapes the branch check cannot follow: they have to be declared.
+        "def handle(response):\n"
+        "    if response.status_code != 403:\n"
+        "        return response\n"
+        "    raise X\n",
+        "def handle(response):\n"
+        "    refused = response.status_code == 403\n"
+        "    if refused:\n"
+        "        raise X\n",
+        "def handle(response):\n"
+        "    match response.status_code:\n"
+        "        case 403:\n"
+        "            raise X\n",
+        "def handle(response):\n"
+        "    if response.status_code == HTTPStatus.FORBIDDEN:\n"
+        "        raise X\n",
+    ],
+    ids=[
+        "described-below",
+        "after-the-raise",
+        "rebound",
+        "not-equal",
+        "kept-in-a-variable",
+        "match",
+        "http-status",
+    ],
+)
+def test_the_refusal_guard_sees_through_these_shapes(source):
+    """Each of these met a 403 without a word about who answered, and the
+    per-branch check passed them all."""
+    assert _refusal_checks_without_a_description(source) == ["handle"]
+
+
+def test_the_refusal_guard_sees_a_silent_403():
+    assert _refusal_checks_without_a_description(
+        "def handle(response):\n    if response.status_code == 403:\n        raise X\n"
+    ) == ["handle"]
+    assert (
+        _refusal_checks_without_a_description(
+            "def handle(response):\n"
+            "    if response.status_code == 403:\n"
+            "        log_refusal(where, response)\n"
+        )
+        == []
+    )

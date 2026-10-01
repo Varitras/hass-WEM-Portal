@@ -8,6 +8,18 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A reused web session that lands on the user view logs in fresh.** When
+  the portal does not take a reused session's switch to the expert view, it
+  answers with the page a login starts on - for a single installation, the
+  user view - and no error. The web scrape then published only the readings
+  that view shows, about a third, and the rest went to unknown; the expert
+  parameters read nothing at all. Both now recognise the expert view and
+  log in fresh when they did not get it.
+- **The hourly expert read reuses its session instead of logging in each
+  time.** The cached web session was given up after fifteen minutes, an
+  assumed lifetime, so every hourly read began with a full login - the
+  request the portal turns away most often. A session measurably lasts
+  longer; it is now reused for up to two hours.
 - **A refused request no longer costs a login the next cycle.** A statistics
   group the heat pump does not have is refused every hour, and that dropped
   the session, so the next cycle logged in again - about 24 extra logins a
@@ -77,6 +89,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   from the web row it had been merged into; with the web scrape failing,
   that row went on showing the last value as current. A weekly programme
   that goes takes its phases with it.
+
+### Changed
+
+- **The debug log says more about a refusal and about the expert session.**
+  A 403 now logs the server that answered and the start of its page, which
+  tells the portal's own refusal from the firewall in front of it, and
+  every reuse of the expert session logs how old the session was.
 
 ## [1.14.0b3] – 2026-09-29
 
