@@ -5395,6 +5395,49 @@ def test_a_batch_read_without_an_abort_reads_everything():
     assert len(result) == 2
 
 
+def test_a_batch_read_stops_at_a_session_found_dead():
+    """A dialog sent to the login page is the session, not that id: the batch
+    went on with every further id over the same dead session - one more trip
+    to the login page each - and booked them all as unreadable ids."""
+    from custom_components.wemportal import expert_writer
+
+    read = []
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client._login = lambda: None
+    client.close = lambda: None
+
+    def fetch_form(entityvalue, *_args, **_kwargs):
+        read.append(entityvalue)
+        raise exceptions.AuthError("redirected to login when fetching the form")
+
+    client._fetch_form = fetch_form
+
+    with pytest.raises(exceptions.AuthError):
+        client.read_many(["a" * 36, "b" * 36, "c" * 36])
+    assert len(read) == 1, f"the batch kept reading on a dead session: {len(read)}"
+
+
+def test_a_discovery_stops_at_a_session_found_dead():
+    """Same for the module walk: each further module went to the login page,
+    and the search then reported "nothing found" instead of failing."""
+    from custom_components.wemportal import expert_writer
+
+    walked = []
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client._login = lambda: None
+    client.close = lambda: None
+
+    def fetch_module_page(module):
+        walked.append(module)
+        raise exceptions.AuthError("session expired during navigation")
+
+    client._fetch_module_page = fetch_module_page
+
+    with pytest.raises(exceptions.AuthError):
+        client.discover([{"label": "one"}, {"label": "two"}])
+    assert len(walked) == 1, f"the walk went on on a dead session: {len(walked)}"
+
+
 def test_a_write_without_an_abort_still_goes_through():
     """The gate must not block ordinary writes - without it the test above
     would pass on a client that never writes anything at all."""

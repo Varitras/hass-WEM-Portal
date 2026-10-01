@@ -20,7 +20,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   attempt first tried the old session cookie, which cost two requests - one
   of them to the login page. A session sent to the login page now counts as
   dead whatever that page answers, error or not. The same holds for the
-  session the expert parameters share.
+  session the expert parameters share, and a read of several of them or a
+  parameter search now stops there instead of sending every remaining
+  request to the login page; the search then reports that it failed rather
+  than that it found nothing.
 - **The login page is recognised the same way everywhere.** Five checks
   still looked for its address as a substring, and a session the portal
   keeps in the address instead of a cookie slipped past them: an expired

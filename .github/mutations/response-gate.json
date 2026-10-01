@@ -4759,5 +4759,19 @@
     "old": "            # dialog a multi-read books per id, left the dead session there.\n            self._cookie_jar.pop(\"cookies\", None)\n",
     "new": "            pass\n",
     "tests": "expert_answer_from_the_login_page_leaves_the_shared_cache"
+  },
+  {
+    "label": "expert batch: a multi-read goes on over a session found dead",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                # login page and be booked as unreadable.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError, AuthError:\n",
+    "new": "                # login page and be booked as unreadable.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError:\n",
+    "tests": "batch_read_stops_at_a_session_found_dead"
+  },
+  {
+    "label": "expert batch: a discovery walks on over a session found dead",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                # dead session, which every further module would only repeat.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError, AuthError:\n",
+    "new": "                # dead session, which every further module would only repeat.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError:\n",
+    "tests": "discovery_stops_at_a_session_found_dead"
   }
 ]

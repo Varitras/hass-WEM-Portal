@@ -1523,9 +1523,11 @@ class WemPortalExpertClient:
                 try:
                     result[entityvalue] = self._fetch_form(entityvalue)
                 # A 403 is about the connection, not this id: it has to reach
-                # the caller so the shared cooldown engages.
+                # the caller so the shared cooldown engages. A dead session
+                # is not this id's either: every further one would go to the
+                # login page and be booked as unreadable.
                 # skipcq: PYL-W0706 - shields the catch-all, not redundant
-                except ForbiddenError:
+                except ForbiddenError, AuthError:
                     raise
                 except Exception as exc:  # noqa: BLE001
                     _LOGGER.warning(
@@ -1574,9 +1576,10 @@ class WemPortalExpertClient:
                 try:
                     html_text = self._fetch_module_page(module)
                 # A 403 is about the connection, not this module: it has to
-                # reach the caller so the shared cooldown engages.
+                # reach the caller so the shared cooldown engages. So is a
+                # dead session, which every further module would only repeat.
                 # skipcq: PYL-W0706 - shields the catch-all, not redundant
-                except ForbiddenError:
+                except ForbiddenError, AuthError:
                     raise
                 except Exception as exc:  # noqa: BLE001
                     _LOGGER.warning(
