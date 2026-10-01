@@ -5085,8 +5085,8 @@
   {
     "label": "refusal: an unreadable answer breaks the handling it describes",
     "path": "custom_components/wemportal/web_protocol.py",
-    "old": "    try:\n        server = (getattr(response, \"headers\", None) or {}).get(\"Server\")\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n        return \"server=not named, body=unreadable\"\n",
-    "new": "    server = (getattr(response, \"headers\", None) or {}).get(\"Server\")\n    try:\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n        return \"server=not named, body=unreadable\"\n",
+    "old": "    try:\n        server = (getattr(response, \"headers\", None) or {}).get(\"Server\")\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n",
+    "new": "    server = (getattr(response, \"headers\", None) or {}).get(\"Server\")\n    try:\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n",
     "tests": "a_refusal_description_is_short_and_never_raises"
   },
   {
@@ -5144,5 +5144,12 @@
     "old": "EXPERT_VIEW_MARKER: Final = \"CodeExpertsDetails.aspx\"\n",
     "new": "EXPERT_VIEW_MARKER: Final = \"rpbSimpleData\"\n",
     "tests": "only_the_fachmann_page_is_the_expert_view"
+  },
+  {
+    "label": "refusal: an unreadable body costs the server that sent it",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "        return f\"server={server or 'not named'}, body=unreadable\"\n",
+    "new": "        return \"server=not named, body=unreadable\"\n",
+    "tests": "unreadable_body_keeps_the_server_that_sent_it"
   }
 ]

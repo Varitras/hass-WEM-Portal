@@ -668,6 +668,23 @@ def test_a_refusal_description_is_short_and_never_raises():
     assert describe_refusal(object()) == "server=not named, body=empty"
 
 
+def test_an_unreadable_body_keeps_the_server_that_sent_it():
+    """Who answered is the point of the line: an unreadable body cost the
+    header that had been read before it."""
+    from custom_components.wemportal.web_protocol import describe_refusal
+
+    class _GatewayWithAnUnreadableBody:
+        headers = {"Server": "Microsoft-Azure-Application-Gateway/v2"}
+
+        @property
+        def text(self):
+            raise UnicodeDecodeError("utf-8", b"", 0, 1, "bad")
+
+    assert describe_refusal(_GatewayWithAnUnreadableBody()) == (
+        "server=Microsoft-Azure-Application-Gateway/v2, body=unreadable"
+    )
+
+
 def test_the_scraper_says_who_refused_it(caplog):
     from custom_components.wemportal.scraper import WemPortalScraper
 
