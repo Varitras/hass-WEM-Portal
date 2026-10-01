@@ -11,6 +11,7 @@ LOGIC; it does not prove the real portal still emits this structure.
 """
 
 import contextlib
+import logging
 import time
 import types
 
@@ -331,6 +332,36 @@ def test_the_session_of_the_last_hourly_poll_is_reused():
 
     assert attempts == [True], "the session of the last poll was not tried"
     assert logins == []
+
+
+@pytest.mark.parametrize("alive", [True, False], ids=["reused", "dead"])
+def test_a_reuse_says_how_old_the_session_was(alive, caplog):
+    """The cap rests on one measurement in a browser. The age at which a
+    session is still taken or already gone is what the log has to show to
+    check it in operation."""
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import AuthError
+
+    jar = {
+        "cookies": {"ASP.NET_SessionId": "abc"},
+        "saved_at": time.monotonic() - 4200,
+    }
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+
+    def establish():
+        if not alive:
+            raise AuthError("session not accepted")
+
+    client._establish_context = establish
+    client._save_session = lambda: None
+    client.close = lambda: None
+    caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")
+
+    client._try_cached_session()
+
+    assert "after 4200s" in caplog.text
 
 
 def test_expired_cache_logs_in_again():

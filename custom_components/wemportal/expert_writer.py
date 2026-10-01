@@ -863,8 +863,13 @@ class WemPortalExpertClient:
             # re-raised above. What is left really is a stale session -
             # AuthError, a dropped connection - and a fresh login is the
             # right answer to those.
+            # The age either way: the cap rests on one measurement, and these
+            # two lines are how it is checked in operation.
             _LOGGER.debug(
-                "Cached expert session no longer usable (%s), logging in fresh.", exc
+                "Cached expert session no longer usable after %.0fs (%s), "
+                "logging in fresh.",
+                age,
+                exc,
             )
             # Out of the account's shared cache too, however the login ends.
             self._cookie_jar.pop("cookies", None)
@@ -872,7 +877,10 @@ class WemPortalExpertClient:
             return False
 
         self._save_session()
-        _LOGGER.debug("Expert path reused the cached session (no login needed).")
+        _LOGGER.debug(
+            "Expert path reused the cached session after %.0fs (no login needed).",
+            age,
+        )
         return True
 
     def _save_session(self):

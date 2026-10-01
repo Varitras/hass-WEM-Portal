@@ -5053,5 +5053,19 @@
     "old": "EXPERT_SESSION_MAX_AGE_SECONDS: Final = 2 * 3600\n",
     "new": "EXPERT_SESSION_MAX_AGE_SECONDS: Final = 900\n",
     "tests": "the_session_of_the_last_hourly_poll_is_reused"
+  },
+  {
+    "label": "expert session: a reuse that worked does not say the session's age",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            \"Expert path reused the cached session after %.0fs (no login needed).\",\n            age,\n",
+    "new": "            \"Expert path reused the cached session after %.0fs (no login needed).\",\n            0,\n",
+    "tests": "a_reuse_says_how_old_the_session_was"
+  },
+  {
+    "label": "expert session: a dead reuse does not say the session's age",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                \"logging in fresh.\",\n                age,\n",
+    "new": "                \"logging in fresh.\",\n                0,\n",
+    "tests": "a_reuse_says_how_old_the_session_was"
   }
 ]
