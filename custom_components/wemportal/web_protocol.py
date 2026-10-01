@@ -163,12 +163,12 @@ def describe_refusal(response: object) -> str:
 
     Never raises - it runs inside the handling of the refusal it describes.
     """
-    headers = getattr(response, "headers", None) or {}
-    server = headers.get("Server") or "not named"
     try:
+        server = (getattr(response, "headers", None) or {}).get("Server")
         text = getattr(response, "text", "") or ""
     except Exception:  # noqa: BLE001
-        return f"server={server}, body=unreadable"
+        return "server=not named, body=unreadable"
+    server = server or "not named"
     excerpt = " ".join(_MARKUP_RE.sub(" ", str(text)).split())
     return f"server={server}, body={excerpt[:REFUSAL_EXCERPT_CHARS] or 'empty'}"
 

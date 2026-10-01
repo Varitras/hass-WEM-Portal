@@ -741,6 +741,10 @@ class WemPortalTransport:
             response.status_code, response_status, response_message
         )
 
+        # Before the maintenance check, which raises on the wording alone: a
+        # refusal phrased as downtime still says which server sent it.
+        if response.status_code == 403:
+            log_refusal(redact_url(API_LOGIN_URL), response)
         if message_reports_maintenance(response_message):
             # A login refused during planned downtime, not a credential problem.
             # The API carries no offlinecontent marker like the web page - only
@@ -763,7 +767,6 @@ class WemPortalTransport:
                 f"{server_said}"
             ) from exc
         if response.status_code == 403:
-            log_refusal(redact_url(API_LOGIN_URL), response)
             first = self._account_state.note_refused_login()
             if first and portal_said_nothing(response_status, response_message):
                 raise LoginRefused(f"The login was turned away: {server_said}") from exc

@@ -85,9 +85,10 @@ LINE_BUDGETS = {
     # And by 12 for the setup's web login following the scraper's rule, so a
     # single refusal there no longer pauses everything either.
     # And by 3 for a login saying it went through, whoever made it.
-    # And by 8 for saying who answered each of its four 403s, gateway or
-    # portal - five of them the import that no longer fits one line.
-    "transport.py": 929,
+    # And by 11 for saying who answered each of its four 403s, gateway or
+    # portal - five of them the import that no longer fits one line, three
+    # the login's, said before a maintenance wording can raise past it.
+    "transport.py": 932,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     "expert_writer.py": 1912,

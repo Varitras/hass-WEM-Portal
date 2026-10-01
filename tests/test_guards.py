@@ -46,7 +46,7 @@ GUARD_FILES = {
     "test_repairs.py": "every repair issue is translated and entry-prefixed",
     "test_quality_scale.py": "no quality scale rule is excused without a reason",
     "test_requirements.py": "the manifest and the runtime file name the same dependencies",
-    "test_security.py": "no module reaches past the redaction or the login-page rule, and the expert client stays behind its own import",
+    "test_security.py": "no module reaches past the redaction or the login-page rule, the expert client stays behind its own import, and every 403 branch says who answered",
     "test_transport_boundary.py": "transport imports no domain module",
     "test_transport_errors.py": "only the value path opts into a transport retry",
     "test_guards.py": "the guards stay package-wide and stay present",

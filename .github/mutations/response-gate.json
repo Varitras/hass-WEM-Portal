@@ -5085,8 +5085,8 @@
   {
     "label": "refusal: an unreadable answer breaks the handling it describes",
     "path": "custom_components/wemportal/web_protocol.py",
-    "old": "    try:\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n        return f\"server={server}, body=unreadable\"\n",
-    "new": "    text = getattr(response, \"text\", \"\") or \"\"\n",
+    "old": "    try:\n        server = (getattr(response, \"headers\", None) or {}).get(\"Server\")\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n        return \"server=not named, body=unreadable\"\n",
+    "new": "    server = (getattr(response, \"headers\", None) or {}).get(\"Server\")\n    try:\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n        return \"server=not named, body=unreadable\"\n",
     "tests": "a_refusal_description_is_short_and_never_raises"
   },
   {
@@ -5102,5 +5102,19 @@
     "old": "            log_refusal(redact_url(url), response)\n",
     "new": "",
     "tests": "every_refusal_says_who_answered"
+  },
+  {
+    "label": "refusal: the web login form's 403 says nothing of who answered",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                log_refusal(redact_url(login_url), response)\n",
+    "new": "",
+    "tests": "every_refusal_says_who_answered"
+  },
+  {
+    "label": "refusal: a login refused in maintenance wording says nothing of who answered",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if response.status_code == 403:\n            log_refusal(redact_url(API_LOGIN_URL), response)\n",
+    "new": "",
+    "tests": "maintenance_message_still_says_who_answered"
   }
 ]

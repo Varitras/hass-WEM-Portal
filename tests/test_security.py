@@ -653,10 +653,18 @@ def test_a_refusal_description_is_short_and_never_raises():
         def text(self):
             raise UnicodeDecodeError("utf-8", b"", 0, 1, "bad")
 
+    class _UnreadableHeaders:
+        text = "fine"
+
+        @property
+        def headers(self):
+            raise RuntimeError("no headers here")
+
     long_page = describe_refusal(_Refusal("x" * 5000))
 
     assert len(long_page) < 300
     assert describe_refusal(_Unreadable()) == "server=not named, body=unreadable"
+    assert describe_refusal(_UnreadableHeaders()) == "server=not named, body=unreadable"
     assert describe_refusal(object()) == "server=not named, body=empty"
 
 
@@ -676,36 +684,52 @@ def test_the_scraper_says_who_refused_it(caplog):
 
 
 def _refusal_checks_without_a_description(source):
-    """Functions that test a status for 403 and do not say who answered."""
+    """Functions with a branch taken on a 403 that does not say who answered.
+
+    Per branch, not per function: one call anywhere let the web login's
+    second 403 branch go silent. A branch whose condition an earlier branch
+    of the same function already described needs no second call.
+    """
     import ast
 
-    found = []
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        tests_403 = any(
+    def tests_403(test):
+        return any(
             isinstance(part, ast.Compare)
+            and isinstance(part.ops[0], (ast.Eq, ast.In))
             and any(
-                isinstance(side, ast.Constant) and side.value == 403
+                isinstance(leaf, ast.Constant) and leaf.value == 403
                 for side in [part.left, *part.comparators]
+                for leaf in ast.walk(side)
             )
-            for part in ast.walk(node)
+            for part in ast.walk(test)
         )
-        describes = any(
+
+    def logs(branch):
+        return any(
             isinstance(part, ast.Call)
             and getattr(part.func, "id", getattr(part.func, "attr", None))
             == "log_refusal"
-            for part in ast.walk(node)
+            for statement in branch.body
+            for part in ast.walk(statement)
         )
-        if tests_403 and not describes:
-            found.append(node.name)
+
+    found = []
+    for function in ast.walk(ast.parse(source)):
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        branches = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.If) and tests_403(node.test)
+        ]
+        described = {ast.dump(branch.test) for branch in branches if logs(branch)}
+        if any(ast.dump(branch.test) not in described for branch in branches):
+            found.append(function.name)
     return found
 
 
 # Functions that look at a 403 without holding the answer that carried it.
 _REFUSALS_SAID_ELSEWHERE = {
-    # Lets the 403 through to _recover_or_raise, which says it.
-    ("transport.py", "make_api_call"),
     # Reads the status off an exception; the answer was described where it
     # arrived.
     ("wemportalapi.py", "_survive_a_failed_description"),
@@ -730,6 +754,33 @@ def test_every_refusal_says_who_answered():
 
     assert silent - _REFUSALS_SAID_ELSEWHERE == set()
     assert _REFUSALS_SAID_ELSEWHERE <= silent, "an exemption no longer needed"
+
+
+def test_the_refusal_guard_looks_at_each_branch():
+    """One call anywhere in a function satisfied it, so the web login's
+    second 403 branch could go silent with the suite green. A condition
+    already described above may repeat without a second call."""
+    two_branches_one_silent = (
+        "def login(page, form):\n"
+        "    if page.status_code == 403:\n"
+        "        log_refusal(where, page)\n"
+        "    if form.status_code == 403:\n"
+        "        raise X\n"
+    )
+    a_tuple = "def handle(response):\n    if response.status_code in (403, 429):\n        raise X\n"
+    said_above = (
+        "def handle(response):\n"
+        "    if response.status_code == 403:\n"
+        "        log_refusal(where, response)\n"
+        "    if maintenance:\n"
+        "        raise M\n"
+        "    if response.status_code == 403:\n"
+        "        raise X\n"
+    )
+
+    assert _refusal_checks_without_a_description(two_branches_one_silent) == ["login"]
+    assert _refusal_checks_without_a_description(a_tuple) == ["handle"]
+    assert _refusal_checks_without_a_description(said_above) == []
 
 
 def test_the_refusal_guard_sees_a_silent_403():

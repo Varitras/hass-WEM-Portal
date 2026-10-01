@@ -4,6 +4,7 @@ survival on a failed device refresh, and str-normalisation of device ids.
 
 import asyncio
 import contextlib
+import logging
 import json
 import time
 import types
@@ -3903,6 +3904,24 @@ def test_a_maintenance_message_on_the_api_login_is_not_a_wrong_password():
     )
     with pytest.raises(exceptions.PortalMaintenanceError):
         api._raise_login_failure(maintenance, real_requests.exceptions.HTTPError())
+
+
+def test_a_login_refused_with_a_maintenance_message_still_says_who_answered(
+    caplog,
+):
+    """Maintenance is decided before the status, and the 403's line came
+    after it: a refusal worded as downtime left no trace of who sent it."""
+    api = _api()
+    refused = FakeResponse(
+        {"Status": 8000, "Message": "WEM-Portal wird derzeit gewartet."},
+        status_code=403,
+    )
+    caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")
+
+    with pytest.raises(exceptions.PortalMaintenanceError):
+        api._raise_login_failure(refused, real_requests.exceptions.HTTPError())
+
+    assert "403 for https://www.wemportal.com/app/Account/Login" in caplog.text
 
 
 def test_a_wrong_password_on_the_api_login_stays_an_auth_error():
