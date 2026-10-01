@@ -1589,34 +1589,18 @@ async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
     `_poll` reschedules in a `finally`, which also runs on cancellation - and
     it wrote the new timer into the store `_cancel` had already emptied, so
     nothing could cancel it. One immortal chain per reload.
+
+    Through _auto_poll_entry, which waits the initial poll out: set up on its
+    own, this test asserted before that background task had rescheduled and
+    failed on a fast runner. The slow read makes that race certain here.
     """
-    from custom_components.wemportal.const import CONF_EXPERT_AUTO_POLL
 
-    scheduled = []
+    def slow_read(_ids):
+        # Not time.sleep, which the suite makes instant.
+        threading.Event().wait(0.2)
+        return {}
 
-    def fake_call_later(_hass, _delay, action):
-        scheduled.append(action)
-        return lambda: None
-
-    # Patched where it is USED: the controller imports async_call_later at
-    # module level, so that is the name the auto-poll actually calls.
-    from custom_components.wemportal import expert_controller
-
-    monkeypatch.setattr(expert_controller, "async_call_later", fake_call_later)
-
-    # A configured slot is required: without an expert entity there is
-    # nothing to poll, so the timer chain is never armed in the first place.
-    entry = await _setup(
-        hass,
-        _entry(
-            hass,
-            {
-                CONF_EXPERT_WRITE: True,
-                CONF_EXPERT_AUTO_POLL: True,
-                CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A,
-            },
-        ),
-    )
+    entry, scheduled, _issues = await _auto_poll_entry(hass, monkeypatch, slow_read)
     data = entry.runtime_data
     assert data.expert._started, "auto-poll never started"
     assert scheduled, "no poll was ever scheduled"

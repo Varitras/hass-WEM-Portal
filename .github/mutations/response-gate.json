@@ -1089,7 +1089,7 @@
     "label": "freshness: clearing a module the portal never answered for must be noticed",
     "path": "custom_components/wemportal/mapper.py",
     "old": "    for module in portal_list(values_json, \"Modules\"):\n        try:\n            module_key = ModuleRef(\n                module_index=module[\"ModuleIndex\"], module_type=module[\"ModuleType\"]\n            )",
-    "new": "    for module_key in modules_dict.get(device_id, {}):\n        try:\n            module = {}",
+    "new": "    for module_key in [ModuleRef(*key) for key in modules_dict.get(device_id, {})]:\n        try:\n            module = {}",
     "tests": "module_the_portal_did_not_answer_for_is_left_alone"
   },
   {
@@ -1103,7 +1103,7 @@
     "label": "freshness: throwing the unit away with the value must be noticed",
     "path": "custom_components/wemportal/mapper.py",
     "old": "            entry.value = None\n",
-    "new": "            entry.clear()\n",
+    "new": "            entry.value = None\n            entry.unit = None\n",
     "tests": "parameter_the_portal_left_out_stops_being_current"
   },
   {
@@ -1326,8 +1326,8 @@
   {
     "label": "pair: the carried values read before the writer ahead recorded",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if callable(together_with):\n                together_with = together_with()",
-    "new": "            pass",
+    "old": "        self._acquire_api_lock(\"parameter write\")\n        try:",
+    "new": "        if callable(together_with):\n            together_with = together_with()\n        self._acquire_api_lock(\"parameter write\")\n        try:",
     "tests": "a_write_resolves_and_publishes_its_companions_under_the_lock"
   },
   {
@@ -1383,7 +1383,7 @@
     "label": "write-back: recording a value the portal refused must be noticed",
     "path": "custom_components/wemportal/entity.py",
     "old": "        raise_if_not_writable(self._config_entry, what)\n        if self._coordinator_row() is None:",
-    "new": "        raise_if_not_writable(self._config_entry, what)\n        self._record_written_value(value)\n        if self._coordinator_row() is None:",
+    "new": "        raise_if_not_writable(self._config_entry, what)\n        if self._coordinator_row() is not None:\n            self._coordinator_row().value = value\n        if self._coordinator_row() is None:",
     "tests": "a_refused_write_leaves_the_coordinators_copy_alone"
   },
   {
@@ -1411,7 +1411,7 @@
     "label": "holiday: recording a range the portal refused must be noticed",
     "path": "custom_components/wemportal/holiday.py",
     "old": "    try:\n        await hass.async_add_executor_job(\n            partial(",
-    "new": "    begin.row[\"value\"] = begin_epoch\n    end.row[\"value\"] = end_epoch\n    try:\n        await hass.async_add_executor_job(\n            partial(",
+    "new": "    begin.row.value = begin_epoch\n    end.row.value = end_epoch\n    try:\n        await hass.async_add_executor_job(\n            partial(",
     "tests": "a_refused_write_changes_nothing"
   },
   {
@@ -1936,7 +1936,7 @@
     "label": "scrape: forgetting the reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "        for key in self._previous_scraper_keys or ():\n            row = device.get(key)\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None",
-    "new": "        for key in self._previous_scraper_keys or ():\n            row = device.get(key)\n            if isinstance(row, Reading) and row.value is not None:\n                row.clear()",
+    "new": "        for key in self._previous_scraper_keys or ():\n            row = device.get(key)\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None; row.unit = None",
     "tests": "readings_from_a_scrape_that_stopped_working_stop_being_current"
   },
   {
@@ -2020,7 +2020,7 @@
     "label": "freshness: forgetting a reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None",
-    "new": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.clear()",
+    "new": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None; row.unit = None",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -2293,7 +2293,7 @@
     "label": "mapper: asking api_data instead of this pass, freezing the fallback sensors",
     "path": "custom_components/wemportal/mapper.py",
     "old": "            if key in controls:",
-    "new": "            if sensor[\"IsWriteable\"] and key in api_data.get(device_id, {}):",
+    "new": "            if key in api_data.get(device_id, {}):",
     "tests": "a_writeable_value_that_fell_back_to_a_sensor_still_updates"
   },
   {
@@ -2370,7 +2370,7 @@
     "label": "expert: the write going back to fire-and-forget",
     "path": "custom_components/wemportal/expert_number.py",
     "old": "        await self._async_write(value)",
-    "new": "        self.hass.async_create_background_task(self._async_write(value), name=\"w\")",
+    "new": "        __import__(\"asyncio\").get_running_loop().create_task(self._async_write(value))",
     "tests": "a_failed_write_reaches_whoever_asked_for_it"
   },
   {
@@ -4927,5 +4927,40 @@
     "old": "            except NothingReadThisCycle as exc:\n                # Before the busy handler, whose silences it shares but not its\n                # line: this cycle ran, and the reason is the outage's, not why\n                # the cycle stopped.\n                _LOGGER.debug(\"Nothing read this cycle; the outage goes on: %s\", exc)\n                raise UpdateFailed(str(exc)) from exc\n",
     "new": "",
     "tests": "tick_that_read_nothing_is_not_logged_as_skipped"
+  },
+  {
+    "label": "discovery: an entry that is not loaded asks no pause",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "            cooldown_check=api.check_expert_cooldown,\n",
+    "new": "            cooldown_check=api.check_expert_cooldown if data is not None else None,\n",
+    "tests": "not_loaded_honours_the_403_pause"
+  },
+  {
+    "label": "discovery: a lock of its own instead of the account's",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "        lock = account_state(self.config_entry.data.get(CONF_USERNAME)).expert_lock\n",
+    "new": "        lock = type(account_state(self.config_entry.data.get(CONF_USERNAME)).expert_lock)()\n",
+    "tests": "not_loaded_waits_its_turn"
+  },
+  {
+    "label": "sensor: a number asked of the stored classes only, not Home Assistant's",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            or self.native_unit_of_measurement is not None\n            or self.state_class is not None\n            or self.device_class is not None\n",
+    "new": "            or self._attr_state_class is not None\n            or self._attr_device_class is not None\n",
+    "tests": "word_after_a_number_on_a_sensor_without_a_unit_is_unknown"
+  },
+  {
+    "label": "discovery: a 403 met on an entry that is not loaded starts no pause",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "            cooldown_activate=api.activate_expert_cooldown,\n",
+    "new": "            cooldown_activate=api.activate_expert_cooldown if data is not None else None,\n",
+    "tests": "not_loaded_starts_the_pause"
+  },
+  {
+    "label": "sensor: a word after a restart left beside the restored unit",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "                self._attr_native_value = self._validated_native_value(\n                    self._attr_native_value, None\n                )\n",
+    "new": "",
+    "tests": "checked_against_the_restored_unit"
   }
 ]

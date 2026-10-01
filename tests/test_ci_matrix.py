@@ -287,7 +287,7 @@ def test_the_gitleaks_pin_check_reads_the_workflow_pin():
 
 
 def test_the_gitleaks_pin_is_checked_by_the_local_gate():
-    """The gate dependencies.md asks for where Dependabot cannot reach."""
+    """The pin Dependabot cannot reach is checked by the local gate instead."""
     script = CHECK_SH.read_text(encoding="utf-8")
 
     assert "check_gitleaks_pin.py" in script, (

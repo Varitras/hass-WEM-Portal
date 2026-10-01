@@ -49,6 +49,16 @@ versioning follows [Semantic Versioning](https://semver.org/).
   refused logins in a row ask for new credentials; a login made in between -
   by a write, or earlier in the cycle whose next login was refused - did not
   break the row.
+- **The parameter search respects a 403 pause while the integration is not
+  loaded.** After a refusal the integration waits to start again, and a
+  parameter search opened in that time logged in and navigated the portal
+  without asking the pause, and beside any other expert operation of the
+  same account.
+- **A sensor without a unit no longer fails on a word after a number.**
+  A reading such as "Stop" arriving on a sensor that had shown numbers was
+  refused by Home Assistant on every cycle, and the last number stayed on
+  screen. It now shows as unknown, like the same word on any other number -
+  also when the word is the first reading after a restart.
 
 ## [1.14.0b3] – 2026-09-29
 

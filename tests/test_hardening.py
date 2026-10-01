@@ -7414,12 +7414,20 @@ def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
 
     api._publish_accepted_values = traced_publish
 
-    api.change_value(
-        "1234", "HolidayBegin", 0, 1, 2.0, together_with=lambda: {"HolidayEnd": 3.0}
-    )
+    locked_at_resolve = {}
+
+    def companions():
+        locked_at_resolve["held"] = api._api_lock.locked()
+        return {"HolidayEnd": 3.0}
+
+    api.change_value("1234", "HolidayBegin", 0, 1, 2.0, together_with=companions)
 
     assert seen["sent"] == {"HolidayEnd": 3.0}, (
         f"the callable companion set was not resolved before the write: {seen['sent']}"
+    )
+    assert locked_at_resolve.get("held"), (
+        "the companions were read before the lock, so a writer ahead of this "
+        "one had not published yet and its dates went back out stale"
     )
     assert locked_at_publish.get("held"), (
         "the values were published after the lock was released, so a writer "
@@ -8095,6 +8103,30 @@ def test_a_word_that_is_not_a_number_shows_as_unknown():
     """Upstream #146: a pump speed reading "Stop" on a portal that writes
     "Aus" everywhere else. Not a fault - a state we do not know."""
     assert _numeric_sensor("Stop").native_value is None
+
+
+def test_a_word_after_a_number_on_a_sensor_without_a_unit_is_unknown():
+    """A row whose unit is empty read a number first, and the empty unit
+    made Home Assistant treat the sensor as a measurement. The word that
+    came later was checked against the unit alone, passed as text, and Home
+    Assistant refused the state on every cycle while the old number stood."""
+    row = Reading(
+        value=30.0,
+        unit="",
+        friendly_name="Push",
+        parameter_id="Push",
+        module_index=0,
+        module_type=1,
+    )
+    sensor = _sensor_from_row("Push", row)
+    sensor.entity_id = "sensor.push"
+    sensor.async_write_ha_state = lambda: None
+
+    row.value = "Stop"
+    sensor._handle_coordinator_update()
+
+    assert sensor.native_value is None
+    assert sensor.state is None
 
 
 def test_an_unreadable_word_is_reported_once_not_every_cycle(caplog):
@@ -9027,6 +9059,34 @@ async def test_the_unit_survives_a_restart_that_begins_with_the_pump_off(monkeyp
     assert sensor.native_unit_of_measurement == "kW", (
         "a restart into the off state left the entity without its unit"
     )
+
+
+async def test_a_word_after_a_restart_is_checked_against_the_restored_unit(
+    monkeypatch,
+):
+    """The value was checked when the entity was built, and the unit it had
+    before the restart came back only afterwards: "Stop" passed as text,
+    then stood on a sensor with a unit, and Home Assistant refused the very
+    first state."""
+    from homeassistant.components.sensor import SensorExtraStoredData
+    from homeassistant.helpers.restore_state import RestoreEntity
+
+    sensor = _sensor_from_row("Power", _power_row("Stop", None))
+    sensor.hass = None
+    sensor.entity_id = "sensor.power"
+
+    async def last_sensor_data():
+        return SensorExtraStoredData(native_value=11.1, native_unit_of_measurement="kW")
+
+    async def no_home_assistant(_self):
+        return None
+
+    sensor.async_get_last_sensor_data = last_sensor_data
+    monkeypatch.setattr(RestoreEntity, "async_added_to_hass", no_home_assistant)
+    await sensor.async_added_to_hass()
+
+    assert sensor.native_value is None
+    assert sensor.state is None
 
 
 # --- an announced maintenance window is not a maintenance window -----------
