@@ -4710,5 +4710,12 @@
     "old": "        if isinstance(previous, Reading) and merged:\n",
     "new": "        if isinstance(previous, Reading):\n",
     "tests": "scrape_that_empties_the_merge_map_drops_the_week"
+  },
+  {
+    "label": "merge freshness: a module gone from the device list still carries its week",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            return parameter_id in (module.get(\"parameters\") or {})\n",
+    "new": "            return True\n",
+    "tests": "drops_the_week_of_a_module_gone_from_the_device_list"
   }
 ]

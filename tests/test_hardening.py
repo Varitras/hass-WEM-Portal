@@ -4656,6 +4656,7 @@ def test_a_scrape_keeps_the_programme_details_the_schedule_fetch_found():
             ),
         }
     }
+    api.modules = {"0000": {ModuleRef(1, 1): {"parameters": {"Programme": {}}}}}
     api.scraping_mapper = {("0000", ModuleRef(1, 1), "Programme"): ["pump-programme"]}
     api._previous_scraper_keys = {"pump-programme"}
 
@@ -4691,6 +4692,30 @@ def test_a_scrape_that_empties_the_merge_map_drops_the_week():
             "pump-programme": Reading(value='{"MO-1":"07:00-11:00"}'),
             "pump-new-row": Reading(value=1.0),
         },
+    )
+
+    assert api.data["0000"]["pump-programme"].circuit_times_day is None
+
+
+def test_a_scrape_drops_the_week_of_a_module_gone_from_the_device_list():
+    """The merge map outlives the module that fed it: gone from the device
+    list, its programme is read by no schedule fetch and forgotten by no
+    re-read, and every scrape carried its last week on for the session."""
+    api = _api()
+    api.data = {
+        "0000": {
+            "ConnectionStatus": 0,
+            "pump-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}', circuit_times_day=A_FED_WEEK
+            ),
+        }
+    }
+    api.modules = {"0000": {}}
+    api.scraping_mapper = {("0000", ModuleRef(1, 1), "Programme"): ["pump-programme"]}
+    api._previous_scraper_keys = {"pump-programme"}
+
+    api._merge_webscraping_data(
+        "0000", {"pump-programme": Reading(value='{"MO-1":"06:00-10:10"}')}
     )
 
     assert api.data["0000"]["pump-programme"].circuit_times_day is None
@@ -6681,14 +6706,14 @@ def test_a_scrape_that_arrives_late_invalidates_the_merge_cache():
     api.data = {"1234": {}}
     scraped = {"heat_pump-outside": Reading(value=1.0, platform="sensor")}
 
-    api.scraping_mapper[(ModuleRef(0, 1), "Outside")] = ["Heat pump-Outside"]
+    api.scraping_mapper[("1234", ModuleRef(0, 1), "Outside")] = ["Heat pump-Outside"]
     api._merge_webscraping_data("1234", scraped)
 
     assert api.scraping_mapper == {}, (
         "the first scrape of the session left the fallback mapping in place"
     )
 
-    api.scraping_mapper[(ModuleRef(0, 1), "Outside")] = ["heat_pump-outside"]
+    api.scraping_mapper[("1234", ModuleRef(0, 1), "Outside")] = ["heat_pump-outside"]
     api._merge_webscraping_data("1234", scraped)
 
     assert api.scraping_mapper, "an unchanged scrape inventory dropped the cache"

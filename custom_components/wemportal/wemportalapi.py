@@ -1172,6 +1172,26 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         if isinstance(previous, Reading) and previous.unit not in (None, ""):
             row.unit = previous.unit
 
+    def _rows_a_described_parameter_merges_into(self) -> set[str]:
+        """The rows whose programme week the schedule fetch still owns.
+
+        Through a parameter some module still describes: the merge map
+        outlives a module gone from the device list, and its week, read by
+        no fetch and forgotten by no re-read, was carried for the session.
+        """
+        modules = self.modules or {}
+
+        def still_described(device_id: str, module_key: Any, parameter_id: str) -> bool:
+            module = modules.get(device_id, {}).get(module_key, {})
+            return parameter_id in (module.get("parameters") or {})
+
+        return {
+            row
+            for key, rows in self.scraping_mapper.items()
+            if still_described(*key)
+            for row in rows
+        }
+
     def _merge_webscraping_data(
         self, device_id: str, webscraping_data: dict[str, Any]
     ) -> None:
@@ -1182,7 +1202,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             [key for key, row in webscraping_data.items() if isinstance(row, Reading)]
         )
 
-        merged_rows = {row for rows in self.scraping_mapper.values() for row in rows}
+        merged_rows = self._rows_a_described_parameter_merges_into()
         for key, new_val in webscraping_data.items():
             if isinstance(new_val, Reading):
                 self._prepare_scraped_row(
