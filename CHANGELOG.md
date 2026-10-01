@@ -6,6 +6,20 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.14.0b4] – 2026-10-02
+
+A fourth beta. Everything from 1.14.0b3, plus: far fewer logins - a refused
+request keeps the session, a dead one is recognised wherever it shows, and
+the hourly expert read reuses its session - honest cycles in `both` mode,
+and merged values and weekly programmes that stay current.
+
+### Changed
+
+- **The debug log says more about a refusal and about the expert session.**
+  A 403 now logs the server that answered and the start of its page, which
+  tells the portal's own refusal from the firewall in front of it, and
+  every reuse of the expert session logs how old the session was.
+
 ### Fixed
 
 - **A reused web session that lands on the user view logs in fresh.** When
@@ -89,13 +103,6 @@ versioning follows [Semantic Versioning](https://semver.org/).
   from the web row it had been merged into; with the web scrape failing,
   that row went on showing the last value as current. A weekly programme
   that goes takes its phases with it.
-
-### Changed
-
-- **The debug log says more about a refusal and about the expert session.**
-  A 403 now logs the server that answered and the start of its page, which
-  tells the portal's own refusal from the firewall in front of it, and
-  every reuse of the expert session logs how old the session was.
 
 ## [1.14.0b3] – 2026-09-29
 
