@@ -5395,6 +5395,49 @@ def test_a_batch_read_without_an_abort_reads_everything():
     assert len(result) == 2
 
 
+def test_a_batch_read_stops_at_a_session_found_dead():
+    """A dialog sent to the login page is the session, not that id: the batch
+    went on with every further id over the same dead session - one more trip
+    to the login page each - and booked them all as unreadable ids."""
+    from custom_components.wemportal import expert_writer
+
+    read = []
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client._login = lambda: None
+    client.close = lambda: None
+
+    def fetch_form(entityvalue, *_args, **_kwargs):
+        read.append(entityvalue)
+        raise exceptions.AuthError("redirected to login when fetching the form")
+
+    client._fetch_form = fetch_form
+
+    with pytest.raises(exceptions.AuthError):
+        client.read_many(["a" * 36, "b" * 36, "c" * 36])
+    assert len(read) == 1, f"the batch kept reading on a dead session: {len(read)}"
+
+
+def test_a_discovery_stops_at_a_session_found_dead():
+    """Same for the module walk: each further module went to the login page,
+    and the search then reported "nothing found" instead of failing."""
+    from custom_components.wemportal import expert_writer
+
+    walked = []
+    client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
+    client._login = lambda: None
+    client.close = lambda: None
+
+    def fetch_module_page(module):
+        walked.append(module)
+        raise exceptions.AuthError("session expired during navigation")
+
+    client._fetch_module_page = fetch_module_page
+
+    with pytest.raises(exceptions.AuthError):
+        client.discover([{"label": "one"}, {"label": "two"}])
+    assert len(walked) == 1, f"the walk went on on a dead session: {len(walked)}"
+
+
 def test_a_write_without_an_abort_still_goes_through():
     """The gate must not block ordinary writes - without it the test above
     would pass on a client that never writes anything at all."""
@@ -9024,7 +9067,15 @@ def test_the_client_tells_a_value_it_does_not_offer_from_an_unconfirmed_write():
     )
 
 
-def test_an_expired_expert_session_during_an_announcement_logs_in_again(monkeypatch):
+@pytest.mark.parametrize(
+    "login_url",
+    [
+        "https://www.wemportal.com/Web/Login.aspx",
+        "https://www.wemportal.com/(S(abc123))/Web/Login.aspx",
+    ],
+    ids=["plain", "cookieless"],
+)
+def test_an_expired_expert_session_during_an_announcement_logs_in_again(login_url):
     """The expert client's cached session has the same shape: the main page
     of an expired session is the login page, with the banner on it during an
     announcement. Read as maintenance, the cached path gave up instead of
@@ -9033,7 +9084,7 @@ def test_an_expired_expert_session_during_an_announcement_logs_in_again(monkeypa
 
     class _Response:
         status_code = 200
-        url = "https://www.wemportal.com/Web/Login.aspx"
+        url = login_url
         text = MAINTENANCE_PAGE
 
     client = expert_writer.WemPortalExpertClient("user@example.org", "secret")
@@ -9808,6 +9859,103 @@ def test_a_web_login_turned_away_once_retries_in_five_minutes(monkeypatch):
     assert api._scrape_is_due(None), "made to wait a full cycle instead of five minutes"
 
 
+def test_a_turned_away_web_login_does_not_hand_its_dead_cookie_to_the_retry(
+    monkeypatch,
+):
+    """The refusal means the session is gone - the reuse was sent to the
+    login page, or a full login was needed anyway. Kept, the retry tried the
+    dead cookie first: two more requests, one of them to the login page that
+    had just refused."""
+    clock = _Clock()
+    api = _api_whose_web_login_answers(clock, monkeypatch, _web_login_refusal())
+    api.webscraping_cookie = {"ASP.NET_SessionId": "expired"}
+
+    _scrape(api)
+
+    assert not api.webscraping_cookie, "the retry starts from the dead session"
+
+
+def test_a_session_the_scraper_found_dead_is_not_handed_back_to_it():
+    """The api re-syncs its cookie into the scraper every cycle, so what the
+    scraper learnt about the session has to reach the api too - on the
+    failures as well, not only on the turned-away login."""
+    api = _api()
+    api.webscraping_cookie = {"ASP.NET_SessionId": "expired"}
+
+    class _Scraper:
+        cookie = {"ASP.NET_SessionId": "expired"}
+
+        def scrape(self):
+            self.cookie = {}
+            raise exceptions.ServerError("the fresh login timed out")
+
+        def close(self):
+            pass
+
+    api._scraper = _Scraper()
+
+    with pytest.raises(exceptions.WemPortalError):
+        api.fetch_webscraping_data()
+
+    assert not api.webscraping_cookie
+
+
+def test_an_expert_session_found_dead_leaves_the_shared_cache(monkeypatch):
+    """The cache is shared by every expert operation of the account. A
+    session found dead stayed in it, so the next operation within the
+    fifteen minutes probed it again before logging in - two requests more."""
+    from custom_components.wemportal import expert_writer
+
+    jar = {"cookies": {"ASP.NET_SessionId": "expired"}, "saved_at": time.monotonic()}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+
+    def dead():
+        raise exceptions.AuthError("session not accepted")
+
+    monkeypatch.setattr(client, "_establish_context", dead)
+
+    assert client._try_cached_session() is False
+    assert not jar.get("cookies"), "the dead session is still offered"
+
+
+@pytest.mark.parametrize("status", [200, 403, 500])
+def test_any_expert_answer_from_the_login_page_leaves_the_shared_cache(status):
+    """At the gate, before the status: a reuse sent to a login page that
+    answered 500 or 403 re-raised as an answer and kept the dead session in
+    the account's cache, and so did a parameter dialog redirected to the
+    login page, which a multi-read books per id and moves on from."""
+    from custom_components.wemportal import expert_writer
+
+    jar = {"cookies": {"ASP.NET_SessionId": "expired"}, "saved_at": time.monotonic()}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    login_page = FakeResponse(
+        status_code=status, url="https://www.wemportal.com/Web/Login.aspx"
+    )
+
+    with contextlib.suppress(exceptions.WemPortalError):
+        client._check_response(login_page, "parameter dialog")
+
+    assert not jar.get("cookies"), "the dead session is still offered"
+
+
+def test_an_expert_error_from_another_page_keeps_the_shared_cache():
+    from custom_components.wemportal import expert_writer
+
+    jar = {"cookies": {"ASP.NET_SessionId": "alive"}, "saved_at": time.monotonic()}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+
+    with pytest.raises(exceptions.ServerError):
+        client._check_response(FakeResponse(status_code=500), "parameter dialog")
+
+    assert jar.get("cookies") == {"ASP.NET_SessionId": "alive"}
+
+
 def test_a_second_turned_away_web_login_in_a_row_is_the_block(monkeypatch):
     clock = _Clock()
     api = _api_whose_web_login_answers(
@@ -9967,3 +10115,23 @@ def test_the_login_page_is_known_by_its_endpoint(url, is_the_login):
         scraper._check_response(FakeResponse({}, status_code=403, url=url), "page")
 
     assert isinstance(refused.value, WebLoginRefused) is is_the_login
+
+
+@pytest.mark.parametrize(
+    ("url", "is_the_login"),
+    [
+        ("https://www.wemportal.com/Web/Login.aspx", True),
+        ("https://www.wemportal.com/(S(abc123))/Web/Login.aspx", True),
+        ("https://WWW.WEMPORTAL.COM/Web/login.aspx?ReturnUrl=%2fWeb", True),
+        ("https://www.wemportal.com/Web/Default.aspx", False),
+        (
+            "https://www.wemportal.com/Web/Default.aspx?x=https://www.wemportal.com/Web/Login.aspx",
+            False,
+        ),
+        (None, False),
+    ],
+)
+def test_one_rule_knows_the_login_page(url, is_the_login):
+    from custom_components.wemportal.web_protocol import is_login_page
+
+    assert is_login_page(url) is is_the_login

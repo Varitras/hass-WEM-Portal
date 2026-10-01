@@ -36,6 +36,7 @@ from .utils import (
     unit_to_icon,
 )
 from .web_protocol import (
+    is_login_page,
     maintenance_blocking,
     maintenance_notice,
     note_maintenance_announcement,
@@ -255,15 +256,18 @@ class WemPortalScraper:
         only where the notice explains a page that is not a session - see
         web_protocol.maintenance_blocking; an announcement is passed on once.
         """
+        where = redact_url(getattr(response, "url", None))
+        if is_login_page(where):
+            # A session sent here is dead whatever the status says, and
+            # the status raises below: asked per request site, a login page
+            # answering an error left the cookie for the next cycle's reuse.
+            self.cookie = {}
         status = getattr(response, "status_code", 200)
         if status == 403:
             # By the endpoint answered, not by the step that asked: a reused
             # session that ran out is redirected to the login page, and that
-            # refusal is the login's too. The endpoint, not a substring: a
-            # cookieless session puts itself into the path, and a query can
-            # name the login page without being it.
-            where = redact_url(getattr(response, "url", None))
-            if where.lower() == WEB_LOGIN_URL.lower():
+            # refusal is the login's too.
+            if is_login_page(where):
                 raise WebLoginRefused(
                     f"The WEM Portal turned the web login away (403 for the "
                     f"{what} at {where})."
@@ -320,7 +324,7 @@ class WemPortalScraper:
         # `return None` - which the full login reports as an AuthError, i.e. a
         # server outage blamed on the credentials.
         self._check_response(r_main, "main page")
-        if WEB_LOGIN_URL.lower() in r_main.url.lower():
+        if is_login_page(r_main.url):
             return None
 
         tree_main = html.fromstring(r_main.text)
@@ -357,7 +361,7 @@ class WemPortalScraper:
         # nothing about maintenance - it looks the same before and during a
         # window. Asked first, an announcement on it re-raised as maintenance
         # here, and the reuse path passes that on instead of logging in fresh.
-        on_login_page = WEB_LOGIN_URL.lower() in r_expert.url.lower()
+        on_login_page = is_login_page(r_expert.url)
         self._check_response(
             r_expert, "expert page", check_maintenance=not on_login_page
         )
@@ -446,6 +450,8 @@ class WemPortalScraper:
                 _LOGGER.debug(
                     "Cached WEM Portal session is no longer valid, logging in again."
                 )
+                # Dead for any retry too, however the login below ends.
+                self.cookie = {}
                 try:
                     self.session.cookies.clear()
                 except Exception as exc:  # noqa: BLE001

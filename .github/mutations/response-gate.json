@@ -4553,7 +4553,7 @@
   {
     "label": "web login grace: a page 403 taken for a turned-away login",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "old": "            if is_login_page(where):\n",
     "new": "            if True:\n",
     "tests": "only_the_login_steps_of_the_scraper_count"
   },
@@ -4567,7 +4567,7 @@
   {
     "label": "web login grace: a redirect to the login page not taken for the login",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "old": "            if is_login_page(where):\n",
     "new": "            if False:\n",
     "tests": "only_the_login_steps_of_the_scraper_count"
   },
@@ -4588,7 +4588,7 @@
   {
     "label": "web login grace: the login page recognised by a substring again",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            if where.lower() == WEB_LOGIN_URL.lower():\n",
+    "old": "            if is_login_page(where):\n",
     "new": "            if WEB_LOGIN_URL.lower() in str(getattr(response, 'url', '')).lower():\n",
     "tests": "the_login_page_is_known_by_its_endpoint"
   },
@@ -4654,5 +4654,138 @@
     "old": "            if occurrences != 1:\n",
     "new": "            if False:\n",
     "tests": "missing_snippet_is_named_as_one"
+  },
+  {
+    "label": "login kept: any failed request drops the login again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if is_session_error:\n            self.valid_login = False\n",
+    "new": "        self.valid_login = False\n",
+    "tests": "an_answer_about_the_request_keeps_the_session"
+  },
+  {
+    "label": "login kept: a session that stays expired is kept too",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if is_session_error:\n            self.valid_login = False\n",
+    "new": "        if False:\n            self.valid_login = False\n",
+    "tests": "session_that_stays_expired_is_given_up"
+  },
+  {
+    "label": "web login grace: a turned-away login keeps its dead cookie",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self._register_scrape_failure()\n            self.webscraping_cookie = None\n            self._reset_scraper()\n            if self._account_state.note_refused_web_login():\n",
+    "new": "            self._register_scrape_failure()\n            self._reset_scraper()\n            if self._account_state.note_refused_web_login():\n",
+    "tests": "dead_cookie_to_the_retry"
+  },
+  {
+    "label": "login page rule: a substring again",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    return redact_url(url).lower() == WEB_LOGIN_URL.lower()\n",
+    "new": "    return WEB_LOGIN_URL.lower() in str(url).lower()\n",
+    "tests": "one_rule_knows_the_login_page"
+  },
+  {
+    "label": "login page rule: the scraper's reuse path back on its substring",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        on_login_page = is_login_page(r_expert.url)\n",
+    "new": "        on_login_page = WEB_LOGIN_URL.lower() in r_expert.url.lower()\n",
+    "tests": "during_an_announcement_falls_back_to_a_login or recognised_by_the_one_rule_everywhere"
+  },
+  {
+    "label": "login page rule: the expert main page back on its substring",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        on_login_page = is_login_page(main_page.url)\n",
+    "new": "        on_login_page = WEB_LOGIN_URL.lower() in main_page.url.lower()\n",
+    "tests": "expert_session_during_an_announcement_logs_in_again or recognised_by_the_one_rule_everywhere"
+  },
+  {
+    "label": "session: a login redirect ending on an error page taken for a plain failure",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                if sent_to_the_login and response.status_code != 403:\n                    raise ExpiredSessionError(\"Redirected to Account/Login\")\n                response.raise_for_status()\n",
+    "new": "                response.raise_for_status()\n                if sent_to_the_login:\n                    raise ExpiredSessionError(\"Redirected to Account/Login\")\n",
+    "tests": "login_redirect_that_lands_on_an_error_is_still_an_expired_session"
+  },
+  {
+    "label": "session: a 403 on the login redirect taken for an expired session",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                if sent_to_the_login and response.status_code != 403:\n",
+    "new": "                if sent_to_the_login:\n",
+    "tests": "403_on_the_login_redirect_is_still_the_block"
+  },
+  {
+    "label": "login page guard: blind to a startswith",
+    "path": "tests/test_security.py",
+    "old": "            and node.func.attr in _STRING_TESTS\n",
+    "new": "            and node.func.attr in ()\n",
+    "tests": "login_page_guard_sees_every_shape_of_the_old_test"
+  },
+  {
+    "label": "login page guard: blind to an alias",
+    "path": "tests/test_security.py",
+    "old": "        if alias.name == \"WEB_LOGIN_URL\" and alias.asname\n",
+    "new": "        if False\n",
+    "tests": "login_page_guard_sees_every_shape_of_the_old_test"
+  },
+  {
+    "label": "scraper: a reuse found dead offered to the retry again",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "                # Dead for any retry too, however the login below ends.\n                self.cookie = {}\n",
+    "new": "",
+    "tests": "reuse_found_dead_is_forgotten_even_if_the_fresh_login_fails"
+  },
+  {
+    "label": "web scrape: what the scraper learnt about the session lost on a failure",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if not scraper.cookie:\n                self.webscraping_cookie = None\n",
+    "new": "            pass\n",
+    "tests": "session_the_scraper_found_dead_is_not_handed_back_to_it"
+  },
+  {
+    "label": "scraper: a reuse sent to a failing login page kept for the retry",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            # answering an error left the cookie for the next cycle's reuse.\n            self.cookie = {}\n",
+    "new": "            pass\n",
+    "tests": "login_page_that_errors_is_forgotten_too or answer_from_the_login_page_forgets_the_session"
+  },
+  {
+    "label": "expert: a dead session left in the account's shared cache",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            # Out of the account's shared cache too, however the login ends.\n            self._cookie_jar.pop(\"cookies\", None)\n",
+    "new": "",
+    "tests": "expert_session_found_dead_leaves_the_shared_cache"
+  },
+  {
+    "label": "expert: a login-page answer leaves the dead session in the shared cache",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            # dialog a multi-read books per id, left the dead session there.\n            self._cookie_jar.pop(\"cookies\", None)\n",
+    "new": "            pass\n",
+    "tests": "expert_answer_from_the_login_page_leaves_the_shared_cache"
+  },
+  {
+    "label": "expert batch: a multi-read goes on over a session found dead",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                # login page and be booked as unreadable.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError, AuthError:\n",
+    "new": "                # login page and be booked as unreadable.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError:\n",
+    "tests": "batch_read_stops_at_a_session_found_dead"
+  },
+  {
+    "label": "expert batch: a discovery walks on over a session found dead",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                # dead session, which every further module would only repeat.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError, AuthError:\n",
+    "new": "                # dead session, which every further module would only repeat.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError:\n",
+    "tests": "discovery_stops_at_a_session_found_dead"
+  },
+  {
+    "label": "scraper: an error from another page drops a live session",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        where = redact_url(getattr(response, \"url\", None))\n        if is_login_page(where):\n",
+    "new": "        where = redact_url(getattr(response, \"url\", None))\n        if True:\n",
+    "tests": "error_from_another_page_keeps_the_session"
+  },
+  {
+    "label": "expert: an error from another page drops the live shared session",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if is_login_page(getattr(response, \"url\", None)):\n",
+    "new": "        if True:\n",
+    "tests": "expert_error_from_another_page_keeps_the_shared_cache"
   }
 ]

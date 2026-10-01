@@ -6,6 +6,30 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A refused request no longer costs a login the next cycle.** A statistics
+  group the heat pump does not have is refused every hour, and that dropped
+  the session, so the next cycle logged in again - about 24 extra logins a
+  day, each one a chance for the bare refusal the portal gives logins now and
+  then. The login is given up now only when the session is really gone -
+  also when the redirect to the login page ends on an error page - or when
+  the portal's refusal pauses everything.
+- **A web session found dead is not tried again.** After a turned-away web
+  login, and after a fresh login that failed any other way, the next
+  attempt first tried the old session cookie, which cost two requests - one
+  of them to the login page. A session sent to the login page now counts as
+  dead whatever that page answers, error or not. The same holds for the
+  session the expert parameters share, and a read of several of them or a
+  parameter search now stops there instead of sending every remaining
+  request to the login page; the search then reports that it failed rather
+  than that it found nothing.
+- **The login page is recognised the same way everywhere.** Five checks
+  still looked for its address as a substring, and a session the portal
+  keeps in the address instead of a cookie slipped past them: an expired
+  session during an announced maintenance window then read as the outage
+  itself, instead of logging in again.
+
 ## [1.14.0b3] – 2026-09-29
 
 A third beta. Everything from 1.14.0b2, plus: a login the portal turns away

@@ -1166,6 +1166,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         if isinstance(previous, Reading) and previous.unit not in (None, ""):
             row.unit = previous.unit
 
+    def _scrape_with(self, scraper: WemPortalScraper) -> dict[str, Any]:
+        """One scrape, and what it learnt about the session, however it ends:
+        this api hands its cookie back to the scraper every cycle."""
+        try:
+            return scraper.scrape()[0]
+        finally:
+            if not scraper.cookie:
+                self.webscraping_cookie = None
+
     def _merge_webscraping_data(
         self, device_id: str, webscraping_data: dict[str, Any]
     ) -> None:
@@ -1243,7 +1252,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
 
         try:
             # Attempt to run the scraping job and extract the first result
-            data = scraper.scrape()[0]
+            data = self._scrape_with(scraper)
 
         except IndexError as exc:
             # Handle the case where the job result is not found
@@ -1271,6 +1280,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # pauses the API nor waits a cycle: five minutes, and the next
             # login usually goes through. A second in a row is the block.
             self._register_scrape_failure()
+            self.webscraping_cookie = None
             self._reset_scraper()
             if self._account_state.note_refused_web_login():
                 self.spider_wait_interval = 0

@@ -10,6 +10,7 @@ no installation-specific ids in the repository). That covers the parsing
 LOGIC; it does not prove the real portal still emits this structure.
 """
 
+import contextlib
 import time
 import types
 
@@ -907,23 +908,111 @@ def test_the_full_login_path_still_warns_about_an_empty_page(scraper, caplog):
     assert [record.levelname for record in _empty_page_reports(caplog)] == ["WARNING"]
 
 
+def test_a_reuse_found_dead_is_forgotten_even_if_the_fresh_login_fails():
+    """The cookie was dropped only when the retry was a turned-away login.
+    A fresh login failing any other way - a timeout, maintenance, a server
+    error - kept it, and every retry spent two requests on it first.
+
+    Not sent to the login page: the portal answering the expert tab with the
+    main page is the other way a reused session turns out dead, and only
+    the scrape itself sees that one."""
+    scraper = WemPortalScraper(
+        "user@example.org", "secret", {"ASP.NET_SessionId": "expired"}
+    )
+    scraper.session = _ReuseSession(
+        _ReuseResponse("<html><body>main page, no expert view</body></html>")
+    )
+
+    with pytest.raises(Exception):  # noqa: B017 - whichever way the login fails
+        scraper.scrape()
+
+    assert scraper.cookie == {}, "the dead session is still offered to the retry"
+
+
+def test_a_reuse_sent_to_a_login_page_that_errors_is_forgotten_too():
+    """The status was asked before the address, so a login page answering
+    500 raised as a server error and the dead session stayed for the retry."""
+    from custom_components.wemportal.exceptions import ServerError
+
+    scraper = WemPortalScraper(
+        "user@example.org", "secret", {"ASP.NET_SessionId": "expired"}
+    )
+
+    class _Session(_ReuseSession):
+        def get(self, *_args, **_kwargs):
+            return _ReuseResponse(
+                "<html>error</html>",
+                status_code=500,
+                url="https://www.wemportal.com/Web/Login.aspx",
+            )
+
+    scraper.session = _Session(None)
+
+    with pytest.raises(ServerError):
+        scraper.scrape()
+
+    assert scraper.cookie == {}
+
+
+@pytest.mark.parametrize("status", [200, 403, 500])
+def test_any_answer_from_the_login_page_forgets_the_session(status):
+    """Decided at the one gate every response passes, and before its status:
+    per request site, each new site was one more chance to forget, and the
+    status raised first left the dead cookie for the next cycle's reuse."""
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    scraper = WemPortalScraper(
+        "user@example.org", "secret", {"ASP.NET_SessionId": "expired"}
+    )
+    login_page = _ReuseResponse(
+        "<html></html>",
+        status_code=status,
+        url="https://www.wemportal.com/Web/Login.aspx",
+    )
+
+    with contextlib.suppress(WemPortalError):
+        scraper._check_response(login_page, "expert page")
+
+    assert scraper.cookie == {}
+
+
+def test_an_error_from_another_page_keeps_the_session():
+    """A 500 from the main page says the portal failed, not the session."""
+    from custom_components.wemportal.exceptions import ServerError
+
+    scraper = WemPortalScraper(
+        "user@example.org", "secret", {"ASP.NET_SessionId": "alive"}
+    )
+
+    with pytest.raises(ServerError):
+        scraper._check_response(_ReuseResponse("<html></html>", 500), "main page")
+
+    assert scraper.cookie == {"ASP.NET_SessionId": "alive"}
+
+
 _ANNOUNCED_LOGIN_PAGE = (
     "<html><body><div class='offlinecontent'>Wartungsarbeiten zwischen 17:00 "
     "und 20:00 Uhr</div><input name='ctl00$content$tbxPassword'></body></html>"
 )
 
 
-def test_an_expired_session_during_an_announcement_falls_back_to_a_login():
+@pytest.mark.parametrize(
+    "login_url",
+    [
+        "https://www.wemportal.com/Web/Login.aspx",
+        "https://www.wemportal.com/(S(abc123))/Web/Login.aspx?ReturnUrl=%2fWeb",
+    ],
+    ids=["plain", "cookieless"],
+)
+def test_an_expired_session_during_an_announcement_falls_back_to_a_login(login_url):
     """Sessions run out after about fifteen minutes and the scrape runs every
     thirty, so the reuse path lands on the login page almost every time. With
     an announcement on that page the marker was read BEFORE the redirect, and
     the reuse path re-raises maintenance instead of logging in fresh - the
     same four hours of outage, one layer down. A login page on the reuse path
-    is an expired session; the full login decides the rest."""
-    scraper = _reuse_scraper(
-        _ReuseResponse(
-            _ANNOUNCED_LOGIN_PAGE, url="https://www.wemportal.com/Web/Login.aspx"
-        )
-    )
+    is an expired session; the full login decides the rest - also when a
+    cookieless session puts itself into the path, which a substring test of
+    the login URL missed."""
+    scraper = _reuse_scraper(_ReuseResponse(_ANNOUNCED_LOGIN_PAGE, url=login_url))
 
     assert scraper._load_expert_page() is None

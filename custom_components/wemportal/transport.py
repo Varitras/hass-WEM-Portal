@@ -512,11 +512,10 @@ class WemPortalTransport:
         # Out of retries, or an error of a completely different kind:
         server_status, server_message = self.get_response_details(response)
 
-        # The old logic recreated the entire API instance when this happened.
-        # To emulate that recovery mechanism without losing cached metadata,
-        # we invalidate the login state so the next cycle creates a fresh
-        # requests.Session.
-        self.valid_login = False
+        # Any other answer is about the request: 400/3001 comes hourly and is
+        # swallowed, and dropping the login for it cost one the next cycle.
+        if is_session_error:
+            self.valid_login = False
 
         if is_transport_error:
             # There was no server and no answer, so there is no status code
@@ -597,15 +596,16 @@ class WemPortalTransport:
             try:
                 response = self._send(url, current_headers, data)
 
-                response.raise_for_status()
-
-                # Check for stealthy session expiration (HTML redirect)
-                if "Account/Login" in response.url or (
+                # Session expiry by redirect, asked before the status: one that
+                # ends on an error page is still one. A 403 stays the block.
+                sent_to_the_login = "Account/Login" in response.url or (
                     hasattr(response, "redirect_url")
                     and response.redirect_url
                     and "Account/Login" in str(response.redirect_url)
-                ):
+                )
+                if sent_to_the_login and response.status_code != 403:
                     raise ExpiredSessionError("Redirected to Account/Login")
+                response.raise_for_status()
 
                 _LOGGER.debug(response)
                 return response

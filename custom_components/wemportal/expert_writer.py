@@ -41,6 +41,7 @@ from .exceptions import (
 from .models import account_state
 from .utils import parse_portal_number
 from .web_protocol import (
+    is_login_page,
     maintenance_blocking,
     maintenance_notice,
     note_maintenance_announcement,
@@ -732,6 +733,11 @@ class WemPortalExpertClient:
         also appears on healthy pages hours before a window opens, so on its
         own it proves nothing; an announcement is passed on once instead.
         """
+        if is_login_page(getattr(response, "url", None)):
+            # Out of the account's shared cache whatever the status says,
+            # before it raises: a reuse sent to a failing login page, or a
+            # dialog a multi-read books per id, left the dead session there.
+            self._cookie_jar.pop("cookies", None)
         self._raise_if_forbidden(response)
         status = getattr(response, "status_code", 200)
         if status != 200:
@@ -856,6 +862,8 @@ class WemPortalExpertClient:
             _LOGGER.debug(
                 "Cached expert session no longer usable (%s), logging in fresh.", exc
             )
+            # Out of the account's shared cache too, however the login ends.
+            self._cookie_jar.pop("cookies", None)
             self.close()
             return False
 
@@ -974,7 +982,7 @@ class WemPortalExpertClient:
         # The login page first, for the reason the scraper's reuse path has:
         # it decides nothing about maintenance, and a cached session that ran
         # out lands there - which is a reason to log in fresh, not an outage.
-        on_login_page = WEB_LOGIN_URL.lower() in main_page.url.lower()
+        on_login_page = is_login_page(main_page.url)
         self._check_response(
             main_page, "main page", check_maintenance=not on_login_page
         )
@@ -1329,7 +1337,7 @@ class WemPortalExpertClient:
                 headers=headers,
             )
         self._check_response(response, "navigation postback")
-        if WEB_LOGIN_URL.lower() in response.url.lower():
+        if is_login_page(response.url):
             raise AuthError("Expert client: session expired during navigation.")
         _LOGGER.debug(
             "Expert navigation: postback %s (async=%s) -> %d bytes, delta=%s, pagestate=%s",
@@ -1515,9 +1523,11 @@ class WemPortalExpertClient:
                 try:
                     result[entityvalue] = self._fetch_form(entityvalue)
                 # A 403 is about the connection, not this id: it has to reach
-                # the caller so the shared cooldown engages.
+                # the caller so the shared cooldown engages. A dead session
+                # is not this id's either: every further one would go to the
+                # login page and be booked as unreadable.
                 # skipcq: PYL-W0706 - shields the catch-all, not redundant
-                except ForbiddenError:
+                except ForbiddenError, AuthError:
                     raise
                 except Exception as exc:  # noqa: BLE001
                     _LOGGER.warning(
@@ -1566,9 +1576,10 @@ class WemPortalExpertClient:
                 try:
                     html_text = self._fetch_module_page(module)
                 # A 403 is about the connection, not this module: it has to
-                # reach the caller so the shared cooldown engages.
+                # reach the caller so the shared cooldown engages. So is a
+                # dead session, which every further module would only repeat.
                 # skipcq: PYL-W0706 - shields the catch-all, not redundant
-                except ForbiddenError:
+                except ForbiddenError, AuthError:
                     raise
                 except Exception as exc:  # noqa: BLE001
                     _LOGGER.warning(
@@ -1843,7 +1854,7 @@ class WemPortalExpertClient:
                 },
             )
             self._check_response(response, "parameter dialog")
-            if WEB_LOGIN_URL.lower() in response.url.lower():
+            if is_login_page(response.url):
                 raise AuthError(
                     "Expert client: redirected to login when fetching the form."
                 )

@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 import logging
 import re
 
-from .const import WEB_LOGGED_IN_MARKER
+from .const import WEB_LOGGED_IN_MARKER, WEB_LOGIN_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -147,3 +147,13 @@ def redact_url(url: object) -> str:
     except Exception:  # noqa: BLE001
         # Redaction must never be the thing that breaks error handling.
         return _UNKNOWN_URL
+
+
+def is_login_page(url: object) -> bool:
+    """Whether a response came from the web login page.
+
+    By the endpoint: a cookieless session puts itself into the path, and
+    a query can name the login page without being it - a substring test
+    misses the first and takes the second.
+    """
+    return redact_url(url).lower() == WEB_LOGIN_URL.lower()
