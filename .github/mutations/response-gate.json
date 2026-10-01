@@ -107,8 +107,8 @@
   {
     "label": "net: falsy scraped fields must not fall back to the api value",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if api_value is not None:\n                target.value = api_value",
-    "new": "            if api_value is not None:\n                target.value = api_value\n            target.unit = target.unit or sensor.unit",
+    "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n                target.value = api_value",
+    "new": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n                target.value = api_value\n            target.unit = target.unit or sensor.unit",
     "tests": "extra_mapper_output_is_unchanged"
   },
   {
@@ -3587,8 +3587,8 @@
   {
     "label": "merge: the row from before the scrape left behind as a second entity",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            api_data[device_id].pop(key, None)",
-    "new": "            pass",
+    "old": "                api_data[device_id].pop(key, None),\n",
+    "new": "                api_data[device_id].get(key),\n",
     "tests": "scraper_arriving_later_takes_the_api_row_it_replaces"
   },
   {
@@ -4962,5 +4962,89 @@
     "old": "                self._attr_native_value = self._validated_native_value(\n                    self._attr_native_value, None\n                )\n",
     "new": "",
     "tests": "checked_against_the_restored_unit"
+  },
+  {
+    "label": "merge: an empty API value kept against a row the scrape no longer feeds",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n",
+    "new": "            if api_value is not None:\n",
+    "tests": "empty_api_value_clears"
+  },
+  {
+    "label": "merge: an empty API value erases a row the scrape delivers",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n",
+    "new": "            if True:\n",
+    "tests": "empty_api_value_does_not_erase_the_scraped_one"
+  },
+  {
+    "label": "scrape: the programme week thrown away with the row",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            row.circuit_times_day = previous.circuit_times_day\n",
+    "new": "",
+    "tests": "scrape_keeps_the_programme_details"
+  },
+  {
+    "label": "scrape: the programme's possible values thrown away with the row",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            row.possible_values = previous.possible_values\n",
+    "new": "",
+    "tests": "scrape_keeps_the_programme_details"
+  },
+  {
+    "label": "discovery: a dropped parameter left standing where the merge put it",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if not scrape_still_feeds(row_name):\n                row.value = None\n",
+    "new": "            if False:\n                row.value = None\n",
+    "tests": "dropped_parameter_is_cleared_where_the_merge_put_it"
+  },
+  {
+    "label": "discovery: a dropped parameter blanks a row the scrape still feeds",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            if not scrape_still_feeds(row_name):\n                row.value = None\n",
+    "new": "            if True:\n                row.value = None\n",
+    "tests": "dropped_parameter_leaves_a_row_the_scrape_still_feeds"
+  },
+  {
+    "label": "discovery: a dropped programme leaves its week on the row",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            row.circuit_times_day = None\n            row.possible_values = None\n",
+    "new": "",
+    "tests": "dropped_programme_takes_its_week_with_it"
+  },
+  {
+    "label": "scrape: a week carried onto a row the merge no longer maps",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if isinstance(previous, Reading) and merged:\n",
+    "new": "        if isinstance(previous, Reading):\n",
+    "tests": "scrape_that_empties_the_merge_map_drops_the_week"
+  },
+  {
+    "label": "merge freshness: a module gone from the device list still carries its week",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            return parameter_id in (module.get(\"parameters\") or {})\n",
+    "new": "            return True\n",
+    "tests": "drops_the_week_of_a_module_gone_from_the_device_list"
+  },
+  {
+    "label": "merge: the row replacing the api's own drops its programme week",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        row.circuit_times_day = left.circuit_times_day\n        row.possible_values = left.possible_values\n",
+    "new": "        pass\n",
+    "tests": "scraper_arriving_later_takes_the_programme_week_with_the_row"
+  },
+  {
+    "label": "merge: the week handed to a row its fetch does not maintain",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "                scraping_mapper[cache_key][0],\n",
+    "new": "                scraping_mapper[cache_key][-1],\n",
+    "tests": "the_programme_week_goes_only_to_the_row_its_fetch_maintains"
+  },
+  {
+    "label": "scrape: the week carried onto every row the merge maps",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            rows[0]\n            for key, rows in self.scraping_mapper.items()\n            if still_described(*key)\n        }\n",
+    "new": "            row\n            for key, rows in self.scraping_mapper.items()\n            if still_described(*key)\n            for row in rows\n        }\n",
+    "tests": "carries_the_week_only_on_the_row_its_fetch_maintains"
   }
 ]

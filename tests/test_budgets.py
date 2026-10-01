@@ -70,7 +70,15 @@ LINE_BUDGETS = {
     # And by 6 for a login ending the auth streak even on a tick that read
     # nothing, and 2 for why the two gates' tick margins differ.
     # And by 6 for knowing a dead session by its cause, not by the login flag.
-    "wemportalapi.py": 2699,
+    # And by 4 for a scrape keeping the programme week the API found.
+    # And by 8 for telling the forgetting of a dropped parameter where the
+    # merge put its value, and whether the scrape still feeds that row.
+    # And by 5 for carrying the programme week only onto a row the merge
+    # still maps, where its fetch and its forgetting can find it.
+    # And by 21 for carrying it only through a parameter some module still
+    # describes, onto the row its fetch maintains: the map outlives a module
+    # gone from the device list, and lists more rows than the fetch keeps.
+    "wemportalapi.py": 2737,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
@@ -92,6 +100,9 @@ COMPLEXITY_LIMIT = 15
 # thing they describe has that many cases, and splitting them would have
 # produced pass-through helpers rather than smaller thoughts.
 COMPLEXITY_BUDGETS = {
+    # One over the default for the question an empty API value has to ask
+    # before it may leave a merged row alone: does the scrape still feed it.
+    "mapper.py::_merge_into_scraped": 16,
     "expert_writer.py::WemPortalExpertClient.parse_parameter_form": 29,
     # The per-parameter ageing decision, split out of _clear_unanswered once
     # the merge map carried a device-scoped key of its own - the split the old

@@ -422,7 +422,14 @@ def _scraped_entities_naming_the_same_thing(
 
 
 def _merge_into_scraped(
-    device_id, key, sensor, language, scraping_mapper, api_data, scraped_rows
+    device_id,
+    key,
+    sensor,
+    language,
+    scraping_mapper,
+    api_data,
+    scraped_rows,
+    scrape_still_feeds,
 ) -> None:
     """Feed an API reading into the scraped entity that shows the same value,
     so both sources keep one entity instead of two that drift apart."""
@@ -486,17 +493,20 @@ def _merge_into_scraped(
             # instead, and entities are built from whatever rows exist: left
             # behind, this one stays as a second entity for the same reading,
             # frozen at the last value the api put in it.
-            api_data[device_id].pop(key, None)
+            _hand_the_week_on(
+                api_data[device_id].pop(key, None),
+                scraping_mapper[cache_key][0],
+                api_data[device_id],
+            )
 
     for scraped_entity in scraping_mapper[cache_key]:
         previous = api_data[device_id].get(scraped_entity)
         target = previous if isinstance(previous, Reading) else None
 
-        # An API read that came back empty must not erase a
-        # web value that was scraped successfully in the same
-        # cycle. Both paths feed this one entity, and writing
-        # None over a good reading turned a partial API
-        # failure into an unknown sensor.
+        # An API read that came back empty must not erase a web value the
+        # scrape still delivers: writing None over it turned a partial API
+        # failure into an unknown sensor. Only then - kept against every
+        # empty answer, a row nothing else refreshes stood as current.
         api_value = sensor.value
         if target is None:
             target = Reading(parameter_id=scraped_entity)
@@ -510,7 +520,7 @@ def _merge_into_scraped(
             # only the value flows in, and everything the row carries beyond
             # these fields (a schedule detail, say) stays untouched, exactly
             # as dict.update() on a fixed key set left it before.
-            if api_value is not None:
+            if api_value is not None or not scrape_still_feeds(scraped_entity):
                 target.value = api_value
             target.parameter_id = scraped_entity
             target.platform = "sensor"
@@ -521,6 +531,23 @@ def _merge_into_scraped(
         # see _forget_unanswered_module_values.
         target.module_index = sensor.module_index
         target.module_type = sensor.module_type
+
+
+def _hand_the_week_on(left, owner, device_data) -> None:
+    """The schedule fetch wrote the programme week under the api's own key,
+    and the row taking its place has none: the page never shows one, and
+    the hourly gate counts the fetch as recent, so nothing brings it back
+    for up to an hour.
+
+    To the first target only, the row the fetch refreshes and drops the
+    week on (see _schedule_row_key): handed to every target, the others
+    kept the old week for the session."""
+    if not isinstance(left, Reading) or left.circuit_times_day is None:
+        return
+    row = device_data.get(owner)
+    if isinstance(row, Reading):
+        row.circuit_times_day = left.circuit_times_day
+        row.possible_values = left.possible_values
 
 
 def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
@@ -558,7 +585,9 @@ def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
     )
 
 
-def forget_dropped_parameters(device_data, module, described) -> None:
+def forget_dropped_parameters(
+    device_data, module, described, merged, scrape_still_feeds
+) -> None:
     """Take the readings of dropped parameters down with the description.
 
     Sibling of `_clear_unanswered` below, and the case that one cannot see.
@@ -577,7 +606,9 @@ def forget_dropped_parameters(device_data, module, described) -> None:
     still exists and keeps its unit and name, while this one is gone.
 
     Only what was described and no longer is. A scraped row filed under the
-    same module was never in that list and is not this function's to delete.
+    same module was never in that list and is not this function's to delete -
+    but where the merge put a dropped parameter's value into one, `merged`
+    names it, and its value goes unless the scrape still delivers it.
 
     Takes the module as it stands and the description that is about to
     replace it, rather than the difference: working out what left is the
@@ -591,6 +622,16 @@ def forget_dropped_parameters(device_data, module, described) -> None:
     module_name = module.get("Name", "")
     for parameter_id in dropped:
         device_data.pop(f"{module_name}-{parameter_id}", None)
+        for row_name in merged(parameter_id):
+            row = device_data.get(row_name)
+            if not isinstance(row, Reading):
+                continue
+            # The week is the schedule fetch's, which no longer walks this
+            # parameter; only the value may still be the page's.
+            row.circuit_times_day = None
+            row.possible_values = None
+            if not scrape_still_feeds(row_name):
+                row.value = None
     _LOGGER.info(
         "Module %s stopped describing %s; dropping the last value instead "
         "of publishing it on as current.",
@@ -787,6 +828,8 @@ class WemPortalDataMapper:
                     scraping_mapper,
                     api_data,
                     scraped_rows,
+                    # No word from the scrape: nothing counts as its delivery.
+                    scrape_still_feeds or (lambda _row_name: False),
                 )
             else:
                 _emit_plain_sensor(device_id, key, sensor, api_data)

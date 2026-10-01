@@ -59,6 +59,24 @@ versioning follows [Semantic Versioning](https://semver.org/).
   refused by Home Assistant on every cycle, and the last number stayed on
   screen. It now shows as unknown, like the same word on any other number -
   also when the word is the first reading after a restart.
+- **In `both` mode an empty API answer no longer keeps an old value
+  forever.** An empty answer was never allowed to overwrite a reading, so
+  the web page's value would survive it - but that also held when the web
+  scrape had stopped delivering that row, or never had. The last reading
+  then stood as current for as long as the API kept answering empty. It
+  is now kept only while the scrape still delivers it.
+- **In `both` mode a web scrape no longer drops a weekly programme's
+  phases.** The scrape replaced the whole reading, and the switching times
+  the API had read from the device went with it: the sensor showed a bare
+  time window until the next hourly schedule read. They are kept on a row
+  as long as the API reading still maps to it and its module is still
+  listed for the device - and the first scrape that takes the place of the
+  API's own row now takes them over from it.
+- **A parameter the portal stops describing no longer lingers in `both`
+  mode.** Its value was removed only under the parameter's own name, not
+  from the web row it had been merged into; with the web scrape failing,
+  that row went on showing the last value as current. A weekly programme
+  that goes takes its phases with it.
 
 ## [1.14.0b3] – 2026-09-29
 

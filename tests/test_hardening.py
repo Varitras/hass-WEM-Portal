@@ -4640,6 +4640,120 @@ def _scraped(*keys):
     return {key: Reading(value=1, unit="°C", platform="sensor") for key in keys}
 
 
+def test_a_scrape_keeps_the_programme_details_the_schedule_fetch_found():
+    """The scrape replaced the whole row, and with it the week the schedule
+    fetch had read from the device. The API merge after it brings the value
+    back but not the week, and the hourly gate still counts the fetch as
+    recent: the sensor showed a bare window until the next schedule read."""
+    api = _api()
+    api.data = {
+        "0000": {
+            "ConnectionStatus": 8,  # busy: still the device's week
+            "pump-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}',
+                circuit_times_day=A_FED_WEEK,
+                possible_values=[1, 2, 3],
+            ),
+        }
+    }
+    api.modules = {"0000": {ModuleRef(1, 1): {"parameters": {"Programme": {}}}}}
+    api.scraping_mapper = {("0000", ModuleRef(1, 1), "Programme"): ["pump-programme"]}
+    api._previous_scraper_keys = {"pump-programme"}
+
+    api._merge_webscraping_data(
+        "0000", {"pump-programme": Reading(value='{"MO-1":"06:00-10:10"}')}
+    )
+
+    row = api.data["0000"]["pump-programme"]
+    assert row.circuit_times_day == A_FED_WEEK, "the scrape threw the week away"
+    assert row.possible_values == [1, 2, 3]
+
+
+def test_a_scrape_carries_the_week_only_on_the_row_its_fetch_maintains():
+    """The fetch refreshes and drops the week on the first mapped row alone;
+    carried on a second one too, that copy was never refreshed again."""
+    api = _api()
+    api.data = {
+        "0000": {
+            "ConnectionStatus": 0,
+            "pump-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}', circuit_times_day=A_FED_WEEK
+            ),
+            "circuit-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}', circuit_times_day=A_FED_WEEK
+            ),
+        }
+    }
+    api.modules = {"0000": {ModuleRef(1, 1): {"parameters": {"Programme": {}}}}}
+    api.scraping_mapper = {
+        ("0000", ModuleRef(1, 1), "Programme"): ["pump-programme", "circuit-programme"]
+    }
+    api._previous_scraper_keys = {"pump-programme", "circuit-programme"}
+
+    api._merge_webscraping_data(
+        "0000",
+        {
+            "pump-programme": Reading(value='{"MO-1":"06:00-10:10"}'),
+            "circuit-programme": Reading(value='{"MO-1":"06:00-10:10"}'),
+        },
+    )
+
+    assert api.data["0000"]["pump-programme"].circuit_times_day == A_FED_WEEK
+    assert api.data["0000"]["circuit-programme"].circuit_times_day is None
+
+
+def test_a_scrape_that_empties_the_merge_map_drops_the_week():
+    """A changed page empties the map, and a programme dropped in the same
+    cycle then has no row to take its week from: carried on by every scrape
+    after, it outlived the programme for good. Dropped with the map, the week
+    comes back with the next schedule read."""
+    api = _api()
+    api.data = {
+        "0000": {
+            "ConnectionStatus": 0,
+            "pump-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}', circuit_times_day=A_FED_WEEK
+            ),
+        }
+    }
+    api.scraping_mapper = {("0000", ModuleRef(1, 1), "Programme"): ["pump-programme"]}
+    api._previous_scraper_keys = {"pump-programme"}
+
+    api._merge_webscraping_data(
+        "0000",
+        {
+            "pump-programme": Reading(value='{"MO-1":"07:00-11:00"}'),
+            "pump-new-row": Reading(value=1.0),
+        },
+    )
+
+    assert api.data["0000"]["pump-programme"].circuit_times_day is None
+
+
+def test_a_scrape_drops_the_week_of_a_module_gone_from_the_device_list():
+    """The merge map outlives the module that fed it: gone from the device
+    list, its programme is read by no schedule fetch and forgotten by no
+    re-read, and every scrape carried its last week on for the session."""
+    api = _api()
+    api.data = {
+        "0000": {
+            "ConnectionStatus": 0,
+            "pump-programme": Reading(
+                value='{"MO-1":"06:00-10:10"}', circuit_times_day=A_FED_WEEK
+            ),
+        }
+    }
+    api.modules = {"0000": {}}
+    api.scraping_mapper = {("0000", ModuleRef(1, 1), "Programme"): ["pump-programme"]}
+    api._previous_scraper_keys = {"pump-programme"}
+
+    api._merge_webscraping_data(
+        "0000", {"pump-programme": Reading(value='{"MO-1":"06:00-10:10"}')}
+    )
+
+    assert api.data["0000"]["pump-programme"].circuit_times_day is None
+
+
 def test_a_relabelled_scraper_row_is_reported(caplog):
     """Scraped sensors are keyed by their portal labels - there is no stable
     id to use instead, since the row's entityvalue embeds the current VALUE
@@ -6672,14 +6786,14 @@ def test_a_scrape_that_arrives_late_invalidates_the_merge_cache():
     api.data = {"1234": {}}
     scraped = {"heat_pump-outside": Reading(value=1.0, platform="sensor")}
 
-    api.scraping_mapper[(ModuleRef(0, 1), "Outside")] = ["Heat pump-Outside"]
+    api.scraping_mapper[("1234", ModuleRef(0, 1), "Outside")] = ["Heat pump-Outside"]
     api._merge_webscraping_data("1234", scraped)
 
     assert api.scraping_mapper == {}, (
         "the first scrape of the session left the fallback mapping in place"
     )
 
-    api.scraping_mapper[(ModuleRef(0, 1), "Outside")] = ["heat_pump-outside"]
+    api.scraping_mapper[("1234", ModuleRef(0, 1), "Outside")] = ["heat_pump-outside"]
     api._merge_webscraping_data("1234", scraped)
 
     assert api.scraping_mapper, "an unchanged scrape inventory dropped the cache"
@@ -7141,6 +7255,72 @@ def test_a_parameter_the_portal_stopped_describing_stops_being_published():
         "a scraped row the description never contained was taken with it"
     )
     assert device_data["ConnectionStatus"] == 0
+
+
+def _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it):
+    api = _api()
+    api.modules = {
+        "1234": {
+            ModuleRef(0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heizkreis",
+                "parameters": {
+                    "P1": {"ParameterID": "P1"},
+                    "P2": {"ParameterID": "P2"},
+                },
+            }
+        }
+    }
+    api.data = {
+        "1234": {
+            "heizkreis-p2": Reading(
+                value=21.5,
+                parameter_id="P2",
+                circuit_times_day=A_FED_WEEK,
+                possible_values=[1, 2, 3],
+            )
+        }
+    }
+    api.scraping_mapper = {("1234", ModuleRef(0, 1), "P2"): ["heizkreis-p2"]}
+    api._previous_scraper_keys = ["heizkreis-p2"]
+    api.spider_retry_count = 0 if scrape_feeds_it else 3
+    api._store_module_description(
+        "1234",
+        ModuleRef(0, 1),
+        api.modules["1234"][ModuleRef(0, 1)],
+        FakeResponse({"Parameters": [{"ParameterID": "P1"}]}),
+    )
+    return api.data["1234"]["heizkreis-p2"]
+
+
+def test_a_dropped_parameter_is_cleared_where_the_merge_put_it():
+    """In `both` mode its value lives in the scraped row it was merged into,
+    and only its own key was dropped. With the scrape failing nothing else
+    refreshed that row, and the last value of a parameter the portal no
+    longer has stood there as current, its module stamps moving on."""
+    row = _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it=False)
+
+    assert row.value is None
+
+
+def test_a_dropped_parameter_leaves_a_row_the_scrape_still_feeds():
+    """The row is the page's too; while the scrape delivers it, the next
+    scrape refreshes its value - blanking it now would only flicker."""
+    row = _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it=True)
+
+    assert row.value == 21.5
+
+
+@pytest.mark.parametrize("scrape_feeds_it", [True, False])
+def test_a_dropped_programme_takes_its_week_with_it(scrape_feeds_it):
+    """The week is the schedule fetch's, and that fetch walks the parameters
+    still described: kept on the row, and carried on by every scrape, it
+    outlived the programme it belonged to for good."""
+    row = _api_with_p2_merged_into_a_scraped_row(scrape_feeds_it)
+
+    assert row.circuit_times_day is None
+    assert row.possible_values is None
 
 
 def test_a_device_with_parameters_is_still_read():

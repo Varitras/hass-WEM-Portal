@@ -1149,8 +1149,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             )
         return gone
 
-    def _prepare_scraped_row(self, row: Reading, previous: Any) -> None:
-        """Translate the row's name and keep a unit this scrape did not bring.
+    def _prepare_scraped_row(self, row: Reading, previous: Any, merged: bool) -> None:
+        """Translate the row's name; keep a unit or programme it did not bring.
 
         Mutates `row` in place, which is what the caller stores. Split out of
         the merge loop, where it sat two levels deep and pushed the unit test
@@ -1175,6 +1175,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         if row.friendly_name is not None:
             row.friendly_name = translate(self.language, row.friendly_name)
+        # The page never has a programme's week; the schedule fetch owns it,
+        # and only a row the merge maps is one that fetch and the forgetting
+        # of a dropped programme can still find.
+        if isinstance(previous, Reading) and merged:
+            row.circuit_times_day = previous.circuit_times_day
+            row.possible_values = previous.possible_values
 
         # Preserve the old unit if the current scrape is missing it (e.g. value
         # is "--"). This prevents Home Assistant from complaining about unit
@@ -1193,6 +1199,27 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             if not scraper.cookie:
                 self.webscraping_cookie = None
 
+    def _rows_owning_a_described_week(self) -> set[str]:
+        """The rows whose programme week the schedule fetch still owns.
+
+        Through a parameter some module still describes: the merge map
+        outlives a module gone from the device list, and its week, read by
+        no fetch and forgotten by no re-read, was carried for the session.
+        And only a parameter's first row, the one the fetch refreshes and
+        drops the week on (see _schedule_row_key).
+        """
+        modules = self.modules or {}
+
+        def still_described(device_id: str, module_key: Any, parameter_id: str) -> bool:
+            module = modules.get(device_id, {}).get(module_key, {})
+            return parameter_id in (module.get("parameters") or {})
+
+        return {
+            rows[0]
+            for key, rows in self.scraping_mapper.items()
+            if still_described(*key)
+        }
+
     def _merge_webscraping_data(
         self, device_id: str, webscraping_data: dict[str, Any]
     ) -> None:
@@ -1203,9 +1230,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             [key for key, row in webscraping_data.items() if isinstance(row, Reading)]
         )
 
+        merged_rows = self._rows_owning_a_described_week()
         for key, new_val in webscraping_data.items():
             if isinstance(new_val, Reading):
-                self._prepare_scraped_row(new_val, self.data[str(device_id)].get(key))
+                self._prepare_scraped_row(
+                    new_val, self.data[str(device_id)].get(key), key in merged_rows
+                )
             self.data[str(device_id)][key] = new_val
 
         # Same reasoning for a row that stopped coming back entirely: it is
@@ -1731,7 +1761,15 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return
 
         # Before the replacement: it needs the list as it stands today.
-        forget_dropped_parameters(self.data.get(device_id), values, parameters)
+        forget_dropped_parameters(
+            self.data.get(device_id),
+            values,
+            parameters,
+            lambda parameter_id: self.scraping_mapper.get(
+                (device_id, key, parameter_id), []
+            ),
+            self._kept_fresh_by_the_scrape,
+        )
         # Non-None here: this path runs only under get_parameters, which
         # returns early while the module list is still None.
         modules = self.modules or {}
