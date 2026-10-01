@@ -180,18 +180,25 @@ def log_refusal(where: str, response: object) -> None:
     _LOGGER.debug("403 for %s: %s", where, describe_refusal(response))
 
 
-# What only the Fachmann (expert) level carries in the server's answer: the
-# configuration of its security-code window. Measured on a live account,
-# the user view a session lands on after its login and the overview have
-# none, and both views carry the same four panels - one with 25 readings,
-# the other 67. A path, not a label, so it reads the same in every language.
-EXPERT_VIEW_MARKER: Final = "CodeExpertsDetails.aspx"
+# The view a page shows, as the server writes it: the page state field starts
+# with the view's submenu key - measured on a live account, 222### on the user
+# view a session lands on after its login, 223### on the Fachmann level, 110###
+# on the overview. The panels cannot tell user view and Fachmann level apart
+# (four each, 25 readings against 67), and the Fachmann page's security-code
+# window is only set while the code is still to be entered.
+EXPERT_VIEW_KEY: Final = "223"
+_PAGE_STATE_TAG_RE = re.compile(r'<input\b[^>]*\bname="__ECNPAGEVIEWSTATE"[^>]*>')
+_VALUE_ATTRIBUTE_RE = re.compile(r'\bvalue="([^"]*)"')
 
 
 def is_expert_view(html_text: str) -> bool:
     """Whether a page is the Fachmann level rather than the user view or the
     overview, which a postback the portal did not honour answers with."""
-    return EXPERT_VIEW_MARKER in (html_text or "")
+    tag = _PAGE_STATE_TAG_RE.search(html_text or "")
+    if tag is None:
+        return False
+    value = _VALUE_ATTRIBUTE_RE.search(tag[0])
+    return value is not None and value[1].startswith(f"{EXPERT_VIEW_KEY}###")
 
 
 def is_login_page(url: object) -> bool:

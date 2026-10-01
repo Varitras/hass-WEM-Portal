@@ -5139,10 +5139,10 @@
     "tests": "on_the_user_view_logs_in_fresh"
   },
   {
-    "label": "expert view: told by the panels the user view has too",
+    "label": "expert view: the user view's key taken for the Fachmann level",
     "path": "custom_components/wemportal/web_protocol.py",
-    "old": "EXPERT_VIEW_MARKER: Final = \"CodeExpertsDetails.aspx\"\n",
-    "new": "EXPERT_VIEW_MARKER: Final = \"rpbSimpleData\"\n",
+    "old": "EXPERT_VIEW_KEY: Final = \"223\"\n",
+    "new": "EXPERT_VIEW_KEY: Final = \"222\"\n",
     "tests": "only_the_fachmann_page_is_the_expert_view"
   },
   {
@@ -5151,5 +5151,12 @@
     "old": "        return f\"server={server or 'not named'}, body=unreadable\"\n",
     "new": "        return \"server=not named, body=unreadable\"\n",
     "tests": "unreadable_body_keeps_the_server_that_sent_it"
+  },
+  {
+    "label": "expert view: a longer key that merely starts like the Fachmann one",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    return value is not None and value[1].startswith(f\"{EXPERT_VIEW_KEY}###\")\n",
+    "new": "    return value is not None and value[1].startswith(EXPERT_VIEW_KEY)\n",
+    "tests": "only_the_fachmann_page_is_the_expert_view"
   }
 ]

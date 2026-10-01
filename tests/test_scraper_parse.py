@@ -49,10 +49,21 @@ def _panel(header, rows, value_cell_class="simpleDataValueCell"):
 # How the Fachmann page announces itself in the server's own answer: the
 # configuration of its security-code window. The user view and the overview
 # carry the same panels or none, but never this.
-FACHMANN_WINDOW = (
+def _view_state(view_key):
+    """The page state field as the portal renders it: the key of the view
+    the page shows (110 overview, 222 user, 223 Fachmann) comes first."""
+    return (
+        '<input type="hidden" name="__ECNPAGEVIEWSTATE" '
+        f'id="__ECNPAGEVIEWSTATE" value="{view_key}###state" />'
+    )
+
+
+# The Fachmann page's security-code window, which the server only sets while
+# the code is still to be entered: no evidence of the level on its own.
+CODE_WINDOW = (
     '<script>$create(Telerik.Web.UI.RadWindow, {"name":"RDWindow",'
     '"navigateUrl":"UControls/Weishaupt/DataDisplay/CodeExpertsDetails.aspx",'
-    '"reloadOnShow":true});</script>'
+    '"visibleOnPageLoad":true});</script>'
 )
 
 
@@ -808,15 +819,18 @@ def test_a_portal_answer_does_not_trigger_a_full_login(answer):
 
 
 def _expert_page():
+    """The Fachmann level - without the code window, as it is once the code
+    has been entered or where an account is never asked for it."""
     return _page(
-        _panel("Heat pump", [("Outside temperature", "12.3 C")]), FACHMANN_WINDOW
+        _panel("Heat pump", [("Outside temperature", "12.3 C")]), _view_state(223)
     )
 
 
 def _user_view_page():
-    """The user view: panels like the expert view, but fewer rows and no
-    Fachmann window."""
-    return _page(_panel("Heat pump", [("Outside temperature", "12.3 C")]))
+    """The user view: panels like the expert view, but fewer rows."""
+    return _page(
+        _panel("Heat pump", [("Outside temperature", "12.3 C")]), _view_state(222)
+    )
 
 
 def _with_cached_session(scraper, reused_html):
@@ -863,7 +877,10 @@ def test_only_the_fachmann_page_is_the_expert_view():
     from custom_components.wemportal.web_protocol import is_expert_view
 
     assert is_expert_view(_expert_page())
+    assert is_expert_view(_page(_view_state(223), CODE_WINDOW))
     assert not is_expert_view(_user_view_page())
+    assert not is_expert_view(_page(_view_state(110)))
+    assert not is_expert_view(_page(_view_state(2230)))
     assert not is_expert_view("")
 
 
