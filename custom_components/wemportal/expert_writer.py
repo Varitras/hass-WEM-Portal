@@ -733,6 +733,11 @@ class WemPortalExpertClient:
         also appears on healthy pages hours before a window opens, so on its
         own it proves nothing; an announcement is passed on once instead.
         """
+        if is_login_page(getattr(response, "url", None)):
+            # Out of the account's shared cache whatever the status says,
+            # before it raises: a reuse sent to a failing login page, or a
+            # dialog a multi-read books per id, left the dead session there.
+            self._cookie_jar.pop("cookies", None)
         self._raise_if_forbidden(response)
         status = getattr(response, "status_code", 200)
         if status != 200:

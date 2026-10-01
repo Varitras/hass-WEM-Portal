@@ -10,6 +10,7 @@ no installation-specific ids in the repository). That covers the parsing
 LOGIC; it does not prove the real portal still emits this structure.
 """
 
+import contextlib
 import time
 import types
 
@@ -951,6 +952,42 @@ def test_a_reuse_sent_to_a_login_page_that_errors_is_forgotten_too():
         scraper.scrape()
 
     assert scraper.cookie == {}
+
+
+@pytest.mark.parametrize("status", [200, 403, 500])
+def test_any_answer_from_the_login_page_forgets_the_session(status):
+    """Decided at the one gate every response passes, and before its status:
+    per request site, each new site was one more chance to forget, and the
+    status raised first left the dead cookie for the next cycle's reuse."""
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    scraper = WemPortalScraper(
+        "user@example.org", "secret", {"ASP.NET_SessionId": "expired"}
+    )
+    login_page = _ReuseResponse(
+        "<html></html>",
+        status_code=status,
+        url="https://www.wemportal.com/Web/Login.aspx",
+    )
+
+    with contextlib.suppress(WemPortalError):
+        scraper._check_response(login_page, "expert page")
+
+    assert scraper.cookie == {}
+
+
+def test_an_error_from_another_page_keeps_the_session():
+    """A 500 from the main page says the portal failed, not the session."""
+    from custom_components.wemportal.exceptions import ServerError
+
+    scraper = WemPortalScraper(
+        "user@example.org", "secret", {"ASP.NET_SessionId": "alive"}
+    )
+
+    with pytest.raises(ServerError):
+        scraper._check_response(_ReuseResponse("<html></html>", 500), "main page")
+
+    assert scraper.cookie == {"ASP.NET_SessionId": "alive"}
 
 
 _ANNOUNCED_LOGIN_PAGE = (

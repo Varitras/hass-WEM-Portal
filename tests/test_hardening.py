@@ -9877,6 +9877,42 @@ def test_an_expert_session_found_dead_leaves_the_shared_cache(monkeypatch):
     assert not jar.get("cookies"), "the dead session is still offered"
 
 
+@pytest.mark.parametrize("status", [200, 403, 500])
+def test_any_expert_answer_from_the_login_page_leaves_the_shared_cache(status):
+    """At the gate, before the status: a reuse sent to a login page that
+    answered 500 or 403 re-raised as an answer and kept the dead session in
+    the account's cache, and so did a parameter dialog redirected to the
+    login page, which a multi-read books per id and moves on from."""
+    from custom_components.wemportal import expert_writer
+
+    jar = {"cookies": {"ASP.NET_SessionId": "expired"}, "saved_at": time.monotonic()}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+    login_page = FakeResponse(
+        status_code=status, url="https://www.wemportal.com/Web/Login.aspx"
+    )
+
+    with contextlib.suppress(exceptions.WemPortalError):
+        client._check_response(login_page, "parameter dialog")
+
+    assert not jar.get("cookies"), "the dead session is still offered"
+
+
+def test_an_expert_error_from_another_page_keeps_the_shared_cache():
+    from custom_components.wemportal import expert_writer
+
+    jar = {"cookies": {"ASP.NET_SessionId": "alive"}, "saved_at": time.monotonic()}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+
+    with pytest.raises(exceptions.ServerError):
+        client._check_response(FakeResponse(status_code=500), "parameter dialog")
+
+    assert jar["cookies"] == {"ASP.NET_SessionId": "alive"}
+
+
 def test_a_second_turned_away_web_login_in_a_row_is_the_block(monkeypatch):
     clock = _Clock()
     api = _api_whose_web_login_answers(

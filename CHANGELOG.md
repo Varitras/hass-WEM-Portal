@@ -18,8 +18,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **A web session found dead is not tried again.** After a turned-away web
   login, and after a fresh login that failed any other way, the next
   attempt first tried the old session cookie, which cost two requests - one
-  of them to the login page. The same holds for the session the expert
-  parameters share.
+  of them to the login page. A session sent to the login page now counts as
+  dead whatever that page answers, error or not. The same holds for the
+  session the expert parameters share.
 - **The login page is recognised the same way everywhere.** Five checks
   still looked for its address as a substring, and a session the portal
   keeps in the address instead of a cookie slipped past them: an expired

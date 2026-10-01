@@ -4742,15 +4742,22 @@
   {
     "label": "scraper: a reuse sent to a failing login page kept for the retry",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "            # Dead whatever the status says, and before the status is asked.\n            self.cookie = {}\n",
+    "old": "            # answering an error left the cookie for the next cycle's reuse.\n            self.cookie = {}\n",
     "new": "            pass\n",
-    "tests": "login_page_that_errors_is_forgotten_too"
+    "tests": "login_page_that_errors_is_forgotten_too or answer_from_the_login_page_forgets_the_session"
   },
   {
     "label": "expert: a dead session left in the account's shared cache",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            self._cookie_jar.pop(\"cookies\", None)\n",
+    "old": "            # Out of the account's shared cache too, however the login ends.\n            self._cookie_jar.pop(\"cookies\", None)\n",
     "new": "",
     "tests": "expert_session_found_dead_leaves_the_shared_cache"
+  },
+  {
+    "label": "expert: a login-page answer leaves the dead session in the shared cache",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            # dialog a multi-read books per id, left the dead session there.\n            self._cookie_jar.pop(\"cookies\", None)\n",
+    "new": "            pass\n",
+    "tests": "expert_answer_from_the_login_page_leaves_the_shared_cache"
   }
 ]
