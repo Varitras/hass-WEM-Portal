@@ -701,52 +701,116 @@ def test_the_scraper_says_who_refused_it(caplog):
 
 
 def _refusal_checks_without_a_description(source):
-    """Functions with a branch taken on a 403 that does not say who answered.
+    """Functions where a 403 can be met without saying who answered.
 
-    Per branch, not per function: one call anywhere let the web login's
-    second 403 branch go silent. A branch whose condition an earlier branch
-    of the same function already described needs no second call.
+    Per branch: one taken on a 403 must log before anything leaves it, or
+    follow an EARLIER branch on the identical condition that did, with the
+    names it compares not rebound in between. A 403 tested any other way -
+    `!=`, a condition kept in a variable, `match`, HTTPStatus.FORBIDDEN -
+    is beyond this check, so the function has to be declared instead.
     """
     import ast
 
-    def tests_403(test):
+    def is_403(node):
+        return isinstance(node, ast.Constant) and node.value == 403
+
+    def compares_403(node):
+        return isinstance(node, ast.Compare) and any(
+            is_403(leaf)
+            for side in [node.left, *node.comparators]
+            for leaf in ast.walk(side)
+        )
+
+    def taken_on_403(test):
         return any(
-            isinstance(part, ast.Compare)
-            and isinstance(part.ops[0], (ast.Eq, ast.In))
-            and any(
-                isinstance(leaf, ast.Constant) and leaf.value == 403
-                for side in [part.left, *part.comparators]
-                for leaf in ast.walk(side)
-            )
+            compares_403(part) and isinstance(part.ops[0], (ast.Eq, ast.In))
             for part in ast.walk(test)
         )
 
-    def logs(branch):
+    def calls_log_refusal(node):
         return any(
             isinstance(part, ast.Call)
             and getattr(part.func, "id", getattr(part.func, "attr", None))
             == "log_refusal"
-            for statement in branch.body
-            for part in ast.walk(statement)
+            for part in ast.walk(node)
+        )
+
+    def logs_first(branch):
+        for statement in branch.body:
+            if calls_log_refusal(statement):
+                return True
+            if isinstance(statement, (ast.Raise, ast.Return)):
+                return False
+        return False
+
+    def names(nodes):
+        return {
+            part.id
+            for node in nodes
+            for part in ast.walk(node)
+            if isinstance(part, ast.Name)
+        }
+
+    def rebound(function, wanted, after, before):
+        for node in ast.walk(function):
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.NamedExpr)):
+                targets = [node.target]
+            else:
+                continue
+            if after < node.lineno < before and names(targets) & wanted:
+                return True
+        return False
+
+    def untraceable(function, branch_tests):
+        in_a_branch = {id(part) for test in branch_tests for part in ast.walk(test)}
+        for node in ast.walk(function):
+            if compares_403(node) and (
+                id(node) not in in_a_branch
+                or not isinstance(node.ops[0], (ast.Eq, ast.In))
+            ):
+                return True
+            if isinstance(node, ast.MatchValue) and is_403(node.value):
+                return True
+            if isinstance(node, ast.Attribute) and node.attr == "FORBIDDEN":
+                return True
+        return False
+
+    def described_above(function, branch, earlier):
+        return any(
+            ast.dump(previous.test) == ast.dump(branch.test)
+            and logs_first(previous)
+            and not rebound(
+                function, names([branch.test]), previous.lineno, branch.lineno
+            )
+            for previous in earlier
         )
 
     found = []
     for function in ast.walk(ast.parse(source)):
         if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        branches = [
-            node
-            for node in ast.walk(function)
-            if isinstance(node, ast.If) and tests_403(node.test)
-        ]
-        described = {ast.dump(branch.test) for branch in branches if logs(branch)}
-        if any(ast.dump(branch.test) not in described for branch in branches):
+        ifs = [node for node in ast.walk(function) if isinstance(node, ast.If)]
+        branches = sorted(
+            (node for node in ifs if taken_on_403(node.test)),
+            key=lambda node: node.lineno,
+        )
+        silent = untraceable(function, [node.test for node in ifs]) or any(
+            not logs_first(branch)
+            and not described_above(function, branch, branches[:index])
+            for index, branch in enumerate(branches)
+        )
+        if silent:
             found.append(function.name)
     return found
 
 
 # Functions that look at a 403 without holding the answer that carried it.
 _REFUSALS_SAID_ELSEWHERE = {
+    # Lets a 403 through (`!= 403`) to raise_for_status and _recover_or_raise,
+    # which says it.
+    ("transport.py", "make_api_call"),
     # Reads the status off an exception; the answer was described where it
     # arrived.
     ("wemportalapi.py", "_survive_a_failed_description"),
@@ -798,6 +862,60 @@ def test_the_refusal_guard_looks_at_each_branch():
     assert _refusal_checks_without_a_description(two_branches_one_silent) == ["login"]
     assert _refusal_checks_without_a_description(a_tuple) == ["handle"]
     assert _refusal_checks_without_a_description(said_above) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # The identical branch that logs comes after the silent one.
+        "def handle(response):\n"
+        "    if response.status_code == 403:\n"
+        "        raise X\n"
+        "    if response.status_code == 403:\n"
+        "        log_refusal(where, response)\n",
+        # The call sits behind the raise and never runs.
+        "def handle(response):\n"
+        "    if response.status_code == 403:\n"
+        "        raise X\n"
+        "        log_refusal(where, response)\n",
+        # The same condition, but about another answer by then.
+        "def handle(response):\n"
+        "    if response.status_code == 403:\n"
+        "        log_refusal(where, response)\n"
+        "    response = post()\n"
+        "    if response.status_code == 403:\n"
+        "        raise X\n",
+        # Shapes the branch check cannot follow: they have to be declared.
+        "def handle(response):\n"
+        "    if response.status_code != 403:\n"
+        "        return response\n"
+        "    raise X\n",
+        "def handle(response):\n"
+        "    refused = response.status_code == 403\n"
+        "    if refused:\n"
+        "        raise X\n",
+        "def handle(response):\n"
+        "    match response.status_code:\n"
+        "        case 403:\n"
+        "            raise X\n",
+        "def handle(response):\n"
+        "    if response.status_code == HTTPStatus.FORBIDDEN:\n"
+        "        raise X\n",
+    ],
+    ids=[
+        "described-below",
+        "after-the-raise",
+        "rebound",
+        "not-equal",
+        "kept-in-a-variable",
+        "match",
+        "http-status",
+    ],
+)
+def test_the_refusal_guard_sees_through_these_shapes(source):
+    """Each of these met a 403 without a word about who answered, and the
+    per-branch check passed them all."""
+    assert _refusal_checks_without_a_description(source) == ["handle"]
 
 
 def test_the_refusal_guard_sees_a_silent_403():
