@@ -493,7 +493,11 @@ def _merge_into_scraped(
             # instead, and entities are built from whatever rows exist: left
             # behind, this one stays as a second entity for the same reading,
             # frozen at the last value the api put in it.
-            api_data[device_id].pop(key, None)
+            _hand_the_week_on(
+                api_data[device_id].pop(key, None),
+                scraping_mapper[cache_key],
+                api_data[device_id],
+            )
 
     for scraped_entity in scraping_mapper[cache_key]:
         previous = api_data[device_id].get(scraped_entity)
@@ -527,6 +531,20 @@ def _merge_into_scraped(
         # see _forget_unanswered_module_values.
         target.module_index = sensor.module_index
         target.module_type = sensor.module_type
+
+
+def _hand_the_week_on(left, targets, device_data) -> None:
+    """The schedule fetch wrote the programme week under the api's own key,
+    and the row taking its place has none: the page never shows one, and
+    the hourly gate counts the fetch as recent, so nothing brings it back
+    for up to an hour."""
+    if not isinstance(left, Reading) or left.circuit_times_day is None:
+        return
+    for name in targets:
+        row = device_data.get(name)
+        if isinstance(row, Reading):
+            row.circuit_times_day = left.circuit_times_day
+            row.possible_values = left.possible_values
 
 
 def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:

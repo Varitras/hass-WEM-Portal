@@ -447,6 +447,32 @@ def test_a_scraper_arriving_later_takes_the_api_row_it_replaces():
     )
 
 
+def test_a_scraper_arriving_later_takes_the_programme_week_with_the_row():
+    """The schedule fetch wrote the week under the api's own key, and the row
+    that replaces it has none: the page never shows one, and the hourly gate
+    counts the fetch as recent - a bare time window for up to an hour."""
+    modules = _modules(_parameter("Heizprogramm1", DataType=WemDataType.PROGRAM))
+    answer = _values(_value("Heizprogramm1", string='{"MO-1": "06:00-22:00"}'))
+    api_only = _process(modules, answer, mode="both")
+    api_only["Heat pump-Heizprogramm1"].circuit_times_day = A_FED_WEEK
+    api_only["Heat pump-Heizprogramm1"].possible_values = [1, 2, 3]
+
+    merged = _process(
+        modules,
+        answer,
+        mode="both",
+        existing={
+            **api_only,
+            **_scraped("heat_pump-heizprogramm1", "Heat pump - Heizprogramm1"),
+        },
+    )
+
+    assert "Heat pump-Heizprogramm1" not in merged
+    row = merged["heat_pump-heizprogramm1"]
+    assert row.circuit_times_day == A_FED_WEEK, "the week went with the api row"
+    assert row.possible_values == [1, 2, 3]
+
+
 def test_a_merged_parameter_left_out_of_the_answer_is_cleared_where_it_lives():
     """The ageing pass looked under the API key, and the value is not there.
 

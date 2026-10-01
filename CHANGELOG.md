@@ -19,7 +19,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
   the API had read from the device went with it: the sensor showed a bare
   time window until the next hourly schedule read. They are kept on a row
   as long as the API reading still maps to it and its module is still
-  listed for the device.
+  listed for the device - and the first scrape that takes the place of the
+  API's own row now takes them over from it.
 - **A parameter the portal stops describing no longer lingers in `both`
   mode.** Its value was removed only under the parameter's own name, not
   from the web row it had been merged into; with the web scrape failing,

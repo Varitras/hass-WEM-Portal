@@ -3594,8 +3594,8 @@
   {
     "label": "merge: the row from before the scrape left behind as a second entity",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            api_data[device_id].pop(key, None)",
-    "new": "            pass",
+    "old": "                api_data[device_id].pop(key, None),\n",
+    "new": "                api_data[device_id].get(key),\n",
     "tests": "scraper_arriving_later_takes_the_api_row_it_replaces"
   },
   {
@@ -4717,5 +4717,12 @@
     "old": "            return parameter_id in (module.get(\"parameters\") or {})\n",
     "new": "            return True\n",
     "tests": "drops_the_week_of_a_module_gone_from_the_device_list"
+  },
+  {
+    "label": "merge: the row replacing the api's own drops its programme week",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            row.circuit_times_day = left.circuit_times_day\n            row.possible_values = left.possible_values\n",
+    "new": "            pass\n",
+    "tests": "scraper_arriving_later_takes_the_programme_week_with_the_row"
   }
 ]
