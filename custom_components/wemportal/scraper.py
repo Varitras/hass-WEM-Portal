@@ -36,6 +36,7 @@ from .utils import (
     unit_to_icon,
 )
 from .web_protocol import (
+    log_refusal,
     is_login_page,
     maintenance_blocking,
     maintenance_notice,
@@ -264,6 +265,7 @@ class WemPortalScraper:
             self.cookie = {}
         status = getattr(response, "status_code", 200)
         if status == 403:
+            log_refusal(where, response)
             # By the endpoint answered, not by the step that asked: a reused
             # session that ran out is redirected to the login page, and that
             # refusal is the login's too.

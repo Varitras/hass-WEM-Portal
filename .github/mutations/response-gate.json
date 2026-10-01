@@ -1795,7 +1795,7 @@
   {
     "label": "login: a refused login PAGE reported as a network problem",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                raise self._refused_web_login(\n                    f\"the web login page {redact_url(login_url)}\",\n                    \"Access forbidden while loading the login page.\",\n                ) from exc\n            raise UnknownAuthError",
+    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                log_refusal(redact_url(login_url), initial_response)\n                raise self._refused_web_login(\n                    f\"the web login page {redact_url(login_url)}\",\n                    \"Access forbidden while loading the login page.\",\n                ) from exc\n            raise UnknownAuthError",
     "new": "            raise UnknownAuthError",
     "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
   },
@@ -3636,8 +3636,8 @@
   {
     "label": "boundary: the transport reaching for utils again must be caught",
     "path": "custom_components/wemportal/transport.py",
-    "old": "from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url",
-    "new": "from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url\nfrom .utils import parse_portal_number",
+    "old": "from .web_protocol import (\n    log_refusal,\n",
+    "new": "from .utils import parse_portal_number\nfrom .web_protocol import (\n    log_refusal,\n",
     "tests": "transport_imports_only_domain_free_siblings"
   },
   {
@@ -5067,5 +5067,40 @@
     "old": "                \"logging in fresh.\",\n                age,\n",
     "new": "                \"logging in fresh.\",\n                0,\n",
     "tests": "a_reuse_says_how_old_the_session_was"
+  },
+  {
+    "label": "refusal: the scraper's 403 says nothing of who answered",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            log_refusal(where, response)\n",
+    "new": "",
+    "tests": "the_scraper_says_who_refused_it"
+  },
+  {
+    "label": "refusal: the gateway's page described without its markup removed",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    excerpt = \" \".join(_MARKUP_RE.sub(\" \", str(text)).split())\n",
+    "new": "    excerpt = \" \".join(str(text).split())\n",
+    "tests": "a_refusal_names_who_answered"
+  },
+  {
+    "label": "refusal: an unreadable answer breaks the handling it describes",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "    try:\n        text = getattr(response, \"text\", \"\") or \"\"\n    except Exception:  # noqa: BLE001\n        return f\"server={server}, body=unreadable\"\n",
+    "new": "    text = getattr(response, \"text\", \"\") or \"\"\n",
+    "tests": "a_refusal_description_is_short_and_never_raises"
+  },
+  {
+    "label": "refusal: a long page logged whole",
+    "path": "custom_components/wemportal/web_protocol.py",
+    "old": "excerpt[:REFUSAL_EXCERPT_CHARS]",
+    "new": "excerpt",
+    "tests": "a_refusal_description_is_short_and_never_raises"
+  },
+  {
+    "label": "refusal: an API request's 403 says nothing of who answered",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            log_refusal(redact_url(url), response)\n",
+    "new": "",
+    "tests": "every_refusal_says_who_answered"
   }
 ]

@@ -83,6 +83,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
   that row went on showing the last value as current. A weekly programme
   that goes takes its phases with it.
 
+### Changed
+
+- **The debug log says more about a refusal and about the expert session.**
+  A 403 now logs the server that answered and the start of its page, which
+  tells the portal's own refusal from the firewall in front of it, and
+  every reuse of the expert session logs how old the session was.
+
 ## [1.14.0b3] – 2026-09-29
 
 A third beta. Everything from 1.14.0b2, plus: a login the portal turns away

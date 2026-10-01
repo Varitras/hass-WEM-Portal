@@ -607,3 +607,140 @@ def test_the_login_page_guard_sees_every_shape_of_the_old_test(shape):
 
 def test_the_login_page_guard_leaves_a_request_to_the_login_page_alone():
     assert not _login_url_tests("session.get(WEB_LOGIN_URL, timeout=10)")
+
+
+# The Azure Application Gateway in front of the portal answers a request its
+# firewall refuses with a page of its own; this is how that page ends.
+_GATEWAY_REFUSAL_PAGE = (
+    "<html>\r\n<head><title>403 Forbidden</title></head>\r\n<body>\r\n"
+    "<center><h1>403 Forbidden</h1></center>\r\n"
+    "<hr><center>Microsoft-Azure-Application-Gateway/v2</center>\r\n"
+    "</body>\r\n</html>\r\n"
+)
+
+
+class _Refusal:
+    def __init__(self, text="", headers=None, url="https://www.wemportal.com/x"):
+        self.status_code = 403
+        self.text = text
+        self.headers = headers or {}
+        self.url = url
+
+
+def test_a_refusal_names_who_answered():
+    """A bare 403 came from the gateway's firewall or from the portal, and
+    the two mean different things; nothing logged which."""
+    from custom_components.wemportal.web_protocol import describe_refusal
+
+    said = describe_refusal(
+        _Refusal(
+            _GATEWAY_REFUSAL_PAGE,
+            {"Server": "Microsoft-Azure-Application-Gateway/v2"},
+        )
+    )
+
+    assert "server=Microsoft-Azure-Application-Gateway/v2" in said
+    assert "403 Forbidden 403 Forbidden Microsoft-Azure-Application-Gateway/v2" in said
+
+
+def test_a_refusal_description_is_short_and_never_raises():
+    """It runs inside error handling: a long page is cut, and a response
+    that cannot even be read still yields a line rather than an exception."""
+    from custom_components.wemportal.web_protocol import describe_refusal
+
+    class _Unreadable:
+        @property
+        def text(self):
+            raise UnicodeDecodeError("utf-8", b"", 0, 1, "bad")
+
+    long_page = describe_refusal(_Refusal("x" * 5000))
+
+    assert len(long_page) < 300
+    assert describe_refusal(_Unreadable()) == "server=not named, body=unreadable"
+    assert describe_refusal(object()) == "server=not named, body=empty"
+
+
+def test_the_scraper_says_who_refused_it(caplog):
+    from custom_components.wemportal.scraper import WemPortalScraper
+
+    scraper = WemPortalScraper("user@example.org", "secret")
+    caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")
+
+    with pytest.raises(exceptions.ForbiddenError):
+        scraper._check_response(
+            _Refusal(_GATEWAY_REFUSAL_PAGE, {"Server": "Microsoft-IIS/10.0"}),
+            "main page",
+        )
+
+    assert "server=Microsoft-IIS/10.0" in caplog.text
+
+
+def _refusal_checks_without_a_description(source):
+    """Functions that test a status for 403 and do not say who answered."""
+    import ast
+
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        tests_403 = any(
+            isinstance(part, ast.Compare)
+            and any(
+                isinstance(side, ast.Constant) and side.value == 403
+                for side in [part.left, *part.comparators]
+            )
+            for part in ast.walk(node)
+        )
+        describes = any(
+            isinstance(part, ast.Call)
+            and getattr(part.func, "id", getattr(part.func, "attr", None))
+            == "log_refusal"
+            for part in ast.walk(node)
+        )
+        if tests_403 and not describes:
+            found.append(node.name)
+    return found
+
+
+# Functions that look at a 403 without holding the answer that carried it.
+_REFUSALS_SAID_ELSEWHERE = {
+    # Lets the 403 through to _recover_or_raise, which says it.
+    ("transport.py", "make_api_call"),
+    # Reads the status off an exception; the answer was described where it
+    # arrived.
+    ("wemportalapi.py", "_survive_a_failed_description"),
+}
+
+
+def test_every_refusal_says_who_answered():
+    """Over the whole package: a seventh place that meets a 403 would
+    otherwise log nothing about whether the gateway or the portal refused."""
+    import pathlib
+
+    from custom_components import wemportal
+
+    package = pathlib.Path(wemportal.__file__).parent
+    silent = {
+        (source_file.name, name)
+        for source_file in sorted(package.glob("*.py"))
+        for name in _refusal_checks_without_a_description(
+            source_file.read_text(encoding="utf-8")
+        )
+    }
+
+    assert silent - _REFUSALS_SAID_ELSEWHERE == set()
+    assert _REFUSALS_SAID_ELSEWHERE <= silent, "an exemption no longer needed"
+
+
+def test_the_refusal_guard_sees_a_silent_403():
+    assert _refusal_checks_without_a_description(
+        "def handle(response):\n    if response.status_code == 403:\n        raise X\n"
+    ) == ["handle"]
+    assert (
+        _refusal_checks_without_a_description(
+            "def handle(response):\n"
+            "    if response.status_code == 403:\n"
+            "        log_refusal(where, response)\n"
+        )
+        == []
+    )

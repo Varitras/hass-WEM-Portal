@@ -149,6 +149,35 @@ def redact_url(url: object) -> str:
         return _UNKNOWN_URL
 
 
+# The portal sits behind an Azure Application Gateway, whose firewall answers
+# a request it refuses with a page of its own. Whether a bare 403 came from
+# there or from the portal decides what the refusal is about, and nothing
+# logged which. Short: it goes into a debug line, not into a dump.
+REFUSAL_EXCERPT_CHARS: Final = 160
+_MARKUP_RE = re.compile(r"<[^>]*>")
+
+
+def describe_refusal(response: object) -> str:
+    """Who answered a 403: the Server header and the start of the body,
+    markup and runs of whitespace removed.
+
+    Never raises - it runs inside the handling of the refusal it describes.
+    """
+    headers = getattr(response, "headers", None) or {}
+    server = headers.get("Server") or "not named"
+    try:
+        text = getattr(response, "text", "") or ""
+    except Exception:  # noqa: BLE001
+        return f"server={server}, body=unreadable"
+    excerpt = " ".join(_MARKUP_RE.sub(" ", str(text)).split())
+    return f"server={server}, body={excerpt[:REFUSAL_EXCERPT_CHARS] or 'empty'}"
+
+
+def log_refusal(where: str, response: object) -> None:
+    """The debug line every 403 gets, wherever it is met."""
+    _LOGGER.debug("403 for %s: %s", where, describe_refusal(response))
+
+
 def is_login_page(url: object) -> bool:
     """Whether a response came from the web login page.
 

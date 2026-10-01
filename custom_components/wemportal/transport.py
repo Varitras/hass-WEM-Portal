@@ -56,7 +56,12 @@ from .mobile_protocol import (
     status_is_success,
     what_the_server_said,
 )
-from .web_protocol import maintenance_blocking, message_reports_maintenance, redact_url
+from .web_protocol import (
+    log_refusal,
+    maintenance_blocking,
+    message_reports_maintenance,
+    redact_url,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -454,6 +459,7 @@ class WemPortalTransport:
         )
 
         if status_code == 403:
+            log_refusal(redact_url(url), response)
             # A 403 means the server is already unhappy with our request
             # rate - immediately retrying with a fresh login (as we do for a
             # plain expired session below) would itself be an extra request
@@ -757,6 +763,7 @@ class WemPortalTransport:
                 f"{server_said}"
             ) from exc
         if response.status_code == 403:
+            log_refusal(redact_url(API_LOGIN_URL), response)
             first = self._account_state.note_refused_login()
             if first and portal_said_nothing(response_status, response_message):
                 raise LoginRefused(f"The login was turned away: {server_said}") from exc
@@ -820,6 +827,7 @@ class WemPortalTransport:
             # read like a network problem, invited an immediate retry, and
             # started no cooldown, so the next cycle walked into it again.
             if initial_response is not None and initial_response.status_code == 403:
+                log_refusal(redact_url(login_url), initial_response)
                 raise self._refused_web_login(
                     f"the web login page {redact_url(login_url)}",
                     "Access forbidden while loading the login page.",
@@ -913,6 +921,7 @@ class WemPortalTransport:
             )
         except requests.exceptions.RequestException as exc:
             if response is not None and response.status_code == 403:
+                log_refusal(redact_url(login_url), response)
                 raise self._refused_web_login(
                     f"the web login form {redact_url(login_url)}",
                     "Access forbidden during login.",

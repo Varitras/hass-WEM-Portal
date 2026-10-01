@@ -41,6 +41,7 @@ from .exceptions import (
 from .models import account_state
 from .utils import parse_portal_number
 from .web_protocol import (
+    log_refusal,
     is_login_page,
     maintenance_blocking,
     maintenance_notice,
@@ -772,6 +773,7 @@ class WemPortalExpertClient:
             # REDACTED: the raw url carries the full entityvalue on the
             # parameter-dialog requests (params={"entityvalue": ...}).
             where = redact_url(getattr(response, "url", None))
+            log_refusal(where, response)
             # The one line for the event: the pause and the failed poll it
             # causes stay at debug. Info the first time - the next hourly
             # read usually goes through - a warning when it repeats.
