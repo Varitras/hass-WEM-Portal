@@ -2440,6 +2440,26 @@ async def test_a_tick_that_read_nothing_leaves_home_assistant_in_its_outage(
     assert coordinator.num_failed == 2
 
 
+async def test_ticks_that_read_nothing_keep_the_outage_reason_as_it_was(
+    hass, monkeypatch
+):
+    """Each such tick wrapped the reason Home Assistant held, which was the
+    previous tick's own wrapping: "still: still: still: ..." on the entry,
+    one layer per cycle of the outage."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.last_update_success = False
+    coordinator.last_exception = UpdateFailed("the portal answered 500")
+    monkeypatch.setattr(WemPortalApi, "fetch_data", _read_nothing(logged_in=False))
+
+    await coordinator.async_refresh()
+    await coordinator.async_refresh()
+
+    assert str(coordinator.last_exception) == "the portal answered 500"
+
+
 async def test_a_busy_api_counts_neither_for_nor_against_the_credentials(
     hass, monkeypatch
 ):

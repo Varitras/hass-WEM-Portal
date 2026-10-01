@@ -570,10 +570,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             # Caught as busy below: no counter moves, and Home Assistant says
             # nothing about a failure following a failure. What the cycle
             # did change - a scrape's values aged out - is still published.
+            # The reason as it was: it is what the entry shows, and wrapping
+            # it nested one layer deeper on every cycle of the outage.
             self.async_update_listeners()
-            raise NothingReadThisCycle(
-                f"Nothing was read this cycle; still: {self.last_exception}"
-            )
+            raise NothingReadThisCycle(str(self.last_exception))
         return fetched
 
     def _end_the_auth_streak_after_a_login(self) -> None:
