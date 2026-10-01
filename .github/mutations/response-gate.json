@@ -4773,5 +4773,19 @@
     "old": "                # dead session, which every further module would only repeat.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError, AuthError:\n",
     "new": "                # dead session, which every further module would only repeat.\n                # skipcq: PYL-W0706 - shields the catch-all, not redundant\n                except ForbiddenError:\n",
     "tests": "discovery_stops_at_a_session_found_dead"
+  },
+  {
+    "label": "scraper: an error from another page drops a live session",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        where = redact_url(getattr(response, \"url\", None))\n        if is_login_page(where):\n",
+    "new": "        where = redact_url(getattr(response, \"url\", None))\n        if True:\n",
+    "tests": "error_from_another_page_keeps_the_session"
+  },
+  {
+    "label": "expert: an error from another page drops the live shared session",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if is_login_page(getattr(response, \"url\", None)):\n",
+    "new": "        if True:\n",
+    "tests": "expert_error_from_another_page_keeps_the_shared_cache"
   }
 ]

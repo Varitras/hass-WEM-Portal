@@ -9953,7 +9953,7 @@ def test_an_expert_error_from_another_page_keeps_the_shared_cache():
     with pytest.raises(exceptions.ServerError):
         client._check_response(FakeResponse(status_code=500), "parameter dialog")
 
-    assert jar["cookies"] == {"ASP.NET_SessionId": "alive"}
+    assert jar.get("cookies") == {"ASP.NET_SessionId": "alive"}
 
 
 def test_a_second_turned_away_web_login_in_a_row_is_the_block(monkeypatch):
