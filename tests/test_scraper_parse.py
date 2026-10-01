@@ -1067,8 +1067,7 @@ _ANNOUNCED_LOGIN_PAGE = (
     ids=["plain", "cookieless"],
 )
 def test_an_expired_session_during_an_announcement_falls_back_to_a_login(login_url):
-    """Sessions run out after about fifteen minutes and the scrape runs every
-    thirty, so the reuse path lands on the login page almost every time. With
+    """A reused session that ran out lands on the login page. With
     an announcement on that page the marker was read BEFORE the redirect, and
     the reuse path re-raises maintenance instead of logging in fresh - the
     same four hours of outage, one layer down. A login page on the reuse path
