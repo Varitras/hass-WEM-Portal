@@ -2373,6 +2373,32 @@ async def test_a_login_made_by_a_write_ends_the_auth_streak(hass, monkeypatch):
     assert coordinator.num_auth_failed == 1
 
 
+async def test_a_login_earlier_in_the_refused_cycle_ends_the_auth_streak(
+    hass, monkeypatch
+):
+    """A cycle that logged in, then had its relogin after a 401 refused: the
+    login broke the row, yet the refusal was counted onto the old streak as
+    the third - asking for new credentials that had worked moments before."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.wemportal.exceptions import AuthError
+
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_auth_failed = 2
+
+    def logged_in_then_refused(self, *_args, **_kwargs):
+        self.login_went_through = True
+        raise AuthError("relogin refused")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", logged_in_then_refused)
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    assert coordinator.num_auth_failed == 1
+
+
 async def test_a_tick_that_read_nothing_still_publishes_what_it_changed(
     hass, monkeypatch
 ):

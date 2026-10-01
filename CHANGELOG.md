@@ -26,7 +26,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
   longer reports such a cycle as recovered either.
 - **A login that worked resets the count towards re-authentication.** Three
   refused logins in a row ask for new credentials; a login made in between -
-  by a cycle that read nothing, or by a write - did not break the row.
+  by a write, or earlier in the cycle whose next login was refused - did not
+  break the row.
 
 ## [1.14.0b3] – 2026-09-29
 

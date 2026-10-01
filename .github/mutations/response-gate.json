@@ -4768,10 +4768,10 @@
     "tests": "read_nothing_still_publishes_what_it_changed"
   },
   {
-    "label": "auth streak: a write's login between two refused cycles ignored",
+    "label": "auth streak: a login earlier in the refused cycle ignored",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "                # Before the fetch too: a write may have logged in since.\n                self._end_the_auth_streak_after_a_login()\n",
+    "old": "                # this refusal: it starts a new streak, not the old one's end.\n                self._end_the_auth_streak_after_a_login()\n",
     "new": "",
-    "tests": "login_made_by_a_write_ends_the_auth_streak"
+    "tests": "login_earlier_in_the_refused_cycle_ends_the_auth_streak or login_made_by_a_write_ends_the_auth_streak"
   }
 ]

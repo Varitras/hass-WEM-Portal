@@ -591,8 +591,6 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 # seven exits is a moment where the backoff either holds or
                 # does not, and a branch added later would otherwise silently
                 # skip the report.
-                # Before the fetch too: a write may have logged in since.
-                self._end_the_auth_streak_after_a_login()
                 fetched = await self.hass.async_add_executor_job(
                     self.api.fetch_data, device_filter
                 )
@@ -627,6 +625,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed(str(exc)) from exc
             except AuthError as exc:
                 self._note_failed_cycle()
+                # A login earlier in this same cycle broke the row before
+                # this refusal: it starts a new streak, not the old one's end.
+                self._end_the_auth_streak_after_a_login()
                 self.num_auth_failed += 1
                 self._account_state.auth_failures = self.num_auth_failed
                 # Escalate to reauth only after several CONSECUTIVE auth
