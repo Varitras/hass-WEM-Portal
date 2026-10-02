@@ -5263,5 +5263,12 @@
     "old": "            row = device_rows.get(data_key)\n",
     "new": "            row = begin.row if data_key == begin.data_key else end.row\n",
     "tests": "read_back_that_carried_one_date_leaves_neither_shown"
+  },
+  {
+    "label": "expert login: the fresh login after a dead reuse not gated",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        # teardown may have begun during that attempt's own request.\n        self._check_gates()\n",
+    "new": "        # teardown may have begun during that attempt's own request.\n",
+    "tests": "teardown_during_the_reused_session_stops_the_fresh_login"
   }
 ]

@@ -371,6 +371,61 @@ def test_a_reused_expert_session_is_kept_only_on_the_fachmann_level(
     assert bool(jar.get("cookies")) is kept
 
 
+def test_a_teardown_during_the_reused_session_stops_the_fresh_login(monkeypatch):
+    """A reused session found dead falls back to a full login, which sent its
+    first request without asking whether the operation was still wanted - so
+    an unload that landed during the reuse still opened the login page."""
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.const import WEB_LOGIN_URL
+    from custom_components.wemportal.exceptions import ExpertOperationAborted
+
+    sent = []
+
+    class _Answer:
+        status_code = 200
+        text = "<html></html>"
+
+        def __init__(self, url):
+            self.url = url
+
+    class _Portal:
+        cookies = {}
+
+        def get(self, url, **_kwargs):
+            sent.append(url)
+            # The session ran out, and the unload begins while it answers.
+            return _Answer(WEB_LOGIN_URL)
+
+        def post(self, url, **_kwargs):
+            sent.append(url)
+            return _Answer(url)
+
+        def close(self):
+            pass
+
+    def abort_once_a_request_went_out():
+        if sent:
+            raise ExpertOperationAborted("the integration is being unloaded")
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_kwargs: _Portal())
+    jar = {"cookies": {"ASP.NET_SessionId": "abc"}, "saved_at": time.monotonic() - 100}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org",
+        "secret",
+        cookie_jar=jar,
+        abort_check=abort_once_a_request_went_out,
+    )
+
+    # Whatever it raises: a login that went ahead fails on this stub's empty
+    # page, and that must not stand in for the answer to the question below.
+    with pytest.raises(BaseException) as raised:
+        client._login()
+
+    assert WEB_LOGIN_URL not in sent, "the login page was opened after the unload"
+    assert len(sent) == 1, "the case is the reuse's own request, then nothing"
+    assert isinstance(raised.value, ExpertOperationAborted)
+
+
 def test_the_session_of_the_last_hourly_poll_is_reused():
     """The cap was fifteen minutes, an assumed session lifetime, while the
     auto-poll runs hourly: every poll logged in afresh, and a full login is

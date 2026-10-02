@@ -95,7 +95,8 @@ LINE_BUDGETS = {
     # half) moved to expert_number.py, leaving the protocol client here.
     # And by 12 for keeping a reused session only once it reached the
     # Fachmann level, which the portal can quietly answer with the user one.
-    "expert_writer.py": 1924,
+    # And by 3 for asking the gates before the login a dead reuse falls to.
+    "expert_writer.py": 1927,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to

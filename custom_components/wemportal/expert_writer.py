@@ -909,6 +909,9 @@ class WemPortalExpertClient:
 
     def _full_login(self):
         """Perform a fresh web login on a new session."""
+        # Also the fallback after a reused session turned out dead, and the
+        # teardown may have begun during that attempt's own request.
+        self._check_gates()
         self.session = requests.Session(impersonate="chrome146")
 
         login_page = self.session.get(
