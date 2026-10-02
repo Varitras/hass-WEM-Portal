@@ -242,10 +242,14 @@ def test_the_list_scan_sees_an_annotated_or_inline_list():
     type annotation, or straight into the parametrize decorator - the most
     natural spelling of it - went unseen."""
     annotated = 'MODULES: list[str] = ["scraper.py", "expert_writer.py"]\n'
-    inline = (
-        'import pytest\n\n\n@pytest.mark.parametrize("module", ["scraper.py"])\n'
-        "def test_it(module):\n    pass\n"
-    )
+    inline = """
+import pytest
+
+
+@pytest.mark.parametrize("module", ["scraper.py"])
+def test_it(module):
+    pass
+"""
 
     assert _hand_picked_source_files(annotated) == ["MODULES"]
     assert _hand_picked_source_files(inline) == ["test_it"]
