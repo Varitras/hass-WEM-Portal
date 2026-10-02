@@ -172,23 +172,39 @@ def _hand_picked_source_files(source: str) -> list[str]:
     so that is what is looked for: a module the list does not name is a
     module the guard never reads.
     """
-    picked = []
+    return [
+        where
+        for where, literal in _module_level_literals(source)
+        if _names_only_source_files(literal)
+    ]
+
+
+def _module_level_literals(source: str):
+    """(where, value) for every value a test module could choose files with:
+    a plain or annotated assignment, and a decorator's arguments - the
+    parametrize list is the same choice written inline."""
     for node in ast.parse(source).body:
-        if not isinstance(node, ast.Assign):
-            continue
-        if not isinstance(node.value, (ast.List, ast.Tuple, ast.Set)):
-            continue
-        names = [
-            element.value
-            for element in node.value.elts
-            if isinstance(element, ast.Constant) and isinstance(element.value, str)
-        ]
-        if names and len(names) == len(node.value.elts):
-            if all(
-                (PACKAGE / name).exists() and name.endswith(".py") for name in names
-            ):
-                picked.append(ast.unparse(node.targets[0]))
-    return picked
+        if isinstance(node, ast.Assign):
+            yield ast.unparse(node.targets[0]), node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            yield ast.unparse(node.target), node.value
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for decorator in node.decorator_list:
+                if isinstance(decorator, ast.Call):
+                    for argument in decorator.args:
+                        yield node.name, argument
+
+
+def _names_only_source_files(literal) -> bool:
+    if not isinstance(literal, (ast.List, ast.Tuple, ast.Set)) or not literal.elts:
+        return False
+    return all(
+        isinstance(element, ast.Constant)
+        and isinstance(element.value, str)
+        and element.value.endswith(".py")
+        and (PACKAGE / element.value).exists()
+        for element in literal.elts
+    )
 
 
 def test_no_guard_reads_a_hand_picked_list_of_source_files():
@@ -219,6 +235,20 @@ def test_the_list_scan_sees_the_shape_it_was_written_for():
         )
         == []
     ), "a set spelled out inside a self-test chooses no files to read"
+
+
+def test_the_list_scan_sees_an_annotated_or_inline_list():
+    """Only `NAME = [...]` was looked for. The same choice written with a
+    type annotation, or straight into the parametrize decorator - the most
+    natural spelling of it - went unseen."""
+    annotated = 'MODULES: list[str] = ["scraper.py", "expert_writer.py"]\n'
+    inline = (
+        'import pytest\n\n\n@pytest.mark.parametrize("module", ["scraper.py"])\n'
+        "def test_it(module):\n    pass\n"
+    )
+
+    assert _hand_picked_source_files(annotated) == ["MODULES"]
+    assert _hand_picked_source_files(inline) == ["test_it"]
 
 
 def test_the_scan_sees_a_path_bound_to_a_name_first():
