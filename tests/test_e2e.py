@@ -2902,14 +2902,15 @@ async def test_an_unload_stops_an_expert_write_before_it_reaches_the_portal(hass
     entities = entry.runtime_data.expert.entities
     assert entities, "no expert entity was created"
     entity = entities[0]
+    owner = entry.runtime_data
 
-    entity._raise_if_removed()  # not removed yet: the gate must let this pass
+    entity._raise_if_gone(owner)  # not removed yet: the gate must let this pass
 
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
     with pytest.raises(ExpertOperationAborted):
-        entity._raise_if_removed()
+        entity._raise_if_gone(owner)
 
 
 async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):

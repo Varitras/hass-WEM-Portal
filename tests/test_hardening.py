@@ -5347,6 +5347,71 @@ def test_a_normal_write_still_reaches_the_portal(monkeypatch):
     assert entity.native_value == 21.0
 
 
+def _entry_unloads(entity):
+    entity._config_entry.runtime_data.begin_unload()
+
+
+def _entry_reloads(entity):
+    from custom_components.wemportal.models import WemPortalData
+
+    entity._config_entry.runtime_data = WemPortalData(api=_api(), coordinator=None)
+
+
+@pytest.mark.parametrize("teardown", [_entry_unloads, _entry_reloads])
+def test_an_expert_write_stops_when_its_entry_goes_away_during_the_login(
+    monkeypatch, teardown
+):
+    """The entity's abort gate asked only whether the entity was removed.
+
+    An unload announces itself before the platforms come down, and the
+    entity is removed only at the end of that - so a write whose login was
+    still running when the unload began passed every later gate and sent its
+    POST into an entry being torn down. A reload leaves the entity's entry
+    holding a new state the write does not belong to. Every other expert
+    operation already refused both.
+    """
+    from types import SimpleNamespace
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.wemportal import expert_writer
+
+    entity = _expert_entity(_api())
+    entity._config_entry.runtime_data.expert.attach_entity(entity)
+    entity.async_write_ha_state = lambda: None
+
+    async def run_inline(function, *args):
+        return function(*args)
+
+    entity.hass.async_add_executor_job = run_inline
+    entity.hass.async_create_task = lambda coro: coro.close()
+    posts = []
+
+    class _Session:
+        def post(self, url, **_kwargs):
+            posts.append(url)
+            return SimpleNamespace(status_code=200, text="ok", url=url)
+
+        def close(self):
+            pass
+
+    def login(client):
+        client.session = _Session()
+        teardown(entity)
+
+    def form(_client, _entityvalue, **_kwargs):
+        return expert_writer.ExpertParameterState(21.0, [20.0, 21.0, 22.0], {})
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "_login", login)
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "_fetch_form", form)
+
+    with pytest.raises(HomeAssistantError):
+        _run(entity.async_set_native_value, 22.0)
+
+    assert posts == [], "the write reached the portal after its entry went away"
+    assert entity._removed is False, "the case is the window before removal"
+
+
 def test_a_rejected_refresh_is_not_read_as_a_fresh_measurement():
     """The portal answers a REFUSED refresh with HTTP 200 and a non-zero
     Status, exactly like the login does.

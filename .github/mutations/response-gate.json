@@ -5158,5 +5158,26 @@
     "old": "    return value is not None and value[1].startswith(f\"{EXPERT_VIEW_KEY}###\")\n",
     "new": "    return value is not None and value[1].startswith(EXPERT_VIEW_KEY)\n",
     "tests": "only_the_fachmann_page_is_the_expert_view"
+  },
+  {
+    "label": "expert entity write: an unloading or reloaded entry not asked",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        reason = owner.why_not_current(self._config_entry)\n        if reason is not None:\n            raise ExpertOperationAborted(f\"{self._attr_name}: {reason}\")\n",
+    "new": "",
+    "tests": "goes_away_during_the_login"
+  },
+  {
+    "label": "expert entity write: the owning state read at each gate instead of kept",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "            self._raise_if_gone(owner)\n",
+    "new": "            self._raise_if_gone(self._config_entry.runtime_data)\n",
+    "tests": "goes_away_during_the_login"
+  },
+  {
+    "label": "expert entity write: the client handed no abort gate",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "                    abort_check=_raise_if_gone,\n",
+    "new": "                    abort_check=None,\n",
+    "tests": "goes_away_during_the_login"
   }
 ]

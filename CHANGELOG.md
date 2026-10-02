@@ -6,6 +6,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An expert parameter no longer writes into an integration being unloaded.**
+  A write whose login was still running when the unload or a reload began
+  sent its change to the portal anyway: the entity is removed only at the
+  end of the teardown, and that was all the write asked about. It now stops
+  before the writing request, as the expert service already did.
+
 ## [1.14.0b4] – 2026-10-02
 
 A fourth beta. Everything from 1.14.0b3, plus: far fewer logins - a refused
