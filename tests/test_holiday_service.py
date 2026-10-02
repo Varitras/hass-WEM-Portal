@@ -227,6 +227,58 @@ async def test_a_read_back_that_fails_leaves_neither_date_asserted(monkeypatch):
     assert rows["Circuit-U_Ende"].value is None
 
 
+async def test_a_read_back_that_carried_one_date_leaves_neither_shown(monkeypatch):
+    """The service blanked the rows it had looked up before the write.
+
+    A read that worked replaces those rows with new ones, so after an answer
+    that carried only the begin, the begin went on showing what came back
+    while the warning said both dates were unknown - the double above keeps
+    the same objects and never showed it. Through the real api and mapper.
+    """
+    from custom_components.wemportal import wemportalapi
+    from custom_components.wemportal.wemportalapi import WemPortalApi
+
+    hass, _double, rows = _world(monkeypatch)
+    api = WemPortalApi("user@example.org", "secret")
+    api.valid_login = True
+    api.device_types = {}
+    api.api_version = None
+    api._change_value = lambda *_args, **_kwargs: None
+    api.data = hass.config_entries.async_get_entry("e1").runtime_data.coordinator.data
+    date_parameter = {"DataType": 2, "IsWriteable": True}
+    api.modules = {
+        "1234": {
+            ModuleRef(1, 2): {
+                "Index": 1,
+                "Type": 2,
+                "Name": "Circuit",
+                "parameters": {
+                    "U_Beginn": {"ParameterID": "U_Beginn", **date_parameter},
+                    "U_Ende": {"ParameterID": "U_Ende", **date_parameter},
+                },
+            }
+        }
+    }
+    begin_only = {
+        "ModuleIndex": 1,
+        "ModuleType": 2,
+        "Values": [{"ParameterID": "U_Beginn", "NumericValue": BEGIN_ROW.value}],
+    }
+    answers = iter([{"Status": 0, "JobID": "job-1"}, {"Modules": [begin_only]}])
+    api.make_api_call = lambda *_args, **_kwargs: types.SimpleNamespace(
+        json=lambda: next(answers)
+    )
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _seconds: None)
+    hass.config_entries.async_get_entry("e1").runtime_data.api = api
+
+    await holiday._write_holiday(hass, _call())
+
+    assert rows["Circuit-U_Ende"].value is None
+    assert rows["Circuit-U_Beginn"].value is None, (
+        "half a holiday was shown after the warning said neither date was known"
+    )
+
+
 async def test_a_refused_write_changes_nothing(monkeypatch):
     """Recording a range the heating system never took would make the
     integration certain of the wrong thing."""

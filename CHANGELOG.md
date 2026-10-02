@@ -18,7 +18,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
   see what the portal kept, and any read that worked counted - also one
   that answered only for another module. The date that was asked for then
   stood as confirmed. The answer now has to carry every date that was
-  written, otherwise it shows as unknown until the next update.
+  written, otherwise the dates written show as unknown until the next update.
 - **A setup cancelled while renaming old entity ids closes its connections.**
   Home Assistant cancels a setup on shutdown or when it takes too long, and
   one cancelled during that rename left the portal sessions of the first

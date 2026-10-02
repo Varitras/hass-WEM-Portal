@@ -1403,8 +1403,8 @@
   {
     "label": "holiday: leaving the end out of the coordinator must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "        end.row.value = None\n",
-    "new": "",
+    "old": "        for data_key in (begin.data_key, end.data_key):\n",
+    "new": "        for data_key in (begin.data_key,):\n",
     "tests": "read_back_that_fails_leaves_neither_date_asserted"
   },
   {
@@ -5256,5 +5256,12 @@
     "old": "    return (isinstance(session, ast.Attribute) and session.attr == \"session\") or (\n        isinstance(session, ast.Name) and session.id == \"session\"\n    )\n",
     "new": "    return isinstance(session, ast.Attribute) and session.attr == \"session\"\n",
     "tests": "seen_however_its_session_is_held"
+  },
+  {
+    "label": "holiday read-back: the rows from before the write blanked again",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "            row = device_rows.get(data_key)\n",
+    "new": "            row = begin.row if data_key == begin.data_key else end.row\n",
+    "tests": "read_back_that_carried_one_date_leaves_neither_shown"
   }
 ]

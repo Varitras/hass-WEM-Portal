@@ -225,8 +225,14 @@ async def _write_holiday(hass: HomeAssistant, call: ServiceCall) -> None:
             end_day,
             failure,
         )
-        begin.row.value = None
-        end.row.value = None
+        # Looked up again rather than the rows found before the write: a
+        # read that worked replaces them, and blanking the old objects left
+        # a date the answer did carry on display.
+        device_rows = (begin.data.coordinator.data or {}).get(begin.device_id, {})
+        for data_key in (begin.data_key, end.data_key):
+            row = device_rows.get(data_key)
+            if isinstance(row, Reading):
+                row.value = None
     begin.data.coordinator.async_update_listeners()
 
     _LOGGER.info(
