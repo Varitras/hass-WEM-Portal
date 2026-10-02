@@ -227,8 +227,9 @@ def test_every_excused_module_still_sends_requests():
 @pytest.mark.parametrize("module", MODULES)
 def test_the_scan_actually_finds_the_requests(module):
     """Guards the guard: a regex that matches nothing would pass silently and
-    report perfect coverage forever."""
-    assert len(list(request_sites(module))) >= 4
+    report perfect coverage forever. Any site at all: the modules are found by
+    their requests now, and a small new client is not a scan that broke."""
+    assert list(request_sites(module))
 
 
 def _requests_classifying_their_transport_failure(tree):
@@ -380,15 +381,34 @@ class _Answer:
 
 
 def _gate_for(module):
-    """The module's own _check_response, bound to a real instance."""
-    if module == "scraper.py":
-        from custom_components.wemportal.scraper import WemPortalScraper
+    """The module's own _check_response, bound to a real instance.
 
-        return WemPortalScraper("user@example.org", "secret")._check_response
+    Found in the module rather than named: the class defined there that
+    defines the gate itself. A module without one raises LookupError.
+    """
+    import importlib
+    import inspect
 
-    from custom_components.wemportal.expert_writer import WemPortalExpertClient
+    imported = importlib.import_module(
+        f"custom_components.wemportal.{module.removesuffix('.py')}"
+    )
+    owners = [
+        cls
+        for _name, cls in inspect.getmembers(imported, inspect.isclass)
+        if cls.__module__ == imported.__name__ and "_check_response" in vars(cls)
+    ]
+    if len(owners) != 1:
+        raise LookupError(f"{module} defines {len(owners)} classes with a gate")
+    return owners[0]("user@example.org", "secret")._check_response
 
-    return WemPortalExpertClient("user@example.org", "secret")._check_response
+
+def test_a_module_without_a_gate_of_its_own_is_not_lent_another():
+    """The modules are found by what they send, and their gate was then
+    looked up by name: any module but the scraper got the expert client's.
+    A new page client with a gate that checks nothing would have been
+    tested against a gate that does."""
+    with pytest.raises(LookupError):
+        _gate_for("utils.py")
 
 
 @pytest.mark.parametrize("module", MODULES)

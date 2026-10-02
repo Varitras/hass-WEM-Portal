@@ -5270,5 +5270,12 @@
     "old": "        # teardown may have begun during that attempt's own request.\n        self._check_gates()\n",
     "new": "        # teardown may have begun during that attempt's own request.\n",
     "tests": "teardown_during_the_reused_session_stops_the_fresh_login"
+  },
+  {
+    "label": "response gate: a module without its own gate lent the expert client's again",
+    "path": "tests/test_response_gate.py",
+    "old": "    if len(owners) != 1:\n        raise LookupError(f\"{module} defines {len(owners)} classes with a gate\")\n",
+    "new": "    if len(owners) != 1:\n        from custom_components.wemportal.expert_writer import WemPortalExpertClient\n\n        owners = [WemPortalExpertClient]\n",
+    "tests": "module_without_a_gate_of_its_own_is_not_lent_another"
   }
 ]
