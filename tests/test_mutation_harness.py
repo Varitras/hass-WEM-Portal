@@ -872,6 +872,20 @@ def _one_case_plan(tmp_path, **extra):
     ]
 
 
+def test_a_mutation_that_does_not_parse_is_refused(tmp_path, monkeypatch):
+    """Only ruff's undefined-name findings were kept, so its syntax error was
+    dropped and the check said nothing. What was left was reading pytest's
+    output for a SyntaxError - and an import failure something swallows
+    does not print one."""
+    monkeypatch.setattr(mutate, "_undefined_names", lambda _folder: {})
+    plan = _one_case_plan(tmp_path, new="value = (")
+
+    problems = _names_left_undefined(plan, root=tmp_path)
+
+    assert len(problems) == 1, f"the broken mutation was not reported: {problems}"
+    assert "does not parse" in problems[0]
+
+
 def test_a_name_the_mutated_module_lacks_is_refused(tmp_path, monkeypatch):
     """A handler catching Exception swallowed the NameError of one such case,
     so its test failed for another reason and the run counted it caught. The

@@ -260,7 +260,8 @@ UNDEFINED_NAME_RULES = "F821,F823"
 
 
 def names_left_undefined(cases: list, root: Path | None = None) -> list[str]:
-    """Every case whose mutated module uses a name it does not define.
+    """Every case whose mutated module does not parse, or uses a name it does
+    not define.
 
     Compared against the unmutated module, and COUNTED: a name the original
     already leaves undefined must not hide a new use of it. Only Python
@@ -290,6 +291,13 @@ def names_left_undefined(cases: list, root: Path | None = None) -> list[str]:
                     _as_run(source), encoding="utf-8"
                 )
             mutated = source.replace(case["old"], case["new"], 1)
+            try:
+                compile(mutated, case["path"], "exec")
+            except SyntaxError as exc:
+                problems.append(
+                    f"{label}: does not parse ({exc.msg}, line {exc.lineno})"
+                )
+                continue
             (folder / f"case_{index}.py").write_text(_as_run(mutated), encoding="utf-8")
             checked.append((index, case, label))
         found = _undefined_names(folder) if checked else {}
@@ -314,8 +322,8 @@ def _as_run(source: str) -> str:
     Those names exist for the type checker only. ruff counts them as defined,
     so a mutation that called one passed the check above and then raised
     NameError under the test - caught, for the wrong reason. Emptied line for
-    line, so the findings keep their line numbers; a source that does not
-    parse is left to ruff, which reports that itself.
+    line, so the findings keep their line numbers. A mutated source that
+    does not parse never gets here: names_left_undefined reports it first.
     """
     try:
         tree = ast.parse(source)

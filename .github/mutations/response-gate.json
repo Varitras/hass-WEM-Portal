@@ -5291,5 +5291,12 @@
     "old": "                if isinstance(decorator, ast.Call):\n",
     "new": "                if False:\n",
     "tests": "list_scan_sees_an_annotated_or_inline_list"
+  },
+  {
+    "label": "harness: a mutation that does not parse let through the preflight again",
+    "path": ".github/scripts/mutate.py",
+    "old": "                compile(mutated, case[\"path\"], \"exec\")\n",
+    "new": "                pass\n",
+    "tests": "a_mutation_that_does_not_parse_is_refused"
   }
 ]
