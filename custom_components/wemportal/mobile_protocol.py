@@ -20,6 +20,7 @@ with the caller.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, NamedTuple
 
 
@@ -160,3 +161,35 @@ def read_refresh_ticket(payload: Any) -> RefreshTicket:
     if status is not None and not status_is_success(status):
         return RefreshTicket(False, None, f"refused the refresh (Status {status})")
     return RefreshTicket(True, payload.get("JobID"), None)
+
+
+def unanswered_parameters(
+    payload: Any, module: tuple[Any, Any], parameter_ids: Iterable[str]
+) -> list[str]:
+    """Which of `parameter_ids` a values answer did not carry for `module`.
+
+    The read-back after a write asks this: a read that worked says nothing
+    about a parameter it did not carry. Collected in a list rather than a
+    set, because an id the portal sent as a list is unhashable and comparing
+    is all this needs.
+    """
+    answered: list[Any] = []
+    for answered_module in _list_under(payload, "Modules"):
+        if not isinstance(answered_module, dict):
+            continue
+        where = (answered_module.get("ModuleIndex"), answered_module.get("ModuleType"))
+        if where != tuple(module):
+            continue
+        answered.extend(
+            value.get("ParameterID")
+            for value in _list_under(answered_module, "Values")
+            if isinstance(value, dict)
+        )
+    return [
+        parameter_id for parameter_id in parameter_ids if parameter_id not in answered
+    ]
+
+
+def _list_under(payload: Any, key: str) -> list[Any]:
+    found = payload.get(key) if isinstance(payload, dict) else None
+    return found if isinstance(found, list) else []

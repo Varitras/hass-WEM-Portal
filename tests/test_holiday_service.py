@@ -20,7 +20,7 @@ import pytest
 
 from custom_components.wemportal import holiday
 from custom_components.wemportal.date import date_to_epoch
-from custom_components.wemportal.models import Reading, WemPortalData
+from custom_components.wemportal.models import ModuleRef, Reading, WemPortalData
 
 pytest.importorskip("homeassistant")
 
@@ -67,8 +67,8 @@ class _Api:
         if self.refuse:
             raise RuntimeError("portal said no")
 
-    def reread_device_values(self, device_id):
-        self.rereads.append(device_id)
+    def reread_device_values(self, device_id, module, parameter_ids):
+        self.rereads.append((device_id, module, tuple(parameter_ids)))
         if self.reread_fails is not None:
             return self.reread_fails
         for key, value in self.kept.items():
@@ -200,9 +200,20 @@ async def test_the_service_publishes_what_the_portal_kept(monkeypatch):
 
     await holiday._write_holiday(hass, _call())
 
-    assert api.rereads == ["1234"], "the write was published without asking back"
+    assert len(api.rereads) == 1, "the write was published without asking back"
     assert rows["Circuit-U_Beginn"].value == kept["Circuit-U_Beginn"]
     assert rows["Circuit-U_Ende"].value == kept["Circuit-U_Ende"]
+
+
+async def test_the_read_back_is_asked_about_both_written_dates(monkeypatch):
+    """The read-back was asked about the device and nothing else, so an
+    answer for any of its modules confirmed the pair. Both dates went out
+    in one request, and each has to come back before either is shown."""
+    hass, api, _rows = _world(monkeypatch)
+
+    await holiday._write_holiday(hass, _call())
+
+    assert api.rereads == [("1234", ModuleRef(1, 2), ("U_Beginn", "U_Ende"))]
 
 
 async def test_a_read_back_that_fails_leaves_neither_date_asserted(monkeypatch):

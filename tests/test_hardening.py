@@ -1193,7 +1193,7 @@ def test_a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise():
     api._api_lock = types.SimpleNamespace(release=lambda: None)
     api._fetch_parameter_values = _refused_relogin
 
-    failure = api.reread_device_values("1234")
+    failure = api.reread_device_values("1234", ModuleRef(0, 1), ("U_Beginn",))
 
     assert isinstance(failure, str) and failure, (
         "the read-back raised instead of reporting, so the caller's failure "
@@ -6305,6 +6305,9 @@ PRESERVED_FIELDS = frozenset(
         "login_went_through",
         "_last_device_read",
         "_module_answered_at",
+        # Read only right after the successful read that wrote it, so no
+        # recovery can put an older answer in front of a read-back.
+        "_last_values_answer",
         "data",
         "username",
         "password",
@@ -9942,7 +9945,108 @@ def test_a_read_back_that_read_nothing_does_not_verify_a_write():
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
 
-    assert isinstance(api.reread_device_values("1234"), str)
+    assert isinstance(
+        api.reread_device_values("1234", ModuleRef(0, 1), ("U_Beginn",)), str
+    )
+
+
+_HOLIDAY = ModuleRef(0, 1)
+
+
+def _holiday_values(*parameter_ids, module_index=0):
+    return {
+        "ModuleIndex": module_index,
+        "ModuleType": 1,
+        "Values": [
+            {"ParameterID": parameter_id, "NumericValue": 1785715200.0}
+            for parameter_id in parameter_ids
+        ],
+    }
+
+
+_ANOTHER_MODULE = {
+    "ModuleIndex": 1,
+    "ModuleType": 1,
+    "Values": [{"ParameterID": "Temperature", "NumericValue": 20}],
+}
+
+
+def _api_reading_back(monkeypatch, answered_modules):
+    """A real api whose refresh is accepted and whose read answers with
+    `answered_modules` - the two requests and the measurement wait stubbed."""
+    from custom_components.wemportal import wemportalapi
+
+    api = _api()
+    api.data = {"1234": {}}
+    date_parameter = {"DataType": 2, "IsWriteable": True}
+    api.modules = {
+        "1234": {
+            _HOLIDAY: {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Circuit",
+                "parameters": {
+                    "U_Beginn": {"ParameterID": "U_Beginn", **date_parameter},
+                    "U_Ende": {"ParameterID": "U_Ende", **date_parameter},
+                },
+            },
+            ModuleRef(1, 1): {
+                "Index": 1,
+                "Type": 1,
+                "Name": "Other",
+                "parameters": {"Temperature": {"ParameterID": "Temperature"}},
+            },
+        }
+    }
+    answers = iter([{"Status": 0, "JobID": "job-1"}, {"Modules": answered_modules}])
+    api.make_api_call = lambda *_args, **_kwargs: types.SimpleNamespace(
+        json=lambda: next(answers)
+    )
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _seconds: None)
+    return api
+
+
+@pytest.mark.parametrize(
+    "answered_modules",
+    [
+        pytest.param([_ANOTHER_MODULE], id="only another module"),
+        pytest.param(
+            [_ANOTHER_MODULE, _holiday_values("U_Beginn")], id="one of the two dates"
+        ),
+        pytest.param(
+            [_holiday_values("U_Beginn", "U_Ende", module_index=1)],
+            id="the same ids in another module",
+        ),
+    ],
+)
+def test_a_read_back_that_misses_a_written_parameter_does_not_verify_it(
+    monkeypatch, answered_modules
+):
+    """A read that worked was taken as the read-back, whatever it held.
+
+    The portal answering for another module, or for only one date of a
+    holiday that was written as a pair, says nothing about what it kept for
+    the parameters that were written - and the caller then published the
+    value it had asked for as the one the portal confirmed.
+    """
+    api = _api_reading_back(monkeypatch, answered_modules)
+
+    failure = api.reread_device_values("1234", _HOLIDAY, ("U_Beginn", "U_Ende"))
+
+    assert isinstance(failure, str) and failure, (
+        "a read-back that never saw the written parameters verified them"
+    )
+
+
+def test_a_read_back_that_answers_every_written_parameter_verifies_them(
+    monkeypatch,
+):
+    """The counter-test: the old value coming back is an answer too."""
+    api = _api_reading_back(
+        monkeypatch, [_ANOTHER_MODULE, _holiday_values("U_Beginn", "U_Ende")]
+    )
+
+    assert api.reread_device_values("1234", _HOLIDAY, ("U_Beginn", "U_Ende")) is None
 
 
 # --- one heavy fetch per cycle ------------------------------------------

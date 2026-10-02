@@ -3,7 +3,7 @@ Weishaupt webscraping and API library
 """
 
 from typing import TYPE_CHECKING, Any, Final
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 import logging
 
 import copy
@@ -55,6 +55,7 @@ from .mobile_protocol import (
     described_parameters,
     read_refresh_ticket,
     read_write_ack,
+    unanswered_parameters,
 )
 from .translations import translate
 from .utils import (
@@ -343,6 +344,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # the one whose readings then have nothing left to refresh OR age
         # them. See _stamp_answered_modules.
         self._module_answered_at: dict[str, dict[ModuleRef, float]] = {}
+        # The last values answer per device, for the read-back after a write:
+        # a read that worked says nothing about a parameter it did not carry.
+        self._last_values_answer: dict[str, Mapping[str, Any]] = {}
         # Monotonic timestamp until which ALL outbound requests are
         # paused, activated after receiving a 403 (rate limit/forbidden)
         # from the server anywhere in a cycle. This is a strictly
@@ -1970,7 +1974,12 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         finally:
             self._api_lock.release()
 
-    def reread_device_values(self, device_id: str) -> str | None:
+    def reread_device_values(
+        self,
+        device_id: str,
+        module: tuple[int | None, int | None],
+        parameter_ids: Iterable[str],
+    ) -> str | None:
         """Read one device's parameter values again, under the shared lock.
 
         For asking the portal what it actually stored. `Status: 0` on a write
@@ -1995,6 +2004,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         read-back exists to prevent. The failure is not lost: api_login gives
         up `valid_login` before raising, so the next cycle logs in and the
         coordinator counts it there.
+
+        `module` and `parameter_ids` are what was written, and the answer has
+        to carry each of them. Any successful read used to count, and one
+        that held only another module left the written rows untouched - so
+        the value that was asked for stood as the one the portal kept.
         """
         self._acquire_api_lock("value re-read")
         try:
@@ -2002,7 +2016,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             if outcome is NoRead.NOTHING_TO_READ:
                 # Nothing read back is nothing verified.
                 return "the device has nothing to read back"
-            return outcome
+            if outcome is not None:
+                return outcome
+            missing = unanswered_parameters(
+                self._last_values_answer.get(str(device_id)), module, parameter_ids
+            )
+            if missing:
+                return f"the answer did not carry {', '.join(missing)}"
+            return None
         except AuthError as exc:
             return str(exc)
         finally:
@@ -2627,6 +2648,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # cannot either (the device did answer).
             self._stamp_answered_modules(device_id, values)
             self._forget_unanswered_module_values(device_id)
+            self._last_values_answer[device_id] = values
             return None
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
         except AuthError:

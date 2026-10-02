@@ -175,17 +175,19 @@ async def _write_holiday(hass: HomeAssistant, call: ServiceCall) -> None:
     begin_epoch = date_to_epoch(begin_day)
     end_epoch = date_to_epoch(end_day)
     module_index, module_type = begin.address
+    begin_parameter = begin.row.parameter_id or begin.data_key
+    end_parameter = end.row.parameter_id or end.data_key
 
     try:
         await hass.async_add_executor_job(
             partial(
                 begin.data.api.change_value,
                 begin.device_id,
-                begin.row.parameter_id or begin.data_key,
+                begin_parameter,
                 module_index,
                 module_type,
                 begin_epoch,
-                together_with={(end.row.parameter_id or end.data_key): end_epoch},
+                together_with={end_parameter: end_epoch},
             )
         )
     except WemPortalError as exc:
@@ -204,7 +206,10 @@ async def _write_holiday(hass: HomeAssistant, call: ServiceCall) -> None:
     # the rejection somebody measured. One read for the whole device, at a
     # service used a few times a year.
     failure = await hass.async_add_executor_job(
-        begin.data.api.reread_device_values, begin.device_id
+        begin.data.api.reread_device_values,
+        begin.device_id,
+        begin.address,
+        (begin_parameter, end_parameter),
     )
     if failure is not None:
         # The write itself went through, so this is not a failed service

@@ -1396,8 +1396,8 @@
   {
     "label": "holiday: writing only the begin must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "            together_with={(end.row.parameter_id or end.data_key): end_epoch},",
-    "new": "            together_with=None,",
+    "old": "                together_with={end_parameter: end_epoch},",
+    "new": "                together_with=None,",
     "tests": "both_dates_travel_in_one_request"
   },
   {
@@ -1907,7 +1907,7 @@
   {
     "label": "date: the write is not checked against what was stored",
     "path": "custom_components/wemportal/date.py",
-    "old": "        failure = await self.hass.async_add_executor_job(\n            self.coordinator.api.reread_device_values, self._device_id\n        )",
+    "old": "        failure = await self.hass.async_add_executor_job(\n            self.coordinator.api.reread_device_values,\n            self._device_id,\n            (self._module_index, self._module_type),\n            (self._parameter_id,),\n        )",
     "new": "        failure = None",
     "tests": "a_day_the_portal_did_not_keep_is_not_displayed"
   },
@@ -3468,7 +3468,7 @@
   {
     "label": "holiday: publishing the requested range without asking back",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "    failure = await hass.async_add_executor_job(\n        begin.data.api.reread_device_values, begin.device_id\n    )\n",
+    "old": "    failure = await hass.async_add_executor_job(\n        begin.data.api.reread_device_values,\n        begin.device_id,\n        begin.address,\n        (begin_parameter, end_parameter),\n    )\n",
     "new": "    failure = None\n",
     "tests": "service_publishes_what_the_portal_kept"
   },
@@ -5179,5 +5179,40 @@
     "old": "                    abort_check=_raise_if_gone,\n",
     "new": "                    abort_check=None,\n",
     "tests": "goes_away_during_the_login"
+  },
+  {
+    "label": "read-back: any successful read verifies the write again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if missing:\n                return f\"the answer did not carry {', '.join(missing)}\"\n",
+    "new": "",
+    "tests": "a_written_parameter_does_not_verify_it or without_the_written_module_does_not_confirm"
+  },
+  {
+    "label": "read-back: the answer it checks not kept from the read",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self._last_values_answer[device_id] = values\n",
+    "new": "",
+    "tests": "answers_every_written_parameter_verifies_them or with_the_written_module_shows_what"
+  },
+  {
+    "label": "read-back: a parameter answered in another module taken for the written one",
+    "path": "custom_components/wemportal/mobile_protocol.py",
+    "old": "        if where != tuple(module):\n            continue\n",
+    "new": "",
+    "tests": "a_written_parameter_does_not_verify_it"
+  },
+  {
+    "label": "date read-back: asked about nothing it wrote",
+    "path": "custom_components/wemportal/date.py",
+    "old": "            (self._parameter_id,),\n",
+    "new": "            (),\n",
+    "tests": "without_the_written_module_does_not_confirm"
+  },
+  {
+    "label": "holiday read-back: asked about the begin alone",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "        (begin_parameter, end_parameter),\n",
+    "new": "        (begin_parameter,),\n",
+    "tests": "read_back_is_asked_about_both_written_dates"
   }
 ]

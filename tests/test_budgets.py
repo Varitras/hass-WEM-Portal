@@ -78,7 +78,9 @@ LINE_BUDGETS = {
     # And by 21 for carrying it only through a parameter some module still
     # describes, onto the row its fetch maintains: the map outlives a module
     # gone from the device list, and lists more rows than the fetch keeps.
-    "wemportalapi.py": 2737,
+    # And by 22 for a read-back after a write that must carry what was
+    # written, not merely succeed.
+    "wemportalapi.py": 2759,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
