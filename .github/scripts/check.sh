@@ -3,7 +3,7 @@
 #
 # The rule was prose in a plan file before, which meant remembering it -
 # and the expensive gates are exactly the ones a tired person skips. Run
-# this before calling a change done; CI runs the same set.
+# this before calling a change done; CI runs the same tools.
 #
 # The second Home Assistant version is optional because its interpreter
 # lives wherever you put it:

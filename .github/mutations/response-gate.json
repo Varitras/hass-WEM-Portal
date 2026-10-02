@@ -5221,5 +5221,40 @@
     "old": "    try:\n        await coordinator.async_config_entry_first_refresh()\n        _LOGGER.info(\"Migrating entity names for wemportal\")\n        try:\n            await migrate_unique_ids(hass, entry, coordinator)\n        except Exception as exc:  # noqa: BLE001\n            # Migration is a best-effort cleanup step (renames old unique_ids\n            # to the new format). A failure here should never prevent the\n            # integration from loading - worst case, some entities keep their\n            # old unique_id until the next successful migration attempt.\n            _LOGGER.warning(\n                \"Unique_id migration failed, continuing without it: %s\", exc\n            )\n",
     "new": "    try:\n        await coordinator.async_config_entry_first_refresh()\n    except BaseException:\n        await hass.async_add_executor_job(api.close_transport)\n        raise\n    try:\n        await migrate_unique_ids(hass, entry, coordinator)\n    except Exception as exc:  # noqa: BLE001\n        _LOGGER.warning(\"migration failed: %s\", exc)\n    try:\n        pass\n",
     "tests": "cancelled_during_the_id_migration_closes_its_sessions"
+  },
+  {
+    "label": "harness: a name the type checker alone imports counted as defined again",
+    "path": ".github/scripts/mutate.py",
+    "old": "        if ast.unparse(node.test) not in (\"TYPE_CHECKING\", \"typing.TYPE_CHECKING\"):\n",
+    "new": "        if True:\n",
+    "tests": "type_checking_name_used_at_runtime"
+  },
+  {
+    "label": "parity guard: a commented-out call counted as a call again",
+    "path": "tests/test_guards.py",
+    "old": "        line for line in text.splitlines() if not line.lstrip().startswith(\"#\")\n",
+    "new": "        line for line in text.splitlines()\n",
+    "tests": "not_satisfied_by_a_commented_out_call"
+  },
+  {
+    "label": "meta guard: a hand-picked list of source files let pass again",
+    "path": "tests/test_guards.py",
+    "old": "                picked.append(ast.unparse(node.targets[0]))\n",
+    "new": "                pass\n",
+    "tests": "list_scan_sees_the_shape_it_was_written_for"
+  },
+  {
+    "label": "response gate: the page clients named by hand again",
+    "path": "tests/test_response_gate.py",
+    "old": "    if module not in NOT_THROUGH_THE_PAGE_GATE\n]\n",
+    "new": "    if module == \"scraper.py\"\n]\n",
+    "tests": "page_clients_are_found_by_what_they_send"
+  },
+  {
+    "label": "response gate: a session held in a plain local not seen",
+    "path": "tests/test_response_gate.py",
+    "old": "    return (isinstance(session, ast.Attribute) and session.attr == \"session\") or (\n        isinstance(session, ast.Name) and session.id == \"session\"\n    )\n",
+    "new": "    return isinstance(session, ast.Attribute) and session.attr == \"session\"\n",
+    "tests": "seen_however_its_session_is_held"
   }
 ]

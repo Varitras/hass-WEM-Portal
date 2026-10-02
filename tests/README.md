@@ -29,8 +29,11 @@ that), because a venv that quietly aged one release behind CI once hid three
 failures behind a green local run. Right after it, `check_gitleaks_pin.py`
 asks GitHub whether the gitleaks release the secret-scan workflow pins is
 still the latest - Dependabot cannot see a version pinned in a run step.
-CI runs the same set; a guard in `tests/test_guards.py` fails if the two
-ever drift apart.
+CI runs the same tools: Ruff, format, mypy, the suite and the mutation run.
+A guard in `tests/test_guards.py` fails if the workflow runs one of them
+that `check.sh` does not, or stops running one of them. It compares those
+five and nothing else - the two version checks above are local, since CI
+resolves its own Home Assistant and its secret scan has its own workflow.
 
 One gate is local-only and **untracked**: `.git/hooks/pre-push` scans the
 push range against a blocklist kept outside the repository (it holds the very
@@ -75,7 +78,7 @@ exists because the thing it prevents actually happened here.
 | `test_action_errors.py` | Every `HomeAssistantError` / `ServiceValidationError` an action raises carries a translation key, with a message and the same placeholders in every catalogue - and no catalogue entry outlives its raise |
 | `test_budgets.py` | No module or function grows past its frozen budget |
 | `test_durations.py` | No single test quietly starts taking minutes (budget in `durations.py`, enforced from `conftest.py`), and a run that stops making progress is cut off rather than only measured |
-| `test_guards.py` | No guard binds itself to one source file; every guard is listed; `check.sh` matches CI |
+| `test_guards.py` | No guard binds itself to one source file; every guard is listed; `check.sh` runs every tool CI runs |
 | `test_ci_matrix.py` | The CI matrix tests the Home Assistant releases it claims to test |
 | `test_comment_narration.py` | No comment merely restates the code it sits on (heuristic; a genuine why-comment passes) |
 | `test_diagnostics_register.py` | Every config field in the diagnostics download carries a redaction decision (`redacted`, tied to `TO_REDACT`, or `readable: <reason>`) |
@@ -91,6 +94,7 @@ exists because the thing it prevents actually happened here.
 | `test_repairs.py` | Every repair issue is translated in every language and prefixed with the entry id |
 | `test_security.py` | No module reaches past the diagnostics redaction or recognises the login page by its own test, the expert client stays behind its own import, and every branch taken on a 403 logs who answered it |
 | `test_requirements.py` | `manifest.json` and `requirements_runtime.txt` name the same dependencies |
+| `test_response_gate.py` | Every web page request, in whichever module sends it, has its answer passed through that module's gate |
 | `test_transport_boundary.py` | `transport.py` imports no domain module |
 | `test_transport_errors.py` | Only the two value-path reads opt into a transport retry |
 

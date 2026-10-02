@@ -46,6 +46,7 @@ GUARD_FILES = {
     "test_repairs.py": "every repair issue is translated and entry-prefixed",
     "test_quality_scale.py": "no quality scale rule is excused without a reason",
     "test_requirements.py": "the manifest and the runtime file name the same dependencies",
+    "test_response_gate.py": "every web page request, in whichever module sends it, passes its answer through the gate",
     "test_security.py": "no module reaches past the redaction or the login-page rule, the expert client stays behind its own import, and every 403 branch says who answered",
     "test_transport_boundary.py": "transport imports no domain module",
     "test_transport_errors.py": "only the value path opts into a transport retry",
@@ -160,6 +161,64 @@ def test_no_guard_is_pinned_to_a_single_source_file():
         f"{offenders} - scan the package instead (PACKAGE.glob('*.py')), or "
         "add an exemption saying why this subject really is one file."
     )
+
+
+def _hand_picked_source_files(source: str) -> list[str]:
+    """Module-level lists that name package source files and nothing else.
+
+    The reads themselves give such a guard away only as `PACKAGE / module`,
+    with the name coming from a parametrize list - the scan above sees a
+    variable there and lets it pass. The list is where the choice is made,
+    so that is what is looked for: a module the list does not name is a
+    module the guard never reads.
+    """
+    picked = []
+    for node in ast.parse(source).body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not isinstance(node.value, (ast.List, ast.Tuple, ast.Set)):
+            continue
+        names = [
+            element.value
+            for element in node.value.elts
+            if isinstance(element, ast.Constant) and isinstance(element.value, str)
+        ]
+        if names and len(names) == len(node.value.elts):
+            if all(
+                (PACKAGE / name).exists() and name.endswith(".py") for name in names
+            ):
+                picked.append(ast.unparse(node.targets[0]))
+    return picked
+
+
+def test_no_guard_reads_a_hand_picked_list_of_source_files():
+    """A list of the files a guard reads goes blind the same way one file
+    does: code moves to a module the list does not name. The response gate
+    read two modules by such a list, and nothing here saw it."""
+    offenders = [
+        f"{test_file.name}: {name}"
+        for test_file in sorted(TESTS.glob("test_*.py"))
+        for name in _hand_picked_source_files(test_file.read_text(encoding="utf-8"))
+    ]
+
+    assert not offenders, (
+        f"{offenders} - derive the files from the package (PACKAGE.glob('*.py')) "
+        "by what they contain, rather than naming them."
+    )
+
+
+def test_the_list_scan_sees_the_shape_it_was_written_for():
+    """The incident's own line, and what must stay allowed beside it."""
+    assert _hand_picked_source_files(
+        'MODULES = ["scraper.py", "expert_writer.py"]\n'
+    ) == ["MODULES"]
+    assert _hand_picked_source_files('GUARDS = ["test_guards.py"]\n') == []
+    assert (
+        _hand_picked_source_files(
+            'def test():\n    package = {"models.py", "brand_new.py"}\n'
+        )
+        == []
+    ), "a set spelled out inside a self-test chooses no files to read"
 
 
 def test_the_scan_sees_a_path_bound_to_a_name_first():
@@ -324,8 +383,16 @@ TOOL_INVOCATIONS = {
 }
 
 
+def _not_commented_out(text: str) -> str:
+    """Both files comment with `#`, and a commented-out call is no call."""
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
 def _tools_ci_runs_and_the_local_check_does_not(workflow: str, check: str) -> set:
     """The gap between the two, by tool name."""
+    workflow, check = _not_commented_out(workflow), _not_commented_out(check)
     in_ci = {
         name
         for name, (in_workflow, _) in TOOL_INVOCATIONS.items()
@@ -341,8 +408,10 @@ def test_every_tool_is_recognised_on_the_ci_side_too():
     failing, and the comparison then holds vacuously for that tool - the
     guard reports nothing missing because it is looking for nothing.
     """
-    workflow = (TESTS.parents[0] / ".github" / "workflows" / "test.yaml").read_text(
-        encoding="utf-8"
+    workflow = _not_commented_out(
+        (TESTS.parents[0] / ".github" / "workflows" / "test.yaml").read_text(
+            encoding="utf-8"
+        )
     )
 
     unseen = [
@@ -392,6 +461,24 @@ def test_the_comparison_is_not_satisfied_by_a_banner():
     assert _tools_ci_runs_and_the_local_check_does_not(
         "        run: mypy\n", banner_only
     ) == {"mypy"}
+
+
+def test_the_comparison_is_not_satisfied_by_a_commented_out_call():
+    """The needle is the call itself, and a commented-out call still is one
+    as far as a substring can tell - on either side. A gate switched off in
+    check.sh with a `#` left the local run claiming a check it no longer
+    made, and one switched off in the workflow made the guard ask for a
+    gate CI does not run."""
+    commented_locally = '#!/bin/sh\n# "$PYTHON" -m mypy\n'
+    commented_in_ci = "      # run: mypy\n"
+
+    assert _tools_ci_runs_and_the_local_check_does_not(
+        "        run: mypy\n", commented_locally
+    ) == {"mypy"}
+    assert (
+        _tools_ci_runs_and_the_local_check_does_not(commented_in_ci, "#!/bin/sh\n")
+        == set()
+    )
 
 
 def _scans_the_package(source: str) -> bool:

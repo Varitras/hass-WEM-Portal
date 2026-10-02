@@ -24,18 +24,52 @@ from pathlib import Path
 
 import pytest
 
-MODULES = ["scraper.py", "expert_writer.py"]
 PACKAGE = Path(__file__).resolve().parents[1] / "custom_components" / "wemportal"
+
+# Requests whose answers are read somewhere other than a page gate, and why.
+NOT_THROUGH_THE_PAGE_GATE = {
+    # The mobile API client: make_api_call and the web login read its
+    # answers, and test_transport_errors and test_security hold those.
+    "transport.py": "the mobile API's own answer handling",
+}
 
 
 def _is_request(node):
-    return (
+    """A `.get` or `.post` on a session - an attribute (`self.session`) or a
+    plain local (`session`), since the login keeps its session in one."""
+    if not (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr in ("get", "post")
-        and isinstance(node.func.value, ast.Attribute)
-        and node.func.value.attr == "session"
+    ):
+        return False
+    session = node.func.value
+    return (isinstance(session, ast.Attribute) and session.attr == "session") or (
+        isinstance(session, ast.Name) and session.id == "session"
     )
+
+
+def _modules_that_request():
+    """Every module of the package that sends a portal request, by its code.
+
+    A list of names was here, and a request moved to a third module would
+    have been read by nothing.
+    """
+    return sorted(
+        path.name
+        for path in PACKAGE.glob("*.py")
+        if any(
+            _is_request(node)
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        )
+    )
+
+
+MODULES = [
+    module
+    for module in _modules_that_request()
+    if module not in NOT_THROUGH_THE_PAGE_GATE
+]
 
 
 def _gate_calls(function):
@@ -169,6 +203,25 @@ def test_every_request_passes_through_the_gate(module):
         "self._check_response(response, '<what>') instead of validating it "
         "here - see this module's docstring for why."
     )
+
+
+def test_the_page_clients_are_found_by_what_they_send():
+    """Guards the derivation: an empty list would pass every test below."""
+    assert {"scraper.py", "expert_writer.py"} <= set(MODULES)
+
+
+@pytest.mark.parametrize(
+    "call", ["self.session.get(url)", "session.post(url, data=form)"]
+)
+def test_a_request_is_seen_however_its_session_is_held(call):
+    assert any(_is_request(node) for node in ast.walk(ast.parse(call)))
+
+
+def test_every_excused_module_still_sends_requests():
+    """An excuse outliving its module would hide the next one of that name."""
+    stale = set(NOT_THROUGH_THE_PAGE_GATE) - set(_modules_that_request())
+
+    assert not stale, f"{sorted(stale)} no longer send requests; drop the entries."
 
 
 @pytest.mark.parametrize("module", MODULES)
