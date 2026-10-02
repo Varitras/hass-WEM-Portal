@@ -5214,5 +5214,12 @@
     "old": "        (begin_parameter, end_parameter),\n",
     "new": "        (begin_parameter,),\n",
     "tests": "read_back_is_asked_about_both_written_dates"
+  },
+  {
+    "label": "setup: the id migration outside the first refresh's cleanup again",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    try:\n        await coordinator.async_config_entry_first_refresh()\n        _LOGGER.info(\"Migrating entity names for wemportal\")\n        try:\n            await migrate_unique_ids(hass, entry, coordinator)\n        except Exception as exc:  # noqa: BLE001\n            # Migration is a best-effort cleanup step (renames old unique_ids\n            # to the new format). A failure here should never prevent the\n            # integration from loading - worst case, some entities keep their\n            # old unique_id until the next successful migration attempt.\n            _LOGGER.warning(\n                \"Unique_id migration failed, continuing without it: %s\", exc\n            )\n",
+    "new": "    try:\n        await coordinator.async_config_entry_first_refresh()\n    except BaseException:\n        await hass.async_add_executor_job(api.close_transport)\n        raise\n    try:\n        await migrate_unique_ids(hass, entry, coordinator)\n    except Exception as exc:  # noqa: BLE001\n        _LOGGER.warning(\"migration failed: %s\", exc)\n    try:\n        pass\n",
+    "tests": "cancelled_during_the_id_migration_closes_its_sessions"
   }
 ]

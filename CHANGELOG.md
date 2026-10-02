@@ -19,6 +19,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   that answered only for another module. The date that was asked for then
   stood as confirmed. The answer now has to carry every date that was
   written, otherwise it shows as unknown until the next update.
+- **A setup cancelled while renaming old entity ids closes its connections.**
+  Home Assistant cancels a setup on shutdown or when it takes too long, and
+  one cancelled during that rename left the portal sessions of the first
+  update open.
 
 ## [1.14.0b4] – 2026-10-02
 
