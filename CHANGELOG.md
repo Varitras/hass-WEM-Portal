@@ -6,6 +6,24 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An expert parameter no longer writes into an integration being unloaded.**
+  A write whose login was still running when the unload or a reload began
+  sent its change to the portal anyway: the entity is removed only at the
+  end of the teardown, and that was all the write asked about. It now stops
+  before the writing request, as the expert service already did.
+- **A holiday date is shown as set only once the portal answered for it.**
+  After a date or holiday write the integration reads the device again to
+  see what the portal kept, and any read that worked counted - also one
+  that answered only for another module. The date that was asked for then
+  stood as confirmed. The answer now has to carry every date that was
+  written, otherwise the dates written show as unknown until the next update.
+- **A setup cancelled while renaming old entity ids closes its connections.**
+  Home Assistant cancels a setup on shutdown or when it takes too long, and
+  one cancelled during that rename left the portal sessions of the first
+  update open.
+
 ## [1.14.0b4] – 2026-10-02
 
 A fourth beta. Everything from 1.14.0b3, plus: far fewer logins - a refused

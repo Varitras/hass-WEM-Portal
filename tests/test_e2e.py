@@ -1583,6 +1583,48 @@ async def test_failed_first_refresh_closes_its_sessions(hass, monkeypatch):
     assert closed, "a failed first refresh leaked its HTTP sessions"
 
 
+async def test_a_setup_cancelled_during_the_id_migration_closes_its_sessions(
+    hass, monkeypatch
+):
+    """The migration ran between the two cleanup regions of the setup.
+
+    It awaits a refresh once it has renamed an entity, and a cancellation
+    there - shutdown, or a setup that took too long - is not an Exception, so
+    its best-effort handler let it through. The first refresh had already
+    opened the HTTP sessions, and nothing was published yet for an unload to
+    close them.
+    """
+    from homeassistant.helpers import entity_registry
+
+    from custom_components.wemportal.coordinator import (
+        WemPortalDataUpdateCoordinator,
+    )
+
+    closed = []
+    monkeypatch.setattr(
+        WemPortalApi, "close_transport", lambda self: closed.append(self)
+    )
+
+    async def cancelled(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(
+        WemPortalDataUpdateCoordinator, "async_request_refresh", cancelled
+    )
+    entry = _entry(hass)
+    # An id from before the migration, so it has something to rename and
+    # reaches the refresh.
+    entity_registry.async_get(hass).async_get_or_create(
+        "sensor", DOMAIN, "Outside temperature", config_entry=entry
+    )
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is not ConfigEntryState.LOADED
+    assert closed, "a cancelled migration leaked the first refresh's sessions"
+
+
 async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
     """A poll in flight during unload must not schedule a successor.
 
@@ -2902,14 +2944,15 @@ async def test_an_unload_stops_an_expert_write_before_it_reaches_the_portal(hass
     entities = entry.runtime_data.expert.entities
     assert entities, "no expert entity was created"
     entity = entities[0]
+    owner = entry.runtime_data
 
-    entity._raise_if_removed()  # not removed yet: the gate must let this pass
+    entity._raise_if_gone(owner)  # not removed yet: the gate must let this pass
 
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
     with pytest.raises(ExpertOperationAborted):
-        entity._raise_if_removed()
+        entity._raise_if_gone(owner)
 
 
 async def test_a_non_auth_failure_breaks_the_auth_streak(hass, monkeypatch):

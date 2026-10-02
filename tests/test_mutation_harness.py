@@ -872,6 +872,20 @@ def _one_case_plan(tmp_path, **extra):
     ]
 
 
+def test_a_mutation_that_does_not_parse_is_refused(tmp_path, monkeypatch):
+    """Only ruff's undefined-name findings were kept, so its syntax error was
+    dropped and the check said nothing. What was left was reading pytest's
+    output for a SyntaxError - and an import failure something swallows
+    does not print one."""
+    monkeypatch.setattr(mutate, "_undefined_names", lambda _folder: {})
+    plan = _one_case_plan(tmp_path, new="value = (")
+
+    problems = _names_left_undefined(plan, root=tmp_path)
+
+    assert len(problems) == 1, f"the broken mutation was not reported: {problems}"
+    assert "does not parse" in problems[0]
+
+
 def test_a_name_the_mutated_module_lacks_is_refused(tmp_path, monkeypatch):
     """A handler catching Exception swallowed the NameError of one such case,
     so its test failed for another reason and the run counted it caught. The
@@ -1018,6 +1032,63 @@ def test_the_real_check_leaves_files_that_are_not_python_alone(tmp_path):
             "path": "data.json",
             "old": '{"render": 1}',
             "new": '{"render": true}',
+            "tests": "test_real",
+            "label": "case0",
+        }
+    ]
+
+    assert _names_left_undefined(plan, root=tmp_path) == []
+
+
+_TYPE_ONLY_MODULE = (
+    "from __future__ import annotations\n"
+    "\n"
+    "from typing import TYPE_CHECKING\n"
+    "\n"
+    "if TYPE_CHECKING:\n"
+    "    from collections import OrderedDict\n"
+    "\n"
+    "\n"
+    "def build() -> OrderedDict:\n"
+    "    return {}\n"
+    "\n"
+    "\n"
+    "value = 1\n"
+)
+
+
+def test_the_real_check_names_a_type_checking_name_used_at_runtime(tmp_path):
+    """A name imported for the type checker only is defined as far as ruff
+    can tell, so a mutation that called it passed this check - and then
+    raised NameError under the test, which counted it as caught."""
+    pytest.importorskip("ruff")
+    (tmp_path / "module.py").write_text(_TYPE_ONLY_MODULE, encoding="utf-8")
+    plan = [
+        {
+            "path": "module.py",
+            "old": "value = 1",
+            "new": "value = OrderedDict()",
+            "tests": "test_real",
+            "label": "case0",
+        }
+    ]
+
+    problems = _names_left_undefined(plan, root=tmp_path)
+
+    assert len(problems) == 1, f"the runtime use was not reported: {problems}"
+    assert "OrderedDict" in problems[0]
+
+
+def test_the_real_check_leaves_a_type_checking_name_in_annotations_alone(tmp_path):
+    """The counter-test: the module as it is, annotation and all, must not
+    read as a mutation that broke something."""
+    pytest.importorskip("ruff")
+    (tmp_path / "module.py").write_text(_TYPE_ONLY_MODULE, encoding="utf-8")
+    plan = [
+        {
+            "path": "module.py",
+            "old": "value = 1",
+            "new": "value = 2",
             "tests": "test_real",
             "label": "case0",
         }

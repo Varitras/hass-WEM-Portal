@@ -229,7 +229,7 @@ async def test_a_day_the_portal_did_not_keep_is_not_displayed():
     entity, data = _entity()
     _wired(entity)
 
-    def portal_kept_the_old_value(_device_id):
+    def portal_kept_the_old_value(*_target):
         data["1234"]["Heat pump-U_Beginn"].value = BEGIN_EPOCH
 
     entity.coordinator.api.reread_device_values = portal_kept_the_old_value
@@ -249,7 +249,9 @@ async def test_a_failed_read_back_does_not_fail_the_write(caplog):
     entity, _ = _entity()
     _wired(entity)
 
-    entity.coordinator.api.reread_device_values = lambda _d: "the portal timed out"
+    entity.coordinator.api.reread_device_values = lambda *_target: (
+        "the portal timed out"
+    )
 
     with caplog.at_level(logging.WARNING):
         await entity.async_set_value(date(2026, 8, 4))
@@ -273,7 +275,9 @@ async def test_a_day_that_could_not_be_read_back_is_not_shown_as_set():
     entity, data = _entity()
     _wired(entity)
 
-    entity.coordinator.api.reread_device_values = lambda _d: "the portal timed out"
+    entity.coordinator.api.reread_device_values = lambda *_target: (
+        "the portal timed out"
+    )
 
     await entity.async_set_value(date(2026, 12, 24))
 
@@ -291,7 +295,7 @@ async def test_a_day_that_was_read_back_is_still_shown():
     entity, data = _entity()
     _wired(entity)
 
-    def portal_kept_it(_device_id):
+    def portal_kept_it(*_target):
         data["1234"]["Heat pump-U_Beginn"].value = date_to_epoch(date(2026, 12, 24))
 
     entity.coordinator.api.reread_device_values = portal_kept_it
@@ -486,3 +490,100 @@ def test_only_date_rows_become_date_entities():
     asyncio.run(async_setup_entry(None, entry, lambda entities: added.extend(entities)))
 
     assert [entity._data_key for entity in added] == ["Heat pump-U_Beginn"]
+
+
+def _real_read_back(entity, answered_modules, monkeypatch):
+    """The api's own read-back, with the portal answering `answered_modules`.
+
+    Everything from the refresh to the mapper is the production path; only
+    the two requests and the five-second wait for the measurement are
+    stubbed.
+    """
+    import time
+    from types import SimpleNamespace
+
+    from custom_components.wemportal import wemportalapi
+    from custom_components.wemportal.models import ModuleRef
+
+    api = entity.coordinator.api
+    del api.reread_device_values
+    api.modules = {
+        "1234": {
+            ModuleRef(0, 1): {
+                "Index": 0,
+                "Type": 1,
+                "Name": "Heat pump",
+                "parameters": {
+                    "U_Beginn": _date_parameter("U_Beginn"),
+                    "U_Ende": _date_parameter("U_Ende"),
+                },
+            },
+            ModuleRef(1, 1): {
+                "Index": 1,
+                "Type": 1,
+                "Name": "Other",
+                "parameters": {"Temperature": {"ParameterID": "Temperature"}},
+            },
+        }
+    }
+    api._module_answered_at = {"1234": {ModuleRef(0, 1): time.monotonic()}}
+    answers = iter([{"Status": 0, "JobID": "job-1"}, {"Modules": answered_modules}])
+    api.make_api_call = lambda *_args, **_kwargs: SimpleNamespace(
+        json=lambda: next(answers)
+    )
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _seconds: None)
+
+
+def _date_parameter(parameter_id):
+    return {"ParameterID": parameter_id, "DataType": 2, "IsWriteable": True}
+
+
+_OTHER_MODULE = {
+    "ModuleIndex": 1,
+    "ModuleType": 1,
+    "Values": [{"ParameterID": "Temperature", "NumericValue": 20}],
+}
+_HOLIDAY_MODULE = {
+    "ModuleIndex": 0,
+    "ModuleType": 1,
+    "Values": [
+        {"ParameterID": "U_Beginn", "NumericValue": BEGIN_EPOCH},
+        {"ParameterID": "U_Ende", "NumericValue": END_EPOCH},
+    ],
+}
+
+
+async def test_a_read_back_without_the_written_module_does_not_confirm_the_day(
+    monkeypatch,
+):
+    """Any successful read counted as the read-back, whatever it held.
+
+    An answer that carried only another module of the device left the
+    written module untouched - its rows aged on the ordinary polling
+    window, not on this read - so the day that was asked for stayed on
+    display as if the portal had confirmed it.
+    """
+    entity, data = _entity()
+    _with_companion(data)
+    _wired(entity)
+    _real_read_back(entity, [_OTHER_MODULE], monkeypatch)
+
+    await entity.async_set_value(date(2026, 12, 24))
+
+    assert entity.native_value is None, (
+        "a day the read-back never saw was shown as the one the portal kept"
+    )
+
+
+async def test_a_read_back_with_the_written_module_shows_what_the_portal_kept(
+    monkeypatch,
+):
+    """The counter-test: an old value that comes back IS the answer."""
+    entity, data = _entity()
+    _with_companion(data)
+    _wired(entity)
+    _real_read_back(entity, [_OTHER_MODULE, _HOLIDAY_MODULE], monkeypatch)
+
+    await entity.async_set_value(date(2026, 12, 24))
+
+    assert entity.native_value == date(2026, 8, 3)

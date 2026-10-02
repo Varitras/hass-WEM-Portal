@@ -53,6 +53,7 @@ produce the same output.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import queue
@@ -259,7 +260,8 @@ UNDEFINED_NAME_RULES = "F821,F823"
 
 
 def names_left_undefined(cases: list, root: Path | None = None) -> list[str]:
-    """Every case whose mutated module uses a name it does not define.
+    """Every case whose mutated module does not parse, or uses a name it does
+    not define.
 
     Compared against the unmutated module, and COUNTED: a name the original
     already leaves undefined must not hide a new use of it. Only Python
@@ -285,9 +287,18 @@ def names_left_undefined(cases: list, root: Path | None = None) -> list[str]:
                 continue
             if case["path"] not in originals:
                 originals[case["path"]] = f"original_{len(originals)}.py"
-                (folder / originals[case["path"]]).write_text(source, encoding="utf-8")
+                (folder / originals[case["path"]]).write_text(
+                    _as_run(source), encoding="utf-8"
+                )
             mutated = source.replace(case["old"], case["new"], 1)
-            (folder / f"case_{index}.py").write_text(mutated, encoding="utf-8")
+            try:
+                compile(mutated, case["path"], "exec")
+            except SyntaxError as exc:
+                problems.append(
+                    f"{label}: does not parse ({exc.msg}, line {exc.lineno})"
+                )
+                continue
+            (folder / f"case_{index}.py").write_text(_as_run(mutated), encoding="utf-8")
             checked.append((index, case, label))
         found = _undefined_names(folder) if checked else {}
 
@@ -303,6 +314,31 @@ def names_left_undefined(cases: list, root: Path | None = None) -> list[str]:
                 f"{label}: marked crash_is_the_defect, but defines every name it uses"
             )
     return problems
+
+
+def _as_run(source: str) -> str:
+    """`source` with the bodies of its `if TYPE_CHECKING:` blocks emptied.
+
+    Those names exist for the type checker only. ruff counts them as defined,
+    so a mutation that called one passed the check above and then raised
+    NameError under the test - caught, for the wrong reason. Emptied line for
+    line, so the findings keep their line numbers. A mutated source that
+    does not parse never gets here: names_left_undefined reports it first.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return source
+    lines = source.splitlines(keepends=True)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        if ast.unparse(node.test) not in ("TYPE_CHECKING", "typing.TYPE_CHECKING"):
+            continue
+        first, last = node.body[0].lineno, node.body[-1].end_lineno or 0
+        indent = lines[first - 1][: node.body[0].col_offset]
+        lines[first - 1 : last] = [f"{indent}pass\n"] + ["\n"] * (last - first)
+    return "".join(lines)
 
 
 def _undefined_names(folder: Path) -> dict[str, Counter]:

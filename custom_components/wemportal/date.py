@@ -142,7 +142,10 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         )
 
         failure = await self.hass.async_add_executor_job(
-            self.coordinator.api.reread_device_values, self._device_id
+            self.coordinator.api.reread_device_values,
+            self._device_id,
+            (self._module_index, self._module_type),
+            (self._parameter_id,),
         )
         if failure is not None:
             # The write itself went through, so this must not be raised as a

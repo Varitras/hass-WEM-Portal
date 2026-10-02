@@ -183,6 +183,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
 
     try:
         await coordinator.async_config_entry_first_refresh()
+        _LOGGER.info("Migrating entity names for wemportal")
+        try:
+            await migrate_unique_ids(hass, entry, coordinator)
+        except Exception as exc:  # noqa: BLE001
+            # Migration is a best-effort cleanup step (renames old unique_ids
+            # to the new format). A failure here should never prevent the
+            # integration from loading - worst case, some entities keep their
+            # old unique_id until the next successful migration attempt.
+            _LOGGER.warning(
+                "Unique_id migration failed, continuing without it: %s", exc
+            )
     except BaseException:
         # The api is not in hass.data yet, so async_unload_entry cannot close
         # it: a failed first refresh (portal down, 403, auth) would leak its
@@ -192,20 +203,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # shutdown and when it takes too long, and CancelledError is not an
         # Exception - so the one ending that leaves the most behind was the
         # one this never ran for. Re-raised immediately, so a cancellation
-        # still cancels.
+        # still cancels. The migration is inside for that reason too: it
+        # awaits a refresh, and a cancellation there passes its best-effort
+        # handler.
         await hass.async_add_executor_job(api.close_transport)
         raise
-
-    # Is there an on_update function that we can add listener to?
-    _LOGGER.info("Migrating entity names for wemportal")
-    try:
-        await migrate_unique_ids(hass, entry, coordinator)
-    except Exception as exc:  # noqa: BLE001
-        # Migration is a best-effort cleanup step (renames old unique_ids
-        # to the new format). A failure here should never prevent the
-        # integration from loading - worst case, some entities keep their
-        # old unique_id until the next successful migration attempt.
-        _LOGGER.warning("Unique_id migration failed, continuing without it: %s", exc)
 
     entry.runtime_data = WemPortalData(api=api, coordinator=coordinator)
 

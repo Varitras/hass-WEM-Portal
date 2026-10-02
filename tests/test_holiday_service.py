@@ -20,7 +20,7 @@ import pytest
 
 from custom_components.wemportal import holiday
 from custom_components.wemportal.date import date_to_epoch
-from custom_components.wemportal.models import Reading, WemPortalData
+from custom_components.wemportal.models import ModuleRef, Reading, WemPortalData
 
 pytest.importorskip("homeassistant")
 
@@ -67,8 +67,8 @@ class _Api:
         if self.refuse:
             raise RuntimeError("portal said no")
 
-    def reread_device_values(self, device_id):
-        self.rereads.append(device_id)
+    def reread_device_values(self, device_id, module, parameter_ids):
+        self.rereads.append((device_id, module, tuple(parameter_ids)))
         if self.reread_fails is not None:
             return self.reread_fails
         for key, value in self.kept.items():
@@ -200,9 +200,20 @@ async def test_the_service_publishes_what_the_portal_kept(monkeypatch):
 
     await holiday._write_holiday(hass, _call())
 
-    assert api.rereads == ["1234"], "the write was published without asking back"
+    assert len(api.rereads) == 1, "the write was published without asking back"
     assert rows["Circuit-U_Beginn"].value == kept["Circuit-U_Beginn"]
     assert rows["Circuit-U_Ende"].value == kept["Circuit-U_Ende"]
+
+
+async def test_the_read_back_is_asked_about_both_written_dates(monkeypatch):
+    """The read-back was asked about the device and nothing else, so an
+    answer for any of its modules confirmed the pair. Both dates went out
+    in one request, and each has to come back before either is shown."""
+    hass, api, _rows = _world(monkeypatch)
+
+    await holiday._write_holiday(hass, _call())
+
+    assert api.rereads == [("1234", ModuleRef(1, 2), ("U_Beginn", "U_Ende"))]
 
 
 async def test_a_read_back_that_fails_leaves_neither_date_asserted(monkeypatch):
@@ -214,6 +225,58 @@ async def test_a_read_back_that_fails_leaves_neither_date_asserted(monkeypatch):
 
     assert rows["Circuit-U_Beginn"].value is None
     assert rows["Circuit-U_Ende"].value is None
+
+
+async def test_a_read_back_that_carried_one_date_leaves_neither_shown(monkeypatch):
+    """The service blanked the rows it had looked up before the write.
+
+    A read that worked replaces those rows with new ones, so after an answer
+    that carried only the begin, the begin went on showing what came back
+    while the warning said both dates were unknown - the double above keeps
+    the same objects and never showed it. Through the real api and mapper.
+    """
+    from custom_components.wemportal import wemportalapi
+    from custom_components.wemportal.wemportalapi import WemPortalApi
+
+    hass, _double, rows = _world(monkeypatch)
+    api = WemPortalApi("user@example.org", "secret")
+    api.valid_login = True
+    api.device_types = {}
+    api.api_version = None
+    api._change_value = lambda *_args, **_kwargs: None
+    api.data = hass.config_entries.async_get_entry("e1").runtime_data.coordinator.data
+    date_parameter = {"DataType": 2, "IsWriteable": True}
+    api.modules = {
+        "1234": {
+            ModuleRef(1, 2): {
+                "Index": 1,
+                "Type": 2,
+                "Name": "Circuit",
+                "parameters": {
+                    "U_Beginn": {"ParameterID": "U_Beginn", **date_parameter},
+                    "U_Ende": {"ParameterID": "U_Ende", **date_parameter},
+                },
+            }
+        }
+    }
+    begin_only = {
+        "ModuleIndex": 1,
+        "ModuleType": 2,
+        "Values": [{"ParameterID": "U_Beginn", "NumericValue": BEGIN_ROW.value}],
+    }
+    answers = iter([{"Status": 0, "JobID": "job-1"}, {"Modules": [begin_only]}])
+    api.make_api_call = lambda *_args, **_kwargs: types.SimpleNamespace(
+        json=lambda: next(answers)
+    )
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _seconds: None)
+    hass.config_entries.async_get_entry("e1").runtime_data.api = api
+
+    await holiday._write_holiday(hass, _call())
+
+    assert rows["Circuit-U_Ende"].value is None
+    assert rows["Circuit-U_Beginn"].value is None, (
+        "half a holiday was shown after the warning said neither date was known"
+    )
 
 
 async def test_a_refused_write_changes_nothing(monkeypatch):

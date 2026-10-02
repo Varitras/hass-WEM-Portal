@@ -24,18 +24,52 @@ from pathlib import Path
 
 import pytest
 
-MODULES = ["scraper.py", "expert_writer.py"]
 PACKAGE = Path(__file__).resolve().parents[1] / "custom_components" / "wemportal"
+
+# Requests whose answers are read somewhere other than a page gate, and why.
+NOT_THROUGH_THE_PAGE_GATE = {
+    # The mobile API client: make_api_call and the web login read its
+    # answers, and test_transport_errors and test_security hold those.
+    "transport.py": "the mobile API's own answer handling",
+}
 
 
 def _is_request(node):
-    return (
+    """A `.get` or `.post` on a session - an attribute (`self.session`) or a
+    plain local (`session`), since the login keeps its session in one."""
+    if not (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr in ("get", "post")
-        and isinstance(node.func.value, ast.Attribute)
-        and node.func.value.attr == "session"
+    ):
+        return False
+    session = node.func.value
+    return (isinstance(session, ast.Attribute) and session.attr == "session") or (
+        isinstance(session, ast.Name) and session.id == "session"
     )
+
+
+def _modules_that_request():
+    """Every module of the package that sends a portal request, by its code.
+
+    A list of names was here, and a request moved to a third module would
+    have been read by nothing.
+    """
+    return sorted(
+        path.name
+        for path in PACKAGE.glob("*.py")
+        if any(
+            _is_request(node)
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        )
+    )
+
+
+MODULES = [
+    module
+    for module in _modules_that_request()
+    if module not in NOT_THROUGH_THE_PAGE_GATE
+]
 
 
 def _gate_calls(function):
@@ -171,11 +205,31 @@ def test_every_request_passes_through_the_gate(module):
     )
 
 
+def test_the_page_clients_are_found_by_what_they_send():
+    """Guards the derivation: an empty list would pass every test below."""
+    assert {"scraper.py", "expert_writer.py"} <= set(MODULES)
+
+
+@pytest.mark.parametrize(
+    "call", ["self.session.get(url)", "session.post(url, data=form)"]
+)
+def test_a_request_is_seen_however_its_session_is_held(call):
+    assert any(_is_request(node) for node in ast.walk(ast.parse(call)))
+
+
+def test_every_excused_module_still_sends_requests():
+    """An excuse outliving its module would hide the next one of that name."""
+    stale = set(NOT_THROUGH_THE_PAGE_GATE) - set(_modules_that_request())
+
+    assert not stale, f"{sorted(stale)} no longer send requests; drop the entries."
+
+
 @pytest.mark.parametrize("module", MODULES)
 def test_the_scan_actually_finds_the_requests(module):
     """Guards the guard: a regex that matches nothing would pass silently and
-    report perfect coverage forever."""
-    assert len(list(request_sites(module))) >= 4
+    report perfect coverage forever. Any site at all: the modules are found by
+    their requests now, and a small new client is not a scan that broke."""
+    assert list(request_sites(module))
 
 
 def _requests_classifying_their_transport_failure(tree):
@@ -327,15 +381,34 @@ class _Answer:
 
 
 def _gate_for(module):
-    """The module's own _check_response, bound to a real instance."""
-    if module == "scraper.py":
-        from custom_components.wemportal.scraper import WemPortalScraper
+    """The module's own _check_response, bound to a real instance.
 
-        return WemPortalScraper("user@example.org", "secret")._check_response
+    Found in the module rather than named: the class defined there that
+    defines the gate itself. A module without one raises LookupError.
+    """
+    import importlib
+    import inspect
 
-    from custom_components.wemportal.expert_writer import WemPortalExpertClient
+    imported = importlib.import_module(
+        f"custom_components.wemportal.{module.removesuffix('.py')}"
+    )
+    owners = [
+        cls
+        for _name, cls in inspect.getmembers(imported, inspect.isclass)
+        if cls.__module__ == imported.__name__ and "_check_response" in vars(cls)
+    ]
+    if len(owners) != 1:
+        raise LookupError(f"{module} defines {len(owners)} classes with a gate")
+    return owners[0]("user@example.org", "secret")._check_response
 
-    return WemPortalExpertClient("user@example.org", "secret")._check_response
+
+def test_a_module_without_a_gate_of_its_own_is_not_lent_another():
+    """The modules are found by what they send, and their gate was then
+    looked up by name: any module but the scraper got the expert client's.
+    A new page client with a gate that checks nothing would have been
+    tested against a gate that does."""
+    with pytest.raises(LookupError):
+        _gate_for("utils.py")
 
 
 @pytest.mark.parametrize("module", MODULES)

@@ -376,17 +376,27 @@ class WemPortalExpertNumber(RestoreNumber):
         self._config_entry.runtime_data.expert.detach_entity(self)
         await super().async_will_remove_from_hass()
 
-    def _raise_if_removed(self) -> None:
+    def _raise_if_gone(self, owner) -> None:
         """Abort gate handed to the portal client.
 
-        Called from the worker thread, so it must only read state - it is
-        a plain flag check on purpose.
+        Called from the worker thread, so it must only read state - plain
+        flag checks on purpose.
+
+        `owner` is the runtime state the write started under. The entity
+        is removed only at the end of an unload, after the platforms came
+        down, while `unloading` goes up at its start - so asking about the
+        entity alone let a write whose login was still running send its
+        POST into an entry being torn down. A reload puts a new state
+        under the same entry, which `_removed` does not see either.
         """
         if self._removed:
             raise ExpertOperationAborted(
                 f"{self._attr_name}: the entity was removed before the "
                 "write reached the portal"
             )
+        reason = owner.why_not_current(self._config_entry)
+        if reason is not None:
+            raise ExpertOperationAborted(f"{self._attr_name}: {reason}")
 
     async def _async_write(self, value: float) -> None:
         """Do the write and wait for the portal to confirm it."""
@@ -394,6 +404,10 @@ class WemPortalExpertNumber(RestoreNumber):
         from .expert_writer import WemPortalExpertClient
 
         client_options = expert_client_options(self._config_entry.options)
+        owner = self._config_entry.runtime_data
+
+        def _raise_if_gone() -> None:
+            self._raise_if_gone(owner)
 
         def _do_write():
             # Checked here AND handed to the client, which re-checks it
@@ -401,7 +415,7 @@ class WemPortalExpertNumber(RestoreNumber):
             # One check at the top only covered a job the thread pool had
             # not started yet; an unload during the login (several
             # requests, seconds) still ran through to the write.
-            self._raise_if_removed()
+            _raise_if_gone()
             # Shared per-account lock: only one expert portal operation
             # (this entity, the service, or the auto-poll) may run at a
             # time, so concurrent writes/reads don't collide on the same
@@ -419,7 +433,7 @@ class WemPortalExpertNumber(RestoreNumber):
                     cooldown_check=self._cooldown_check(),
                     cooldown_activate=self._cooldown_activate(),
                     cookie_jar=self._cookie_jar(),
-                    abort_check=self._raise_if_removed,
+                    abort_check=_raise_if_gone,
                     **client_options,
                 )
                 return client.write_parameter(self._entityvalue, value)
