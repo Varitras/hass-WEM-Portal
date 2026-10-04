@@ -328,15 +328,19 @@ def test_malformed_entries_do_not_cost_the_remaining_values():
     assert data["Heat pump-Good"].value == 42
 
 
-def test_missing_value_becomes_none_rather_than_zero():
-    """ "--" is missing data. Reported as 0 it would look like a real
-    reading and could trigger automations."""
+def test_the_api_leaves_the_idle_dash_to_the_entity():
+    """The API path shares the page's rule: "--" stays the portal's text,
+    and the entity decides with the unit it ends up with (test_idle_dash)."""
     data = _process(
-        _modules(_parameter("Outside")),
-        _values(_value("Outside", string="--", unit="°C")),
+        _modules(_parameter("Vorlaufsoll"), _parameter("Energy")),
+        _values(
+            _value("Vorlaufsoll", string="--", unit="°C"),
+            _value("Energy", string="--", unit="kWh"),
+        ),
     )
 
-    assert data["Heat pump-Outside"].value is None
+    assert data["Heat pump-Vorlaufsoll"].value == "--"
+    assert data["Heat pump-Energy"].value == "--"
 
 
 def test_friendly_name_does_not_repeat_the_module_name():
@@ -1059,6 +1063,22 @@ def test_an_empty_api_value_does_not_erase_the_scraped_one():
     data = _process(
         _modules(_parameter("Outside")),
         _values(_value("Outside", numeric=None, string="")),
+        mode="both",
+        existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
+        scrape_still_feeds=lambda key: key == "heat_pump-outside",
+    )
+
+    assert data["heat_pump-outside"].value == 11.0
+
+
+def test_an_idle_api_dash_does_not_erase_the_scraped_value_either():
+    """The "--" now stays text where it used to be read as no value, and the
+    rule above asked only for None - so the API's "--" overwrote a reading
+    the web scrape had just delivered, and the two sources could take turns
+    on one sensor."""
+    data = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=None, string="--")),
         mode="both",
         existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
         scrape_still_feeds=lambda key: key == "heat_pump-outside",

@@ -38,7 +38,13 @@ DEVICE_TYPE_NAMES: Final = {
 }
 
 # Scraper Constants
-MISSING_DATA_STRINGS: Final = ["--", "label ist null", "label ist null "]
+MISSING_DATA_STRINGS: Final = ["label ist null", "label ist null "]
+# What the portal shows where nothing is active: a setpoint while there is no
+# demand, a fault field without a fault. Read as missing data, every such
+# sensor stood at unknown whenever the heat pump was idle. Kept as this text
+# by the readers: whether it is 0 or nothing depends on the unit the entity
+# ends up with (see WemPortalSensor._idle_reading), which neither reader has.
+NOTHING_ACTIVE: Final = "--"
 
 
 def clamped_scan_interval(
@@ -268,7 +274,8 @@ def sanitize_value(value_str: Any) -> Any:
         A number for numeric/boolean values; None for empty or "missing
         data" values (the sensor then shows as unavailable rather than
         reporting a fabricated 0); or the original string if it can't be
-        interpreted as a number or known boolean/placeholder.
+        interpreted as a number or known boolean/placeholder - the portal's
+        "--" among them, see NOTHING_ACTIVE.
 
     Note on boolean handling: "Ein"/"On"/"Aus"/"Off" are ALWAYS mapped to
     1/0 here, never to text, regardless of `unit`. An earlier version
@@ -318,6 +325,11 @@ def sanitize_value(value_str: Any) -> Any:
     if number is not None:
         return number
     return value_str
+
+
+def is_nothing_active(value: Any) -> bool:
+    """Whether `value` is the portal's "--" (see NOTHING_ACTIVE)."""
+    return isinstance(value, str) and value.strip() == NOTHING_ACTIVE
 
 
 def serialize_modules(modules: dict[str, Any]) -> dict[str, Any]:

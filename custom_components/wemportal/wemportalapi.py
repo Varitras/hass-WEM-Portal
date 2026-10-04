@@ -1163,8 +1163,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         The old VALUE is deliberately NOT carried over when this scrape has
         none. It used to be, to avoid "a gap in the history, even though the
         previous value is still very likely accurate". Measured on a live
-        installation, that premise does not hold: the portal renders "--" for
-        a value it does not currently have, the scrape maps that to None, and
+        installation, that premise does not hold: the portal rendered "--"
+        for a setpoint it no longer had, the scrape read that as no value, and
         the sensor then reported a setpoint of 50.5 degrees for three hours
         while the portal and the heat pump both showed nothing. Only
         reloading the integration cleared it.

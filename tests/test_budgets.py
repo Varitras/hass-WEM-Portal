@@ -110,7 +110,8 @@ COMPLEXITY_LIMIT = 15
 COMPLEXITY_BUDGETS = {
     # One over the default for the question an empty API value has to ask
     # before it may leave a merged row alone: does the scrape still feed it.
-    "mapper.py::_merge_into_scraped": 16,
+    # And one more for the portal's "--" counting as empty there too.
+    "mapper.py::_merge_into_scraped": 17,
     "expert_writer.py::WemPortalExpertClient.parse_parameter_form": 29,
     # The per-parameter ageing decision, split out of _clear_unanswered once
     # the merge map carried a device-scoped key of its own - the split the old

@@ -8,7 +8,7 @@ import json
 import re
 from typing import Any
 
-from homeassistant.components.sensor import RestoreSensor
+from homeassistant.components.sensor import RestoreSensor, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_USERNAME, MAX_LENGTH_STATE_STATE, EntityCategory
 from homeassistant.core import HomeAssistant, callback
@@ -24,6 +24,7 @@ from .utils import (
     device_is_reachable,
     device_model,
     fix_value_and_unit,
+    is_nothing_active,
     unit_to_device_class,
     unit_to_state_class,
 )
@@ -358,10 +359,9 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             or self.device_class is not None
         )
 
-        # A MISSING reading is expected, not invalid: the portal regularly
-        # reports "--" (or an empty string) for a parameter it has no current
-        # value for, and that is deliberately mapped to None so the sensor
-        # shows as unknown instead of a fabricated 0.0. Logging this at
+        # A MISSING reading is expected, not invalid: an empty value, or a
+        # counter's "--", is deliberately mapped to None so the sensor shows
+        # as unknown instead of a fabricated 0.0. Logging this at
         # warning level (as an "invalid value") made a normal condition look
         # like a defect and drowned out real problems - so it is debug.
         # Genuinely un-coercible values are still warned about below.
@@ -375,6 +375,9 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         if value is None:
             _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
             return None
+
+        if is_nothing_active(value):
+            return self._idle_reading()
 
         if isinstance(value, str):
             value = value.strip()
@@ -411,6 +414,23 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 return None
 
         return _whole_number_shown_whole(value)
+
+    def _idle_reading(self):
+        """0 for the portal's "--", like "Aus" - but nothing on a counter.
+
+        Home Assistant reads a counter that drops to 0 as reset and books the
+        next real reading as consumption from zero, a jump in the long-term
+        statistics that does not go away. Asked of the state class this
+        sensor ends up with, not of the unit the "--" came with: a scraped
+        cell has none, an API answer may omit it, and the entity keeps the
+        previous one.
+        """
+        # By value: a reading may state its class as the plain text Home
+        # Assistant also accepts - the statistics rows do - and that text is
+        # never the same object as the enum member.
+        if self.state_class == SensorStateClass.TOTAL_INCREASING:
+            return None
+        return 0
 
     def __init__(
         self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data
@@ -456,10 +476,12 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                     last_sensor_data.native_unit_of_measurement
                 )
                 # Checked again: the value was checked without this unit, and
-                # a word that passed as text must not stand beside it.
-                self._attr_native_value = self._validated_native_value(
-                    self._attr_native_value, None
-                )
+                # a word that passed as text must not stand beside it. From
+                # the row, not the value already decided: a "--" became 0
+                # before the unit said it belongs to a counter.
+                row = self._coordinator_row()
+                raw = row.value if row is not None else self._attr_native_value
+                self._attr_native_value = self._validated_native_value(raw, None)
                 _LOGGER.debug(
                     "Restored unit %s for %s from previous session",
                     self._attr_native_unit_of_measurement,
@@ -515,11 +537,12 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             return
 
         value, unit = fix_value_and_unit(row.value, row.unit)
-        self._attr_native_value = self._validated_native_value(value, unit)
-
-        # set unit if it references a valid non-trivial unit of measurement
+        # The unit before the value, as in __init__: a "--" is decided by the
+        # state class the unit gives, and taken afterwards the first one of a
+        # counter whose unit had not arrived yet read as 0 - a reset.
         if unit not in (None, ""):
             self._attr_native_unit_of_measurement = unit
+        self._attr_native_value = self._validated_native_value(value, unit)
 
         _LOGGER.debug(
             'Update sensor: %s: "%s" [%s]',

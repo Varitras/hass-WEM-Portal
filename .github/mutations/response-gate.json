@@ -107,8 +107,8 @@
   {
     "label": "net: falsy scraped fields must not fall back to the api value",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n                target.value = api_value",
-    "new": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n                target.value = api_value\n            target.unit = target.unit or sensor.unit",
+    "old": "            if brings_a_reading or not scrape_still_feeds(scraped_entity):\n                target.value = api_value",
+    "new": "            if brings_a_reading or not scrape_still_feeds(scraped_entity):\n                target.value = api_value\n            target.unit = target.unit or sensor.unit",
     "tests": "extra_mapper_output_is_unchanged"
   },
   {
@@ -4959,21 +4959,21 @@
   {
     "label": "sensor: a word after a restart left beside the restored unit",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "                self._attr_native_value = self._validated_native_value(\n                    self._attr_native_value, None\n                )\n",
+    "old": "                self._attr_native_value = self._validated_native_value(raw, None)\n",
     "new": "",
     "tests": "checked_against_the_restored_unit"
   },
   {
     "label": "merge: an empty API value kept against a row the scrape no longer feeds",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n",
-    "new": "            if api_value is not None:\n",
+    "old": "            if brings_a_reading or not scrape_still_feeds(scraped_entity):\n",
+    "new": "            if brings_a_reading:\n",
     "tests": "empty_api_value_clears"
   },
   {
     "label": "merge: an empty API value erases a row the scrape delivers",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            if api_value is not None or not scrape_still_feeds(scraped_entity):\n",
+    "old": "            if brings_a_reading or not scrape_still_feeds(scraped_entity):\n",
     "new": "            if True:\n",
     "tests": "empty_api_value_does_not_erase_the_scraped_one"
   },
@@ -5298,5 +5298,61 @@
     "old": "                compile(mutated, case[\"path\"], \"exec\")\n",
     "new": "                pass\n",
     "tests": "a_mutation_that_does_not_parse_is_refused"
+  },
+  {
+    "label": "sensor: the idle dash read as an unreadable word again",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if is_nothing_active(value):\n            return self._idle_reading()\n",
+    "new": "",
+    "tests": "setpoint_going_to_dash_reads_zero_degrees"
+  },
+  {
+    "label": "sensor restore: the dash re-checked from the value already decided",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "                raw = row.value if row is not None else self._attr_native_value\n",
+    "new": "                raw = self._attr_native_value\n",
+    "tests": "first_reading_after_a_restart_is_dash_is_not_reset"
+  },
+  {
+    "label": "number: the idle dash read as an invalid number again",
+    "path": "custom_components/wemportal/number.py",
+    "old": "        if is_nothing_active(value):\n            return 0\n",
+    "new": "",
+    "tests": "idle_number_reads_zero"
+  },
+  {
+    "label": "portal values: a padded dash not recognised",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return isinstance(value, str) and value.strip() == NOTHING_ACTIVE\n",
+    "new": "    return isinstance(value, str) and value == NOTHING_ACTIVE\n",
+    "tests": "dash_is_left_for_the_entity_to_decide"
+  },
+  {
+    "label": "sensor: a counter's idle dash shown as 0, a reset to the statistics",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if self.state_class == SensorStateClass.TOTAL_INCREASING:\n            return None\n        return 0\n",
+    "new": "        return 0\n",
+    "tests": "scraped_hour_counter_going_to_dash_is_not_a_reset or portals_own_spelling_is_not_reset"
+  },
+  {
+    "label": "sensor: the value decided before the unit it comes with is taken",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
+    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n",
+    "tests": "unit_first_arrives_with_a_dash_is_not_reset"
+  },
+  {
+    "label": "merge: an idle API dash erases a row the scrape delivers",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        brings_a_reading = api_value is not None and not is_nothing_active(api_value)\n",
+    "new": "        brings_a_reading = api_value is not None\n",
+    "tests": "idle_api_dash_does_not_erase_the_scraped_value"
+  },
+  {
+    "label": "sensor: a counter class stated as text compared by identity again",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if self.state_class == SensorStateClass.TOTAL_INCREASING:\n",
+    "new": "        if self.state_class is SensorStateClass.TOTAL_INCREASING:\n",
+    "tests": "statistics_energy_counter_with_a_dash_is_not_reset"
   }
 ]

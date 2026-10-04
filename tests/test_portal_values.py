@@ -58,8 +58,18 @@ def test_words_and_placeholders_still_survive_the_shared_parser():
     """The counter-test: routing through the parser must not turn the
     non-numeric answers into numbers or errors."""
     assert utils.sanitize_value("Aus") == 0.0, "boolean words keep their mapping"
-    assert utils.sanitize_value("--") is None, "missing data stays missing"
+    assert utils.sanitize_value("label ist null") is None, "missing stays missing"
     assert utils.sanitize_value("Sommer") == "Sommer", "plain words stay words"
+
+
+def test_the_portals_dash_is_left_for_the_entity_to_decide():
+    """ "--" is 0 on a setpoint and nothing on a counter, and which one a
+    reading is shows only in the unit its entity ends up with - which the
+    readers do not have. So they keep it as the portal's text."""
+    assert utils.sanitize_value("--") == "--"
+    assert utils.is_nothing_active(" -- ")
+    assert not utils.is_nothing_active("label ist null")
+    assert not utils.is_nothing_active(0)
 
 
 def test_comma_normalisation_lives_in_exactly_one_place():

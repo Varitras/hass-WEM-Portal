@@ -10,6 +10,7 @@ from .const import WemDataType
 from .models import ModuleRef, Reading
 from .translations import friendly_name_mapper, translate
 from .utils import (
+    is_nothing_active,
     looks_like_schedule,
     portal_list,
     sanitize_value,
@@ -506,8 +507,11 @@ def _merge_into_scraped(
         # An API read that came back empty must not erase a web value the
         # scrape still delivers: writing None over it turned a partial API
         # failure into an unknown sensor. Only then - kept against every
-        # empty answer, a row nothing else refreshes stood as current.
+        # empty answer, a row nothing else refreshes stood as current. The
+        # portal's "--" counts as empty here too: it is kept as text for the
+        # entity to decide, and as text it overwrote the scrape's own reading.
         api_value = sensor.value
+        brings_a_reading = api_value is not None and not is_nothing_active(api_value)
         if target is None:
             target = Reading(parameter_id=scraped_entity)
             api_data[device_id][scraped_entity] = target
@@ -520,7 +524,7 @@ def _merge_into_scraped(
             # only the value flows in, and everything the row carries beyond
             # these fields (a schedule detail, say) stays untouched, exactly
             # as dict.update() on a fixed key set left it before.
-            if api_value is not None or not scrape_still_feeds(scraped_entity):
+            if brings_a_reading or not scrape_still_feeds(scraped_entity):
                 target.value = api_value
             target.parameter_id = scraped_entity
             target.platform = "sensor"
