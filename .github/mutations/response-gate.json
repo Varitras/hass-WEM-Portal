@@ -4959,7 +4959,7 @@
   {
     "label": "sensor: a word after a restart left beside the restored unit",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "                self._attr_native_value = self._validated_native_value(\n                    self._attr_native_value, None\n                )\n",
+    "old": "                self._attr_native_value = self._validated_native_value(raw, None)\n",
     "new": "",
     "tests": "checked_against_the_restored_unit"
   },
@@ -5300,24 +5300,45 @@
     "tests": "a_mutation_that_does_not_parse_is_refused"
   },
   {
-    "label": "portal values: the idle dash read as missing data again",
-    "path": "custom_components/wemportal/utils.py",
-    "old": "    if value_lower == NOTHING_ACTIVE:\n        return _nothing_active(unit)\n",
-    "new": "    if value_lower == NOTHING_ACTIVE:\n        return None\n",
-    "tests": "the_portals_dash_reads_as_zero or boolean_and_idle_values_are_sanitized"
+    "label": "sensor: the idle dash read as an unreadable word again",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if is_nothing_active(value):\n            return self._idle_reading()\n",
+    "new": "",
+    "tests": "setpoint_going_to_dash_reads_zero_degrees"
   },
   {
-    "label": "portal values: a counter's dash turned into a reset",
-    "path": "custom_components/wemportal/utils.py",
-    "old": "    if unit_to_state_class(unit) is SensorStateClass.TOTAL_INCREASING:\n        return None\n    return 0\n",
-    "new": "    return 0\n",
-    "tests": "a_dash_on_a_counter_stays_unknown"
+    "label": "sensor restore: the dash re-checked from the value already decided",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "                raw = row.value if row is not None else self._attr_native_value\n",
+    "new": "                raw = self._attr_native_value\n",
+    "tests": "first_reading_after_a_restart_is_dash_is_not_reset"
   },
   {
-    "label": "mapper: the api value's unit not consulted for a dash",
-    "path": "custom_components/wemportal/mapper.py",
-    "old": "            final_value = sanitize_value(final_value, value.get(\"Unit\"))\n",
-    "new": "            final_value = sanitize_value(final_value)\n",
-    "tests": "idle_setpoint_reads_as_zero_and_a_counter_stays_unknown"
+    "label": "number: the idle dash read as an invalid number again",
+    "path": "custom_components/wemportal/number.py",
+    "old": "        if is_nothing_active(value):\n            return 0\n",
+    "new": "",
+    "tests": "idle_number_reads_zero"
+  },
+  {
+    "label": "portal values: a padded dash not recognised",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return isinstance(value, str) and value.strip() == NOTHING_ACTIVE\n",
+    "new": "    return isinstance(value, str) and value == NOTHING_ACTIVE\n",
+    "tests": "dash_is_left_for_the_entity_to_decide"
+  },
+  {
+    "label": "sensor: a counter's idle dash shown as 0, a reset to the statistics",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if self.state_class is SensorStateClass.TOTAL_INCREASING:\n            return None\n        return 0\n",
+    "new": "        return 0\n",
+    "tests": "scraped_hour_counter_going_to_dash_is_not_a_reset or portals_own_spelling_is_not_reset"
+  },
+  {
+    "label": "sensor: the value decided before the unit it comes with is taken",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
+    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n",
+    "tests": "unit_first_arrives_with_a_dash_is_not_reset"
   }
 ]

@@ -62,21 +62,14 @@ def test_words_and_placeholders_still_survive_the_shared_parser():
     assert utils.sanitize_value("Sommer") == "Sommer", "plain words stay words"
 
 
-@pytest.mark.parametrize("unit", ["°C", "%", "", None])
-def test_the_portals_dash_reads_as_zero(unit):
-    """The portal shows "--" where nothing is active: a flow setpoint with no
-    heat demand, a fault field with no fault. It was read as missing data,
-    so those sensors stood at unknown whenever the heat pump was idle - the
-    pump speed and power beside them already read 0 from "Aus"."""
-    assert utils.sanitize_value("--", unit) == 0
-
-
-@pytest.mark.parametrize("unit", ["kWh", "Wh", "h"])
-def test_a_dash_on_a_counter_stays_unknown(unit):
-    """A counter Home Assistant sees drop to 0 has been reset, and the next
-    real reading is booked as consumption from zero - one stray 0 is a jump
-    in the long-term statistics that does not go away."""
-    assert utils.sanitize_value("--", unit) is None
+def test_the_portals_dash_is_left_for_the_entity_to_decide():
+    """ "--" is 0 on a setpoint and nothing on a counter, and which one a
+    reading is shows only in the unit its entity ends up with - which the
+    readers do not have. So they keep it as the portal's text."""
+    assert utils.sanitize_value("--") == "--"
+    assert utils.is_nothing_active(" -- ")
+    assert not utils.is_nothing_active("label ist null")
+    assert not utils.is_nothing_active(0)
 
 
 def test_comma_normalisation_lives_in_exactly_one_place():

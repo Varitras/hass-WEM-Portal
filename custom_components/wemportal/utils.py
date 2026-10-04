@@ -41,7 +41,9 @@ DEVICE_TYPE_NAMES: Final = {
 MISSING_DATA_STRINGS: Final = ["label ist null", "label ist null "]
 # What the portal shows where nothing is active: a setpoint while there is no
 # demand, a fault field without a fault. Read as missing data, every such
-# sensor stood at unknown whenever the heat pump was idle.
+# sensor stood at unknown whenever the heat pump was idle. Kept as this text
+# by the readers: whether it is 0 or nothing depends on the unit the entity
+# ends up with (see WemPortalSensor._idle_reading), which neither reader has.
 NOTHING_ACTIVE: Final = "--"
 
 
@@ -257,7 +259,7 @@ def parse_portal_number(value: object) -> float | None:
         return None
 
 
-def sanitize_value(value_str: Any, unit: str | None = None) -> Any:
+def sanitize_value(value_str: Any) -> Any:
     """Sanitize typical German/English WEM Portal strings into numeric values.
 
     The single implementation for both readers - the API mapper (mapper.py)
@@ -267,14 +269,13 @@ def sanitize_value(value_str: Any, unit: str | None = None) -> Any:
     Args:
         value_str: The raw string value coming from the portal (or already
             a non-string value, in which case it is returned unchanged).
-        unit: The unit the reading comes with, if any. It decides what the
-            portal's "--" becomes: 0, or None on a counter.
 
     Returns:
-        A number for numeric/boolean values and for "--" (see
-        NOTHING_ACTIVE); None for empty or "missing data" values (the sensor then shows as unavailable rather than
+        A number for numeric/boolean values; None for empty or "missing
+        data" values (the sensor then shows as unavailable rather than
         reporting a fabricated 0); or the original string if it can't be
-        interpreted as a number or known boolean/placeholder.
+        interpreted as a number or known boolean/placeholder - the portal's
+        "--" among them, see NOTHING_ACTIVE.
 
     Note on boolean handling: "Ein"/"On"/"Aus"/"Off" are ALWAYS mapped to
     1/0 here, never to text, regardless of `unit`. An earlier version
@@ -315,9 +316,6 @@ def sanitize_value(value_str: Any, unit: str | None = None) -> Any:
         # already returned None; now the same honesty applies to all).
         return None
 
-    if value_lower == NOTHING_ACTIVE:
-        return _nothing_active(unit)
-
     if value_lower in BOOLEAN_OFF_STRINGS:
         return 0
     if value_lower in BOOLEAN_ON_STRINGS:
@@ -329,13 +327,9 @@ def sanitize_value(value_str: Any, unit: str | None = None) -> Any:
     return value_str
 
 
-def _nothing_active(unit: str | None) -> int | None:
-    """0, like "Aus" - except on a counter. Home Assistant reads a counter
-    that drops to 0 as reset and books the next real reading as consumption
-    from zero, a jump in the long-term statistics that does not go away."""
-    if unit_to_state_class(unit) is SensorStateClass.TOTAL_INCREASING:
-        return None
-    return 0
+def is_nothing_active(value: Any) -> bool:
+    """Whether `value` is the portal's "--" (see NOTHING_ACTIVE)."""
+    return isinstance(value, str) and value.strip() == NOTHING_ACTIVE
 
 
 def serialize_modules(modules: dict[str, Any]) -> dict[str, Any]:

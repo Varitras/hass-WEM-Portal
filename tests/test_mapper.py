@@ -328,9 +328,9 @@ def test_malformed_entries_do_not_cost_the_remaining_values():
     assert data["Heat pump-Good"].value == 42
 
 
-def test_an_idle_setpoint_reads_as_zero_and_a_counter_stays_unknown():
-    """The API path shares the page's rule: "--" is nothing active, so 0 -
-    except on a counter, which Home Assistant would take as reset."""
+def test_the_api_leaves_the_idle_dash_to_the_entity():
+    """The API path shares the page's rule: "--" stays the portal's text,
+    and the entity decides with the unit it ends up with (test_idle_dash)."""
     data = _process(
         _modules(_parameter("Vorlaufsoll"), _parameter("Energy")),
         _values(
@@ -339,8 +339,8 @@ def test_an_idle_setpoint_reads_as_zero_and_a_counter_stays_unknown():
         ),
     )
 
-    assert data["Heat pump-Vorlaufsoll"].value == 0
-    assert data["Heat pump-Energy"].value is None
+    assert data["Heat pump-Vorlaufsoll"].value == "--"
+    assert data["Heat pump-Energy"].value == "--"
 
 
 def test_friendly_name_does_not_repeat_the_module_name():

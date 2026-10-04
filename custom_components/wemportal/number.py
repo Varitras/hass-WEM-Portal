@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_EXPERT_WRITE, DOMAIN
 from .entity import async_add_readings_as_they_appear, WemPortalEntity
-from .utils import fix_value_and_unit, unit_to_device_class
+from .utils import fix_value_and_unit, is_nothing_active, unit_to_device_class
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -154,6 +154,11 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         if value is None:
             _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
             return None
+
+        # A setpoint without demand; a number has no text state, and a
+        # control is no counter, so this is simply 0.
+        if is_nothing_active(value):
+            return 0
 
         if isinstance(value, str):
             value = value.strip()

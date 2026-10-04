@@ -139,8 +139,9 @@ def test_non_numeric_value_keeps_the_full_string_and_no_unit(scraper):
 
 
 def test_boolean_and_idle_values_are_sanitized(scraper):
-    """Shared sanitize_value(): on/off become numbers, and so does the "--"
-    the page shows for a setpoint while there is no demand."""
+    """Shared sanitize_value(): on/off become numbers; the "--" the page
+    shows for a setpoint without demand is left for the entity, with the
+    unit its name gives it."""
     page = _page(
         _panel(
             "Pump",
@@ -151,7 +152,7 @@ def test_boolean_and_idle_values_are_sanitized(scraper):
 
     assert data["pump-ein"].value == 1.0
     assert data["pump-aus"].value == 0.0
-    assert data["pump-vorlaufsolltemperatur"].value == 0
+    assert data["pump-vorlaufsolltemperatur"].value == "--"
     assert data["pump-vorlaufsolltemperatur"].unit == "°C"
 
 
