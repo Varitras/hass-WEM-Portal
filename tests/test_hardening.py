@@ -7036,9 +7036,9 @@ def _scraped_row(value, unit="°C"):
 
 
 def test_a_scraped_row_without_a_value_clears_the_sensor():
-    """Measured on a live installation: the portal renders "--" for a value
-    it does not have, the scrape maps that to None - and the old value was
-    carried over, so a setpoint read 50.5 degrees for three hours while the
+    """Measured on a live installation: the portal rendered "--" for a
+    setpoint it no longer had, the scrape read that as no value - and the old
+    value was carried over, so a setpoint read 50.5 degrees for three hours while the
     portal and the heat pump both showed nothing."""
     api = _api()
     api._merge_webscraping_data("0000", {"wp-solltemperatur": _scraped_row(50.5)})

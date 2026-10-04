@@ -659,6 +659,7 @@ Portal, click the three dots on the card, choose `Enable debug logging`.
 | Setup says the portal is refusing this network | The IP is rate-limited. Waiting is the only fix; retrying prolongs it. |
 | A sensor shows *unknown* for a cycle | The portal answered without that parameter. Deliberate: a stale reading is not shown as current. |
 | Web-only sensors go *unknown* together | Three scrapes in a row failed. They come back on the next successful one. |
+| A setpoint shows 0 while the heat pump is idle | The portal shows `--` there: no setpoint without demand. Read as 0, like a pump's `Aus`; a counter showing `--` stays *unknown*, since Home Assistant would take a 0 as a reset. |
 | Asked to re-authenticate although the password is right | The portal served something other than a login form or a session. Only a re-rendered login form counts as wrong credentials, but a portal in an odd state can still get there. |
 | A new parameter does not appear | Parameter lists are cached for 24 hours. Use `Search the portal for new API parameters`. |
 | Expert discovery says another operation is running | The auto-poll or a write holds the per-account lock. Try again in a moment. |

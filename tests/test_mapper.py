@@ -328,15 +328,19 @@ def test_malformed_entries_do_not_cost_the_remaining_values():
     assert data["Heat pump-Good"].value == 42
 
 
-def test_missing_value_becomes_none_rather_than_zero():
-    """ "--" is missing data. Reported as 0 it would look like a real
-    reading and could trigger automations."""
+def test_an_idle_setpoint_reads_as_zero_and_a_counter_stays_unknown():
+    """The API path shares the page's rule: "--" is nothing active, so 0 -
+    except on a counter, which Home Assistant would take as reset."""
     data = _process(
-        _modules(_parameter("Outside")),
-        _values(_value("Outside", string="--", unit="°C")),
+        _modules(_parameter("Vorlaufsoll"), _parameter("Energy")),
+        _values(
+            _value("Vorlaufsoll", string="--", unit="°C"),
+            _value("Energy", string="--", unit="kWh"),
+        ),
     )
 
-    assert data["Heat pump-Outside"].value is None
+    assert data["Heat pump-Vorlaufsoll"].value == 0
+    assert data["Heat pump-Energy"].value is None
 
 
 def test_friendly_name_does_not_repeat_the_module_name():

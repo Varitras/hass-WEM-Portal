@@ -358,10 +358,9 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             or self.device_class is not None
         )
 
-        # A MISSING reading is expected, not invalid: the portal regularly
-        # reports "--" (or an empty string) for a parameter it has no current
-        # value for, and that is deliberately mapped to None so the sensor
-        # shows as unknown instead of a fabricated 0.0. Logging this at
+        # A MISSING reading is expected, not invalid: an empty value, or a
+        # counter's "--", is deliberately mapped to None so the sensor shows
+        # as unknown instead of a fabricated 0.0. Logging this at
         # warning level (as an "invalid value") made a normal condition look
         # like a defect and drowned out real problems - so it is debug.
         # Genuinely un-coercible values are still warned about below.

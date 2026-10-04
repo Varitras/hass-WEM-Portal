@@ -138,15 +138,21 @@ def test_non_numeric_value_keeps_the_full_string_and_no_unit(scraper):
     assert sensor.unit is None
 
 
-def test_boolean_and_missing_values_are_sanitized(scraper):
-    """Shared sanitize_value(): on/off become numbers, "--" becomes None -
-    a missing reading must not surface as a fabricated 0."""
-    page = _page(_panel("Pump", [("Ein", "Ein"), ("Aus", "Aus"), ("Missing", "--")]))
+def test_boolean_and_idle_values_are_sanitized(scraper):
+    """Shared sanitize_value(): on/off become numbers, and so does the "--"
+    the page shows for a setpoint while there is no demand."""
+    page = _page(
+        _panel(
+            "Pump",
+            [("Ein", "Ein"), ("Aus", "Aus"), ("Vorlaufsolltemperatur", "--")],
+        )
+    )
     data = _parse(scraper, page)
 
     assert data["pump-ein"].value == 1.0
     assert data["pump-aus"].value == 0.0
-    assert data["pump-missing"].value is None
+    assert data["pump-vorlaufsolltemperatur"].value == 0
+    assert data["pump-vorlaufsolltemperatur"].unit == "°C"
 
 
 def test_enum_value_cells_are_parsed_too(scraper):

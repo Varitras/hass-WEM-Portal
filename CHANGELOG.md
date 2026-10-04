@@ -6,6 +6,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **An idle setpoint reads 0 instead of unknown.** The portal shows `--`
+  where nothing is active - a flow setpoint without heat demand, a fault
+  field without a fault - and those sensors stood at unknown whenever the
+  heat pump was idle, while the pump speed and power beside them read 0
+  from `Aus`. `--` now reads 0 too. A counter (kWh, Wh, hours) showing `--`
+  stays unknown: Home Assistant would take a 0 there as a reset.
+
 ### Fixed
 
 - **An expert parameter no longer writes into an integration being unloaded.**
