@@ -1071,6 +1071,22 @@ def test_an_empty_api_value_does_not_erase_the_scraped_one():
     assert data["heat_pump-outside"].value == 11.0
 
 
+def test_an_idle_api_dash_does_not_erase_the_scraped_value_either():
+    """The "--" now stays text where it used to be read as no value, and the
+    rule above asked only for None - so the API's "--" overwrote a reading
+    the web scrape had just delivered, and the two sources could take turns
+    on one sensor."""
+    data = _process(
+        _modules(_parameter("Outside")),
+        _values(_value("Outside", numeric=None, string="--")),
+        mode="both",
+        existing=_scraped("heat_pump-outside", "Heat pump - Outside", value=11.0),
+        scrape_still_feeds=lambda key: key == "heat_pump-outside",
+    )
+
+    assert data["heat_pump-outside"].value == 11.0
+
+
 def test_an_empty_api_value_clears_a_merged_row_the_scrape_stopped_feeding():
     """The protection above is for a value the scrape still delivers. With
     the scrape gone, the empty answer is the only news there is - kept

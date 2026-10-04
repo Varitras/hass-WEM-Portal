@@ -425,7 +425,10 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         cell has none, an API answer may omit it, and the entity keeps the
         previous one.
         """
-        if self.state_class is SensorStateClass.TOTAL_INCREASING:
+        # By value: a reading may state its class as the plain text Home
+        # Assistant also accepts - the statistics rows do - and that text is
+        # never the same object as the enum member.
+        if self.state_class == SensorStateClass.TOTAL_INCREASING:
             return None
         return 0
 

@@ -175,6 +175,28 @@ async def test_a_counter_whose_first_reading_after_a_restart_is_dash_is_not_rese
     assert sensor.native_value is None, "the restored counter started at 0"
 
 
+def test_a_statistics_energy_counter_with_a_dash_is_not_reset():
+    """The statistics rows state their class themselves, as the plain text
+    Home Assistant also accepts, and the counter check compared it by
+    identity with the enum member - never the same object, so a "--" there
+    read 0 on the energy dashboard's own counter."""
+    from custom_components.wemportal.wemportalapi import WemPortalApi
+
+    api = WemPortalApi(USER, "secret")
+    api.data = {DEVICE: {}}
+    api._store_statistics_group(
+        DEVICE,
+        1,
+        "Heating Energy Yield",
+        {"Unit": "kWh", "Values": [{"Date": "2026-10-04T00:00:00", "Value": "--"}]},
+    )
+    key = f"{DEVICE}-Energy_1"
+    assert key in api.data[DEVICE], "the control case stored no statistics row"
+    sensor = _sensor(api.data[DEVICE], key)
+
+    assert sensor.native_value is None
+
+
 def test_an_idle_number_reads_zero():
     """A writeable setpoint shows "--" the same way; a number entity has no
     text state, so it is 0 there too."""

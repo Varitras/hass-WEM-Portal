@@ -12,8 +12,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   where nothing is active - a flow setpoint without heat demand, a fault
   field without a fault - and those sensors stood at unknown whenever the
   heat pump was idle, while the pump speed and power beside them read 0
-  from `Aus`. `--` now reads 0 too. A counter (kWh, Wh, hours) showing `--`
-  stays unknown: Home Assistant would take a 0 there as a reset.
+  from `Aus`. `--` now reads 0 too, and a switch showing it reads off. A
+  counter (kWh, Wh, hours) that has shown a reading stays unknown on `--`:
+  Home Assistant would take a 0 there as a reset. In `both` mode the web
+  page's value still wins over an API `--` while the page delivers one.
 
 ### Fixed
 
