@@ -8,7 +8,7 @@ from dataclasses import replace
 
 from .const import WemDataType
 from .models import ModuleRef, Reading
-from .translations import friendly_name_mapper, translate
+from .translations import friendly_name_mapper, known_unit, translate
 from .utils import (
     is_nothing_active,
     looks_like_schedule,
@@ -116,7 +116,7 @@ def _describe_value(
     return name, Reading(
         friendly_name=_friendly_name(language, parameter_id, device_module["Name"]),
         parameter_id=parameter_id,
-        unit=value.get("Unit"),
+        unit=known_unit(parameter_id, value.get("Unit")),
         value=final_value,
         data_type=data_type,
         module_index=module["ModuleIndex"],

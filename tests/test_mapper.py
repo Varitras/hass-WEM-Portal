@@ -343,6 +343,42 @@ def test_the_api_leaves_the_idle_dash_to_the_entity():
     assert data["Heat pump-Energy"].value == "--"
 
 
+def test_a_known_setpoint_sent_without_a_unit_reads_degrees():
+    """The portal sends most adjustable temperatures with an empty Unit -
+    measured: hot water normal/reduced and the circuit's comfort, reduced and
+    normal temperatures - so they showed as bare numbers with a lightning
+    icon, while the room setpoint beside them, sent with "°C", did not. The
+    integration already names these ids as temperatures."""
+    data = _process(
+        _modules(
+            _parameter(
+                "NormalWW", IsWriteable=True, DataType=-1, MinValue=5.0, MaxValue=60.0
+            )
+        ),
+        _values(_value("NormalWW", numeric=45.0, unit="")),
+    )
+
+    assert data["Heat pump-NormalWW"].platform == "number"
+    assert data["Heat pump-NormalWW"].unit == "°C"
+
+
+def test_a_unit_the_portal_sends_is_never_replaced():
+    """The table only fills a gap: a unit the portal states stands, and a
+    parameter the integration does not know keeps its empty one."""
+    data = _process(
+        _modules(_parameter("Komfort"), _parameter("Pumpenstufe")),
+        _values(
+            _value("Komfort", numeric=22.0, unit="K"),
+            _value("Pumpenstufe", numeric=2.0, unit=""),
+        ),
+    )
+
+    assert data["Heat pump-Komfort"].unit == "K"
+    assert data["Heat pump-Pumpenstufe"].unit in (None, ""), (
+        "a unit was made up for a parameter nobody described"
+    )
+
+
 def test_friendly_name_does_not_repeat_the_module_name():
     """The module name is only prefixed when it is not already contained in
     the parameter name - otherwise entities read "Heat pump Heat pump ...".

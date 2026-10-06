@@ -5354,5 +5354,26 @@
     "old": "        if self.state_class == SensorStateClass.TOTAL_INCREASING:\n",
     "new": "        if self.state_class is SensorStateClass.TOTAL_INCREASING:\n",
     "tests": "statistics_energy_counter_with_a_dash_is_not_reset"
+  },
+  {
+    "label": "known units: a unit the portal sends replaced by the table",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "    if sent not in (None, \"\"):\n        return sent\n",
+    "new": "",
+    "tests": "unit_the_portal_sends_is_never_replaced"
+  },
+  {
+    "label": "known units: a known setpoint left without its unit",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "    return known.unit\n",
+    "new": "    return sent\n",
+    "tests": "known_setpoint_sent_without_a_unit_reads_degrees"
+  },
+  {
+    "label": "mapper: the api value's unit taken as sent again",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        unit=known_unit(parameter_id, value.get(\"Unit\")),\n",
+    "new": "        unit=value.get(\"Unit\"),\n",
+    "tests": "known_setpoint_sent_without_a_unit_reads_degrees"
   }
 ]
