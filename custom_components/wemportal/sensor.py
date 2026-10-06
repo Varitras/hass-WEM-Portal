@@ -10,7 +10,12 @@ from typing import Any
 
 from homeassistant.components.sensor import RestoreSensor, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_USERNAME, MAX_LENGTH_STATE_STATE, EntityCategory
+from homeassistant.const import (
+    CONF_USERNAME,
+    MAX_LENGTH_STATE_STATE,
+    EntityCategory,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -579,6 +584,18 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         if self._attr_state_class is not None:
             return self._attr_state_class
         return unit_to_state_class(self._attr_native_unit_of_measurement)
+
+    @property
+    def suggested_display_precision(self):
+        """No decimals on hours, which the portal only counts whole.
+
+        Suggesting nothing lets Home Assistant derive a precision from the
+        device class, and for a duration in hours that comes out as two
+        decimals.
+        """
+        if self._attr_native_unit_of_measurement == UnitOfTime.HOURS:
+            return 0
+        return None
 
     @property
     def extra_state_attributes(self):

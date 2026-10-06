@@ -19,6 +19,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Operating hours show without decimals.** With no precision suggested,
+  Home Assistant derived two decimals for a duration in hours, so a counter
+  the portal keeps in whole hours read like "16846,00 h". A precision you set
+  on the entity yourself still wins.
 - **An expert parameter no longer writes into an integration being unloaded.**
   A write whose login was still running when the unload or a reload began
   sent its change to the portal anyway: the entity is removed only at the
