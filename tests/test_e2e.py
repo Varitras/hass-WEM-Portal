@@ -1805,16 +1805,10 @@ async def test_every_platform_builds_an_entity_for_a_late_reading(hass, platform
     )
 
 
-async def test_an_entity_a_merge_orphaned_is_taken_down(hass):
-    """The wiring for the retired-api-key cleanup.
+async def _retire_an_api_key_by_a_merge(hass, entry):
+    """Build an entity for an api key, then let the scrape's merge retire it.
 
-    In `both` mode the value read merges an api reading into a scraped row and
-    drops the api row under its own key. The add-only builder never takes the
-    entity it already made down, so it shows unknown for good. The migration
-    listener removes it - driven by the merge record, not by the key being
-    absent, so a reading gone for one bad cycle keeps its entity.
-    """
-    entry = await _setup(hass, _entry(hass))
+    Returns the retired entity's unique id."""
     coordinator = entry.runtime_data.coordinator
     from homeassistant.helpers import entity_registry
 
@@ -1851,11 +1845,46 @@ async def test_an_entity_a_merge_orphaned_is_taken_down(hass):
     )
     coordinator.async_update_listeners()
     await hass.async_block_till_done()
+    return unique_id
 
+
+async def test_an_entity_a_merge_orphaned_is_taken_down(hass):
+    """The wiring for the retired-api-key cleanup.
+
+    In `both` mode the value read merges an api reading into a scraped row and
+    drops the api row under its own key. The add-only builder never takes the
+    entity it already made down, so it shows unknown for good. The migration
+    listener removes it - driven by the merge record, not by the key being
+    absent, so a reading gone for one bad cycle keeps its entity.
+    """
+    from homeassistant.helpers import entity_registry
+
+    entry = await _setup(hass, _entry(hass))
+    unique_id = await _retire_an_api_key_by_a_merge(hass, entry)
+
+    registry = entity_registry.async_get(hass)
     assert registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None, (
         "the entity the merge retired is still registered, showing unknown "
         "for the life of the installation"
     )
+
+
+async def test_an_entity_a_merge_retired_is_not_reported_missing(hass, caplog):
+    """Seen after a restart whose first web login was refused: the api-only
+    cycles built the api rows' entities, the first scrape merged them away,
+    and each warned "Can't find" on the update that went out while the
+    migration was taking it down - about a row nothing is missing from."""
+    entry = await _setup(hass, _entry(hass))
+
+    with caplog.at_level(logging.WARNING, logger="custom_components.wemportal"):
+        unique_id = await _retire_an_api_key_by_a_merge(hass, entry)
+
+    missing = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno >= logging.WARNING and unique_id in record.getMessage()
+    ]
+    assert not missing, missing
 
 
 async def test_two_entries_of_one_account_share_the_expert_lock(hass):

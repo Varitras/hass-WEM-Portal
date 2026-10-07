@@ -60,7 +60,7 @@ def _entity(cls, reachable=True, last_update_success=True, num_failed=0, **overr
     status = Reading(value="online" if reachable else "offline")
     coordinator = types.SimpleNamespace(
         data={"1234": {"Pump": row, "1234-ConnectionStatus": status}},
-        api=types.SimpleNamespace(api_version="2.0", modules={}),
+        api=types.SimpleNamespace(api_version="2.0", modules={}, scraping_mapper={}),
         last_update_success=last_update_success,
         num_failed=num_failed,
         async_add_listener=lambda *_args, **_kwargs: None,
