@@ -9268,6 +9268,33 @@ def test_a_dead_expert_batch_is_announced_once_per_outage(caplog):
 # --- upstream #146: a word in a cell that otherwise carries a unit --------
 
 
+def test_an_hour_counter_is_shown_without_decimals():
+    """Home Assistant derives a precision when the integration suggests none:
+    duration counts from milliseconds with no decimals, and the ratio to
+    hours, capped at two, put "16846,00 h" on the operating hours - which
+    the portal only ever counts in whole hours."""
+    counter = _sensor_from_row(
+        "Hours", Reading(value=16846, unit="h", parameter_id="Hours", platform="sensor")
+    )
+    setpoint = _sensor_from_row(
+        "Setpoint",
+        Reading(value=35.0, unit="°C", parameter_id="Setpoint", platform="sensor"),
+    )
+
+    from homeassistant.util.unit_system import METRIC_SYSTEM
+
+    # A temperature's unit is the user's choice, read from the configuration.
+    for sensor in (counter, setpoint):
+        sensor.hass = types.SimpleNamespace(
+            config=types.SimpleNamespace(units=METRIC_SYSTEM)
+        )
+
+    assert counter._get_adjusted_display_precision() == 0
+    assert setpoint._get_adjusted_display_precision() == 1, (
+        "a precision Home Assistant derives well was overridden too"
+    )
+
+
 def _power_row(value, unit):
     return Reading(
         value=value, unit=unit, friendly_name="Heat pump - Power", parameter_id="Power"
