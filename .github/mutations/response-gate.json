@@ -5410,5 +5410,19 @@
     "old": "    is_plain_number = numeric_value is not None and not parameter.get(\"EnumValues\")\n",
     "new": "    is_plain_number = numeric_value is not None\n",
     "tests": "known_id_that_is_not_a_number_gets_no_degrees"
+  },
+  {
+    "label": "setup: the devices listed by name, the login among them",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        _LOGGER.info(\"Found %d devices for %s\", len(devices), DOMAIN)\n",
+    "new": "        _LOGGER.info(\"Found devices for %s: %s\", DOMAIN, [device.name for device in devices])\n",
+    "tests": "a_restart_does_not_log_the_login"
+  },
+  {
+    "label": "entity: a row a merge retired reported missing again",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        if (self._device_id, self._data_key) in set(\n",
+    "new": "        if (self._device_id, self._data_key) not in set(\n",
+    "tests": "merge_retired_is_not_reported_missing or a_row_that_is_really_gone_is_still_reported"
   }
 ]

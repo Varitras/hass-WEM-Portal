@@ -6,6 +6,19 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The login no longer appears in the log.** Every start after the first
+  listed the integration's devices by name at info level, and the hub device
+  is named after the login - an email address - so a log pasted into an
+  issue published it. The line now gives only the number of devices.
+- **No more "Can't find" warnings for entities a merge takes down.** In
+  `both` mode, when the first web login after a restart is refused, the
+  readings the web page also shows get entities of their own from the API
+  for a few minutes. Once the page is read, those values move into its rows
+  and the extra entities are removed as intended - but each first warned
+  that it could not find its reading. That is now a debug line.
+
 ## [1.14.0] – 2026-10-07
 
 The stable release of the 1.14.0 line: everything from the prereleases

@@ -109,13 +109,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     # the latter was chosen to escape the former and landed in the next
     # announcement.
     devices = device_registry.async_entries_for_config_entry(registry, entry.entry_id)
-    device_ids = [device.name for device in devices]
-    if not device_ids:
+    if not devices:
         _LOGGER.warning(
             "No devices found for %s. Starting first time initialization.", DOMAIN
         )
     else:
-        _LOGGER.info("Found devices for %s: %s", DOMAIN, device_ids)
+        # A count, not the names: the hub is named after the entry's title,
+        # which is the login, and this line lands in logs people share.
+        _LOGGER.info("Found %d devices for %s", len(devices), DOMAIN)
 
     # Load any previously persisted device/module/parameter metadata, so we
     # can skip the slow, rate-limited per-module discovery in

@@ -282,7 +282,9 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         re-discovery reclassified it, and this entity is the one of the
         platform it no longer is. Reported as missing, that condition warned
         once per cycle for as long as the entity stayed loaded, about
-        something the migration takes care of by itself.
+        something the migration takes care of by itself. Neither is a row a
+        merge retired: its value shows in the scraped row now, and the update
+        that reaches it is the one during which the migration removes it.
         """
         row = self._row_under_this_key()
         if row is not None:
@@ -292,6 +294,15 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
                 self._attr_unique_id,
                 row.platform,
                 self._platform,
+            )
+            return
+        if (self._device_id, self._data_key) in set(
+            _keys_a_merge_retired(self.coordinator)
+        ):
+            _LOGGER.debug(
+                "%s: its reading now shows in a scraped row, and the migration "
+                "is taking this entity down.",
+                self._attr_unique_id,
             )
             return
         _LOGGER.warning("Can't find %s", self._attr_unique_id)
