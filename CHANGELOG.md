@@ -6,6 +6,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The login no longer appears in the log.** Every start after the first
+  listed the integration's devices by name at info level, and the hub device
+  is named after the login - an email address - so a log pasted into an
+  issue published it. The line now gives only the number of devices.
+
 ## [1.14.0] – 2026-10-07
 
 The stable release of the 1.14.0 line: everything from the prereleases

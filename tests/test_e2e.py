@@ -201,6 +201,27 @@ async def test_child_devices_link_to_the_hub_by_registry_id(hass):
     assert entry.runtime_data.hub_device_id == hub.id
 
 
+async def test_a_restart_does_not_log_the_login(hass, caplog):
+    """The hub device is named after the entry's title, which is the login -
+    an email address - and every setup after the first listed the devices by
+    name at info level. A log pasted into an issue published the address."""
+    entry = await _setup(hass, _entry(hass))
+    caplog.clear()
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.wemportal"):
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    ours = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("custom_components.wemportal")
+    ]
+    assert ours, "precondition: the reload logged nothing to look at"
+    leaking = [message for message in ours if USER in message]
+    assert not leaking, leaking
+
+
 async def test_unload_cleans_up(hass):
     """Unload must release the entry store; a leftover would make a later
     reload operate on a stale api/coordinator."""
