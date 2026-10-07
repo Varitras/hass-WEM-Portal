@@ -343,23 +343,54 @@ def test_the_api_leaves_the_idle_dash_to_the_entity():
     assert data["Heat pump-Energy"].value == "--"
 
 
-def test_a_known_setpoint_sent_without_a_unit_reads_degrees():
+@pytest.mark.parametrize("sent_unit", ["", None])
+def test_a_known_setpoint_sent_without_a_unit_reads_degrees(sent_unit):
     """The portal sends most adjustable temperatures with an empty Unit -
     measured: hot water normal/reduced and the circuit's comfort, reduced and
     normal temperatures - so they showed as bare numbers with a lightning
     icon, while the room setpoint beside them, sent with "°C", did not. The
-    integration already names these ids as temperatures."""
+    integration already names these ids as temperatures. A Unit left out
+    altogether is the same gap."""
     data = _process(
         _modules(
             _parameter(
                 "NormalWW", IsWriteable=True, DataType=-1, MinValue=5.0, MaxValue=60.0
             )
         ),
-        _values(_value("NormalWW", numeric=45.0, unit="")),
+        _values(_value("NormalWW", numeric=45.0, unit=sent_unit)),
     )
 
     assert data["Heat pump-NormalWW"].platform == "number"
     assert data["Heat pump-NormalWW"].unit == "°C"
+
+
+@pytest.mark.parametrize(
+    ("parameter", "value"),
+    [
+        (
+            _parameter(
+                "Normal",
+                DataType=WemDataType.SELECT,
+                EnumValues=[{"Value": 0, "Name": "Eco"}, {"Value": 1, "Name": "On"}],
+            ),
+            _value("Normal", numeric=0.0, string="Eco", unit=""),
+        ),
+        (_parameter("Komfort"), _value("Komfort", string="Eco", unit="")),
+        (
+            _parameter("Normal", DataType=WemDataType.PROGRAM),
+            _value("Normal", string='{"MO-1": "06:00-22:00", "MO": "H"}', unit=""),
+        ),
+    ],
+    ids=["choice", "text", "programme"],
+)
+def test_a_known_id_that_is_not_a_number_gets_no_degrees(parameter, value):
+    """The ids are generic words, and nothing ties them to a temperature on
+    another installation. Given °C, a text or choice read as unknown, and a
+    programme was refused by Home Assistant on every update."""
+    data = _process(_modules(parameter), _values(value))
+
+    reading = data[f"Heat pump-{parameter['ParameterID']}"]
+    assert reading.unit in (None, ""), "a temperature unit on a value that is no number"
 
 
 def test_a_unit_the_portal_sends_is_never_replaced():
