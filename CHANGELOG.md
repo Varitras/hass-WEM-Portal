@@ -6,6 +6,25 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.14.0] – 2026-10-07
+
+The stable release of the 1.14.0 line: everything from the prereleases
+1.14.0b1 through 1.14.0b4, plus the changes listed below.
+
+The theme of the line is staying logged in and saying what is wrong. The
+login can be changed without removing the integration; far fewer logins reach
+the portal - a refused request keeps the session, a dead one is recognised
+wherever it shows, and the hourly expert read reuses its session; a
+maintenance announcement no longer takes the integration down hours early;
+and action errors and lasting failures arrive once, in your language.
+
+New since 1.14.0b4: an idle setpoint reads 0 instead of unknown, operating
+hours show without decimals, temperature setpoints show °C, and three fixes
+around writes and setup.
+
+The 1.14.0b1–b4 sections below carry the full, itemised list of every change
+since 1.13.3.
+
 ### Changed
 
 - **An idle setpoint reads 0 instead of unknown.** The portal shows `--`
