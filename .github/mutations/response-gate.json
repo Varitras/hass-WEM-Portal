@@ -5368,5 +5368,47 @@
     "old": "        if self._attr_native_unit_of_measurement == UnitOfTime.HOURS:\n",
     "new": "        if True:\n",
     "tests": "hour_counter_is_shown_without_decimals"
+  },
+  {
+    "label": "known units: a unit the portal sends replaced by the table",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "    if sent not in (None, \"\"):\n        return sent\n",
+    "new": "",
+    "tests": "unit_the_portal_sends_is_never_replaced"
+  },
+  {
+    "label": "known units: a known setpoint left without its unit",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "    return known.unit\n",
+    "new": "    return sent\n",
+    "tests": "known_setpoint_sent_without_a_unit_reads_degrees"
+  },
+  {
+    "label": "mapper: the api value's unit taken as sent again",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        unit = known_unit(parameter_id, unit)\n",
+    "new": "        pass\n",
+    "tests": "known_setpoint_sent_without_a_unit_reads_degrees"
+  },
+  {
+    "label": "known units: a unit left out altogether taken as stated",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "    if sent not in (None, \"\"):\n",
+    "new": "    if sent != \"\":\n",
+    "tests": "known_setpoint_sent_without_a_unit_reads_degrees"
+  },
+  {
+    "label": "mapper: degrees given to a text or a programme",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    is_plain_number = numeric_value is not None and not parameter.get(\"EnumValues\")\n",
+    "new": "    is_plain_number = not parameter.get(\"EnumValues\")\n",
+    "tests": "known_id_that_is_not_a_number_gets_no_degrees"
+  },
+  {
+    "label": "mapper: degrees given to a choice",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    is_plain_number = numeric_value is not None and not parameter.get(\"EnumValues\")\n",
+    "new": "    is_plain_number = numeric_value is not None\n",
+    "tests": "known_id_that_is_not_a_number_gets_no_degrees"
   }
 ]

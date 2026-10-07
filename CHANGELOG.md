@@ -23,6 +23,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   Home Assistant derived two decimals for a duration in hours, so a counter
   the portal keeps in whole hours read like "16846,00 h". A precision you set
   on the entity yourself still wins.
+- **Temperature setpoints show °C.** The portal sends most adjustable
+  temperatures - hot water normal and reduced, comfort, reduced and normal -
+  without a unit, so they showed as bare numbers with a lightning icon while
+  the room setpoint beside them carried °C. Setpoints the integration knows by
+  their portal id now get °C when the portal sends none; a unit the portal
+  does send is never replaced.
 - **An expert parameter no longer writes into an integration being unloaded.**
   A write whose login was still running when the unload or a reload began
   sent its change to the portal anyway: the entity is removed only at the

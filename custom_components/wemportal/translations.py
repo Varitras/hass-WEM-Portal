@@ -1,30 +1,66 @@
 """Translations for WEM Portal."""
 
+from typing import NamedTuple
+
+from homeassistant.const import UnitOfTemperature
+
+
+class KnownParameter(NamedTuple):
+    """What the integration knows about a portal parameter id."""
+
+    name: str
+    # For ids that are temperature setpoints by what they are called. Used
+    # only where the portal sends no unit - see known_unit.
+    unit: str | None = None
+
+
+_CELSIUS = UnitOfTemperature.CELSIUS
+
+# Name and unit side by side, so an id is listed once: the temperatures
+# below were already known as such by their names.
+_KNOWN_PARAMETERS: dict[str, KnownParameter] = {
+    "pp_beginn": KnownParameter("party_beginn"),
+    "pp_ende": KnownParameter("party_ende"),
+    "pp_funktion": KnownParameter("party_funktion"),
+    "pp_raumsoll": KnownParameter("party_raumsoll", _CELSIUS),
+    "aktraumsoll": KnownParameter("raumsolltemperatur", _CELSIUS),
+    "u_beginn": KnownParameter("urlaub_beginn"),
+    "u_ende": KnownParameter("urlaub_ende"),
+    "u_funktion": KnownParameter("urlaub_funktion"),
+    "u_raumsoll": KnownParameter("urlaub_raumsoll", _CELSIUS),
+    "ww-push": KnownParameter("warmwasser_push"),
+    "ww-program": KnownParameter("warmwasser_programm"),
+    "ww-programm": KnownParameter("warmwasser_programm"),
+    "aktwwsoll": KnownParameter("warmwassersolltemperatur", _CELSIUS),
+    "leistung": KnownParameter("wärmeleistung"),
+    "absenk": KnownParameter("absenktemperatur", _CELSIUS),
+    "absenkww": KnownParameter("absenk_warmwasser_temperatur", _CELSIUS),
+    "normalww": KnownParameter("normal_warmwasser_temperatur", _CELSIUS),
+    "komfort": KnownParameter("komforttemperatur", _CELSIUS),
+    "normal": KnownParameter("normaltemperatur", _CELSIUS),
+}
+
 
 def friendly_name_mapper(value: str) -> str:
-    friendly_name_dict = {
-        "pp_beginn": "party_beginn",
-        "pp_ende": "party_ende",
-        "pp_funktion": "party_funktion",
-        "pp_raumsoll": "party_raumsoll",
-        "aktraumsoll": "raumsolltemperatur",
-        "u_beginn": "urlaub_beginn",
-        "u_ende": "urlaub_ende",
-        "u_funktion": "urlaub_funktion",
-        "u_raumsoll": "urlaub_raumsoll",
-        "ww-push": "warmwasser_push",
-        "ww-program": "warmwasser_programm",
-        "ww-programm": "warmwasser_programm",
-        "aktwwsoll": "warmwassersolltemperatur",
-        "leistung": "wärmeleistung",
-        "absenk": "absenktemperatur",
-        "absenkww": "absenk_warmwasser_temperatur",
-        "normalww": "normal_warmwasser_temperatur",
-        "komfort": "komforttemperatur",
-        "normal": "normaltemperatur",
-    }
     normalised = value.casefold()
-    return friendly_name_dict.get(normalised, normalised)
+    known = _KNOWN_PARAMETERS.get(normalised)
+    return known.name if known is not None else normalised
+
+
+def known_unit(parameter_id: str, sent: str | None) -> str | None:
+    """The unit the portal sent, or a known parameter's when it sent none.
+
+    The portal sends most adjustable temperatures with an empty Unit while
+    the room setpoint comes with "°C", so the same kind of value showed as a
+    bare number beside a temperature. Only fills that gap: a unit the
+    portal states always stands.
+    """
+    if sent not in (None, ""):
+        return sent
+    known = _KNOWN_PARAMETERS.get(parameter_id.casefold())
+    if known is None or known.unit is None:
+        return sent
+    return known.unit
 
 
 def translate(language: str, value: str) -> str:
