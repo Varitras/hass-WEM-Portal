@@ -17,7 +17,7 @@ import logging
 import re
 
 import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
+import probatio as vol
 from homeassistant.config_entries import (
     OptionsFlowWithReload,
 )

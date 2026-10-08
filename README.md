@@ -120,7 +120,7 @@ portal's own granularity, and asking more often only spends requests.
 
 ### Prerequisites
 
-- **Home Assistant 2026.8.0** or newer.
+- **Home Assistant 2026.9.0** or newer.
 - A **WEM Portal account** with your heating system registered in it - if the
   WEM app on your phone shows it, the integration can see it.
 - For [expert write access](#expert-write-access-web) only: the installation's

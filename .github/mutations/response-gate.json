@@ -3342,8 +3342,8 @@
   {
     "label": "ci: the minimum job must name what hacs.json declares",
     "path": "hacs.json",
-    "old": "\"homeassistant\": \"2026.8.0\"",
-    "new": "\"homeassistant\": \"2026.9.0\"",
+    "old": "\"homeassistant\": \"2026.9.0\"",
+    "new": "\"homeassistant\": \"2026.10.0\"",
     "tests": "the_minimum_job_names_the_version_hacs_declares"
   },
   {

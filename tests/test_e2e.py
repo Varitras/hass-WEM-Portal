@@ -3197,9 +3197,9 @@ async def test_home_assistant_reports_no_deprecated_use_during_setup(hass, caplo
     property cannot look up; setup now keeps that id when it creates the hub,
     so the property has it. The other two had already gone: the registry
     index for DeviceEntry.config_entries, the entry-aware lookup for
-    async_get_device(). Nothing is feature-detected any more - the floor is
-    2026.8, the first release with every replacement, and the adapters that
-    served 2024.12 went with it.
+    async_get_device(). Nothing is feature-detected any more - 2026.8 is the
+    first release with every replacement, the floor is above it, and the
+    adapters that served 2024.12 went with it.
 
     Two things had to be true for this to be able to fail at all, and
     neither was. It listened on `warnings`, while report_usage writes to a
@@ -3342,7 +3342,7 @@ async def test_a_setup_that_fails_late_leaves_no_service_behind(hass, monkeypatc
     #
     # Found on HA 2024.12, which left the timer running (its harness reported
     # it as lingering); releases from 2026.7 tear it down themselves, so with
-    # the 2026.8 floor this assertion is a statement of the contract rather
+    # the 2026.9 floor this assertion is a statement of the contract rather
     # than the thing that catches it - kept, because the shutdown call it
     # vouches for is still ours to make. No mutation for it: one would survive
     # on every version the harness runs.

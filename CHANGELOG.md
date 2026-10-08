@@ -6,6 +6,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Home Assistant 2026.9.0 or newer is required.** Home Assistant validates
+  forms and service calls with probatio now, and the integration builds its
+  schemas with it directly; 2026.9 is the first release that ships it. On
+  2026.8, HACS no longer offers this version.
+
 ### Fixed
 
 - **The login no longer appears in the log.** Every start after the first
