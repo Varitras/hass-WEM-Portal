@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 import logging
 
-import voluptuous as vol
+import probatio as vol
 from homeassistant import exceptions
 from homeassistant.config_entries import (
     ConfigEntry,
