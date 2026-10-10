@@ -1886,7 +1886,7 @@
   {
     "label": "statistics: a device whose every group failed counts as read",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "        if failed and not read:\n            raise WemPortalError(\n                f\"Every statistics group of device {device_id} failed to read \"\n                f\"({failed} of {len(group_types)}).\"\n            )",
+    "old": "        if failed and not read:\n            raise WemPortalError(\n                f\"Every statistics group of device {short_device_id(device_id)} \"\n                \"failed to read \"\n                f\"({failed} of {len(group_types)}).\"\n            )",
     "new": "        pass",
     "tests": "a_device_whose_every_group_failed_is_not_counted_as_a_success"
   },
@@ -5441,9 +5441,9 @@
   },
   {
     "label": "entity: a missing reading names its device in full again",
-    "path": "custom_components/wemportal/entity.py",
-    "old": "        return f\"{short_device_id(self._device_id)}:{self._data_key}\"\n",
-    "new": "        return f\"{self._device_id}:{self._data_key}\"\n",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return f\"{short_device_id(device_id)}:{key}\"\n",
+    "new": "    return f\"{device_id}:{key}\"\n",
     "tests": "missing_reading_names_its_device_only_by_the_tail"
   },
   {
@@ -5480,5 +5480,26 @@
     "old": "            title=entry_title_for(self.hass, entry),\n",
     "new": "            title=entry.title,\n",
     "tests": "move_renames_an_entry_still_named_after_its_old_login"
+  },
+  {
+    "label": "logs: a logger method chosen and stored under a name again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            _LOGGER.log(\n                logging.INFO if first_of_the_outage else logging.DEBUG,\n",
+    "new": "            (_LOGGER.info if first_of_the_outage else _LOGGER.debug)(\n",
+    "tests": "no_log_method_is_stored_under_another_name"
+  },
+  {
+    "label": "logs: an exception text carrying the full device id again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "                f\"Every statistics group of device {short_device_id(device_id)} \"\n",
+    "new": "                f\"Every statistics group of device {device_id} \"\n",
+    "tests": "no_log_call_names_the_installation"
+  },
+  {
+    "label": "logs: a removed expert entity named by its entity id again",
+    "path": "custom_components/wemportal/number.py",
+    "old": "                registry_entry.original_name,\n",
+    "new": "                registry_entry.entity_id,\n",
+    "tests": "no_log_call_names_the_installation"
   }
 ]

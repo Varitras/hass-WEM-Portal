@@ -358,7 +358,8 @@ class WemPortalStatistics:
 
         if failed and not read:
             raise WemPortalError(
-                f"Every statistics group of device {device_id} failed to read "
+                f"Every statistics group of device {short_device_id(device_id)} "
+                "failed to read "
                 f"({failed} of {len(group_types)})."
             )
 

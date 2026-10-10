@@ -22,6 +22,7 @@ from homeassistant.helpers import entity_registry
 
 from .const import DOMAIN, PLATFORMS
 from .models import Reading
+from .utils import reading_label
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -295,7 +296,7 @@ def _remove_entities_from_a_previous_platform(
         ):
             _LOGGER.info(
                 "%s is a %s now - removing the entity it left behind.",
-                stale,
+                reading_label(device_id, unique_id),
                 current,
             )
             registry.async_remove(stale)
@@ -356,7 +357,7 @@ def _remove_orphaned_by_a_merge(
             _LOGGER.info(
                 "%s was merged into another row and left showing unknown - "
                 "removing the entity it left behind.",
-                entity_id,
+                reading_label(device_id, own_key),
             )
             registry.async_remove(entity_id)
 

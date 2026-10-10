@@ -2348,8 +2348,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 # commentary there is - but repeating it every few minutes
                 # for as long as the device stays away would bury everything
                 # else in the log. Say it once per change, then stay quiet.
-                log = _LOGGER.debug if previous == conn_status else _LOGGER.warning
-                log("Device %s is %s. Skipping data polling.", device_id, conn_status)
+                level = logging.DEBUG if previous == conn_status else logging.WARNING
+                _LOGGER.log(
+                    level,
+                    "Device %s is %s. Skipping data polling.",
+                    short_device_id(device_id),
+                    conn_status,
+                )
                 return False
             if previous is not None and previous != "online":
                 _LOGGER.info("Device %s is back online.", short_device_id(device_id))

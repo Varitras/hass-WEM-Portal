@@ -18,7 +18,7 @@ from .utils import (
     build_device_info,
     device_is_reachable,
     device_model,
-    short_device_id,
+    reading_label,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -315,7 +315,7 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
     def _log_label(self) -> str:
         """The unique id as a log names it: the device id in it shortened,
         since a log is what gets attached to a public issue."""
-        return f"{short_device_id(self._device_id)}:{self._data_key}"
+        return reading_label(self._device_id, self._data_key)
 
     @property
     def device_info(self) -> DeviceInfo:

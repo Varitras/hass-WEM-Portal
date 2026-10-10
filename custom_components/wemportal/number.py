@@ -88,16 +88,17 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
             # A digest-format entity already exists; leave both untouched
             # rather than colliding (should not happen in practice).
             _LOGGER.debug(
-                "Skipping expert unique_id migration for %s: target exists.", entity_id
+                "Skipping expert unique_id migration for %s: target exists.",
+                entity.name,
             )
             continue
         try:
             registry.async_update_entity(entity_id, new_unique_id=entity.unique_id)
             _LOGGER.info(
-                "Migrated expert entity %s to digest-based unique_id.", entity_id
+                "Migrated expert entity %s to digest-based unique_id.", entity.name
             )
         except ValueError as exc:
-            _LOGGER.warning("Could not migrate expert entity %s: %s", entity_id, exc)
+            _LOGGER.warning("Could not migrate expert entity %s: %s", entity.name, exc)
 
 
 def _async_drop_ghost_expert_entities(hass, config_entry, expected_unique_ids) -> None:
@@ -126,7 +127,7 @@ def _async_drop_ghost_expert_entities(hass, config_entry, expected_unique_ids) -
         if is_ghost:
             _LOGGER.info(
                 "Removing expert entity %s: its slot is no longer configured.",
-                registry_entry.entity_id,
+                registry_entry.original_name,
             )
             registry.async_remove(registry_entry.entity_id)
 

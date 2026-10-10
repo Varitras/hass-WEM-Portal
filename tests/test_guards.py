@@ -47,7 +47,7 @@ GUARD_FILES = {
     "test_quality_scale.py": "no quality scale rule is excused without a reason",
     "test_requirements.py": "the manifest and the runtime file name the same dependencies",
     "test_response_gate.py": "every web page request, in whichever module sends it, passes its answer through the gate",
-    "test_security.py": "no module reaches past the redaction or the login-page rule, the expert client stays behind its own import, every 403 branch says who answered, and no log call names a device id or the login",
+    "test_security.py": "no module reaches past the redaction or the login-page rule, the expert client stays behind its own import, every 403 branch says who answered, and no log call or exception text names a device id, entity id, entityvalue or the login",
     "test_transport_boundary.py": "transport imports no domain module",
     "test_transport_errors.py": "only the value path opts into a transport retry",
     "test_guards.py": "the guards stay package-wide and stay present",

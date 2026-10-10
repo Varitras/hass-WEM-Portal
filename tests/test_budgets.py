@@ -81,8 +81,10 @@ LINE_BUDGETS = {
     # And by 22 for a read-back after a write that must carry what was
     # written, not merely succeed.
     # And by 16 for its log calls naming devices by the shortened id only -
-    # every one of them is a call the wrapping no longer fits on one line.
-    "wemportalapi.py": 2775,
+    # every one of them is a call the wrapping no longer fits on one line -
+    # and by 5 for the offline line choosing its level instead of storing a
+    # logger method under a name the log-call scan cannot see.
+    "wemportalapi.py": 2780,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
