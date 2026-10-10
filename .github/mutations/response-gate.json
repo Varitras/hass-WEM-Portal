@@ -5501,5 +5501,26 @@
     "old": "                registry_entry.original_name,\n",
     "new": "                registry_entry.entity_id,\n",
     "tests": "no_log_call_names_the_installation"
+  },
+  {
+    "label": "state class: pressure in bar left without one again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        UnitOfPressure.BAR: SensorStateClass.MEASUREMENT,\n",
+    "new": "",
+    "tests": "unit_the_portal_measures_in_has_a_state_class"
+  },
+  {
+    "label": "state class: the portal's m3/h left without one again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        \"m3/h\": SensorStateClass.MEASUREMENT,\n",
+    "new": "",
+    "tests": "unit_the_portal_measures_in_has_a_state_class"
+  },
+  {
+    "label": "state class: rpm left without one again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        \"rpm\": SensorStateClass.MEASUREMENT,\n",
+    "new": "",
+    "tests": "unit_the_portal_measures_in_has_a_state_class"
   }
 ]

@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Pressures, the flow rate and the compressor speed keep long-term
+  statistics.** Readings in bar, m3/h (as the portal writes it) and rpm had
+  no state class, so Home Assistant kept no long-term statistics for them
+  and their history ended with the recorder's retention. Statistics start
+  with this version; earlier history is not filled in.
 - **The login no longer appears in the log, and the integration is called
   "WEM Portal".** Its entry was named after the login - an email address -
   and Home Assistant names an entry by its title in its own log lines, among

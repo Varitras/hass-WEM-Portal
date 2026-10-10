@@ -3578,6 +3578,35 @@ def test_a_unit_the_portal_spells_its_own_way_gets_both_halves():
     assert unit_to_state_class(None) is None
 
 
+@pytest.mark.parametrize(
+    "unit",
+    [
+        "BAR",
+        "bar",
+        "m3/h",
+        "m³/h",
+        "rpm",
+        "°C",
+        "K",
+        "kWh",
+        "Wh",
+        "kW",
+        "W",
+        "h",
+        "Hz",
+        "%",
+    ],
+)
+def test_every_unit_the_portal_measures_in_has_a_state_class(unit):
+    """Without one the recorder keeps no long-term statistics: the pressures
+    the expert page reports in BAR and the compressor speed in rpm had a
+    device class or an icon, and history that ended with the recorder's
+    retention."""
+    from custom_components.wemportal.utils import unit_to_state_class
+
+    assert unit_to_state_class(unit) is not None
+
+
 # Trimmed from a real maintenance page. The login form stays fully present
 # and submittable - only the backend behind it is down - so the notice
 # container is the only thing that sets the two states apart.

@@ -538,6 +538,11 @@ def unit_to_state_class(unit: str | None) -> SensorStateClass | None:
         UnitOfTime.HOURS: SensorStateClass.TOTAL_INCREASING,
         UnitOfFrequency.HERTZ: SensorStateClass.MEASUREMENT,
         UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR: SensorStateClass.MEASUREMENT,
+        # The portal's own spellings, as in unit_to_device_class: the
+        # pressures of the expert page, its flow rate, the compressor speed.
+        UnitOfPressure.BAR: SensorStateClass.MEASUREMENT,
+        "m3/h": SensorStateClass.MEASUREMENT,
+        "rpm": SensorStateClass.MEASUREMENT,
     }
     # None if this unit has no state class.
     return {_unit_lookup_key(key): value for key, value in mapping.items()}.get(
