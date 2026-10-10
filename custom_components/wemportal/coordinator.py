@@ -41,7 +41,12 @@ from .exceptions import (
     WemPortalError,
 )
 from .models import account_state, account_unique_id, forget_account_state
-from .utils import device_identifier, failure_is_new, serialize_modules
+from .utils import (
+    device_identifier,
+    failure_is_new,
+    serialize_modules,
+    short_device_id,
+)
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -402,7 +407,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 self.config_entry.entry_id,
             )
             if device_entry is not None and device_entry.disabled_by is not None:
-                _LOGGER.debug("Skipping disabled device %s", device_id)
+                _LOGGER.debug("Skipping disabled device %s", short_device_id(device_id))
                 continue
             enabled_devices.append(device_id)
 

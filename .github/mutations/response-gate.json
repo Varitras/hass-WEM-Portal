@@ -1011,8 +1011,8 @@
   {
     "label": "discovery: a refused network walked into module after module",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                device_id,\n            )\n            raise exc\n        if status_code == 400:",
-    "new": "                device_id,\n            )\n            return\n        if status_code == 400:",
+    "old": "                short_device_id(device_id),\n            )\n            raise exc\n        if status_code == 400:",
+    "new": "                short_device_id(device_id),\n            )\n            return\n        if status_code == 400:",
     "tests": "a_refused_discovery_stops_at_the_first_module"
   },
   {
@@ -1144,8 +1144,8 @@
   {
     "label": "empty read: counting a skipped device as refreshed must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                device_id,\n            )\n            return \"it has modules but no known parameters yet\"",
-    "new": "                device_id,\n            )\n            return None",
+    "old": "                short_device_id(device_id),\n            )\n            return \"it has modules but no known parameters yet\"",
+    "new": "                short_device_id(device_id),\n            )\n            return None",
     "tests": "device_with_no_parameters_is_not_asked_for_values"
   },
   {
@@ -3440,8 +3440,8 @@
   {
     "label": "logs: dumping the account's readings from the parameter read",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            _LOGGER.debug(\"Fetching api parameters data for device %s\", device_id)\n",
-    "new": "            _LOGGER.debug(\"Fetching api parameters data for device %s\", device_id)\n            _LOGGER.debug(self.data)\n",
+    "old": "                \"Fetching api parameters data for device %s\", short_device_id(device_id)\n            )\n",
+    "new": "                \"Fetching api parameters data for device %s\", short_device_id(device_id)\n            )\n            _LOGGER.debug(self.data)\n",
     "tests": "no_log_call_hands_over_a_whole_store or parameter_read_does_not_log_the_whole_account"
   },
   {
@@ -3461,7 +3461,7 @@
   {
     "label": "entity: a reading that really went away passing in silence",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        _LOGGER.warning(\"Can't find %s\", self._attr_unique_id)",
+    "old": "        _LOGGER.warning(\"Can't find %s\", self._log_label())",
     "new": "        pass",
     "tests": "row_that_is_really_gone_is_still_reported"
   },
@@ -5424,5 +5424,26 @@
     "old": "        if (self._device_id, self._data_key) in set(\n",
     "new": "        if (self._device_id, self._data_key) not in set(\n",
     "tests": "merge_retired_is_not_reported_missing or a_row_that_is_really_gone_is_still_reported"
+  },
+  {
+    "label": "logs: a device id handed to a log call in full again",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "        short_device_id(begin.device_id),\n",
+    "new": "        begin.device_id,\n",
+    "tests": "no_log_call_names_the_installation"
+  },
+  {
+    "label": "logs: a device list logged with the full ids",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return [short_device_id(device_id) for device_id in device_ids]\n",
+    "new": "    return list(device_ids)\n",
+    "tests": "device_list_is_logged_by_the_tails"
+  },
+  {
+    "label": "entity: a missing reading names its device in full again",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        return f\"{short_device_id(self._device_id)}:{self._data_key}\"\n",
+    "new": "        return f\"{self._device_id}:{self._data_key}\"\n",
+    "tests": "missing_reading_names_its_device_only_by_the_tail"
   }
 ]

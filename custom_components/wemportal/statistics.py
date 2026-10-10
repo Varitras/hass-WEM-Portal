@@ -24,6 +24,7 @@ from .utils import (
     failure_is_over,
     latest_statistics_entry,
     portal_list,
+    short_device_id,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -132,16 +133,22 @@ class WemPortalStatistics:
             _LOGGER.debug(
                 "Device %s is offline right now, so it has no statistics to read "
                 "(status %s).",
-                device_id,
+                short_device_id(device_id),
                 WEM_INSTALLATION_OFFLINE_STATUS,
             )
             return
         key = _statistics_key(device_id)
         if failure_is_new(self._reported_failures, key, str(exc)):
-            _LOGGER.info("Statistics for device %s cannot be read: %s", device_id, exc)
+            _LOGGER.info(
+                "Statistics for device %s cannot be read: %s",
+                short_device_id(device_id),
+                exc,
+            )
         else:
             _LOGGER.debug(
-                "Statistics for device %s still cannot be read: %s", device_id, exc
+                "Statistics for device %s still cannot be read: %s",
+                short_device_id(device_id),
+                exc,
             )
 
     def _statistics_devices(self, enabled_devices=None) -> list[str]:
@@ -401,7 +408,8 @@ class WemPortalStatistics:
                         self._reported_failures, _statistics_key(device_id)
                     ):
                         _LOGGER.info(
-                            "Statistics for device %s are being read again.", device_id
+                            "Statistics for device %s are being read again.",
+                            short_device_id(device_id),
                         )
                 # skipcq: PYL-W0706 - shields the catch-all, not redundant
                 except AuthError:

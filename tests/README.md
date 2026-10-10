@@ -92,7 +92,7 @@ exists because the thing it prevents actually happened here.
 | `test_reading_invariants.py` | Every reading the mapper writes carries the fields another path reads |
 | `test_quality_scale.py` | Every quality scale rule carries a status Home Assistant defines, and no `exempt` or `todo` stands without a reason |
 | `test_repairs.py` | Every repair issue is translated in every language and prefixed with the entry id |
-| `test_security.py` | No module reaches past the diagnostics redaction or recognises the login page by its own test, the expert client stays behind its own import, and every branch taken on a 403 logs who answered it |
+| `test_security.py` | No module reaches past the diagnostics redaction or recognises the login page by its own test, the expert client stays behind its own import, every branch taken on a 403 logs who answered it, and no log call hands over a device id, a unique id or the login unshortened |
 | `test_requirements.py` | `manifest.json` and `requirements_runtime.txt` name the same dependencies |
 | `test_response_gate.py` | Every web page request, in whichever module sends it, has its answer passed through that module's gate |
 | `test_transport_boundary.py` | `transport.py` imports no domain module |

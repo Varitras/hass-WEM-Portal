@@ -2,7 +2,10 @@
 text, and auth-error message hygiene.
 """
 
+import ast
 import logging
+import pathlib
+import re
 
 import pytest
 import requests as real_requests
@@ -530,8 +533,125 @@ def test_the_parameter_read_does_not_log_the_whole_account(caplog):
     with caplog.at_level(logging.DEBUG):
         api.get_parameters()
 
-    assert "1234" in caplog.text, "a log that names nothing is not worth writing"
+    assert "…34" in caplog.text, "a log that names nothing is not worth writing"
     assert "23.5" not in caplog.text, "the account's readings went into the log"
+
+
+# Names that carry who the log is about: a device id (alone, in a list, or
+# inside a unique id) or the login. A page's own title is a local name and
+# not the entry's title, which is why `title` counts only as an attribute.
+# shortcut: matched by name, so an id under a neutral one (the migration's
+# `old_id`) passes; name it after what it is before logging it.
+_IDENTIFYING_NAME = re.compile(
+    r"(?:^|_)(?:device_ids?|devices|unique_id)$|username", re.IGNORECASE
+)
+_IDENTIFYING_ATTRIBUTE = {"title"}
+# What makes such a name safe to hand over: shortened, or only counted.
+_MASKS = {"short_device_id", "short_device_ids", "len"}
+
+
+def _is_a_mask(node) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in _MASKS
+    )
+
+
+def _identifying_name(node) -> str | None:
+    if isinstance(node, ast.Name) and _IDENTIFYING_NAME.search(node.id):
+        return node.id
+    if not isinstance(node, ast.Attribute):
+        return None
+    if _IDENTIFYING_NAME.search(node.attr) or node.attr in _IDENTIFYING_ATTRIBUTE:
+        return node.attr
+    return None
+
+
+def _unmasked_identifiers(node) -> list[str]:
+    """The identifying names under `node` that no mask call wraps.
+
+    A comparison hands over only True or False, whatever it compares."""
+    if _is_a_mask(node) or isinstance(node, ast.Compare):
+        return []
+    found = [name for name in [_identifying_name(node)] if name]
+    for child in ast.iter_child_nodes(node):
+        found.extend(_unmasked_identifiers(child))
+    return found
+
+
+def _log_calls_naming_an_installation(source: str) -> list[tuple[int, list[str]]]:
+    offenders = []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        logger = node.func.value
+        if not (isinstance(logger, ast.Name) and logger.id == "_LOGGER"):
+            continue
+        handed_over = [*node.args, *(keyword.value for keyword in node.keywords)]
+        names = [name for arg in handed_over for name in _unmasked_identifiers(arg)]
+        if names:
+            offenders.append((node.lineno, names))
+    return offenders
+
+
+@pytest.mark.parametrize(
+    ("source", "caught"),
+    [
+        ('_LOGGER.debug("x %s", device_id)', True),
+        ('_LOGGER.warning("x %s", self._device_id)', True),
+        ('_LOGGER.debug("x %s", enabled_devices)', True),
+        ('_LOGGER.debug("x %s", [d for d in target_devices])', True),
+        ('_LOGGER.warning("x %s", self._attr_unique_id)', True),
+        ('_LOGGER.info("x %s", entry.title)', True),
+        ('_LOGGER.info("x %s", entry.data[CONF_USERNAME])', True),
+        ('_LOGGER.log(level, "x %s", device_id)', True),
+        ('_LOGGER.debug(f"x {device_id}")', True),
+        ('_LOGGER.debug("x %s", device_id == other or device_id)', True),
+        ('_LOGGER.debug("x %s", short_device_id(device_id))', False),
+        ('_LOGGER.debug("x %s", short_device_ids(enabled_devices))', False),
+        ('_LOGGER.debug("x %s", device_id in self.data)', False),
+        ('_LOGGER.info("x %d", len(devices))', False),
+        ('_LOGGER.debug("x %r", title)', False),
+        ('_LOGGER.debug("x %s", device_name)', False),
+    ],
+)
+def test_the_identifier_scan_sees_these_shapes(source, caught):
+    assert bool(_log_calls_naming_an_installation(source)) is caught
+
+
+def test_a_device_list_is_logged_by_the_tails():
+    """None stays None: to the device filter it means "no filter", which is
+    what the debug line is there to tell apart from an empty list."""
+    from custom_components.wemportal.utils import short_device_ids
+
+    assert short_device_ids(["1234", "5678"]) == ["…34", "…78"]
+    assert short_device_ids([]) == []
+    assert short_device_ids(None) is None
+
+
+def test_no_log_call_names_the_installation():
+    """A Home Assistant log is what gets attached to an issue, and the device
+    ids in it belong to one installation. The login was in it too: the hub
+    device is named after it, and the startup line listed devices by name.
+
+    Behaviour tests catch the one line being written; this asks every log
+    call in the package, which is the only way the next one is caught too.
+    """
+    package = pathlib.Path(__file__).resolve().parents[1] / "custom_components"
+    offenders = [
+        f"{path.name}:{line} {names}"
+        for path in sorted((package / "wemportal").glob("*.py"))
+        for line, names in _log_calls_naming_an_installation(
+            path.read_text(encoding="utf-8")
+        )
+    ]
+
+    assert not offenders, (
+        "log call(s) handing over a device id, a unique id or the login: "
+        f"{offenders}. Pass device ids through short_device_id(), log a count "
+        "instead of a list, and leave the login out."
+    )
 
 
 _STRING_TESTS = {"startswith", "endswith", "find", "rfind", "index"}

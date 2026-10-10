@@ -14,7 +14,12 @@ from .coordinator import API_FAILURES_TOLERATED, WemPortalDataUpdateCoordinator
 from .exceptions import WemPortalError
 from .migration import _orphaned_by_a_merge, get_wemportal_unique_id
 from .models import Reading, raise_if_not_writable
-from .utils import build_device_info, device_is_reachable, device_model
+from .utils import (
+    build_device_info,
+    device_is_reachable,
+    device_model,
+    short_device_id,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -291,7 +296,7 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
             _LOGGER.debug(
                 "%s: the portal now describes this parameter as a %s, not a "
                 "%s, so this entity has nothing to show until it is rebuilt.",
-                self._attr_unique_id,
+                self._log_label(),
                 row.platform,
                 self._platform,
             )
@@ -302,10 +307,15 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
             _LOGGER.debug(
                 "%s: its reading now shows in a scraped row, and the migration "
                 "is taking this entity down.",
-                self._attr_unique_id,
+                self._log_label(),
             )
             return
-        _LOGGER.warning("Can't find %s", self._attr_unique_id)
+        _LOGGER.warning("Can't find %s", self._log_label())
+
+    def _log_label(self) -> str:
+        """The unique id as a log names it: the device id in it shortened,
+        since a log is what gets attached to a public issue."""
+        return f"{short_device_id(self._device_id)}:{self._data_key}"
 
     @property
     def device_info(self) -> DeviceInfo:

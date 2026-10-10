@@ -165,10 +165,8 @@ def _adopt_entity_under_its_old_id(
         if old_id == new_id:
             return False
         _LOGGER.info(
-            "Migrating entity %s from old id %s to new unique_id %s",
+            "Migrating entity %s to the current unique_id",
             name_id,
-            old_id,
-            new_id,
         )
         registry.async_update_entity(name_id, new_unique_id=new_id)
         return True

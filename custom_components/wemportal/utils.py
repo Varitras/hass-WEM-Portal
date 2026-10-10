@@ -111,6 +111,14 @@ def short_device_id(device_id: str | None) -> str:
     return f"…{text[-2:]}" if len(text) > 2 else text
 
 
+def short_device_ids(device_ids: Iterable[str] | None) -> list[str] | None:
+    """short_device_id for each id of a list. None stays None: to the
+    device filter it means "no filter", which an empty list does not."""
+    if device_ids is None:
+        return None
+    return [short_device_id(device_id) for device_id in device_ids]
+
+
 def build_device_info(
     entry_id: str,
     device_id: str,

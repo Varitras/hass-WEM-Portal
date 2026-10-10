@@ -538,6 +538,23 @@ def test_a_row_that_is_really_gone_is_still_reported(name, caplog):
     assert _warnings(caplog), f"{name} lost its reading without saying so"
 
 
+def test_a_missing_reading_names_its_device_only_by_the_tail(caplog):
+    """The warning named the entity by its unique id, the device id in full
+    inside it - in the one line of this kind most likely to be pasted into an
+    issue. The log-call scan cannot see into the label it is handed."""
+    import logging
+
+    entity = _entity(WemPortalSensor)
+    entity.async_write_ha_state = lambda: None
+    entity.coordinator.data["1234"].pop("Pump")
+
+    with caplog.at_level(logging.WARNING):
+        entity._handle_coordinator_update()
+
+    assert "…34:Pump" in caplog.text
+    assert "1234" not in caplog.text
+
+
 def test_an_unreachable_device_takes_its_entities_with_it():
     """The availability rule now lives in one place; this is that place
     doing its job for a platform that no longer carries its own copy."""

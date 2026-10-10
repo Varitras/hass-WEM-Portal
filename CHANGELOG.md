@@ -19,6 +19,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   listed the integration's devices by name at info level, and the hub device
   is named after the login - an email address - so a log pasted into an
   issue published it. The line now gives only the number of devices.
+- **Device ids appear in the log only shortened.** The id of your
+  installation stood in full in many log lines - in the "Can't find"
+  warning, the holiday confirmation and most debug lines. They now show
+  its last two digits, as the error messages meant for sharing already did.
 - **No more "Can't find" warnings for entities a merge takes down.** In
   `both` mode, when the first web login after a restart is refused, the
   readings the web page also shows get entities of their own from the API
