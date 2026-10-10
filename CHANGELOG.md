@@ -15,6 +15,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A reading from the API is shown in one web row at most.** In `both`
+  mode an API reading went into every row of the expert page whose label
+  its name covers. The page lists a flow temperature under the heating
+  circuit and another under the heat pump; the heat generator's one value
+  replaced both, so the circuit showed it under its own name. A reading now
+  goes only into the row under its own module, and where no such row is
+  unambiguous it keeps an entity of its own again, while the rows show
+  their own values.
 - **Pressures, the flow rate and the compressor speed keep long-term
   statistics.** Readings in bar, m3/h (as the portal writes it) and rpm had
   no state class, so Home Assistant kept no long-term statistics for them

@@ -430,6 +430,38 @@ def _scraped_entities_naming_the_same_thing(
     return matches
 
 
+def _heading_words(scraped_entity_id: str, language: str) -> set:
+    """The words of a scraped row's heading - the part of the page it sits
+    under, before the key's first hyphen."""
+    heading = scraped_entity_id.split("-", 1)[0]
+    words: set = _tokenize(translate(language, friendly_name_mapper(heading)))
+    return words
+
+
+def _the_row_meant(matches: list, sensor: Reading, language: str) -> list:
+    """Of the scraped rows naming the same thing, the one this reading is.
+
+    A reading is one value and a row shows one, so a reading goes into one
+    row at most. Word containment matched a flow temperature to the heat
+    pump's row and to the heating circuit's - two different readings on the
+    page - and wrote the one value into both. The row under the reading's
+    own module is the one; without exactly one of those nobody can say which
+    is meant, and the reading keeps its own entity: an extra entity again
+    beats one value shown under two names.
+    """
+    if len(matches) < 2:
+        return matches
+    sensor_words = _tokenize(sensor.friendly_name)
+    under_its_module = [
+        match
+        for match in matches
+        if (heading := _heading_words(match, language)) and heading <= sensor_words
+    ]
+    if len(under_its_module) == 1:
+        return under_its_module
+    return []
+
+
 def _merge_into_scraped(
     device_id,
     key,
@@ -494,7 +526,7 @@ def _merge_into_scraped(
         # Falls back to the reading's own key: no scraped entity showing this
         # value means there is nothing to merge into, and the entity is its
         # own target.
-        scraping_mapper[cache_key] = matches or [key]
+        scraping_mapper[cache_key] = _the_row_meant(matches, sensor, language) or [key]
         if key not in scraping_mapper[cache_key]:
             # The api can run alone for a while - `both` mode before the first
             # successful scrape - and every one of those cycles wrote a row
@@ -551,9 +583,9 @@ def _hand_the_week_on(left, owner, device_data) -> None:
     the hourly gate counts the fetch as recent, so nothing brings it back
     for up to an hour.
 
-    To the first target only, the row the fetch refreshes and drops the
-    week on (see _schedule_row_key): handed to every target, the others
-    kept the old week for the session."""
+    To the row the reading merged into, which is the one the fetch
+    refreshes and drops the week on (see _schedule_row_key); a reading
+    merges into one row at most (see _the_row_meant)."""
     if not isinstance(left, Reading) or left.circuit_times_day is None:
         return
     row = device_data.get(owner)
