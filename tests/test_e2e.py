@@ -201,25 +201,86 @@ async def test_child_devices_link_to_the_hub_by_registry_id(hass):
     assert entry.runtime_data.hub_device_id == hub.id
 
 
+def _lines_naming_the_login(caplog) -> list[str]:
+    """Every captured line, from any logger, that names the login - also in
+    the slug form Home Assistant builds entity ids from."""
+    from homeassistant.util import slugify
+
+    forms = (USER, slugify(USER))
+    return [
+        f"{record.name}: {record.getMessage()}"
+        for record in caplog.records
+        if any(form in record.getMessage() for form in forms)
+    ]
+
+
 async def test_a_restart_does_not_log_the_login(hass, caplog):
-    """The hub device is named after the entry's title, which is the login -
+    """The hub device is named after the entry's title, which was the login -
     an email address - and every setup after the first listed the devices by
     name at info level. A log pasted into an issue published the address."""
     entry = await _setup(hass, _entry(hass))
     caplog.clear()
 
-    with caplog.at_level(logging.DEBUG, logger="custom_components.wemportal"):
+    with caplog.at_level(logging.DEBUG):
         assert await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
 
-    ours = [
-        record.getMessage()
-        for record in caplog.records
-        if record.name.startswith("custom_components.wemportal")
-    ]
-    assert ours, "precondition: the reload logged nothing to look at"
-    leaking = [message for message in ours if USER in message]
-    assert not leaking, leaking
+    assert caplog.records, "precondition: the reload logged nothing to look at"
+    assert not _lines_naming_the_login(caplog)
+
+
+async def test_a_setup_retry_does_not_log_the_login(hass, caplog, monkeypatch):
+    """Home Assistant names the entry by its title when a setup has to be
+    retried - and a first login turned away after a restart is ordinary for
+    this portal. With the login as the title, that line carried it."""
+
+    def turned_away(self, *_args, **_kwargs):
+        raise ForbiddenError("HTTP 403, no status or message")
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", turned_away)
+    entry = _entry(hass)
+
+    with caplog.at_level(logging.DEBUG):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert not _lines_naming_the_login(caplog)
+
+
+async def test_an_entry_named_after_its_login_is_renamed(hass):
+    """The title every entry used to get. One the user gave a name of their
+    own keeps it."""
+    named_after_the_login = await _setup(hass, _entry(hass))
+    renamed_by_the_user = MockConfigEntry(
+        domain=DOMAIN,
+        title="Heating at home",
+        data={CONF_USERNAME: "other@example.org", CONF_PASSWORD: "pw"},
+        options=BASE_OPTIONS,
+        version=2,
+    )
+    renamed_by_the_user.add_to_hass(hass)
+    await _setup(hass, renamed_by_the_user)
+
+    assert named_after_the_login.title == "WEM Portal"
+    assert renamed_by_the_user.title == "Heating at home"
+
+
+async def test_a_second_account_is_numbered_not_named_after_its_login(hass):
+    """Two accounts, two entries - told apart by a number rather than by the
+    address, which is what used to tell them apart."""
+    first = await _setup(hass, _entry(hass))
+    second = MockConfigEntry(
+        domain=DOMAIN,
+        title="other@example.org",
+        data={CONF_USERNAME: "other@example.org", CONF_PASSWORD: "pw"},
+        options=BASE_OPTIONS,
+        version=2,
+    )
+    second.add_to_hass(hass)
+    await _setup(hass, second)
+
+    assert (first.title, second.title) == ("WEM Portal", "WEM Portal 2")
 
 
 async def test_unload_cleans_up(hass):

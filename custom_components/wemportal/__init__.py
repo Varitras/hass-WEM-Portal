@@ -47,7 +47,11 @@ from .coordinator import (
     get_scraper_device_store,
 )
 from .exceptions import ExpertOperationAborted, ValueNotOffered
-from .migration import migrate_unique_ids
+from .migration import (
+    ENTRY_TITLE,
+    migrate_unique_ids,
+    retitle_an_entry_named_after_its_login,
+)
 from .models import (
     account_unique_id,
     WemPortalConfigEntry,
@@ -101,6 +105,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         update_interval = min(scan_interval, scan_interval_api)
 
     _backfill_account_unique_id(hass, entry)
+    # Before anything can fail: a setup retry is logged under the title.
+    retitle_an_entry_named_after_its_login(hass, entry)
 
     registry = device_registry.async_get(hass)
     # The public helper, unchanged from 2026.8 through 2026.9.
@@ -225,7 +231,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="Weishaupt",
-            name=entry.title or "WEM Portal",
+            name=entry.title or ENTRY_TITLE,
             model="WEM Portal",
         )
         entry.runtime_data.hub_device_id = hub.id

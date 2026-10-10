@@ -23,6 +23,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from .migration import entry_title_for, free_entry_title
 from .models import account_unique_id
 from .const import (
     CONF_EXPERT_MODULE_ARG,
@@ -118,8 +119,6 @@ async def validate_input(hass: HomeAssistant, data):
         # Close the throwaway validation session(s); config-flow validation
         # otherwise left an open connection behind on every setup attempt.
         await hass.async_add_executor_job(api.close_transport)
-
-    return data
 
 
 class RateLimited(exceptions.HomeAssistantError):
@@ -218,9 +217,9 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 if self._account_already_has_an_entry(account):
                     return self.async_abort(reason="already_configured")
 
-                info = await validate_input(self.hass, user_input)
+                await validate_input(self.hass, user_input)
                 return self.async_create_entry(
-                    title=info[CONF_USERNAME],
+                    title=free_entry_title(self.hass),
                     data=user_input,
                     options={
                         # The constants, not the numbers: the options flow
@@ -433,15 +432,15 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         # before the update: the reload it starts runs eagerly, and the new
         # coordinator copies the count when it is built.
         forget_auth_failures(user_input[CONF_USERNAME])
-        title = entry.title
         options: Mapping[str, Any] = entry.options
         if moves_to_another_login:
-            title = user_input[CONF_USERNAME]
             options = _without_the_installation(options)
         return self.async_update_reload_and_abort(
             entry,
             unique_id=account,
-            title=title,
+            # Its own title, not the new login: the title is not the login
+            # any more, and one still carrying the old login gets renamed.
+            title=entry_title_for(self.hass, entry),
             data={
                 **entry.data,
                 CONF_USERNAME: user_input[CONF_USERNAME],
