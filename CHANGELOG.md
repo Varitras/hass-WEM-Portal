@@ -15,6 +15,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The energy statistics count every day in full.** The statistics
+  groups (heating, hot water, consumption ...) report one day's energy,
+  but were published as a meter. Home Assistant starts a new cycle of a
+  meter only when it drops, and the portal does not drop at midnight: it
+  ships the new day without a value at first. Two similar days - hot water
+  charged once a night - booked only their difference, and the Energy
+  Dashboard lost whole days. They are now a total that restarts with every
+  new day. Days booked before this version are not corrected.
 - **A reading from the API is shown in one web row at most.** In `both`
   mode an API reading went into every row of the expert page whose label
   its name covers. The page lists a flow temperature under the heating

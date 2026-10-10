@@ -191,8 +191,8 @@
   {
     "label": "stats: the sensor attributes must be frozen",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            state_class=\"total_increasing\",",
-    "new": "            state_class=\"total\",",
+    "old": "            state_class=_state_class_for(day_started),",
+    "new": "            state_class=SensorStateClass.TOTAL_INCREASING,",
     "tests": "statistics_output_is_unchanged"
   },
   {
@@ -5323,15 +5323,15 @@
   {
     "label": "sensor: a counter's idle dash shown as 0, a reset to the statistics",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if self.state_class == SensorStateClass.TOTAL_INCREASING:\n            return None\n        return 0\n",
+    "old": "        if self.state_class in (\n            SensorStateClass.TOTAL_INCREASING,\n            SensorStateClass.TOTAL,\n        ):\n            return None\n        return 0\n",
     "new": "        return 0\n",
     "tests": "scraped_hour_counter_going_to_dash_is_not_a_reset or portals_own_spelling_is_not_reset"
   },
   {
     "label": "sensor: the value decided before the unit it comes with is taken",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
-    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n",
+    "old": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
+    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n",
     "tests": "unit_first_arrives_with_a_dash_is_not_reset"
   },
   {
@@ -5344,8 +5344,8 @@
   {
     "label": "sensor: a counter class stated as text compared by identity again",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if self.state_class == SensorStateClass.TOTAL_INCREASING:\n",
-    "new": "        if self.state_class is SensorStateClass.TOTAL_INCREASING:\n",
+    "old": "        if self.state_class in (\n            SensorStateClass.TOTAL_INCREASING,\n            SensorStateClass.TOTAL,\n        ):\n",
+    "new": "        if (\n            self.state_class is SensorStateClass.TOTAL_INCREASING\n            or self.state_class is SensorStateClass.TOTAL\n        ):\n",
     "tests": "statistics_energy_counter_with_a_dash_is_not_reset"
   },
   {
@@ -5529,5 +5529,33 @@
     "old": "        if (heading := _heading_words(match, language)) and heading <= sensor_words\n",
     "new": "        if (heading := _heading_words(match, language))\n",
     "tests": "under_the_api_modules_heading"
+  },
+  {
+    "label": "statistics: a day's energy published without the day it belongs to",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "            last_reset=day_started,\n",
+    "new": "",
+    "tests": "day_of_the_same_size_as_the_last_still_starts_a_new_cycle"
+  },
+  {
+    "label": "statistics: the kept value carried over without its day",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "                day_started = old_sensor.last_reset\n",
+    "new": "",
+    "tests": "cycle_without_any_value_keeps_the_day_it_kept_the_value_of"
+  },
+  {
+    "label": "sensor: a new day of a statistics group not taken on update",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        self._attr_last_reset = row.last_reset\n",
+    "new": "",
+    "tests": "day_of_the_same_size_as_the_last_still_starts_a_new_cycle"
+  },
+  {
+    "label": "sensor: a daily total's idle dash shown as 0 within its cycle",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            SensorStateClass.TOTAL,\n        ):\n",
+    "new": "        ):\n",
+    "tests": "statistics_energy_counter_with_a_dash_is_not_reset"
   }
 ]
