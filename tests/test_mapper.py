@@ -971,6 +971,69 @@ def test_one_api_reading_is_not_merged_into_two_scraped_rows():
     assert data["Heat pump-Flow"].value == 24.0
 
 
+@pytest.mark.parametrize(
+    ("before", "answer", "kept"),
+    [
+        (None, "", ""),
+        ("°C", "", "°C"),
+        ("°C", None, "°C"),
+        ("", "kW", "kW"),
+        (None, None, None),
+    ],
+    ids=["no unit yet", "real unit kept", "nothing said", "real unit arrives", "text"],
+)
+@pytest.mark.parametrize("mode", ["api", "both"])
+def test_a_reading_keeps_the_best_unit_it_was_told(mode, before, answer, kept):
+    """The empty unit is "a number without a unit", None says nothing.
+
+    In `api` mode the empty one was dropped, so a unitless number had no
+    state class there while `both` gave it one - and switching modes took
+    its statistics away. In `both` mode a reading under its own key took
+    only its value from later answers, so one whose first answer came
+    without a unit stayed without it for the whole run, a power or energy
+    sensor included. A real unit is never replaced by an empty one: that is
+    an answer which left the unit out."""
+    existing = (
+        {}
+        if before is None and answer is None
+        else {"Heat pump-Pump": Reading(value=1.0, unit=before, parameter_id="Pump")}
+    )
+    data = _process(
+        _modules(_parameter("Pump")),
+        _values(_value("Pump", numeric=2.0, unit=answer)),
+        mode=mode,
+        existing=existing,
+        scraping_mapper={(DEVICE, ModuleRef(0, 1), "Pump"): ["Heat pump-Pump"]}
+        if mode == "both"
+        else None,
+    )
+
+    assert data["Heat pump-Pump"].unit == kept
+
+
+def test_a_label_with_a_hyphen_of_its_own_is_compared_whole():
+    """Only the first hyphen of a key separates heading and label - the
+    scraper builds it that way. The merge cut at the label's own hyphen, so
+    "Version WWP-SG" and "Version WWP-EC WBB" both read as "version wwp",
+    and a reading meant for one matched both."""
+    data = _process(
+        _modules(_parameter("Version WWP-SG")),
+        _values(_value("Version WWP-SG", numeric=3.2, unit="")),
+        mode="both",
+        existing={
+            **_scraped("heat_pump-version_wwp-sg", "Heat pump - Version WWP-SG", 3.1),
+            **_scraped(
+                "heat_pump-version_wwp-ec_wbb", "Heat pump - Version WWP-EC WBB", 7.0
+            ),
+        },
+    )
+
+    assert data["heat_pump-version_wwp-sg"].value == 3.2, (
+        "the reading was not merged into the one row it names"
+    )
+    assert data["heat_pump-version_wwp-ec_wbb"].value == 7.0
+
+
 def test_of_two_matching_rows_the_one_under_the_api_modules_heading_is_merged():
     """The heading says which module a row belongs to; where exactly one of
     the matching rows sits under the API reading's own module, that row is

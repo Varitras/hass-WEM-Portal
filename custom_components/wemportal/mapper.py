@@ -11,6 +11,7 @@ from .models import ModuleRef, Reading
 from .translations import friendly_name_mapper, known_unit, translate
 from .utils import (
     is_nothing_active,
+    kept_unit,
     looks_like_schedule,
     portal_list,
     sanitize_value,
@@ -417,7 +418,9 @@ def _scraped_entities_naming_the_same_thing(
             continue
         scraped_entity_id = scraped_data.parameter_id or ""
         try:
-            scraped_part = scraped_entity_id.split("-")[1]
+            # The first hyphen only, as the scraper builds the key: a label
+            # has hyphens of its own ("Version WWP-SG").
+            scraped_part = scraped_entity_id.split("-", 1)[1]
         except IndexError:
             # No module prefix, so nothing to compare against.
             continue
@@ -575,6 +578,11 @@ def _merge_into_scraped(
         # see _forget_unanswered_module_values.
         target.module_index = sensor.module_index
         target.module_type = sensor.module_type
+        if scraped_entity == key:
+            # Its own row, not a scraped one: the unit is the API's, and a
+            # first answer without one left it unitless for the whole run.
+            target.unit = kept_unit(sensor.unit, target.unit)
+            target.icon = unit_to_icon(target.unit)
 
 
 def _hand_the_week_on(left, owner, device_data) -> None:
@@ -601,7 +609,7 @@ def _emit_plain_sensor(device_id, key, sensor, api_data) -> None:
     previous = api_data[device_id].get(key)
     kept = previous if isinstance(previous, Reading) else None
     old_unit = kept.unit if kept else None
-    final_unit = new_unit if new_unit not in (None, "") else old_unit
+    final_unit = kept_unit(new_unit, old_unit)
 
     api_data[device_id][key] = Reading(
         value=sensor.value,

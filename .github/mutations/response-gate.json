@@ -128,8 +128,8 @@
   {
     "label": "net: the IndexError guard must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            scraped_part = scraped_entity_id.split(\"-\")[1]",
-    "new": "            scraped_part = scraped_entity_id.split(\"-\")[-1]",
+    "old": "            scraped_part = scraped_entity_id.split(\"-\", 1)[1]",
+    "new": "            scraped_part = scraped_entity_id.split(\"-\", 1)[-1]",
     "tests": "extra_mapper_output_is_unchanged"
   },
   {
@@ -3769,8 +3769,8 @@
   {
     "label": "unit: a word in the cell taking the unit with it again",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if unit not in (None, \"\") or first_unit:\n            self._attr_native_unit_of_measurement = unit",
-    "new": "        self._attr_native_unit_of_measurement = unit",
+    "old": "        self._attr_native_unit_of_measurement = kept_unit(\n            unit, self._attr_native_unit_of_measurement\n        )\n",
+    "new": "        self._attr_native_unit_of_measurement = unit\n",
     "tests": "a_cell_that_reads_off_keeps_the_unit_its_number_had"
   },
   {
@@ -5323,8 +5323,8 @@
   {
     "label": "sensor: the value decided before the unit it comes with is taken",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if unit not in (None, \"\") or first_unit:\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
-    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        if unit not in (None, \"\") or first_unit:\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n",
+    "old": "        self._attr_native_unit_of_measurement = kept_unit(\n            unit, self._attr_native_unit_of_measurement\n        )\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
+    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        self._attr_native_unit_of_measurement = kept_unit(\n            unit, self._attr_native_unit_of_measurement\n        )\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n",
     "tests": "unit_first_arrives_with_a_dash_is_not_reset"
   },
   {
@@ -5700,10 +5700,10 @@
   },
   {
     "label": "sensor: a unitless number that started as a dash kept as text",
-    "path": "custom_components/wemportal/sensor.py",
-    "old": "        if unit not in (None, \"\") or first_unit:\n            self._attr_native_unit_of_measurement = unit\n",
-    "new": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n",
-    "tests": "unitless_number_that_started_as_a_dash_still_gets_a_state_class"
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return new if new is not None else old\n",
+    "new": "    return old\n",
+    "tests": "unitless_number_that_started_as_a_dash_still_gets_a_state_class or best_unit_it_was_told"
   },
   {
     "label": "sensor: a level named null shown as the word None",
@@ -5788,5 +5788,33 @@
     "old": "            row.value = None\n            forgotten.append(key)\n",
     "new": "            self.data[device_id][key] = Reading(unit=row.unit)\n            forgotten.append(key)\n",
     "tests": "reading_that_ages_out_keeps_its_address"
+  },
+  {
+    "label": "merge: a label cut at its own hyphen again",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            scraped_part = scraped_entity_id.split(\"-\", 1)[1]\n",
+    "new": "            scraped_part = scraped_entity_id.split(\"-\")[1]\n",
+    "tests": "hyphen_of_its_own"
+  },
+  {
+    "label": "unit: an answer without its unit replaces the real one",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    if old:\n        return old\n",
+    "new": "",
+    "tests": "best_unit_it_was_told"
+  },
+  {
+    "label": "mapper: api mode drops the empty unit again",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    final_unit = kept_unit(new_unit, old_unit)\n",
+    "new": "    final_unit = new_unit if new_unit not in (None, \"\") else old_unit\n",
+    "tests": "best_unit_it_was_told"
+  },
+  {
+    "label": "mapper: a reading under its own key never takes a later unit",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        if scraped_entity == key:\n            # Its own row",
+    "new": "        if False:\n            # Its own row",
+    "tests": "best_unit_it_was_told"
   }
 ]

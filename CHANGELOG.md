@@ -15,6 +15,16 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Units and merges follow one rule in every mode.**
+  - A unitless number kept its empty unit in `both` mode but lost it in
+    `api` mode, so it had long-term statistics in one and not the other -
+    switching modes removed them.
+  - In `both` mode an API reading without a web row whose first answer
+    came without a unit stayed without one for the whole run, a power or
+    energy sensor included.
+  - A web row label with a hyphen of its own ("Version WWP-SG") was cut
+    there when matching API readings, so a reading meant for one row
+    matched its neighbour too.
 - **A device whose readings stopped no longer blanks rows other reads keep.**
   After half an hour without values the device's readings go unknown; that
   took the energy statistics with them, which their hourly read keeps

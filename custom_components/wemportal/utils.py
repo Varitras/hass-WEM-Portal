@@ -498,6 +498,25 @@ def unit_to_device_class(unit: str | None) -> SensorDeviceClass | None:
     )
 
 
+def kept_unit(new: str | None, old: str | None) -> str | None:
+    """The unit a reading keeps when an answer brings `new` over `old`.
+
+    A real unit always wins. The empty one means "a number without a
+    unit" and is taken only where nothing better is known: over a real
+    unit it is an answer that left the unit out (a "--"), over nothing
+    it is the one fact there is. None says nothing and changes nothing.
+
+    One rule for the mapper's two write paths and the sensor: apart, the
+    `api` mode dropped the empty unit that `both` kept, and a number's
+    state class depended on the mode.
+    """
+    if new:
+        return new
+    if old:
+        return old
+    return new if new is not None else old
+
+
 def unit_to_icon(unit: str | None) -> str | None:
     """Icon for a unit - or None to let Home Assistant decide.
 

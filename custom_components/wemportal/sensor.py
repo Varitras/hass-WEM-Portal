@@ -30,6 +30,7 @@ from .utils import (
     device_model,
     fix_value_and_unit,
     is_nothing_active,
+    kept_unit,
     unit_to_device_class,
     unit_to_state_class,
 )
@@ -551,11 +552,11 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # The unit before the value, as in __init__: a "--" is decided by the
         # state class the unit gives, and taken afterwards the first one of a
         # counter whose unit had not arrived yet read as 0 - a reset.
-        # "" is a number without a unit: taken while nothing better is known,
-        # or a cell that started as "--" stayed text for the whole session.
-        first_unit = unit == "" and self._attr_native_unit_of_measurement is None
-        if unit not in (None, "") or first_unit:
-            self._attr_native_unit_of_measurement = unit
+        # A cell that started as "--" was built as text; its first number
+        # brings the empty unit, which kept_unit takes where none is known.
+        self._attr_native_unit_of_measurement = kept_unit(
+            unit, self._attr_native_unit_of_measurement
+        )
         # A new day of a statistics group is a new cycle, whatever the
         # size of its value - see statistics._start_of_the_day.
         self._attr_last_reset = row.last_reset
