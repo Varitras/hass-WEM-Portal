@@ -1403,8 +1403,8 @@
   {
     "label": "holiday: leaving the end out of the coordinator must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "        for data_key in (begin.data_key, end.data_key):\n",
-    "new": "        for data_key in (begin.data_key,):\n",
+    "old": "    written = [device_rows.get(key) for key in (begin.data_key, end.data_key)]\n",
+    "new": "    written = [device_rows.get(key) for key in (begin.data_key,)]\n",
     "tests": "read_back_that_fails_leaves_neither_date_asserted"
   },
   {
@@ -5246,8 +5246,8 @@
   {
     "label": "holiday read-back: the rows from before the write blanked again",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "            row = device_rows.get(data_key)\n",
-    "new": "            row = begin.row if data_key == begin.data_key else end.row\n",
+    "old": "    written = [device_rows.get(key) for key in (begin.data_key, end.data_key)]\n",
+    "new": "    written = [begin.row, end.row]\n",
     "tests": "read_back_that_carried_one_date_leaves_neither_shown"
   },
   {
@@ -5578,5 +5578,33 @@
     "old": "    if not previous_keys or not set(keys) - previous_keys:\n",
     "new": "    if not previous_keys:\n",
     "tests": "real_change_of_the_page_is_still_taken"
+  },
+  {
+    "label": "date: a day the portal did not keep reported as set",
+    "path": "custom_components/wemportal/date.py",
+    "old": "        if failure is None and self._attr_native_value != value:\n",
+    "new": "        if False:\n",
+    "tests": "portal_did_not_keep_is_not_displayed"
+  },
+  {
+    "label": "date: a read-back that failed reported as a day not kept",
+    "path": "custom_components/wemportal/date.py",
+    "old": "        if failure is None and self._attr_native_value != value:\n",
+    "new": "        if self._attr_native_value != value:\n",
+    "tests": "failed_read_back_does_not_fail_the_write"
+  },
+  {
+    "label": "holiday: a holiday the portal did not keep reported as set",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if failure is None and kept != [begin_day, end_day]:\n",
+    "new": "    if False:\n",
+    "tests": "service_publishes_what_the_portal_kept"
+  },
+  {
+    "label": "holiday: a read-back that failed reported as a holiday not kept",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if failure is None and kept != [begin_day, end_day]:\n",
+    "new": "    if kept != [begin_day, end_day]:\n",
+    "tests": "read_back_that_fails_leaves_neither_date_asserted"
   }
 ]

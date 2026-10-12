@@ -20,8 +20,10 @@ from datetime import UTC, date, datetime
 from homeassistant.components.date import DateEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .const import DOMAIN
 from .entity import async_add_readings_as_they_appear, WemPortalEntity
 from .models import date_companions
 
@@ -164,6 +166,18 @@ class WemPortalDate(WemPortalEntity, DateEntity):
             self._forget_written_value()
         self._attr_native_value = epoch_to_date(self._current_value())
         self.coordinator.async_update_listeners()
+        # A read-back that worked and found another day: the portal accepted
+        # the request and kept something else. Shown as kept, and said - the
+        # action succeeding looked like a setting that changed by itself.
+        if failure is None and self._attr_native_value != value:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="date_not_kept",
+                translation_placeholders={
+                    "written": str(value),
+                    "kept": str(self._attr_native_value),
+                },
+            )
 
     def _current_value(self):
         """This parameter's value as the coordinator now holds it."""

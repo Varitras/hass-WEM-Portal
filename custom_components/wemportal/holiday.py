@@ -38,7 +38,7 @@ from homeassistant.helpers.service import async_register_admin_service
 from .const import (
     DOMAIN,
 )
-from .date import date_to_epoch
+from .date import date_to_epoch, epoch_to_date
 from .exceptions import WemPortalError
 from .models import Reading, WemPortalData, is_still_serving, raise_if_not_writable
 from .utils import short_device_id
@@ -212,6 +212,11 @@ async def _write_holiday(hass: HomeAssistant, call: ServiceCall) -> None:
         begin.address,
         (begin_parameter, end_parameter),
     )
+    # Looked up again rather than the rows found before the write: a read
+    # that worked replaces them, and blanking the old objects left a date the
+    # answer did carry on display.
+    device_rows = (begin.data.coordinator.data or {}).get(begin.device_id, {})
+    written = [device_rows.get(key) for key in (begin.data_key, end.data_key)]
     if failure is not None:
         # The write itself went through, so this is not a failed service
         # call - what is unknown is whether it was kept, and an unknown
@@ -226,15 +231,22 @@ async def _write_holiday(hass: HomeAssistant, call: ServiceCall) -> None:
             end_day,
             failure,
         )
-        # Looked up again rather than the rows found before the write: a
-        # read that worked replaces them, and blanking the old objects left
-        # a date the answer did carry on display.
-        device_rows = (begin.data.coordinator.data or {}).get(begin.device_id, {})
-        for data_key in (begin.data_key, end.data_key):
-            row = device_rows.get(data_key)
+        for row in written:
             if isinstance(row, Reading):
                 row.value = None
     begin.data.coordinator.async_update_listeners()
+    kept = [
+        epoch_to_date(row.value if isinstance(row, Reading) else None)
+        for row in written
+    ]
+    # Read back and found other days: accepted, not kept. Shown as kept, and
+    # the call fails - an automation went on as if the holiday was set.
+    if failure is None and kept != [begin_day, end_day]:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="holiday_not_kept",
+            translation_placeholders={"begin": str(kept[0]), "end": str(kept[1])},
+        )
 
     _LOGGER.info(
         "Holiday set from %s to %s on device %s.",

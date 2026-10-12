@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A date or holiday the portal did not keep is reported, not taken as
+  set.** The portal accepts some dates and stores something else. The
+  entities already showed the day it kept, but the action and the
+  `set_holiday` service still succeeded - an automation went on as if the
+  holiday was set. Both now fail with a message naming the day kept.
 - **A broken expert page no longer leaves a set of dead sensors behind.**
   The portal now and then sends the expert page with every panel headed
   "Info" instead of its module, and the next page is normal again. That one

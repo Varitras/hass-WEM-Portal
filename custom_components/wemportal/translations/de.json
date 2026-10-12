@@ -230,6 +230,9 @@
     "account_unloading": {
       "message": "{parameter}: Die WEM-Portal-Integration wird gerade entladen, daher wurde nichts geschrieben."
     },
+    "date_not_kept": {
+      "message": "Das Portal hat {written} angenommen, aber {kept} behalten."
+    },
     "expert_account_ambiguous": {
       "message": "Es ist nicht eindeutig, auf welches Konto geschrieben werden soll. Aktiviere den Expertenzugriff für genau einen WEM-Portal-Eintrag."
     },
@@ -274,6 +277,9 @@
     },
     "holiday_not_a_wemportal_entity": {
       "message": "{entity_id} ist keine WEM-Portal-Entität."
+    },
+    "holiday_not_kept": {
+      "message": "Das Portal hat den Urlaub angenommen, aber {begin} bis {end} behalten."
     },
     "holiday_reclassified": {
       "message": "{entity_id} ist als Datum angelegt, das Portal beschreibt diesen Parameter inzwischen aber als {platform}. Lade die Integration neu, damit die Änderung übernommen wird; es wurde nichts geschrieben."

@@ -230,6 +230,9 @@
     "account_unloading": {
       "message": "{parameter}: the WEM Portal integration is being unloaded, so nothing was written."
     },
+    "date_not_kept": {
+      "message": "The portal accepted {written} but kept {kept}."
+    },
     "expert_account_ambiguous": {
       "message": "Could not tell which account to write to. Enable expert write on exactly one WEM Portal entry."
     },
@@ -274,6 +277,9 @@
     },
     "holiday_not_a_wemportal_entity": {
       "message": "{entity_id} is not a WEM Portal entity."
+    },
+    "holiday_not_kept": {
+      "message": "The portal accepted the holiday but kept {begin} to {end}."
     },
     "holiday_reclassified": {
       "message": "{entity_id} is filed as a date, but the portal now describes that parameter as a {platform}. Reload the integration to pick up the change; nothing was written."
