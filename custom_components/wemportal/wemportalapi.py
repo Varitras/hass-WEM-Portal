@@ -34,7 +34,7 @@ from .const import (
 )
 from .models import HeavyFetchTurns, ModuleRef, Reading, account_state
 from .schedule import WemPortalSchedule
-from .statistics import WemPortalStatistics
+from .statistics import WemPortalStatistics, is_statistics_row
 from .transport import WemPortalTransport
 from .exceptions import (
     ApiBusyError,
@@ -492,7 +492,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         if self.spider_retry_count == SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE:
             self._forget_scraped_values()
 
-    def _forget_stale_device_values(self, device_id: str) -> None:
+    def _forget_stale_device_values(
+        self, device_id: str, schedule_runs: bool = True
+    ) -> None:
         """Stop presenting one device's readings once they are too old.
 
         The same rule _forget_scraped_values applies to the web source, for
@@ -539,13 +541,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         status_rows = {f"{device_id}-{row_name}" for row_name in DEVICE_STATUS_ROWS}
         forgotten = []
         for key, row in (self.data.get(device_id) or {}).items():
-            if key in status_rows:
+            if key in status_rows or is_statistics_row(device_id, key):
                 continue
-            if self._kept_fresh_by_the_scrape(key):
+            if not isinstance(row, Reading) or row.value is None:
                 continue
-            if isinstance(row, Reading) and row.value is not None:
-                row.value = None
-                forgotten.append(key)
+            if self._owned_by_another_fetch(key, row, schedule_runs):
+                continue
+            row.value = None
+            forgotten.append(key)
         if not forgotten:
             return
         # Reset, so the next failure is measured from here rather than
@@ -588,14 +591,26 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 continue
             if (row.module_index, row.module_type) != module_key:
                 continue
-            if self._kept_fresh_by_the_scrape(row_name):
-                continue
-            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(
-                row.value
-            )
-            if is_programme and schedule_runs and schedule_fetch_still_feeds(row):
+            if self._owned_by_another_fetch(row_name, row, schedule_runs):
                 continue
             yield row_name, row
+
+    def _owned_by_another_fetch(
+        self, row_name: str, row: Reading, schedule_runs: bool
+    ) -> bool:
+        """Whether another fetch still keeps this row current, so a silent
+        value read must not age it: the scrape, or the schedule fetch for a
+        programme it still feeds - where that fetch runs at all.
+
+        One answer for both API ageing passes. The device pass had its own
+        list and left the fed programme out, so a current week went blank.
+        """
+        if self._kept_fresh_by_the_scrape(row_name):
+            return True
+        is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(
+            row.value
+        )
+        return is_programme and schedule_runs and schedule_fetch_still_feeds(row)
 
     def _kept_fresh_by_the_scrape(self, row_name: str) -> bool:
         """Whether the scrape is still delivering this row.
@@ -2294,7 +2309,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 # after cycle kept publishing the same numbers as current -
                 # and `busy` is not one of the states that make a device
                 # unreachable, so its entities stayed available saying them.
-                self._forget_stale_device_values(device_id)
+                # No schedule fetch on this path: a programme ages too.
+                self._forget_stale_device_values(device_id, schedule_runs=False)
                 continue
             # `is None`, never a truth test: the reason for a FAILURE is what
             # comes back, so a truthy answer is the bad one.

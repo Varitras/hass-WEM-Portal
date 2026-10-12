@@ -71,6 +71,17 @@ def _statistics_group_key(device_id: str, group_id: Any) -> str:
     return f"statistics:{device_id}:group:{group_id}"
 
 
+def statistics_row_key(device_id: str, group_id: Any) -> str:
+    """Where one statistics group of a device lives in its data."""
+    return f"{device_id}-Energy_{group_id}"
+
+
+def is_statistics_row(device_id: str, key: str) -> bool:
+    """Whether a row is one this fetch owns - see the device-level ageing,
+    which must leave it to the hourly read that keeps it."""
+    return key.startswith(statistics_row_key(device_id, ""))
+
+
 def _start_of_the_day(entry: dict[str, Any]) -> datetime | None:
     """Midnight of the day a statistics entry reports, in Home Assistant's
     time zone - the portal dates its days without one.
@@ -255,7 +266,9 @@ class WemPortalStatistics:
             # value instead of falling back to 0.0, which would
             # otherwise show up as a false drop/spike on the
             # Energy Dashboard.
-            old_sensor = self.data.get(device_id, {}).get(f"{device_id}-{sensor_name}")
+            old_sensor = self.data.get(device_id, {}).get(
+                statistics_row_key(device_id, group_id)
+            )
             if isinstance(old_sensor, Reading) and old_sensor.value is not None:
                 current_value = old_sensor.value
                 day_started = old_sensor.last_reset
@@ -276,7 +289,7 @@ class WemPortalStatistics:
         # No data_type/module fields on purpose: the -1 placeholders they
         # used to carry existed only to fill the dict shape, and nothing
         # reads a module address off a statistics sensor.
-        self.data[device_id][f"{device_id}-{sensor_name}"] = Reading(
+        self.data[device_id][statistics_row_key(device_id, group_id)] = Reading(
             friendly_name=group_name,
             parameter_id=sensor_name,
             unit=unit,

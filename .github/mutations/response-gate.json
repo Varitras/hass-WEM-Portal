@@ -2019,8 +2019,8 @@
   {
     "label": "freshness: forgetting a reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None",
-    "new": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None; row.unit = None",
+    "old": "            row.value = None\n            forgotten.append(key)\n",
+    "new": "            row.value = None\n            row.unit = None\n            forgotten.append(key)\n",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -2432,14 +2432,14 @@
   {
     "label": "freshness: the rows explaining the silence blanked with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):",
-    "new": "            if self._kept_fresh_by_the_scrape(key):",
+    "old": "            if key in status_rows or is_statistics_row(device_id, key):",
+    "new": "            if is_statistics_row(device_id, key):",
     "tests": "the_rows_that_explain_the_silence_are_not_blanked_with_it"
   },
   {
     "label": "freshness: a device busy forever never ageing its readings",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                self._forget_stale_device_values(device_id)\n                continue",
+    "old": "                self._forget_stale_device_values(device_id, schedule_runs=False)\n                continue",
     "new": "                continue",
     "tests": "a_device_that_is_busy_forever_still_stops_showing_old_values"
   },
@@ -2481,8 +2481,8 @@
   {
     "label": "freshness: a fresh scrape cleared because the API half went quiet",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if self._kept_fresh_by_the_scrape(key):\n                continue",
-    "new": "            if False:\n                continue",
+    "old": "            if self._owned_by_another_fetch(key, row, schedule_runs):\n                continue\n            row.value = None",
+    "new": "            row.value = None",
     "tests": "a_fresh_scrape_is_not_cleared_with_a_silent_api_device"
   },
   {
@@ -2936,15 +2936,15 @@
   {
     "label": "freshness: a programme exempted whether or not anything refreshes it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if is_programme and schedule_runs and schedule_fetch_still_feeds(row):",
-    "new": "            if is_programme:",
+    "old": "        return is_programme and schedule_runs and schedule_fetch_still_feeds(row)\n",
+    "new": "        return is_programme\n",
     "tests": "a_weekly_programme_nobody_refreshes_any_more_ages_with_its_module"
   },
   {
     "label": "freshness: the programme exemption dropped from the module aging",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(\n                row.value\n            )\n            if is_programme and schedule_runs and schedule_fetch_still_feeds(row):\n                continue",
-    "new": "            pass",
+    "old": "            if self._owned_by_another_fetch(row_name, row, schedule_runs):\n                continue\n            yield row_name, row\n",
+    "new": "            if self._kept_fresh_by_the_scrape(row_name):\n                continue\n            yield row_name, row\n",
     "tests": "a_weekly_programme_the_schedule_fetch_still_feeds_survives_the_aging"
   },
   {
@@ -3097,8 +3097,8 @@
   {
     "label": "freshness: ageing a row the scrape still feeds must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if self._kept_fresh_by_the_scrape(row_name):\n                continue",
-    "new": "            if False:\n                continue",
+    "old": "        if self._kept_fresh_by_the_scrape(row_name):\n            return True\n",
+    "new": "        if False:\n            return True\n",
     "tests": "row_the_scrape_still_feeds_is_not_aged"
   },
   {
@@ -5760,5 +5760,33 @@
     "old": "        if too_soon:\n            return\n",
     "new": "",
     "tests": "waits_web_intervals_not_api_ticks"
+  },
+  {
+    "label": "freshness: a statistics row aged by a value read that does not own it",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if key in status_rows or is_statistics_row(device_id, key):",
+    "new": "            if key in status_rows:",
+    "tests": "gone_quiet_leaves_the_statistics_rows_alone"
+  },
+  {
+    "label": "freshness: a busy device's programme kept as if its fetch ran",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                self._forget_stale_device_values(device_id, schedule_runs=False)\n",
+    "new": "                self._forget_stale_device_values(device_id)\n",
+    "tests": "busy_device_ages_its_programme_too"
+  },
+  {
+    "label": "freshness: a fed programme blanked by the device pass",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if self._owned_by_another_fetch(key, row, schedule_runs):\n                continue\n            row.value = None",
+    "new": "            if self._kept_fresh_by_the_scrape(key):\n                continue\n            row.value = None",
+    "tests": "schedule_fetch_feeds_ages_only_where_it_does_not_run"
+  },
+  {
+    "label": "freshness: ageing replaces the row and loses its address",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            row.value = None\n            forgotten.append(key)\n",
+    "new": "            self.data[device_id][key] = Reading(unit=row.unit)\n            forgotten.append(key)\n",
+    "tests": "reading_that_ages_out_keeps_its_address"
   }
 ]

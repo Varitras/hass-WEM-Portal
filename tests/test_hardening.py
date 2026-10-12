@@ -6154,6 +6154,60 @@ def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
     )
 
 
+def _device_gone_quiet(rows):
+    api = _api()
+    api.data = {"1234": rows}
+    api._last_device_read["1234"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+    return api
+
+
+def test_a_device_gone_quiet_leaves_the_statistics_rows_alone():
+    """The hourly statistics fetch reads a device whatever its value read
+    does, and owns its rows. The device pass blanked them with the rest, so
+    the energy sensors flapped to unknown every 30 minutes of an outage of
+    another fetch."""
+    api = _device_gone_quiet(
+        {
+            "Heat pump-T1": Reading(
+                value=21.0, unit="°C", module_index=0, module_type=1
+            ),
+            "1234-Energy_2": Reading(value=2.9, unit="kWh"),
+        }
+    )
+
+    api._forget_stale_device_values("1234")
+
+    assert api.data["1234"]["Heat pump-T1"].value is None
+    assert api.data["1234"]["1234-Energy_2"].value == 2.9, (
+        "a statistics row was aged by a value read that does not own it"
+    )
+
+
+@pytest.mark.parametrize(("schedule_runs", "kept"), [(True, True), (False, False)])
+def test_a_programme_the_schedule_fetch_feeds_ages_only_where_it_does_not_run(
+    schedule_runs, kept
+):
+    """The per-module pass exempts a programme its own fetch still feeds; the
+    device pass did not, and the schedule fetch never puts the value back,
+    so a current week went blank. Where the device is skipped for its status
+    that fetch does not run either, and exempting it there would keep a
+    pre-outage plan on display without limit."""
+    programme = Reading(
+        value='{"MO-1":"06:00-10:10"}',
+        data_type=wemportalapi.WemDataType.PROGRAM,
+        circuit_times_day=A_FED_WEEK,
+        module_index=0,
+        module_type=1,
+    )
+    api = _device_gone_quiet({"Heat pump-Programme": programme})
+
+    api._forget_stale_device_values("1234", schedule_runs=schedule_runs)
+
+    assert (programme.value is not None) is kept
+
+
 def test_the_third_scrape_failure_before_any_success_is_survivable():
     """_previous_scraper_keys is None until a scrape has succeeded.
 
@@ -6231,6 +6285,31 @@ def test_a_device_that_is_busy_forever_still_stops_showing_old_values():
     assert api.data["5678"]["flow"].value is None, (
         "a device that has been busy for half an hour still showed its old "
         "readings as current"
+    )
+
+
+def test_a_busy_device_ages_its_programme_too():
+    """The schedule fetch does not run for a device skipped for its status,
+    so nothing keeps its programme current there - exempting it as fed kept
+    the plan from before the outage on display without limit."""
+    api = _two_device_api_with_status(None)
+    api.get_data(enabled_devices=["1234", "5678"])
+    api.data["5678"]["programme"] = Reading(
+        value='{"MO-1":"06:00-10:10"}',
+        data_type=wemportalapi.WemDataType.PROGRAM,
+        circuit_times_day=A_FED_WEEK,
+        module_index=0,
+        module_type=1,
+    )
+    api._fetch_device_status = lambda device_id: device_id != "5678"
+    api._last_device_read["5678"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+
+    api.get_data(enabled_devices=["1234", "5678"])
+
+    assert api.data["5678"]["programme"].value is None, (
+        "a programme nothing refreshes stayed on display as current"
     )
 
 

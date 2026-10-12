@@ -15,6 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A device whose readings stopped no longer blanks rows other reads keep.**
+  After half an hour without values the device's readings go unknown; that
+  took the energy statistics with them, which their hourly read keeps
+  regardless, and a weekly programme the schedule read still updates.
 - **One part of the portal failing no longer stops the rest.**
   - A module the portal had not described yet - on a new installation, or
     one just added - whose description kept failing stopped every reading

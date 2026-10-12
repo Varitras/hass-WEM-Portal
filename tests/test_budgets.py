@@ -92,7 +92,9 @@ LINE_BUDGETS = {
     # fails skipped while the described ones are read, and the scrape
     # backoff counted in web intervals. The discovery half (~400 lines) is
     # the cohesive part to move out; that is the owner's call.
-    "wemportalapi.py": 2843,
+    # And by 16 for one answer to "which rows does the value read own",
+    # shared by both ageing passes.
+    "wemportalapi.py": 2859,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
