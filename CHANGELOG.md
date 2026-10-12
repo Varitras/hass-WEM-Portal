@@ -23,7 +23,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
   unknown for good, one set each time it happened. Such a page is now
   recognised - the same rows under fewer headings - and skipped like a
   failed read. Sensors created by earlier occurrences can be removed in
-  Home Assistant's entity settings.
+  Home Assistant's entity settings. The warning about relabelled rows also
+  said such sensors came "on a later cycle"; they are created right away,
+  and it now says so.
 - **The energy statistics count every day in full.** The statistics
   groups (heating, hot water, consumption ...) report one day's energy,
   but were published as a meter. Home Assistant starts a new cycle of a

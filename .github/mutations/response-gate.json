@@ -1865,8 +1865,8 @@
   {
     "label": "relabel: the message promising a restart again",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, NEW entities are created from them on a later cycle \"\n                \"and the history stays with the old ones.\",",
-    "new": "                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, the next Home Assistant restart creates NEW entities \"\n                \"from them and the history stays with the old ones.\",",
+    "old": "                \"unknown; they come back if the labels do. NEW entities are \"\n                \"made from the new labels right away and keep the history from \"\n                \"then on; if the old labels return, remove the new ones.\",",
+    "new": "                \"unknown; they come back if the labels do. NEW entities are \"\n                \"made from the new labels at the next Home Assistant restart \"\n                \"and keep the history from then on.\",",
     "tests": "the_relabel_warning_does_not_promise_entities_that_appear_now"
   },
   {
