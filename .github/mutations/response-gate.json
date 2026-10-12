@@ -3769,7 +3769,7 @@
   {
     "label": "unit: a word in the cell taking the unit with it again",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit",
+    "old": "        if unit not in (None, \"\") or first_unit:\n            self._attr_native_unit_of_measurement = unit",
     "new": "        self._attr_native_unit_of_measurement = unit",
     "tests": "a_cell_that_reads_off_keeps_the_unit_its_number_had"
   },
@@ -5323,8 +5323,8 @@
   {
     "label": "sensor: the value decided before the unit it comes with is taken",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
-    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n",
+    "old": "        if unit not in (None, \"\") or first_unit:\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
+    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        if unit not in (None, \"\") or first_unit:\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n",
     "tests": "unit_first_arrives_with_a_dash_is_not_reset"
   },
   {
@@ -5697,5 +5697,33 @@
     "old": "        if self.mode != \"both\":\n",
     "new": "        if self.mode == \"api\":\n",
     "tests": "web_report_is_for_both_mode_only"
+  },
+  {
+    "label": "sensor: a unitless number that started as a dash kept as text",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if unit not in (None, \"\") or first_unit:\n            self._attr_native_unit_of_measurement = unit\n",
+    "new": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n",
+    "tests": "unitless_number_that_started_as_a_dash_still_gets_a_state_class"
+  },
+  {
+    "label": "sensor: a level named null shown as the word None",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        text = text.strip() if isinstance(text, str) else \"\"\n",
+    "new": "        text = str(text).strip()\n",
+    "tests": "level_the_portal_named_null_keeps_its_times_too"
+  },
+  {
+    "label": "select: a value outside the options shown as its neighbour",
+    "path": "custom_components/wemportal/select.py",
+    "old": "                if re.findall(r\"\\d+\", name) == digits\n",
+    "new": "                if True\n",
+    "tests": "not_shown_as_its_neighbour"
+  },
+  {
+    "label": "select: one of several close spellings picked",
+    "path": "custom_components/wemportal/select.py",
+    "old": "            if len(matches) == 1:\n                return matches[0]\n",
+    "new": "            if matches:\n                return matches[0]\n",
+    "tests": "not_shown_as_its_neighbour or close_to_two_options_is_not_guessed"
   }
 ]

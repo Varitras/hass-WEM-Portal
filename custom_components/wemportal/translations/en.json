@@ -182,7 +182,7 @@
     },
     "expert_poll_read_failures": {
       "title": "Expert parameter {name} keeps failing to read",
-      "description": "Reading {name} has failed {failures} times in a row while other parameters were read successfully. That is usually a wrong ID in the integration options, but the portal can refuse a single parameter too. This issue clears itself once the parameter reads again."
+      "description": "Reading {name} has failed {failures} times in a row. That is usually a wrong ID in the integration options, but the portal can refuse a single parameter too. This issue clears itself once the parameter reads again."
     }
   },
   "services": {

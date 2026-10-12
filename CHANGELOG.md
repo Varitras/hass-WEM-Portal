@@ -15,6 +15,18 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Values shown as they are, or as unknown - not as a neighbour.**
+  - A select whose current setting is not in its option list yet showed
+    the nearest spelling - "Party 4 h" as "Party 3 h". A different number
+    is a different setting now, and a value close to two options is not
+    guessed: both show as unknown.
+  - A unitless number that read `--` on the first update after a start
+    stayed text for the whole session, without long-term statistics.
+  - A programme level the portal sends without a name no longer shows as
+    the word "None".
+  - The repair for an expert parameter that keeps failing no longer claims
+    that other parameters were read, which with one configured parameter
+    is not true.
 - **No "web access is not working" repair in pure `web` mode.** Its text
   says the API half keeps delivering, which `web` mode does not have; there
   a failed read already shows as unavailable entities.

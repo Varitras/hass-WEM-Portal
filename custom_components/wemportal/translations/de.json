@@ -182,7 +182,7 @@
     },
     "expert_poll_read_failures": {
       "title": "Fachmann-Parameter „{name}“ lässt sich wiederholt nicht lesen",
-      "description": "„{name}“ konnte {failures} Mal in Folge nicht gelesen werden, während andere Parameter erfolgreich gelesen wurden. Meist ist die ID in den Integrationsoptionen falsch, das Portal kann aber auch einen einzelnen Parameter ablehnen. Diese Meldung verschwindet, sobald der Parameter wieder gelesen wird."
+      "description": "„{name}“ konnte {failures} Mal in Folge nicht gelesen werden. Meist ist die ID in den Integrationsoptionen falsch, das Portal kann aber auch einen einzelnen Parameter ablehnen. Diese Meldung verschwindet, sobald der Parameter wieder gelesen wird."
     }
   },
   "services": {

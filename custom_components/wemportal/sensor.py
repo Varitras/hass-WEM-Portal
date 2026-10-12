@@ -201,7 +201,9 @@ def _level_names(possible_values) -> dict[Any, str]:
     for entry in possible_values or []:
         if not isinstance(entry, dict):
             continue
-        text = str(entry.get("Text", "")).strip()
+        text = entry.get("Text")
+        # Not str() of it: a null became the word "None" and passed as a name.
+        text = text.strip() if isinstance(text, str) else ""
         if text:
             names[entry.get("Value")] = text
     return names
@@ -549,7 +551,10 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # The unit before the value, as in __init__: a "--" is decided by the
         # state class the unit gives, and taken afterwards the first one of a
         # counter whose unit had not arrived yet read as 0 - a reset.
-        if unit not in (None, ""):
+        # "" is a number without a unit: taken while nothing better is known,
+        # or a cell that started as "--" stayed text for the whole session.
+        first_unit = unit == "" and self._attr_native_unit_of_measurement is None
+        if unit not in (None, "") or first_unit:
             self._attr_native_unit_of_measurement = unit
         # A new day of a statistics group is a new cycle, whatever the
         # size of its value - see statistics._start_of_the_day.

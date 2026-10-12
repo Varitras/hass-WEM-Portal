@@ -464,6 +464,43 @@ def test_a_select_value_outside_its_options_still_warns(caplog):
     assert caplog.records, "an unresolvable option passed silently"
 
 
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        ("Party 4 h", None),
+        ("Party 3h", "Party 3 h"),
+    ],
+    ids=["another number", "the same setting spelled apart"],
+)
+def test_a_value_missing_from_the_options_is_not_shown_as_its_neighbour(value, shown):
+    """A device already on an option the cached list does not have yet - the
+    case rediscovery exists for - was shown as the nearest spelling: "Party
+    4 h" as "Party 3 h". A definite wrong setting, for an automation to act
+    on and a user to write back. A different number is a different setting;
+    a spelling variant of the same one still matches."""
+    entity = _entity(
+        WemPortalSelect,
+        value=value,
+        options=["3", "6"],
+        options_names=["Party 3 h", "Party 6 h"],
+    )
+
+    assert entity.current_option == shown
+
+
+def test_a_value_close_to_two_options_is_not_guessed():
+    """Two options spelled as close to the value, the same number in both:
+    which one is meant is not known, and the first was shown as a fact."""
+    entity = _entity(
+        WemPortalSelect,
+        value="Absenk 3",
+        options=["1", "2"],
+        options_names=["Absenkung 3", "Absenken 3"],
+    )
+
+    assert entity.current_option is None
+
+
 def _warnings(caplog):
     """Only what a user would see as a fault.
 

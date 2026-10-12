@@ -8857,6 +8857,17 @@ def test_a_level_the_portal_did_not_name_keeps_its_times():
     assert _readable_schedule(row)["DI"] == ["00:00-24:00"]
 
 
+def test_a_level_the_portal_named_null_keeps_its_times_too():
+    """`"Text": null` became the word None, which then passed as a name:
+    "00:00-24:00 None" where an absent name shows the bare times."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    row = _measured_monday()
+    row.possible_values = [{"Value": 3, "Text": None}]
+
+    assert _readable_schedule(row)["DI"] == ["00:00-24:00"]
+
+
 def test_the_days_are_labelled_the_way_the_portal_labels_them():
     """1..6 is Monday to Saturday and 0 is Sunday, and the names come from
     the JSON rather than from a weekday table in here - which is what keeps
@@ -9523,6 +9534,24 @@ def test_a_dead_expert_batch_is_announced_once_per_outage(caplog):
 
 
 # --- upstream #146: a word in a cell that otherwise carries a unit --------
+
+
+def test_a_unitless_number_that_started_as_a_dash_still_gets_a_state_class():
+    """The empty unit means "a number without a unit", None means "text".
+    A unitless cell that read "--" on the first scrape after a start was
+    built as text, and the update took only units other than "" - so the
+    numbers that followed had no state class all session: no long-term
+    statistics, a timeline instead of a line."""
+    from homeassistant.components.sensor import SensorStateClass
+
+    row = Reading(value=None, unit=None, parameter_id="Code", platform="sensor")
+    sensor = _sensor_from_row("Code", row)
+    sensor.async_write_ha_state = lambda: None
+
+    row.value, row.unit = 1234, ""
+    sensor._handle_coordinator_update()
+
+    assert sensor.state_class == SensorStateClass.MEASUREMENT
 
 
 def test_an_hour_counter_is_shown_without_decimals():
