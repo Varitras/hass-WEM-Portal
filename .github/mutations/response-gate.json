@@ -1788,29 +1788,29 @@
   {
     "label": "login: the web login sends before asking the cooldown",
     "path": "custom_components/wemportal/transport.py",
-    "old": "        self.check_cooldown()\n        session = requests.Session()",
-    "new": "        session = requests.Session()",
+    "old": "        self.check_cooldown()\n        # Closed however",
+    "new": "        # Closed however",
     "tests": "a_login_is_not_attempted_during_a_cooldown"
   },
   {
     "label": "login: a refused login PAGE reported as a network problem",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                log_refusal(redact_url(login_url), initial_response)\n                raise self._refused_web_login(\n                    f\"the web login page {redact_url(login_url)}\",\n                    \"Access forbidden while loading the login page.\",\n                ) from exc\n            raise UnknownAuthError",
-    "new": "            raise UnknownAuthError",
+    "old": "                if initial_response is not None and initial_response.status_code == 403:\n                    log_refusal(redact_url(login_url), initial_response)\n                    raise self._refused_web_login(\n                        f\"the web login page {redact_url(login_url)}\",\n                        \"Access forbidden while loading the login page.\",\n                    ) from exc\n                raise UnknownAuthError",
+    "new": "                raise UnknownAuthError",
     "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
   },
   {
     "label": "login: any answered page taken as a wrong password",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            if WEB_LOGIN_FORM_MARKER in response.text:\n                raise AuthError",
-    "new": "            if True:\n                raise AuthError",
+    "old": "                if WEB_LOGIN_FORM_MARKER in response.text:\n                    raise AuthError",
+    "new": "                if True:\n                    raise AuthError",
     "tests": "a_page_that_is_neither_login_nor_session_is_not_a_wrong_password"
   },
   {
     "label": "login: maintenance checked only before the credentials go out",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            notice = maintenance_blocking(response.text)\n            if notice:\n                raise PortalMaintenanceError(notice)\n            if WEB_LOGIN_FORM_MARKER in response.text:",
-    "new": "            if WEB_LOGIN_FORM_MARKER in response.text:",
+    "old": "                notice = maintenance_blocking(response.text)\n                if notice:\n                    raise PortalMaintenanceError(notice)\n                if WEB_LOGIN_FORM_MARKER in response.text:",
+    "new": "                if WEB_LOGIN_FORM_MARKER in response.text:",
     "tests": "maintenance_starting_between_the_two_requests_is_recognised"
   },
   {
@@ -2208,8 +2208,8 @@
   {
     "label": "deadline: outliving the cycle it belongs to",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        finally:\n            self._deadline = None\n            self._api_lock.release()",
-    "new": "        finally:\n            self._api_lock.release()",
+    "old": "        finally:\n            self._deadline = None\n            self._relogin_failure = None\n",
+    "new": "        finally:\n            self._relogin_failure = None\n",
     "tests": "the_deadline_is_cleared_after_a_failing_poll"
   },
   {
@@ -4574,8 +4574,8 @@
   {
     "label": "web login grace: a working setup web login does not end the streak",
     "path": "custom_components/wemportal/transport.py",
-    "old": "                _LOGGER.debug(\"WEB login successful.\")\n                self._account_state.refused_web_logins = 0\n",
-    "new": "                _LOGGER.debug(\"WEB login successful.\")\n",
+    "old": "                    _LOGGER.debug(\"WEB login successful.\")\n                    self._account_state.refused_web_logins = 0\n",
+    "new": "                    _LOGGER.debug(\"WEB login successful.\")\n",
     "tests": "setup_web_login_that_worked_starts_the_count_again"
   },
   {
@@ -5606,5 +5606,47 @@
     "old": "    if failure is None and kept != [begin_day, end_day]:\n",
     "new": "    if kept != [begin_day, end_day]:\n",
     "tests": "read_back_that_fails_leaves_neither_date_asserted"
+  },
+  {
+    "label": "api login: a refusal by Status left outside the classifier again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                self._raise_login_failure(response, None)\n",
+    "new": "                raise AuthError(f\"Login failed: Server returned {response_data}\")\n",
+    "tests": "refused_with_http_200_is_classified_like_any_refusal"
+  },
+  {
+    "label": "api login: an HTTP-200 refusal not read as one",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if response.status_code in (200, 400):\n",
+    "new": "        if response.status_code == 400:\n",
+    "tests": "refused_with_http_200_is_classified_like_any_refusal"
+  },
+  {
+    "label": "web login: the check leaves its session open again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        with closing(requests.Session()) as session:\n",
+    "new": "        for session in (requests.Session(),):\n",
+    "tests": "web_login_check_closes_its_session"
+  },
+  {
+    "label": "relogin: a failure kept past the poll it happened in",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self._relogin_failure = None\n            self._api_lock.release()",
+    "new": "            self._api_lock.release()",
+    "tests": "relogin_that_failed_is_not_repeated_by_every_later_request"
+  },
+  {
+    "label": "relogin: a failed re-login tried again by every later call site",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if self._relogin_failure is not None:\n            raise self._relogin_failure\n",
+    "new": "",
+    "tests": "relogin_that_failed_is_not_repeated_by_every_later_request"
+  },
+  {
+    "label": "relogin: a failure outside a poll kept with nothing to clear it",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            if self.remaining_budget() is not None:\n                self._relogin_failure = login_failure\n",
+    "new": "            self._relogin_failure = login_failure\n",
+    "tests": "relogin_that_failed_outside_a_poll_does_not_block_the_next_request"
   }
 ]

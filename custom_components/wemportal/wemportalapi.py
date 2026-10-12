@@ -418,6 +418,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # service call has a user waiting on it and no coordinator timeout
         # behind it, so neither gets a deadline.
         self._deadline: float | None = None
+        # A re-login that failed during this poll; see _recover_or_raise.
+        self._relogin_failure: Exception | None = None
         # device_id -> when its values were last refreshed, for the staleness
         # check above. Monotonic because it measures a duration and never
         # appears in output; a restart starts empty, which is correct - there
@@ -818,6 +820,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             return self._fetch_data(enabled_devices)
         finally:
             self._deadline = None
+            self._relogin_failure = None
             self._api_lock.release()
 
     def remaining_budget(self) -> float | None:

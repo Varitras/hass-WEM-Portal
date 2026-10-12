@@ -15,6 +15,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Fewer logins, and no reauth prompt, when the portal is down.** The API
+  refuses a login in two ways, and only one of them looked for a
+  maintenance notice: the other counted downtime as a wrong password, and
+  three such cycles asked for credentials that were correct. When a login
+  in the middle of a cycle failed for another reason - a server error, a
+  timeout - every later request of that cycle logged in again; the cycle
+  now stops trying until the next one. The web login checked during setup
+  also closes its connection now.
 - **A date or holiday the portal did not keep is reported, not taken as
   set.** The portal accepts some dates and stores something else. The
   entities already showed the day it kept, but the action and the

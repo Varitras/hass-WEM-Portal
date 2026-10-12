@@ -86,7 +86,8 @@ LINE_BUDGETS = {
     # logger method under a name the log-call scan cannot see. And by 2 for
     # refusing a page with folded panels inside the scrape's try, where the
     # failure is counted - the check itself lives in scraper.py.
-    "wemportalapi.py": 2782,
+    # And by 3 for the poll's re-login failure, cleared with its deadline.
+    "wemportalapi.py": 2785,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
@@ -96,7 +97,12 @@ LINE_BUDGETS = {
     # And by 11 for saying who answered each of its four 403s, gateway or
     # portal - five of them the import that no longer fits one line, three
     # the login's, said before a maintenance wording can raise past it.
-    "transport.py": 932,
+    # And by 2 for sending the HTTP-200 refusal through the same classifier,
+    # and by 5 for closing the web check's session: the body moved under a
+    # `with`, and the formatter wrapped what no longer fit. And by 19 for
+    # keeping a failed mid-poll re-login for the rest of the poll, in its
+    # own method so _recover_or_raise keeps its complexity.
+    "transport.py": 958,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     # And by 12 for keeping a reused session only once it reached the

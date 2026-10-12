@@ -2740,6 +2740,70 @@ def _refused_relogin(*_args, **_kwargs):
     raise exceptions.AuthError("Login failed: Invalid username or password.")
 
 
+def test_a_relogin_that_failed_is_not_repeated_by_every_later_request(monkeypatch):
+    """The session ran out mid-cycle and the re-login met a 500 - not an
+    AuthError, so the call site's shield swallowed it. Every later request of
+    the cycle then went out on the dead session, collected its 401 and logged
+    in again: one login per call site against a portal that was failing.
+    The failure stands for the rest of the cycle; the next cycle tries."""
+    api = _api()
+    api.valid_login = True
+    sent, logins = [], []
+
+    def _send(*_args, **_kwargs):
+        sent.append(True)
+        return FakeResponse({}, status_code=401)
+
+    def _login():
+        logins.append(True)
+        api.valid_login = False
+        raise exceptions.ServerError("WemPortal server error: 500")
+
+    api._send = _send
+    api.api_login = _login
+    monkeypatch.setattr(transport.time, "sleep", lambda _seconds: None)
+    api._deadline = time.monotonic() + 600  # inside a poll cycle
+
+    for _call_site in range(2):
+        with pytest.raises(exceptions.ServerError):
+            api.make_api_call("https://www.wemportal.com/app/x")
+
+    assert (len(sent), len(logins)) == (1, 1), (
+        "a later request of the same cycle tried the failed login again"
+    )
+
+    api.valid_login = True
+    api._fetch_data = lambda *_args, **_kwargs: {}
+    api.fetch_data()
+    with pytest.raises(exceptions.ServerError):
+        api.make_api_call("https://www.wemportal.com/app/x")
+    assert len(logins) == 2, "the next cycle did not try to log in again"
+
+
+def test_a_relogin_that_failed_outside_a_poll_does_not_block_the_next_request(
+    monkeypatch,
+):
+    """A write has no poll around it, and nothing would clear a kept failure
+    until the next one: the following write would be refused unsent."""
+    api = _api()
+    api.valid_login = True
+    logins = []
+
+    def _login():
+        logins.append(True)
+        raise exceptions.ServerError("WemPortal server error: 500")
+
+    api._send = lambda *_args, **_kwargs: FakeResponse({}, status_code=401)
+    api.api_login = _login
+    monkeypatch.setattr(transport.time, "sleep", lambda _seconds: None)
+
+    for _write in range(2):
+        with pytest.raises(exceptions.ServerError):
+            api.make_api_call("https://www.wemportal.com/app/x")
+
+    assert len(logins) == 2, "a failure outside a poll refused the next request"
+
+
 def test_a_refused_relogin_is_not_reported_as_one_device_failing():
     """The AuthError has to reach the coordinator, and these handlers are
     what stands between.
@@ -3667,6 +3731,9 @@ def test_a_real_window_is_still_maintenance_and_not_a_wrong_password(monkeypatch
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             return FakeResponse_html(MAINTENANCE_PAGE)
 
@@ -3690,6 +3757,9 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             # A real login page by default. These tests are about the answer
             # to the POST, and an empty body here is not a shortcut but a
@@ -3708,6 +3778,36 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
     return _api()
 
 
+@pytest.mark.parametrize("outcome", ["logged in", "page not reached"])
+def test_the_web_login_check_closes_its_session(monkeypatch, outcome):
+    """The config flow's web check opened a session and dropped it; the
+    comment there said validation closes it, and only the API one was."""
+    closed = []
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_args, **_kwargs):
+            if outcome == "page not reached":
+                raise real_requests.exceptions.ConnectionError("reset")
+            return FakeResponse_html(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse_html(
+                f"<html><body><div id='{WEB_LOGGED_IN_MARKER}'></div></body></html>"
+            )
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+
+    with contextlib.suppress(exceptions.WemPortalError):
+        _api().web_login()
+
+    assert closed == [True], f"the session was left open ({outcome})"
+
+
 def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
     """The portal answering 200 with an empty body.
 
@@ -3721,6 +3821,9 @@ def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
 
     class _Session:
         cookies = {}
+
+        def close(self):
+            pass
 
         def get(self, *_args, **_kwargs):
             return FakeResponse_html("")
@@ -3751,6 +3854,9 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
 
     class _Session:
         cookies = {}
+
+        def close(self):
+            pass
 
         def get(self, *_args, **_kwargs):
             return _Refused("forbidden", status_code=403)
@@ -3784,6 +3890,9 @@ def test_a_page_without_a_login_form_gets_no_credentials(monkeypatch):
 
     class _Session:
         cookies = {}
+
+        def close(self):
+            pass
 
         def get(self, *_args, **_kwargs):
             # Parses fine. Has no form.
@@ -3833,6 +3942,9 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             raise AssertionError("a request was sent during the cooldown")
 
@@ -3875,6 +3987,9 @@ def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
 
     class _Session:
         cookies = {}
+
+        def close(self):
+            pass
 
         def get(self, *_args, **_kwargs):
             return FakeResponse_html(FORM_PAGE)
@@ -3933,6 +4048,39 @@ def test_a_maintenance_message_on_the_api_login_is_not_a_wrong_password():
     )
     with pytest.raises(exceptions.PortalMaintenanceError):
         api._raise_login_failure(maintenance, real_requests.exceptions.HTTPError())
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        (
+            {"Status": 8000, "Message": "WEM-Portal wird derzeit gewartet."},
+            exceptions.PortalMaintenanceError,
+        ),
+        (
+            {"Status": 1, "Message": "Benutzer oder Passwort falsch"},
+            exceptions.AuthError,
+        ),
+    ],
+    ids=["maintenance", "credentials"],
+)
+def test_a_login_refused_with_http_200_is_classified_like_any_refusal(
+    monkeypatch, answer, expected
+):
+    """The API refuses a login with HTTP 200 and a non-zero Status too, and
+    that branch skipped the classification the HTTP errors get: downtime
+    worded in the message became a wrong password - three cycles of it
+    asked for working credentials - and the whole answer went into the
+    error text."""
+    api = _api()
+    session = RecordingSession(post_json=answer)
+    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+
+    with pytest.raises(exceptions.WemPortalError) as excinfo:
+        api.api_login()
+
+    assert type(excinfo.value) is expected
+    assert "'Status'" not in str(excinfo.value), "the raw answer reached the message"
 
 
 def test_a_login_refused_with_a_maintenance_message_still_says_who_answered(
@@ -6308,6 +6456,9 @@ TRANSPORT_FIELDS = frozenset(
 # between cycles and finds it None either way - but "the transport was
 # rebuilt" is not a reason for a running cycle to gain more time, and having
 # it in TRANSPORT_FIELDS would say it was.
+# _relogin_failure follows _deadline: it says this poll's re-login failed,
+# and fetch_data clears it when the poll ends. A new connection mid-poll
+# is no reason for the rest of that poll to try the login again.
 # _last_device_read says when each device last returned values. Not transport:
 # replacing the connection does not make readings from half an hour ago any
 # fresher, and dropping it would restart the staleness clock on every
@@ -6331,6 +6482,7 @@ PRESERVED_FIELDS = frozenset(
         "_account_state",
         "_first_cycle_done",
         "_deadline",
+        "_relogin_failure",
         # Like _deadline, it belongs to the poll cycle in progress: which
         # burst that cycle has spent. A new connection does not un-spend it.
         "heavy_fetch_turns",
@@ -10792,11 +10944,17 @@ def test_a_setup_web_login_that_worked_starts_the_count_again(monkeypatch):
     class _RefusingSession:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             return _Refused("forbidden", status_code=403)
 
     class _WorkingSession:
         cookies = {}
+
+        def close(self):
+            pass
 
         def get(self, *_args, **_kwargs):
             return FakeResponse_html(NORMAL_LOGIN_PAGE)
