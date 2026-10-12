@@ -205,8 +205,8 @@
   {
     "label": "poll: an outage must not be counted against individual parameters",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                return",
-    "new": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                results = {}",
+    "old": "                _LOGGER.log(level, \"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                return",
+    "new": "                _LOGGER.log(level, \"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                results = {}",
     "tests": "failed_read_does_not_count"
   },
   {
@@ -808,15 +808,15 @@
   {
     "label": "auth: a refused re-login lost inside the schedule read",
     "path": "custom_components/wemportal/schedule.py",
-    "old": "        except AuthError:\n            # A refused login is not one programme failing",
-    "new": "        except ():\n            # A refused login is not one programme failing",
+    "old": "        except AuthError, ForbiddenError:\n            # A refused login or network",
+    "new": "        except ForbiddenError:\n            # A refused login or network",
     "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
   },
   {
     "label": "auth: a refused re-login lost around the schedule loop",
     "path": "custom_components/wemportal/schedule.py",
-    "old": "        except AuthError:\n            # The outer half of the same rule",
-    "new": "        except ():\n            # The outer half of the same rule",
+    "old": "        except AuthError, ForbiddenError:\n            # The outer half",
+    "new": "        except ForbiddenError:\n            # The outer half",
     "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
   },
   {
@@ -5648,5 +5648,47 @@
     "old": "            if self.remaining_budget() is not None:\n                self._relogin_failure = login_failure\n",
     "new": "            self._relogin_failure = login_failure\n",
     "tests": "relogin_that_failed_outside_a_poll_does_not_block_the_next_request"
+  },
+  {
+    "label": "schedule: a refusal swallowed inside the programme read",
+    "path": "custom_components/wemportal/schedule.py",
+    "old": "        except AuthError, ForbiddenError:\n            # A refused login or network",
+    "new": "        except AuthError:\n            # A refused login or network",
+    "tests": "refusal_is_not_walked_into_by_every_remaining_programme"
+  },
+  {
+    "label": "schedule: a refusal swallowed around the programme loop",
+    "path": "custom_components/wemportal/schedule.py",
+    "old": "        except AuthError, ForbiddenError:\n            # The outer half",
+    "new": "        except AuthError:\n            # The outer half",
+    "tests": "refusal_is_not_walked_into_by_every_remaining_programme"
+  },
+  {
+    "label": "schedule: a failing programme warned on every retry again",
+    "path": "custom_components/wemportal/schedule.py",
+    "old": "                logging.WARNING if new else logging.DEBUG,\n",
+    "new": "                logging.WARNING,\n",
+    "tests": "programme_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "schedule: a programme that reads again not said",
+    "path": "custom_components/wemportal/schedule.py",
+    "old": "            if failure_is_over(self._reported_failures, reported):\n",
+    "new": "            if False:\n",
+    "tests": "programme_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "expert poll: a failing read warned on every poll again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "                    if failure_is_new(self._reported_failures, \"read\", str(exc))\n",
+    "new": "                    if True\n",
+    "tests": "read_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "expert poll: a read that works again not said",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            if failure_is_over(self._reported_failures, \"read\"):\n",
+    "new": "            if False:\n",
+    "tests": "read_that_keeps_failing_is_announced_once"
   }
 ]

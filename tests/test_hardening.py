@@ -2699,6 +2699,63 @@ def test_the_deadline_is_not_swallowed_by_the_schedule_fetch():
         api._fetch_circuit_times("1234")
 
 
+def _schedule_api(*parameter_ids):
+    """Two programmes on one module, with recognition and throttle stubbed
+    past - the handler around the read is what these tests are about."""
+    api = _api()
+    api.data = {"1234": {}}
+    parameters = {parameter_id: {} for parameter_id in parameter_ids}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": parameters}}}
+    api._is_schedule_parameter = lambda *_args: True
+    api._schedule_is_due = lambda *_args: True
+    api._record_schedule_attempt = lambda *_args: None
+    return api
+
+
+def test_a_programme_that_keeps_failing_is_announced_once(caplog):
+    """Back-dated, a failing programme is retried every 15 minutes, and each
+    retry warned: two programmes made about 190 warnings a day for one
+    outage. The statistics beside it say it once and once when it heals."""
+    import logging
+
+    api = _schedule_api("p1")
+    module = api.modules["1234"][(0, 1)]
+    answers = iter([False, False, False, True])
+
+    def read(*_args):
+        if not next(answers):
+            raise exceptions.ServerError("Job konnte nicht abgeschlossen werden")
+        return True
+
+    api._read_one_schedule = read
+    with caplog.at_level(logging.DEBUG):
+        for _ in range(4):
+            api._read_and_record_one_schedule("1234", module, "p1")
+
+    warned = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warned) == 1, f"one outage was announced {len(warned)} times"
+    assert "read again" in caplog.text, "the recovery was never said"
+
+
+def test_a_refusal_is_not_walked_into_by_every_remaining_programme():
+    """A 403 on one programme was swallowed like any failure, so every
+    programme after it met the cooldown and warned on its own, and the
+    coordinator never heard the network is refused. The statistics path lets
+    it out for its handler; this one now does too."""
+    api = _schedule_api("p1", "p2")
+    asked = []
+
+    def refused(_device_id, _module, parameter_id):
+        asked.append(parameter_id)
+        raise exceptions.ForbiddenError("WemPortal forbidden error: 403")
+
+    api._read_one_schedule = refused
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api._fetch_circuit_times("1234")
+    assert asked == ["p1"], f"programmes after the refusal were tried: {asked}"
+
+
 def test_the_deadline_is_not_swallowed_by_the_statistics_fetch(monkeypatch):
     """The statistics path already lets ForbiddenError past its catch-all for
     the same reason. The deadline was not given the same treatment.

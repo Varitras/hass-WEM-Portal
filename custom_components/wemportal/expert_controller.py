@@ -138,6 +138,9 @@ class ExpertController:
         # from the per-id tally on purpose: a dead batch is not evidence
         # about any single id, but it is evidence about every VALUE.
         self._batch_failures = 0
+        # What the read is known to be failing with, so an outage is said
+        # once; see utils.failure_is_new.
+        self._reported_failures: dict[str, str] = {}
 
         self._data: Any = None
         self._hass: HomeAssistant | None = None
@@ -311,6 +314,9 @@ class ExpertController:
 
     async def poll(self, _now: Any = None) -> None:
         """One cycle: read every configured id in one session, apply, re-arm."""
+        # Here, not at the top: utils imports models, which imports this module.
+        from .utils import failure_is_new, failure_is_over
+
         try:
             entities = self.live_entities
             entityvalues = [entity.entityvalue for entity in entities]
@@ -372,10 +378,17 @@ class ExpertController:
                 # failed, a session that broke. Counted like a dead batch:
                 # the values are just as unconfirmed as when the portal
                 # answers and every id comes back empty.
-                _LOGGER.warning("Expert auto-poll read failed: %s", exc)
+                level = (
+                    logging.WARNING
+                    if failure_is_new(self._reported_failures, "read", str(exc))
+                    else logging.DEBUG
+                )
+                _LOGGER.log(level, "Expert auto-poll read failed: %s", exc)
                 self._register_batch_failure()
                 return
 
+            if failure_is_over(self._reported_failures, "read"):
+                _LOGGER.info("Expert auto-poll reads again.")
             self.apply_read(results)
         finally:
             # Always reschedule the next run (with fresh jitter), even if this

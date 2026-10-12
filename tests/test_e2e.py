@@ -2045,6 +2045,38 @@ async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypa
     assert raised_issues == [], "an outage produced a 'check your ID' issue"
 
 
+async def test_a_read_that_keeps_failing_is_announced_once(hass, monkeypatch, caplog):
+    """A login that stays broken warned on every hourly poll - 24 times a day
+    for one outage - although the log policy is once when it breaks and once
+    when it heals. The damping existed, on the path for a dead batch; this
+    one, where the read itself raises, was left out."""
+    import logging
+
+    reads = []
+
+    def reader(_ids):
+        reads.append(True)
+        if len(reads) <= 3:
+            raise RuntimeError("expert login keeps failing")
+        return {}
+
+    _entry, scheduled, _issues = await _auto_poll_entry(hass, monkeypatch, reader)
+    poll = scheduled[-1]
+
+    with caplog.at_level(logging.DEBUG):
+        for _ in range(4):
+            await poll(None)
+            await hass.async_block_till_done()
+
+    warned = [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.WARNING and "read failed" in record.getMessage()
+    ]
+    assert len(warned) == 1, f"one outage was announced {len(warned)} times"
+    assert "reads again" in caplog.text, "the recovery was never said"
+
+
 async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
     hass, monkeypatch
 ):
@@ -4251,10 +4283,11 @@ async def test_a_refused_poll_is_not_announced_a_second_time(hass, monkeypatch, 
     def refused(_ids):
         raise ForbiddenError("WEM Portal returned 403 for an expert request.")
 
-    _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, refused)
-    caplog.clear()
-
+    # From the setup on: the first refused poll runs there, and a repeat of
+    # the same failure is quiet anyway now - checked after it, a refusal
+    # handled like any failure would pass unseen.
     with caplog.at_level(logging.WARNING):
+        _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, refused)
         await scheduled[-1](None)
         await hass.async_block_till_done()
 

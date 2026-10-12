@@ -15,6 +15,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A lasting failure of a weekly programme or of the expert read is logged
+  once.** A programme the portal kept failing on was retried every 15
+  minutes with a warning each time - about 190 a day for two programmes -
+  and an expert login that stayed broken warned on every hourly poll. Both
+  now say it once, and once when it reads again. A refused network (403)
+  during the programme reads is no longer walked into by every remaining
+  programme.
 - **Fewer logins, and no reauth prompt, when the portal is down.** The API
   refuses a login in two ways, and only one of them looked for a
   maintenance notice: the other counted downtime as a wrong password, and
