@@ -5557,5 +5557,33 @@
     "old": "            SensorStateClass.TOTAL,\n        ):\n",
     "new": "        ):\n",
     "tests": "statistics_energy_counter_with_a_dash_is_not_reset"
+  },
+  {
+    "label": "scrape: a page with its panels folded together taken as the expert page",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            refuse_folded_panels(self._previous_scraper_keys, data)\n",
+    "new": "",
+    "tests": "every_panel_headed_info"
+  },
+  {
+    "label": "scrape: a renamed module taken for folded panels",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    if len(headings) >= len(headings_before):\n",
+    "new": "    if len(headings) > len(headings_before):\n",
+    "tests": "real_change_of_the_page_is_still_taken"
+  },
+  {
+    "label": "scrape: new labels taken for folded panels",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    if any(key.partition(\"-\")[2] not in labels_before for key in keys):\n        return\n",
+    "new": "",
+    "tests": "real_change_of_the_page_is_still_taken"
+  },
+  {
+    "label": "scrape: a module gone taken for folded panels",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    if not previous_keys or not set(keys) - previous_keys:\n",
+    "new": "    if not previous_keys:\n",
+    "tests": "real_change_of_the_page_is_still_taken"
   }
 ]

@@ -1274,7 +1274,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         # Function-local on purpose: the scraper pulls curl_cffi and lxml
         # (~140 ms, measured), and `api` mode never gets here.
-        from .scraper import WemPortalScraper
+        from .scraper import WemPortalScraper, refuse_folded_panels
 
         # Respect an active rate-limit cooldown for the scraping path too,
         # not just the API path - a 403 from either frontend means the
@@ -1306,6 +1306,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         try:
             # Attempt to run the scraping job and extract the first result
             data = self._scrape_with(scraper)
+            # In the try: a broken page counts as a failed scrape, never as rows.
+            refuse_folded_panels(self._previous_scraper_keys, data)
 
         except IndexError as exc:
             # Handle the case where the job result is not found

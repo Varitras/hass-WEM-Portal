@@ -28,6 +28,7 @@ from .exceptions import (
     PortalMaintenanceError,
     ServerError,
     WebLoginRefused,
+    WemPortalError,
 )
 from .models import Reading, account_state
 from .utils import (
@@ -94,6 +95,40 @@ def _panel_key(heading: str) -> str:
         .replace("/*+/*", "_")
         .replace(" ", "_")
         .casefold()
+    )
+
+
+def refuse_folded_panels(previous_keys: set[str] | None, page: dict[str, Any]) -> None:
+    """Refuse the expert page when its panel headings are broken.
+
+    The portal now and then sends every panel headed "Info": the same rows
+    under one heading, normal again a cycle later. Taken as a page, it
+    relabelled every row and left a full set of sensors behind for good.
+
+    Recognised by its shape rather than by how long it lasts: every label is
+    one the page already had, a key is new, and the rows sit under fewer
+    headings than before. A language switch changes the labels, a renamed
+    module keeps the number of headings, a module that goes away adds no key.
+
+    shortcut: the first scrape of a session has nothing to compare with, and
+    a broken page that keeps the number of headings passes; a log of one
+    would show the next shape.
+    """
+    keys = [key for key, row in page.items() if isinstance(row, Reading)]
+    if not previous_keys or not set(keys) - previous_keys:
+        return
+    labels_before = {key.partition("-")[2] for key in previous_keys}
+    if any(key.partition("-")[2] not in labels_before for key in keys):
+        return
+    headings = sorted({key.partition("-")[0] for key in keys})
+    headings_before = sorted({key.partition("-")[0] for key in previous_keys})
+    if len(headings) >= len(headings_before):
+        return
+    raise WemPortalError(
+        "The WEM Portal sent the expert page with its rows under fewer headings "
+        f"({', '.join(headings)} instead of {', '.join(headings_before)}), a "
+        "fault on the portal's side. This page is not used; the next one is "
+        "usually normal again."
     )
 
 

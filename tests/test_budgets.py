@@ -83,8 +83,10 @@ LINE_BUDGETS = {
     # And by 16 for its log calls naming devices by the shortened id only -
     # every one of them is a call the wrapping no longer fits on one line -
     # and by 5 for the offline line choosing its level instead of storing a
-    # logger method under a name the log-call scan cannot see.
-    "wemportalapi.py": 2780,
+    # logger method under a name the log-call scan cannot see. And by 2 for
+    # refusing a page with folded panels inside the scrape's try, where the
+    # failure is counted - the check itself lives in scraper.py.
+    "wemportalapi.py": 2782,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

@@ -15,6 +15,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A broken expert page no longer leaves a set of dead sensors behind.**
+  The portal now and then sends the expert page with every panel headed
+  "Info" instead of its module, and the next page is normal again. That one
+  page relabelled every web row: the sensors went unknown for a cycle, and
+  a full set of new sensors named "info ..." was created from it and stayed
+  unknown for good, one set each time it happened. Such a page is now
+  recognised - the same rows under fewer headings - and skipped like a
+  failed read. Sensors created by earlier occurrences can be removed in
+  Home Assistant's entity settings.
 - **The energy statistics count every day in full.** The statistics
   groups (heating, hot water, consumption ...) report one day's energy,
   but were published as a meter. Home Assistant starts a new cycle of a
