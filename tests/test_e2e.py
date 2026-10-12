@@ -67,18 +67,23 @@ BASE_OPTIONS = {
     CONF_MODE: "api",
 }
 
-# One device with one sensor data point, in the shape fetch_data() returns.
-FAKE_DATA = {
-    "1234": {
-        "Outside temperature": Reading(
-            value=12.5,
-            unit="°C",
-            platform="sensor",
-            friendly_name="Outside temperature",
-            parameter_id="P1",
-        )
+
+def _fake_data():
+    """One device with one sensor data point, in the shape fetch_data() returns.
+
+    Built per call: the coordinator publishes what the stub returns as its
+    live data, and tests write rows into it."""
+    return {
+        "1234": {
+            "Outside temperature": Reading(
+                value=12.5,
+                unit="°C",
+                platform="sensor",
+                friendly_name="Outside temperature",
+                parameter_id="P1",
+            )
+        }
     }
-}
 
 
 @pytest.fixture(autouse=True)
@@ -97,7 +102,7 @@ def _mock_portal(monkeypatch):
     the production types.
     """
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: _fake_data()
     )
     monkeypatch.setattr(WemPortalApi, "api_login", lambda self, *_args, **_kwargs: None)
     monkeypatch.setattr(WemPortalApi, "web_login", lambda self, *_args, **_kwargs: None)
@@ -145,6 +150,19 @@ async def _setup(hass, entry):
 
 
 # --- setup / unload ---------------------------------------------------
+
+
+def test_every_cycle_of_the_portal_stub_hands_out_its_own_rows():
+    """The stub handed out one module-level dict as the live coordinator data,
+    so rows a test wrote into it were there at the next test's setup - which
+    one depended on how the workers split the run."""
+    api = WemPortalApi(USER, "secret")
+    first = api.fetch_data()
+    first["1234"]["Late-Parameter"] = Reading(value=1.0, platform="sensor")
+
+    assert "Late-Parameter" not in api.fetch_data()["1234"], (
+        "a row written into one cycle's data reached the next"
+    )
 
 
 async def test_setup_creates_entities_and_devices(hass):
@@ -822,7 +840,7 @@ async def test_a_rate_limit_becomes_a_repair_issue_until_the_block_lapses(
 
     transport.reset_cooldowns_for_tests()
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: _fake_data()
     )
     await entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
@@ -856,7 +874,7 @@ async def test_a_403_a_sub_task_swallowed_still_raises_the_repair_issue(
         # Exactly what a swallowed 403 leaves behind: the backoff is set,
         # and the cycle returns data anyway.
         self._activate_cooldown("a test 403")
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", succeed_but_earn_a_403)
     await entry.runtime_data.coordinator.async_refresh()
@@ -873,7 +891,7 @@ async def test_a_403_a_sub_task_swallowed_still_raises_the_repair_issue(
     # because some later cycle happened to work.
     transport.reset_cooldowns_for_tests()
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: _fake_data()
     )
     await entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
@@ -900,7 +918,7 @@ async def test_a_successful_cycle_under_an_active_block_keeps_the_issue(
 
     def blocked_but_returning_data(self, *_args, **_kwargs):
         self._activate_cooldown("a test 403")
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", blocked_but_returning_data)
     await entry.runtime_data.coordinator.async_refresh()
@@ -908,7 +926,7 @@ async def test_a_successful_cycle_under_an_active_block_keeps_the_issue(
 
     # A second cycle that raises nothing at all, with the backoff still on.
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: _fake_data()
     )
     await entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
@@ -1355,10 +1373,8 @@ async def test_the_service_can_set_the_option_that_is_not_a_number(hass, monkeyp
 
 
 def _writeable_rows(number_row=None, select_row=None):
-    """FAKE_DATA plus one writeable row, in the mapper's own shape."""
-    import copy
-
-    data = copy.deepcopy(FAKE_DATA)
+    """_fake_data() plus one writeable row, in the mapper's own shape."""
+    data = _fake_data()
     if number_row is not None:
         data["1234"]["Heat pump-Komfort"] = number_row
     if select_row is not None:
@@ -1522,7 +1538,7 @@ async def test_diagnostics_carry_no_credentials_and_no_installation_ids(hass):
         CONF_EXPERT_MODULE_LIST: [{"value": EV_B, "label": "Heating"}],
     }
     entry = await _setup(hass, _entry(hass, options))
-    # A row keyed the way production keys its status rows. FAKE_DATA has no
+    # A row keyed the way production keys its status rows. _fake_data() has no
     # such key, so without this the report simply never contains one - and
     # the assertion below would pass while the aliasing did nothing. The
     # mutation run is what said so: breaking the row-key aliasing left the
@@ -1628,7 +1644,7 @@ async def test_first_refresh_does_not_filter_devices_away(hass, monkeypatch):
 
     def record(self, enabled_devices=None):
         seen.append(enabled_devices)
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", record)
 
@@ -1676,7 +1692,7 @@ async def test_a_disabled_device_is_filtered_out_on_the_first_cycle(hass, monkey
 
     def record(self, enabled_devices=None):
         seen.append(enabled_devices)
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", record)
     await coordinator._async_update_data()
@@ -1711,7 +1727,7 @@ async def test_the_persisted_scraper_id_survives_a_restart_in_the_device_filter(
 
     def record(self, enabled_devices=None):
         seen.append(enabled_devices)
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", record)
     await coordinator._async_update_data()
@@ -2873,7 +2889,7 @@ async def test_a_good_cycle_between_two_bad_ones_keeps_the_entities(hass, monkey
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
 
-    cycles = iter([ForbiddenError("blocked"), FAKE_DATA, ForbiddenError("blocked")])
+    cycles = iter([ForbiddenError("blocked"), _fake_data(), ForbiddenError("blocked")])
 
     def next_cycle(self, *_args, **_kwargs):
         outcome = next(cycles)
