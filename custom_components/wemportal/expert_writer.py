@@ -31,6 +31,7 @@ from .const import (
 )
 from .exceptions import (
     AuthError,
+    ExpertLevelNotReached,
     ExpertOperationAborted,
     ForbiddenError,
     ParameterWriteError,
@@ -693,9 +694,6 @@ class WemPortalExpertClient:
         # the old fixed pre-poll loop with a demand-driven one (early exit
         # as soon as the dropdown is populated). Updated as polls advance.
         self._nav_html: str | None = None
-        # The page the Fachmann submenu postback answered with; see
-        # _try_cached_session for why it is kept apart from _nav_html.
-        self._expert_level_html: str | None = None
 
     # ------------------------------------------------------------------
     def _check_gates(self):
@@ -848,14 +846,6 @@ class WemPortalExpertClient:
 
         try:
             self._establish_context()
-            # A reused session's submenu postback the portal no longer
-            # honours comes back HTTP 200 on the user level: kept, every read
-            # was empty and the next operation reused it again. Only here -
-            # after a fresh login there is nothing fresher to fall back to.
-            if not is_expert_view(self._expert_level_html or ""):
-                raise AuthError(
-                    "Expert client: the reused session stayed on the user level."
-                )
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
         except ForbiddenError, PortalMaintenanceError, ServerError:
             # All three are ANSWERS, not signs that the cached session went
@@ -874,8 +864,8 @@ class WemPortalExpertClient:
         except Exception as exc:  # noqa: BLE001
             # Broad, but the three answers that must NOT be retried are
             # re-raised above. What is left really is a stale session -
-            # AuthError, a dropped connection - and a fresh login is the
-            # right answer to those.
+            # AuthError, a dropped connection, a session the portal kept on
+            # the user level - and a fresh login is the right answer to those.
             # The age either way: the cap rests on one measurement, and these
             # two lines are how it is checked in operation.
             _LOGGER.debug(
@@ -1041,7 +1031,14 @@ class WemPortalExpertClient:
                 EXPERT_SUBMENU_CLIENTSTATE_FIELD: EXPERT_SUBMENU_CLIENTSTATE_VALUE,
             },
         )
-        self._expert_level_html = current_html
+        # Here, where the reused session and the fresh login both pass. A
+        # postback the portal does not honour stays on the user level with
+        # HTTP 200: reused, every read came back empty; after a fresh login
+        # too, and two such cycles emptied every expert value.
+        if not is_expert_view(current_html):
+            raise ExpertLevelNotReached(
+                "Expert client: logged in, but the portal stayed on the user level."
+            )
         # --- Fachmann security-code sub-sequence (retained safety net) ---
         # DISABLED by default (EXPERT_SKIP_SECURITY_CODE, at the top of THIS
         # file - const.py has never held it).

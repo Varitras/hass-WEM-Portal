@@ -284,7 +284,6 @@ def test_session_cache_round_trip_survives_a_new_client():
     )
     second._full_login = lambda: _fail("cached session must be reused")
     second._establish_context = lambda: restored.update(second.session.cookies)
-    second._expert_level_html = _expert_page()
 
     second._login()
 
@@ -324,7 +323,6 @@ def test_expert_session_is_reused_instead_of_logging_in():
     before = jar["saved_at"]
     client = _client_with_jar(jar)
     client._establish_context = lambda: None
-    client._expert_level_html = _expert_page()
 
     client._login()
 
@@ -376,6 +374,67 @@ def test_a_reused_expert_session_is_kept_only_on_the_fachmann_level(
 
     assert client._try_cached_session() is kept
     assert bool(jar.get("cookies")) is kept
+
+
+@pytest.mark.parametrize(
+    ("view", "reached"),
+    [("fachmann", True), ("user-level", False)],
+    ids=["fachmann", "user-level"],
+)
+def test_a_fresh_expert_login_left_on_the_user_level_fails(monkeypatch, view, reached):
+    """Only the reused session was checked, on the grounds that a fresh login
+    has nothing fresher to fall back to. So a fresh login left on the user
+    level went on: every read came back empty, two such cycles emptied every
+    expert value under a repair naming the parameters, not the cause - and
+    the session was cached for the next operation as if it had worked."""
+    from custom_components.wemportal import expert_writer
+    from custom_components.wemportal.exceptions import AuthError, WemPortalError
+
+    class _Answer:
+        status_code = 200
+
+        def __init__(self, text, url="https://www.wemportal.com/Web/Default.aspx"):
+            self.text = text
+            self.url = url
+
+    class _Portal:
+        cookies = {}
+
+        def get(self, url, *_args, **_kwargs):
+            return _Answer(
+                "<html><input id='__VIEWSTATE' name='__VIEWSTATE' value='vs'/>"
+                "<input id='__EVENTVALIDATION' name='__EVENTVALIDATION' value='ev'/>"
+                "</html>",
+                url,
+            )
+
+        def post(self, url, *_args, **_kwargs):
+            if "Login" in url:
+                return _Answer("<html><a id='ctl00_btnLogout'></a></html>")
+            return _Answer(
+                {"fachmann": _expert_page, "user-level": _user_view_page}[view]()
+            )
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(expert_writer.requests, "Session", lambda **_kwargs: _Portal())
+    monkeypatch.setattr(expert_writer.time, "sleep", lambda _seconds: None)
+    jar = {}
+    client = expert_writer.WemPortalExpertClient(
+        "user@example.org", "secret", cookie_jar=jar
+    )
+
+    if reached:
+        client._login()
+        assert jar.get("cookies") is not None, "a working session was not cached"
+        return
+    with pytest.raises(WemPortalError, match="user level") as excinfo:
+        client._login()
+    assert not isinstance(excinfo.value, AuthError), (
+        "the login just went through - the credentials are not the problem"
+    )
+    assert jar.get("cookies") is None, "a session on the user level was cached"
 
 
 def test_a_teardown_during_the_reused_session_stops_the_fresh_login(monkeypatch):
@@ -457,7 +516,6 @@ def test_the_session_of_the_last_hourly_poll_is_reused():
     attempts = []
     client._full_login = lambda: logins.append(True)
     client._establish_context = lambda: attempts.append(True)
-    client._expert_level_html = _expert_page()
 
     client._login()
 
@@ -486,7 +544,6 @@ def test_a_reuse_says_how_old_the_session_was(alive, caplog):
             raise AuthError("session not accepted")
 
     client._establish_context = establish
-    client._expert_level_html = _expert_page()
     client._save_session = lambda: None
     client.close = lambda: None
     caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")

@@ -5111,18 +5111,11 @@
     "tests": "maintenance_message_still_says_who_answered"
   },
   {
-    "label": "expert session: a reuse on the user level kept",
+    "label": "expert session: the user level taken for the Fachmann level",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            if not is_expert_view(self._expert_level_html or \"\"):\n",
-    "new": "            if False:\n",
-    "tests": "kept_only_on_the_fachmann_level"
-  },
-  {
-    "label": "expert session: the page the Fachmann postback got not kept for the check",
-    "path": "custom_components/wemportal/expert_writer.py",
-    "old": "        self._expert_level_html = current_html\n",
-    "new": "",
-    "tests": "kept_only_on_the_fachmann_level"
+    "old": "        if not is_expert_view(current_html):\n",
+    "new": "        if False:\n",
+    "tests": "kept_only_on_the_fachmann_level or fresh_expert_login_left_on_the_user_level_fails"
   },
   {
     "label": "expert page: the user view taken for the expert view",

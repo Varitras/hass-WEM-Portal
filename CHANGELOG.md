@@ -31,7 +31,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   shows the user view, which has a third of the rows. A reused session
   already noticed this and logged in again; a fresh login read the user
   view and left the other web sensors unknown for that cycle. It now counts
-  as a failed read.
+  as a failed read. The expert parameters had the same gap: after a fresh
+  login left on the user view every read came back empty, and after two
+  such cycles the values were cleared under a message naming the
+  parameters rather than the cause. The log now says the portal stayed on
+  the user view.
 - **The energy statistics count every day in full.** The statistics
   groups (heating, hot water, consumption ...) report one day's energy,
   but were published as a meter. Home Assistant starts a new cycle of a
