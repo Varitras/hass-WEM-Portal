@@ -68,12 +68,11 @@ rules:
   test-coverage:
     status: todo
     comment: >-
-      The rule asks for above 95% over the integration; measured is 90% with
-      branch coverage. The largest gap is expert_writer.py
-      at 68%, the web-scraping client for expert parameters - its error
-      branches need portal HTML nobody has captured yet. number.py and
-      select.py are at 82%, web_protocol.py at 84%; most other modules are
-      above 90%.
+      The rule asks for above 95% over the integration, and the measured
+      branch coverage is below that. The largest gap is expert_writer.py,
+      the web-scraping client for expert parameters - its error branches need
+      portal HTML nobody has captured yet. No figures here on purpose: they
+      went stale with the next round of tests.
 
   # Gold
   devices: done

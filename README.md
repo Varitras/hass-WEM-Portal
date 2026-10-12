@@ -63,7 +63,8 @@ other models are welcome - especially if something is missing or looks wrong.
   states and faults on the same dashboards and in the same history as the rest
   of the house.
 - **Being told about a fault** - the *Has Errors* and *Error Messages*
-  sensors below are made for a notification automation.
+  sensors below are made for a notification automation (in `api` and `both`
+  mode).
 - **Energy Dashboard** - consumption and heat output as energy totals.
 - **Acting on the house** - setpoints as number entities, so an automation can
   raise the hot-water temperature while there is solar surplus, or a holiday
@@ -80,7 +81,9 @@ other models are welcome - especially if something is missing or looks wrong.
 ### Diagnostic entities
 
 Three per device, and they stay available even when everything else goes away —
-they are what explains why:
+they are what explains why. They come from the mobile API's device status, so
+they exist in `api` and `both` mode; the web page has no such read, and in
+`web` mode there are none:
 
 - **Connection Status** — what the portal says about reaching the device.
 - **Has Errors** — `Yes` / `No`. When a status read fails, this reports
