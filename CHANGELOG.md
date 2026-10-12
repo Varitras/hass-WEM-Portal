@@ -23,10 +23,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   are now called "WEM Portal" ("WEM Portal 2" and so on for further
   accounts); one still named after its login is renamed once, a name you
   gave it yourself stays. Entity ids already created keep their names.
-- **Device ids appear in the log only shortened.** The id of your
-  installation stood in full in many log lines - in the "Can't find"
-  warning, the holiday confirmation and most debug lines. They now show
-  its last two digits, as the error messages meant for sharing already did.
+- **The integration's own log lines show device ids only shortened.** The
+  id of your installation stood in full in many of them - in the "Can't
+  find" warning, the holiday confirmation and most debug lines. They now
+  show its last two digits, as the error messages meant for sharing already
+  did. Entity ids still contain the full id, because the devices are named
+  after it, and Home Assistant's own log lines name entities by those ids.
 - **No more "Can't find" warnings for entities a merge takes down.** In
   `both` mode, when the first web login after a restart is refused, the
   readings the web page also shows get entities of their own from the API
