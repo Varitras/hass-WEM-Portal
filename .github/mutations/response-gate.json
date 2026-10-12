@@ -379,13 +379,6 @@
     "tests": "missing_job_id"
   },
   {
-    "label": "recovery: tearing down a connection in use must be noticed",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        if not self._api_lock.acquire(timeout=API_LOCK_TIMEOUT_SECONDS):\n            # Best-effort by design.",
-    "new": "        if False:\n            # Best-effort by design.",
-    "tests": "recovery_leaves_a_busy_connection_alone"
-  },
-  {
     "label": "recovery: the lock must be given back afterwards",
     "path": "custom_components/wemportal/transport.py",
     "old": "        try:\n            self._reset_transport_locked()\n        finally:\n            self._api_lock.release()",
@@ -3599,20 +3592,6 @@
     "tests": "write_publishes_every_value_it_sent"
   },
   {
-    "label": "expert lock: released by the awaiter instead of the worker again",
-    "path": "custom_components/wemportal/expert_controller.py",
-    "old": "    if lock is not None and not lock.acquire(blocking=False):",
-    "new": "    if False:",
-    "tests": "expert_lock_belongs_to_the_worker_not_to_its_awaiter"
-  },
-  {
-    "label": "expert service: lock released by the awaiter instead of the worker",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "            if lock is not None and not lock.acquire(blocking=False):",
-    "new": "            if False:",
-    "tests": "a_cancelled_service_write_keeps_the_lock_until_the_worker_ends"
-  },
-  {
     "label": "storage: the save no longer holding the lock the unload waits on",
     "path": "custom_components/wemportal/coordinator.py",
     "old": "        async with self._store_writes:\n            await store.async_save(data)",
@@ -5872,5 +5851,40 @@
     "old": "            and not is_statistics_row(device_id, key)\n",
     "new": "",
     "tests": "offline_at_the_upgrade_keeps_its_claim"
+  },
+  {
+    "label": "expert poll: lock released by the awaiter instead of the worker",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            try:\n                results = await self._hass.async_add_executor_job(\n                    read_expert_values,\n                    self._entry,\n                    current_api,\n                    entityvalues,\n                    self._raise_if_stopped,\n                    self.lock,\n                )\n",
+    "new": "            if not self.lock.acquire(blocking=False):\n                return\n            try:\n                try:\n                    results = await self._hass.async_add_executor_job(\n                        read_expert_values,\n                        self._entry,\n                        current_api,\n                        entityvalues,\n                        self._raise_if_stopped,\n                        None,\n                    )\n                finally:\n                    self.lock.release()\n",
+    "tests": "keeps_the_lock_until_the_worker_ends"
+  },
+  {
+    "label": "expert entity write: lock released by the awaiter instead of the worker",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "            lock = self._expert_lock()\n            if lock is not None and not lock.acquire(blocking=False):\n                raise HomeAssistantError(\n                    translation_domain=DOMAIN,\n                    translation_key=\"expert_operation_in_progress\",\n                )\n            try:\n                client = WemPortalExpertClient(\n                    self._config_entry.data.get(CONF_USERNAME),\n                    self._config_entry.data.get(CONF_PASSWORD),\n                    cooldown_check=self._cooldown_check(),\n                    cooldown_activate=self._cooldown_activate(),\n                    cookie_jar=self._cookie_jar(),\n                    abort_check=_raise_if_gone,\n                    **client_options,\n                )\n                return client.write_parameter(self._entityvalue, value)\n            finally:\n                if lock is not None:\n                    lock.release()\n\n        try:\n            state = await self.hass.async_add_executor_job(_do_write)\n",
+    "new": "            lock = None\n            if lock is not None and not lock.acquire(blocking=False):\n                raise HomeAssistantError(\n                    translation_domain=DOMAIN,\n                    translation_key=\"expert_operation_in_progress\",\n                )\n            try:\n                client = WemPortalExpertClient(\n                    self._config_entry.data.get(CONF_USERNAME),\n                    self._config_entry.data.get(CONF_PASSWORD),\n                    cooldown_check=self._cooldown_check(),\n                    cooldown_activate=self._cooldown_activate(),\n                    cookie_jar=self._cookie_jar(),\n                    abort_check=_raise_if_gone,\n                    **client_options,\n                )\n                return client.write_parameter(self._entityvalue, value)\n            finally:\n                if lock is not None:\n                    lock.release()\n\n        awaiter_lock = self._expert_lock()\n        if not awaiter_lock.acquire(blocking=False):\n            raise HomeAssistantError(\"busy\")\n        try:\n            try:\n                state = await self.hass.async_add_executor_job(_do_write)\n            finally:\n                awaiter_lock.release()\n",
+    "tests": "keeps_the_lock_until_the_worker_ends"
+  },
+  {
+    "label": "expert service: lock released by the awaiter instead of the worker",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if lock is not None and not lock.acquire(blocking=False):\n                raise ExpertBusy(\n                    \"another expert operation is already in progress for this \"\n                    \"account; try again shortly.\"\n                )\n            try:\n                client = expert_client(\n                    target_entry.data.get(CONF_USERNAME),\n                    target_entry.data.get(CONF_PASSWORD),\n                    cooldown_check=target_api.check_expert_cooldown,\n                    cooldown_activate=target_api.activate_expert_cooldown,\n                    cookie_jar=target_api.expert_cookies,\n                    abort_check=_raise_if_unloaded,\n                    **expert_client_options(target_entry.options),\n                )\n                return client.write_parameter(entityvalue, value)\n            finally:\n                if lock is not None:\n                    lock.release()\n\n        # Run synchronously and RAISE on failure so an automation calling this\n        # action can tell whether the write actually succeeded (HA action-\n        # exception guidance), instead of the old fire-and-forget that always\n        # reported success. An expert write takes ~5-15s (login + Fachmann\n        # navigation + write + verify) - acceptable for an explicit, on-demand\n        # action. Only a SHORTENED entityvalue appears in any user-facing text.\n        try:\n            state = await hass.async_add_executor_job(_do_write)\n",
+    "new": "            if False:\n                raise ExpertBusy(\n                    \"another expert operation is already in progress for this \"\n                    \"account; try again shortly.\"\n                )\n            try:\n                client = expert_client(\n                    target_entry.data.get(CONF_USERNAME),\n                    target_entry.data.get(CONF_PASSWORD),\n                    cooldown_check=target_api.check_expert_cooldown,\n                    cooldown_activate=target_api.activate_expert_cooldown,\n                    cookie_jar=target_api.expert_cookies,\n                    abort_check=_raise_if_unloaded,\n                    **expert_client_options(target_entry.options),\n                )\n                return client.write_parameter(entityvalue, value)\n            finally:\n                pass\n\n        # Run synchronously and RAISE on failure so an automation calling this\n        # action can tell whether the write actually succeeded (HA action-\n        # exception guidance), instead of the old fire-and-forget that always\n        # reported success. An expert write takes ~5-15s (login + Fachmann\n        # navigation + write + verify) - acceptable for an explicit, on-demand\n        # action. Only a SHORTENED entityvalue appears in any user-facing text.\n        if lock is not None and not lock.acquire(blocking=False):\n            raise HomeAssistantError(\"busy\")\n        try:\n            try:\n                state = await hass.async_add_executor_job(_do_write)\n            finally:\n                if lock is not None:\n                    lock.release()\n",
+    "tests": "keeps_the_lock_until_the_worker_ends"
+  },
+  {
+    "label": "expert discovery: lock released by the awaiter instead of the worker",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "        def run_locked():\n            if not lock.acquire(blocking=False):\n                raise ExpertBusy(\"another expert operation is running for this account\")\n            try:\n                return work(*arguments)\n            finally:\n                lock.release()\n\n        try:\n            return await self.hass.async_add_executor_job(run_locked)\n",
+    "new": "        def run_locked():\n            return work(*arguments)\n\n        if not lock.acquire(blocking=False):\n            raise ExpertBusy(\"busy\")\n        try:\n            try:\n                return await self.hass.async_add_executor_job(run_locked)\n            finally:\n                lock.release()\n",
+    "tests": "keeps_the_lock_until_the_worker_ends"
+  },
+  {
+    "label": "recovery: tearing down a connection in use must be noticed",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if not self._api_lock.acquire(timeout=API_LOCK_TIMEOUT_SECONDS):\n            # Best-effort by design. The recovery must not raise into the\n            # coordinator's error handling, and a connection still in use is\n            # exactly when tearing it down does the damage. The next failed\n            # cycle tries again.\n            _LOGGER.warning(\n                \"Not resetting the connection: it is still in use by another \"\n                \"operation. Trying again on the next failed cycle.\"\n            )\n            return\n        try:\n            self._reset_transport_locked()\n        finally:\n            self._api_lock.release()\n",
+    "new": "        self._reset_transport_locked()\n",
+    "tests": "recovery_leaves_a_busy_connection_alone"
   }
 ]

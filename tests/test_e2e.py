@@ -2291,46 +2291,87 @@ async def test_a_poll_skips_when_another_expert_operation_holds_the_lock(
     lock.release()
 
 
-async def test_a_cancelled_service_write_keeps_the_lock_until_the_worker_ends(
-    hass, monkeypatch
-):
-    """The service took the account lock on the event loop and released it in
-    the awaiting coroutine's finally. Cancel that await - a reload, an unload,
-    or shutdown cancelling the automation that called the action - and the
-    finally freed the lock while the executor thread was still driving the
-    portal, so the next expert operation could open a second session beside
-    it. The worker must own the lock, the way the entity write and the
-    auto-poll already do, so a cancellation cannot free it early.
-    """
-    entry = await _setup(hass, _entry(hass, _expert_options()))
-    lock = entry.runtime_data.expert.lock
+def _service_write(hass, entry, monkeypatch, in_portal):
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient,
+        "write_parameter",
+        lambda self, entityvalue, value, **_kwargs: in_portal(),
+    )
+    return hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_EXPERT_PARAMETER,
+        {"entityvalue": EV_A, "value": 30},
+        blocking=True,
+    )
 
-    in_write = threading.Event()
+
+def _entity_write(hass, entry, monkeypatch, in_portal):
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient,
+        "write_parameter",
+        lambda self, entityvalue, value, **_kwargs: in_portal(),
+    )
+    return entry.runtime_data.expert.entities[0].async_set_native_value(30)
+
+
+def _auto_poll(hass, entry, monkeypatch, in_portal):
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "read_many", lambda self, ids: in_portal()
+    )
+    return entry.runtime_data.expert.poll()
+
+
+def _discovery(hass, entry, monkeypatch, in_portal):
+    from custom_components.wemportal.options_flow import WemportalOptionsFlow
+
+    flow = WemportalOptionsFlow()
+    flow.hass = hass
+    monkeypatch.setattr(type(flow), "config_entry", property(lambda self: entry))
+    return flow._run_expert(in_portal)
+
+
+@pytest.mark.parametrize(
+    "start", [_service_write, _entity_write, _auto_poll, _discovery]
+)
+async def test_a_cancelled_expert_operation_keeps_the_lock_until_the_worker_ends(
+    hass, monkeypatch, start
+):
+    """A lock taken on the event loop and released in the awaiting coroutine's
+    finally is freed by a cancellation - a reload, an unload, or shutdown
+    cancelling the automation - while the executor thread is still driving the
+    portal, so the next expert operation opens a second session beside it.
+    The service path was fixed and tested alone; the entity write, the
+    auto-poll and discovery could have gone back to that shape unnoticed.
+    """
+    from custom_components.wemportal import expert_controller
+    from custom_components.wemportal.const import CONF_EXPERT_AUTO_POLL
+
+    # No real timer: the poll case calls poll() itself, beside the one armed.
+    monkeypatch.setattr(
+        expert_controller, "async_call_later", lambda *_args: lambda: None
+    )
+    # The auto-poll armed for every path, so all four meet the same entry; its
+    # first read is waited out, or it could hold the lock the case needs.
+    entry = await _setup(
+        hass, _entry(hass, {**_expert_options(), CONF_EXPERT_AUTO_POLL: True})
+    )
+    if entry.runtime_data.expert._initial_task is not None:
+        await entry.runtime_data.expert._initial_task
+    lock = entry.runtime_data.expert.lock
+    reached = threading.Event()
     release = threading.Event()
 
-    def blocking_write(self, entityvalue, value, **_kwargs):
-        in_write.set()
+    def in_portal(*_args):
+        reached.set()
         release.wait(timeout=5)
-        return expert_writer.ExpertParameterState(value, [10.0, 20.0, 30.0], {})
+        return {}
 
-    monkeypatch.setattr(
-        expert_writer.WemPortalExpertClient, "write_parameter", blocking_write
-    )
-
-    task = asyncio.create_task(
-        hass.services.async_call(
-            DOMAIN,
-            SERVICE_SET_EXPERT_PARAMETER,
-            {"entityvalue": EV_A, "value": 30},
-            blocking=True,
-        )
-    )
-    # Let the worker reach the portal write, where it holds the lock.
+    task = asyncio.create_task(start(hass, entry, monkeypatch, in_portal))
     for _ in range(500):
-        if in_write.is_set():
+        if reached.is_set():
             break
         await asyncio.sleep(0.01)
-    assert in_write.is_set(), "the worker never reached the portal write"
+    assert reached.is_set(), "the worker never reached the portal"
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

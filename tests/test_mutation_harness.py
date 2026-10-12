@@ -346,6 +346,24 @@ def test_the_shipped_plan_still_matches_the_code():
         )
 
 
+def test_no_two_cases_make_the_same_mutation():
+    """A second label on the same edit claims a second invariant is guarded
+    while the same code change is tested twice - one plan case was added for
+    the awaiter shape of the expert lock and was the poll's case again."""
+    plan = json.loads(
+        (SCRIPT.parent.parent / "mutations" / "response-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    seen: dict[tuple[str, str, str], str] = {}
+    for case in plan:
+        edit = (case["path"], case["old"], case["new"])
+        assert edit not in seen, (
+            f"{case['label']!r} makes the same edit as {seen[edit]!r}"
+        )
+        seen[edit] = case["label"]
+
+
 @pytest.mark.parametrize(
     ("code", "reason"),
     [(2, "interrupted"), (3, "internal error"), (4, "usage error")],
