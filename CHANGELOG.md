@@ -38,6 +38,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   own that the portal's device list does not name. After two failed cycles
   the list was read again without it: every web sensor went unknown and
   warned about its missing reading until the next scrape.
+- **An expert parameter configured twice in different capitals gets one
+  entity.** The options form has treated `3A7F...` and `3a7f...` as one id
+  since 1.12, but options saved before that still built two entities, and
+  the hourly read asked the portal for the same parameter twice.
 - **Units and merges follow one rule in every mode.**
   - A unitless number kept its empty unit in `both` mode but lost it in
     `api` mode, so it had long-term statistics in one and not the other -

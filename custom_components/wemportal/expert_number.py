@@ -33,7 +33,7 @@ from .exceptions import (
     ValueNotOffered,
     WemPortalError,
 )
-from .expert_options import entityvalue_digest
+from .expert_options import canonical_entityvalue, entityvalue_digest
 from .migration import ENTRY_TITLE
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,7 +49,9 @@ def create_expert_number_entities(config_entry):
     one for any other caller.
 
     Entities are built from the ten generic slots (name + entityvalue id).
-    Empty slots are skipped; duplicate entityvalues are de-duplicated.
+    Empty slots are skipped; duplicate entityvalues are de-duplicated the way
+    the options form compares them, case-blind - options saved before that
+    check can still hold one id in two spellings. The first one stays.
     """
 
     if not config_entry.options.get(CONF_EXPERT_WRITE, False):
@@ -69,9 +71,9 @@ def create_expert_number_entities(config_entry):
     entities = []
     seen = set()
     for name, entityvalue in configured_slots:
-        if entityvalue in seen:
+        if canonical_entityvalue(entityvalue) in seen:
             continue
-        seen.add(entityvalue)
+        seen.add(canonical_entityvalue(entityvalue))
         entities.append(WemPortalExpertNumber(config_entry, name, entityvalue))
     return entities
 

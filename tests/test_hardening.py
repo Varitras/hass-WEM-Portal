@@ -859,6 +859,39 @@ def test_a_missing_entity_class_fails_loud_instead_of_dropping_configured_slots(
         expert_number.create_expert_number_entities(entry)
 
 
+@pytest.mark.parametrize(
+    ("first", "second"), [("3A7F", "3a7f"), ("3a7f", "3A7F")], ids=["upper", "lower"]
+)
+def test_one_expert_id_in_two_spellings_builds_one_entity(monkeypatch, first, second):
+    """The options form compares ids case-blind since 1.12; options saved
+    before that can hold one id in two slots, and the entity builder still
+    compared verbatim - two entities, and the auto-poll read the same dialog
+    twice. The first configured spelling is the one kept."""
+    from custom_components.wemportal import expert_number
+    from custom_components.wemportal.const import (
+        CONF_EXPERT_SLOT_ID_TEMPLATE,
+        CONF_EXPERT_WRITE,
+    )
+
+    built = []
+    monkeypatch.setattr(
+        expert_number,
+        "WemPortalExpertNumber",
+        lambda _entry, name, entityvalue: built.append((name, entityvalue)),
+    )
+    entry = types.SimpleNamespace(
+        options={
+            CONF_EXPERT_WRITE: True,
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: first + "0" * 32,
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 2: second + "0" * 32,
+        }
+    )
+
+    expert_number.create_expert_number_entities(entry)
+
+    assert built == [("expert_parameter_1", first + "0" * 32)], built
+
+
 def test_building_an_expert_entity_does_not_import_the_client(monkeypatch):
     """Constructing the entity must not pull in expert_writer.
 

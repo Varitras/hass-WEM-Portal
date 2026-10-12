@@ -5942,5 +5942,12 @@
     "old": "            new_data.setdefault(str(self.scraper_device_id), scraper_rows)\n",
     "new": "            pass\n",
     "tests": "keeps_the_scrapers_own_device"
+  },
+  {
+    "label": "expert entities: one id in two spellings builds two again",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        if canonical_entityvalue(entityvalue) in seen:\n",
+    "new": "        if entityvalue in seen:\n",
+    "tests": "two_spellings_builds_one_entity"
   }
 ]
