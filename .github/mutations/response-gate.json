@@ -1200,7 +1200,7 @@
   {
     "label": "reuse: logging in although the reused page worked must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                    if panels is not None and is_expert_view(reused_html):",
+    "old": "                    if panels is not None:",
     "new": "                    if False:",
     "tests": "reused_session_that_worked_does_not_log_in"
   },
@@ -5125,11 +5125,11 @@
     "tests": "kept_only_on_the_fachmann_level"
   },
   {
-    "label": "reuse: the user view taken for the expert view",
+    "label": "expert page: the user view taken for the expert view",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                    if panels is not None and is_expert_view(reused_html):",
-    "new": "                    if panels is not None:",
-    "tests": "on_the_user_view_logs_in_fresh"
+    "old": "        if not is_expert_view(r_expert.text):\n            return None\n",
+    "new": "",
+    "tests": "user_view_is_not_handed_back_as_the_expert_page or fresh_login_that_lands_on_the_user_view_fails"
   },
   {
     "label": "expert view: the user view's key taken for the Fachmann level",

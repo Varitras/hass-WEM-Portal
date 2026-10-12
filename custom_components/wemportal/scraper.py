@@ -344,7 +344,8 @@ class WemPortalScraper:
             The HTML of the Expert page on success, or None if the current
             session is not (or no longer) authenticated - e.g. because we
             got redirected back to the login page, or the expected
-            ASP.NET form fields are missing from the response. None is
+            ASP.NET form fields are missing from the response - or if the
+            answer is not the Fachmann level at all. None is
             used (instead of raising) here because "session no longer
             valid" is an expected, recoverable condition for the fast
             path's caller, not necessarily a hard error.
@@ -416,6 +417,12 @@ class WemPortalScraper:
         # password and fed the re-authentication counter, where three outages
         # in a row could ask the user to re-enter working credentials. It also
         # stops the reuse path from answering a 500 with two more requests.
+        #
+        # A postback the portal does not honour lands on the user view: HTTP
+        # 200, panels and a third of the rows. Only the reuse path checked
+        # for it, and the fresh login published that third as the page.
+        if not is_expert_view(r_expert.text):
+            return None
         return r_expert.text
 
     def scrape(self) -> list[dict[str, Any]]:
@@ -475,9 +482,7 @@ class WemPortalScraper:
                     panels = self.parse_expert_page(
                         reused_html, source="the reused session", required=False
                     )
-                    # The user view has panels too, a third of the readings:
-                    # taken for the expert view, the rest went to unknown.
-                    if panels is not None and is_expert_view(reused_html):
+                    if panels is not None:
                         _LOGGER.debug(
                             "Reused existing WEM Portal web session (skipped full login)."
                         )
@@ -592,13 +597,14 @@ class WemPortalScraper:
         # 3+4. GET Default.aspx and select the "Expert" tab
         expert_html = self._load_expert_page()
         if expert_html is None:
-            # NOT an AuthError, whichever of its two meanings this is. The
+            # NOT an AuthError, whichever of its three meanings this is. The
             # login succeeded a few lines up, so the credentials are the one
             # thing that has just been proven. _load_expert_page answers None
-            # both for "the session is no longer valid" and for "the page
-            # came back without its form state"; before a login that
-            # ambiguity is harmless, because the caller's answer to both is
-            # to log in fresh, and here there is no fresher login to try.
+            # for "the session is no longer valid", for "the page came back
+            # without its form state" and for "the page is the user view";
+            # before a login that ambiguity is harmless, because the caller's
+            # answer to all three is to log in fresh, and here there is no
+            # fresher login to try.
             raise ServerError(
                 "Logged in, but the WEM Portal main page did not come back "
                 "with the expert view on it. This is a portal-side problem, "

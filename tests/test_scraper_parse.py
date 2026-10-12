@@ -797,7 +797,7 @@ def test_an_expert_page_carrying_an_announcement_still_comes_back():
     page = (
         "<html><body><div class='offlinecontent'>Wartungsarbeiten zwischen "
         "17:00 und 20:00 Uhr</div><a id='ctl00_btnLogout'></a>expert data"
-        "</body></html>"
+        f"{_view_state(223)}</body></html>"
     )
     scraper = _reuse_scraper(_ReuseResponse(page))
 
@@ -806,7 +806,9 @@ def test_an_expert_page_carrying_an_announcement_still_comes_back():
 
 def test_a_healthy_expert_page_still_comes_back():
     """The guards must not swallow the normal case."""
-    scraper = _reuse_scraper(_ReuseResponse("<html><body>expert data</body></html>"))
+    scraper = _reuse_scraper(
+        _ReuseResponse(f"<html><body>expert data{_view_state(223)}</body></html>")
+    )
 
     assert "expert data" in scraper._load_expert_page()
 
@@ -946,21 +948,63 @@ def test_only_the_fachmann_page_is_the_expert_view():
     assert not is_expert_view("")
 
 
-def test_a_reused_session_on_the_user_view_logs_in_fresh(scraper):
-    """The main page a session lands on after a login is the user view. A
-    reuse whose Expert-tab postback is not honoured gets that page back -
-    with panels, so it passed, and the scrape published a third of its
-    readings while the rest went to unknown."""
-    from custom_components.wemportal.exceptions import ServerError
+def test_the_user_view_is_not_handed_back_as_the_expert_page():
+    """The main page a session lands on after a login is the user view. An
+    Expert-tab postback the portal does not honour gets that page back - with
+    panels, so it passed, and the scrape published a third of its readings
+    while the rest went to unknown. "Not reached" is None, which the reuse
+    path answers with a fresh login."""
+    scraper = _reuse_scraper(_ReuseResponse(_user_view_page()))
 
-    _with_cached_session(scraper, _user_view_page())
-
-    with pytest.raises(ServerError) as excinfo:
-        scraper.scrape()
-
-    assert "login page" in str(excinfo.value), (
+    assert scraper._load_expert_page() is None, (
         "the user view was taken as the expert view"
     )
+
+
+class _FreshLoginPortal:
+    """A full login that goes through, then answers the Expert-tab postback
+    with `expert_tab_answer`."""
+
+    def __init__(self, expert_tab_answer):
+        self._expert_tab_answer = expert_tab_answer
+        self.cookies = {}
+
+    def get(self, url, *_args, **_kwargs):
+        form = (
+            "<html><body><input id='__VIEWSTATE' value='vs'/>"
+            "<input id='__EVENTVALIDATION' value='ev'/></body></html>"
+        )
+        return _ReuseResponse(form, url=url)
+
+    def post(self, url, *_args, **_kwargs):
+        if "Login" in url:
+            return _ReuseResponse("<html><a id='ctl00_btnLogout'></a></html>")
+        return _ReuseResponse(self._expert_tab_answer)
+
+
+@pytest.mark.parametrize(
+    ("answer", "reached"),
+    [(_expert_page, True), (_user_view_page, False)],
+    ids=["fachmann", "user-view"],
+)
+def test_a_fresh_login_that_lands_on_the_user_view_fails(monkeypatch, answer, reached):
+    """The reuse path checked the view and logged in fresh; the fresh login,
+    which has nothing fresher to try, took the user view as it came and
+    published a third of the readings as the whole page. It is a failed
+    scrape instead."""
+    from custom_components.wemportal.exceptions import ServerError
+
+    monkeypatch.setattr(
+        "custom_components.wemportal.scraper.time.sleep", lambda _seconds: None
+    )
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _FreshLoginPortal(answer())
+
+    if reached:
+        assert scraper.scrape()[0], "the expert page was not used"
+        return
+    with pytest.raises(ServerError, match="expert view"):
+        scraper.scrape()
 
 
 def test_a_reused_session_that_worked_does_not_log_in(scraper):

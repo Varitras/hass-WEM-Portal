@@ -133,9 +133,9 @@ COMPLEXITY_BUDGETS = {
     # guard and a busy handler. Extracting it would be the pass-through helper
     # this file's header warns against.
     "__init__.py::_async_register_expert_service": 28,
-    # 23 since a reused page must also be the expert view, not the user
-    # view with its own panels.
-    "scraper.py::WemPortalScraper.scrape": 23,
+    # Back to 22: whether a page is the expert view is now answered once, by
+    # _load_expert_page, for the reused session and the fresh login alike.
+    "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,
     # 19 before the AuthError shield in front of its catch-all, which is
     # exactly the one branch.

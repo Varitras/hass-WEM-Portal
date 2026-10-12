@@ -26,6 +26,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   Home Assistant's entity settings. The warning about relabelled rows also
   said such sensors came "on a later cycle"; they are created right away,
   and it now says so.
+- **A fresh web login no longer reads the user view as the expert page.**
+  When the portal does not switch to the expert page after a login, it
+  shows the user view, which has a third of the rows. A reused session
+  already noticed this and logged in again; a fresh login read the user
+  view and left the other web sensors unknown for that cycle. It now counts
+  as a failed read.
 - **The energy statistics count every day in full.** The statistics
   groups (heating, hot water, consumption ...) report one day's energy,
   but were published as a meter. Home Assistant starts a new cycle of a
