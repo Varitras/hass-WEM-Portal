@@ -5949,5 +5949,12 @@
     "old": "        if canonical_entityvalue(entityvalue) in seen:\n",
     "new": "        if entityvalue in seen:\n",
     "tests": "two_spellings_builds_one_entity"
+  },
+  {
+    "label": "statistics: an offline installation asked every fifteen minutes again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "            and self.data[str(device_id)].get(\"ConnectionStatus\") in (None, 0)\n",
+    "new": "",
+    "tests": "offline_installation_are_not_asked_for"
   }
 ]

@@ -202,10 +202,15 @@ class WemPortalStatistics:
         # by str, callers may pass ints. Scraper-only devices (e.g. the "0000"
         # placeholder) have no API statistics; they are skipped so
         # int("0000")=0 isn't sent to the portal.
+        # A device the status read found offline is not asked either: the
+        # portal answers it with 5001, which counted as a failed cycle and
+        # brought the read back every fifteen minutes instead of hourly.
         return [
             str(device_id)
             for device_id in target_devices
-            if str(device_id) in self.data and str(device_id) in (self.modules or {})
+            if str(device_id) in self.data
+            and str(device_id) in (self.modules or {})
+            and self.data[str(device_id)].get("ConnectionStatus") in (None, 0)
         ]
 
     def _statistics_group_name(self, group: dict[str, Any]) -> str:

@@ -38,6 +38,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   own that the portal's device list does not name. After two failed cycles
   the list was read again without it: every web sensor went unknown and
   warned about its missing reading until the next scrape.
+- **An offline installation is no longer asked for its statistics.** The
+  portal answers it with "offline", which counted as a failed read: with
+  every device offline, the statistics were asked for again every 15
+  minutes instead of hourly, for an installation that could not answer.
 - **An expert parameter configured twice in different capitals gets one
   entity.** The options form has treated `3A7F...` and `3a7f...` as one id
   since 1.12, but options saved before that still built two entities, and

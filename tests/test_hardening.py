@@ -552,6 +552,24 @@ def test_a_statistics_refresh_that_lists_no_groups_as_null_is_not_an_error(caplo
     assert not complaints, f"a device with nothing to report was an error: {complaints}"
 
 
+def test_the_statistics_of_an_offline_installation_are_not_asked_for():
+    """The portal answers an offline installation with status 5001, and the
+    cycle counted that as a failure: with every device offline the read was
+    back-dated and asked again every fifteen minutes instead of hourly - two
+    requests each time, for an installation that could not answer."""
+    api = _api()
+    api.data = {"1234": {"ConnectionStatus": 50}}
+    api.modules = {"1234": {}}
+    asked = []
+    api.make_api_call = lambda *_args, **_kwargs: (
+        asked.append(1) or FakeResponse({"GroupTypeDescriptions": None})
+    )
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert asked == [], f"{len(asked)} statistics requests for an offline device"
+
+
 def _statistics_api_with_groups(groups, read_answer):
     """An api whose refresh lists `groups` and whose group reads go through
     `read_answer(group_id)` - returning a payload or raising."""
