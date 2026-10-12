@@ -133,6 +133,25 @@ def _entity_that_can_actually_write(cls, **overrides):
     return entity, reached_the_portal
 
 
+def test_a_control_writes_to_the_module_its_row_now_has():
+    """The row key is "<module name>-<parameter>" and carries no address, so a
+    module that comes back at a new index after the module list was read
+    again keeps its key - and the entity went on writing to the index it was
+    built with. Whatever module sits there now got the value. The address is
+    the current row's, as the holiday service already reads it."""
+    entity, reached_the_portal = _entity_that_can_actually_write(WemPortalNumber)
+    entity.coordinator.data["1234"]["Pump"] = replace(
+        entity.coordinator.data["1234"]["Pump"], module_index=2, module_type=1
+    )
+
+    _run(entity.async_write_parameter, 21.0)
+
+    sent = reached_the_portal[0]
+    assert (sent.args[2], sent.args[3]) == (2, 1), (
+        f"the write went to the module the entity was built with: {sent.args}"
+    )
+
+
 def test_a_control_writes_while_its_reading_is_there():
     """The control case for the test below - without it, a refusal proves
     nothing about the reason for the refusal."""

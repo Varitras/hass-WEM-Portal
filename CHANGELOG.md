@@ -15,6 +15,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A setting is written to the module it belongs to now.** A control took
+  its module's address when it was created. A module that came back at a
+  different position after the module list was read again kept its name
+  - and the control wrote to whatever module now sat at the old position.
+  Controls, dates and their read-back use the current address.
 - **Units and merges follow one rule in every mode.**
   - A unitless number kept its empty unit in `both` mode but lost it in
     `api` mode, so it had long-term statistics in one and not the other -

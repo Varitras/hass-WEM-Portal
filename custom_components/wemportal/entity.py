@@ -2,6 +2,7 @@
 
 import logging
 from functools import partial
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
@@ -170,10 +171,6 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         # Home Assistant derives from the device class.
         if entity_data.icon:
             self._attr_icon = entity_data.icon
-        # Only the writeable platforms use these, but the write path below is
-        # shared, so the address of the parameter is too.
-        self._module_index = entity_data.module_index
-        self._module_type = entity_data.module_type
         # What this entity was built as. The re-discovery can reclassify a
         # parameter, and the listener then builds an entity of the new
         # platform for the same row - so "the row is still there" stopped
@@ -214,8 +211,7 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
                     self.coordinator.api.change_value,
                     self._device_id,
                     self._parameter_id,
-                    self._module_index,
-                    self._module_type,
+                    *self._module_address,
                     value,
                     together_with=together_with,
                 )
@@ -247,6 +243,18 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         row = self._coordinator_row()
         if row is not None:
             row.value = None
+
+    @property
+    def _module_address(self) -> tuple[Any, Any]:
+        """Where this parameter lives on the portal: the module of its row as
+        it is NOW. The row key names the module, not its index, so a module
+        back at a new index after the module list was read again kept its
+        key - and an address taken at construction sent the write to
+        whatever module sits at the old one."""
+        row = self._coordinator_row()
+        if row is None:
+            return None, None
+        return row.module_index, row.module_type
 
     def _coordinator_row(self) -> Reading | None:
         """This parameter's row in the coordinator's data, or None.

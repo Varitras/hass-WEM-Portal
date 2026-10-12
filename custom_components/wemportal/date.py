@@ -110,8 +110,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         """
         return date_companions(
             self.coordinator.api.data.get(self._device_id, {}),
-            self._module_index,
-            self._module_type,
+            *self._module_address,
             self._data_key,
         )
 
@@ -146,7 +145,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         failure = await self.hass.async_add_executor_job(
             self.coordinator.api.reread_device_values,
             self._device_id,
-            (self._module_index, self._module_type),
+            self._module_address,
             (self._parameter_id,),
         )
         if failure is not None:
