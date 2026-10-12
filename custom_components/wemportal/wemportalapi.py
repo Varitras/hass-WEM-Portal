@@ -243,6 +243,11 @@ def _report_missing_job_id(device_id: str, reported: set[str]) -> None:
     )
 
 
+def _description_key(device_id: str, values: dict[str, Any]) -> str:
+    """Which module a reported description failure is about."""
+    return f"description:{device_id}:{values.get('Index')}:{values.get('Type')}"
+
+
 class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
     """Wrapper class for Weishaupt WEM Portal"""
 
@@ -380,6 +385,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # Used to keep track of the number of times the spider consecutively fails
         self.spider_retry_count = retry_count
         self.last_scraping_update = last_update
+        # When the backoff last moved a step; see _count_down_scrape_backoff.
+        self._backoff_stepped_at: float | None = None
 
     def _init_runtime_state(self) -> None:
         """State that always starts empty: the HTTP transport, the
@@ -481,6 +488,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         self.spider_retry_count += 1
         self.spider_wait_interval = self.spider_retry_count
+        self._backoff_stepped_at = time.monotonic()
         if self.spider_retry_count == SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE:
             self._forget_scraped_values()
 
@@ -968,9 +976,24 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         return waited + TICK_TOLERANCE_SECONDS >= self.scan_interval_api.total_seconds()
 
     def _count_down_scrape_backoff(self) -> None:
-        """One cycle closer to the next scrape attempt."""
-        if self.spider_wait_interval > 0:
-            self.spider_wait_interval -= 1
+        """One web interval closer to the next scrape attempt.
+
+        In web intervals, not ticks: `both` mode ticks at the shorter
+        interval, and counting those retried a failing scrape more often
+        than a working one runs.
+        """
+        if self.spider_wait_interval <= 0:
+            return
+        now = time.monotonic()
+        stepped_at = self._backoff_stepped_at
+        interval = self.scan_interval.total_seconds()
+        too_soon = stepped_at is not None and (
+            now - stepped_at + SCRAPE_TICK_TOLERANCE_SECONDS < interval
+        )
+        if too_soon:
+            return
+        self._backoff_stepped_at = now
+        self.spider_wait_interval -= 1
 
     def _scrape_and_merge(self) -> None:
         """Scrape once and merge the result. The timestamp moves only after
@@ -1791,6 +1814,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         # cache, so a refusal that was never cleared would outlive the
         # restart that fixed it.
         modules[device_id][key].pop("description_refused", None)
+        self._reported_failures.pop(_description_key(device_id, values), None)
 
     def _discover_device_parameters(self, device_id: str) -> None:
         """Read every module description of one device that is due."""
@@ -1850,8 +1874,11 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         refused_for_the_account = session_gone or isinstance(
             exc, (AuthError, ForbiddenError)
         )
-        if refused_for_the_account or "parameters" not in values:
+        if refused_for_the_account:
             raise exc
+        if "parameters" not in values:
+            self._wait_for_a_first_description(device_id, values, exc)
+            return
         # An empty list is a known answer too; what the portal said about the
         # module stands, only the timestamp moves.
         self._note_undescribed_module(
@@ -1860,6 +1887,34 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             str(exc),
             unsupported=values.get("description_refused", False),
         )
+
+    def _wait_for_a_first_description(
+        self, device_id: str, values: dict[str, Any], exc: WemPortalError
+    ) -> None:
+        """A module never described, whose description failed: asked again next
+        cycle while the described ones are read, or the cycle fails when there
+        is nothing to read at all.
+
+        It raised whatever else was described, out of discovery before the
+        device loop - so one new module the portal failed took every entity
+        of the account down, for as long as the portal kept failing it.
+        """
+        if not any(
+            "parameters" in module
+            for modules in (self.modules or {}).values()
+            for module in modules.values()
+        ):
+            raise exc
+        if failure_is_new(
+            self._reported_failures, _description_key(device_id, values), str(exc)
+        ):
+            _LOGGER.warning(
+                "Module %s of device %s could not be described (%s). The other "
+                "modules are read; it is asked again next cycle.",
+                values.get("Name"),
+                short_device_id(device_id),
+                exc,
+            )
 
     def _parameters_can_be_read(
         self, device_id: str, enabled_devices: list[str] | None
@@ -2294,6 +2349,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # the one that clears what it cannot vouch for and still lets the
             # parameters have their chance.
             raw_status = status_response["ConnectionStatus"]
+            if raw_status is None:  # sent as null: says as little as missing
+                raise KeyError("ConnectionStatus")
             status_map = {0: "online", 7: "wrong_secret", 8: "busy", 50: "offline"}
             conn_status = status_map.get(raw_status, "unknown")
 

@@ -87,8 +87,12 @@ LINE_BUDGETS = {
     # refusing a page with folded panels inside the scrape's try, where the
     # failure is counted - the check itself lives in scraper.py.
     # And by 3 for the poll's re-login failure, cleared with its deadline.
-    # And by 1 for keeping the web repair to `both` mode.
-    "wemportalapi.py": 2786,
+    # And by 1 for keeping the web repair to `both` mode. And by 57 for the
+    # cycle class: a null status read as missing, a new module the portal
+    # fails skipped while the described ones are read, and the scrape
+    # backoff counted in web intervals. The discovery half (~400 lines) is
+    # the cohesive part to move out; that is the owner's call.
+    "wemportalapi.py": 2843,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

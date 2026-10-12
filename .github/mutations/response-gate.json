@@ -4791,22 +4791,22 @@
   {
     "label": "discovery: a failed refresh of a working list fails the cycle again",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
-    "new": "        if True:\n            raise exc\n",
+    "old": "        if refused_for_the_account:\n            raise exc\n        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
+    "new": "        raise exc\n        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
     "tests": "re_read_the_portal_fails_keeps_the_cycle_and_the_list"
   },
   {
     "label": "discovery: a refused account shrugged off as one module",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
-    "new": "        if \"parameters\" not in values:\n            raise exc\n",
+    "old": "        if refused_for_the_account:\n            raise exc\n",
+    "new": "        if False:\n            raise exc\n",
     "tests": "re_read_refused_for_the_account_still_stops_the_cycle"
   },
   {
     "label": "discovery: a list still missing shrugged off",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
-    "new": "        if refused_for_the_account:\n            raise exc\n",
+    "old": "        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
+    "new": "        if \"parameters\" not in values:\n            return\n",
     "tests": "missing_list_the_portal_fails_still_fails_the_cycle"
   },
   {
@@ -4840,8 +4840,8 @@
   {
     "label": "discovery: an empty list's failed refresh fails the cycle again",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
-    "new": "        if refused_for_the_account or not values.get(\"parameters\"):\n            raise exc\n",
+    "old": "        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
+    "new": "        if not values.get(\"parameters\"):\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
     "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
   },
   {
@@ -5725,5 +5725,40 @@
     "old": "            if len(matches) == 1:\n                return matches[0]\n",
     "new": "            if matches:\n                return matches[0]\n",
     "tests": "not_shown_as_its_neighbour or close_to_two_options_is_not_guessed"
+  },
+  {
+    "label": "discovery: one new module the portal fails takes every device down again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not any(\n            \"parameters\" in module\n",
+    "new": "        if True or not any(\n            \"parameters\" in module\n",
+    "tests": "new_module_the_portal_fails_does_not_stop_the_described_ones"
+  },
+  {
+    "label": "device status: a null status read as the device being away",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                raise KeyError(\"ConnectionStatus\")\n",
+    "new": "                pass\n",
+    "tests": "without_a_status_is_a_failed_read"
+  },
+  {
+    "label": "web login: a login let through leaves the refusal streak standing",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        self._account_state.refused_web_logins = 0\n\n        # Wait a moment\n",
+    "new": "\n        # Wait a moment\n",
+    "tests": "login_that_went_through_ends_the_refusal_streak"
+  },
+  {
+    "label": "scrape backoff: the failure starts no step clock",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.spider_wait_interval = self.spider_retry_count\n        self._backoff_stepped_at = time.monotonic()\n",
+    "new": "        self.spider_wait_interval = self.spider_retry_count\n",
+    "tests": "waits_web_intervals_not_api_ticks"
+  },
+  {
+    "label": "scrape backoff: counted in ticks again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if too_soon:\n            return\n",
+    "new": "",
+    "tests": "waits_web_intervals_not_api_ticks"
   }
 ]

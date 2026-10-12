@@ -5244,8 +5244,14 @@ def test_a_returning_device_becomes_eligible_for_parameter_discovery():
     assert api.data["1234"]["ConnectionStatus"] == 0, "the discovery gate stayed stale"
 
 
-def test_a_status_answer_without_a_status_is_a_failed_read(caplog):
-    """An answer that does not say is not an answer that says "unknown".
+@pytest.mark.parametrize(
+    "answer",
+    [{}, {"ConnectionStatus": None, "Errors": None}],
+    ids=["field missing", "field null"],
+)
+def test_a_status_answer_without_a_status_is_a_failed_read(caplog, answer):
+    """An answer that does not say is not an answer that says "unknown" -
+    whether the field is missing or sent as null, which this portal does.
 
     `.get("ConnectionStatus", -1)` turned a payload with the field missing
     into the "unknown" state - which this method reports as a SUCCESSFUL read
@@ -5271,7 +5277,7 @@ def test_a_status_answer_without_a_status_is_a_failed_read(caplog):
         }
     }
     api.modules = {"1234": {}}
-    api.make_api_call = lambda *_args, **_kwargs: FakeResponse({})
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(answer)
 
     # info, not warning: an unreadable status is the device becoming
     # unavailable, which Home Assistant's rule puts at info level - said once
@@ -6260,6 +6266,31 @@ def test_one_failed_scrape_does_not_throw_the_readings_away():
     assert api.data["0000"]["pump-flow"].value == 1.0
 
 
+def test_a_failed_scrape_waits_web_intervals_not_api_ticks(monkeypatch):
+    """`both` mode ticks at the shorter interval - the API's 5 minutes beside
+    a 30-minute scrape - and the backoff counted those ticks: a failing
+    scrape was retried after 5, then 10, 15 minutes, about twice as often
+    as a working one. The backoff waits whole web intervals."""
+    from datetime import timedelta
+
+    now = [1000.0]
+    monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: now[0])
+    api = _api(config={"mode": "both"})
+    api.scan_interval = timedelta(minutes=30)
+
+    api._register_scrape_failure()
+    for _tick in range(5):  # 25 minutes of five-minute ticks
+        now[0] += 300
+        api._count_down_scrape_backoff()
+        assert api.spider_wait_interval == 1, (
+            f"the scrape was due again after {(now[0] - 1000) / 60:.0f} minutes"
+        )
+
+    now[0] += 300
+    api._count_down_scrape_backoff()
+    assert api.spider_wait_interval == 0, "the backoff never ran out"
+
+
 def test_a_successful_scrape_clears_the_backoff():
     """The counters must come back down, or one hiccup would slow the
     scraper for the rest of the session."""
@@ -6590,6 +6621,9 @@ PRESERVED_FIELDS = frozenset(
         "_last_circuit_times_fetch",
         "expert_cookies",
         "spider_wait_interval",
+        # The step clock of that backoff: dropped, a recovery would hand
+        # the failing scrape its next attempt on the very next tick.
+        "_backoff_stepped_at",
         "spider_retry_count",
         "last_scraping_update",
         # Same rule as the scrape backoff above: a recovery runs after the
@@ -8274,6 +8308,33 @@ def test_a_missing_list_the_portal_fails_still_fails_the_cycle():
 
     with pytest.raises(exceptions.WemPortalError):
         api.get_parameters()
+
+
+@pytest.mark.parametrize("failure", [500, "timeout"])
+def test_a_new_module_the_portal_fails_does_not_stop_the_described_ones(
+    monkeypatch, failure
+):
+    """A module without a list yet - a fresh install, or one Device/Read just
+    added - whose description fails raised out of discovery before the device
+    loop, so no device was read at all: every entity of the account went
+    unavailable for as long as the portal failed that one module. With a
+    described module to read, it is skipped this cycle and asked again on
+    the next; with none, the cycle still fails (the test above)."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
+    error = (
+        _portal_error(500)
+        if failure == 500
+        else exceptions.WemPortalError("Could not reach the WEM Portal: timeout")
+    )
+    api, _calls = _discovery_api([error])
+    api.modules["1234"][(1, 1)] = {"Index": 1, "Type": 1, "Name": "New module"}
+    api.modules["1234"][(0, 1)]["parameters_fetched_at"] = time.time()
+
+    api.get_parameters()
+
+    assert "parameters" not in api.modules["1234"][(1, 1)], (
+        "the failure was booked as an empty description"
+    )
 
 
 def test_a_failed_re_read_is_not_retried_on_the_very_next_cycle():

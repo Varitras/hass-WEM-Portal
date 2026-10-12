@@ -15,6 +15,19 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **One part of the portal failing no longer stops the rest.**
+  - A module the portal had not described yet - on a new installation, or
+    one just added - whose description kept failing stopped every reading
+    of the account. It is now asked again next cycle while the described
+    modules are read.
+  - A device status sent with the status as null stopped the readings of
+    that device and its discovery; it is treated as unreadable, like a
+    missing one, and the readings go ahead.
+  - In `both` mode a failing scrape was retried about twice as often as a
+    working one runs; it now waits whole web intervals.
+  - A web login the portal let through now ends a streak of refused ones,
+    even when the page after it fails - so a single refusal hours later no
+    longer pauses every request for 15 minutes.
 - **Values shown as they are, or as unknown - not as a neighbour.**
   - A select whose current setting is not in its option list yet showed
     the nearest spelling - "Party 4 h" as "Party 3 h". A different number
