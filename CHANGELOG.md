@@ -33,6 +33,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
     start after the upgrade, the other could take over an old entity that
     both answer to, with its history. Old ids are now renamed once every
     device has answered.
+- **Web sensors of an installation that began in `web` mode stay readable
+  after a connection reset.** Their readings sit under a device of their
+  own that the portal's device list does not name. After two failed cycles
+  the list was read again without it: every web sensor went unknown and
+  warned about its missing reading until the next scrape.
 - **Units and merges follow one rule in every mode.**
   - A unitless number kept its empty unit in `both` mode but lost it in
     `api` mode, so it had long-term statistics in one and not the other -

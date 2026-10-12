@@ -231,6 +231,41 @@ def test_a_device_list_refresh_keeps_the_readings_of_a_device_it_still_names():
     assert api.data["1234"]["ConnectionStatus"] == 0
 
 
+def test_a_device_list_refresh_keeps_the_scrapers_own_device():
+    """The sibling the test above missed: an install that started in `web`
+    mode files its scraped rows under a placeholder device the device list
+    never names. A refresh after a transport reset dropped all of them, and
+    every web sensor warned that its reading was gone until the next scrape."""
+    from custom_components.wemportal.wemportalapi import SCRAPER_FALLBACK_DEVICE_ID
+
+    api = _api(cached_modules=CACHED_MODULES)
+    api.scraper_device_id = SCRAPER_FALLBACK_DEVICE_ID
+    api.data = {
+        "1234": {"ConnectionStatus": 0},
+        SCRAPER_FALLBACK_DEVICE_ID: {
+            "heat_pump-outside": Reading(value=11.5, parameter_id="heat_pump-outside")
+        },
+    }
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {
+            "Devices": [
+                {
+                    "ID": 1234,
+                    "ConnectionStatus": 0,
+                    "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}],
+                }
+            ]
+        }
+    )
+
+    api.get_devices()
+
+    scraped = api.data.get(SCRAPER_FALLBACK_DEVICE_ID, {}).get("heat_pump-outside")
+    assert scraped is not None and scraped.value == 11.5, (
+        "the scraper's own device was dropped by a refresh of the device list"
+    )
+
+
 def test_a_device_list_where_no_row_is_usable_is_reported_not_adopted():
     """Skipping a bad row is right; skipping every row and calling it an
     empty account is not.

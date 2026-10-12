@@ -5935,5 +5935,12 @@
     "old": "    if begin.entry.entry_id != end.entry.entry_id:\n",
     "new": "    if False:\n",
     "tests": "holiday_across_two_accounts_is_refused"
+  },
+  {
+    "label": "devices: a list refresh drops the scraper's own device again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            new_data.setdefault(str(self.scraper_device_id), scraper_rows)\n",
+    "new": "            pass\n",
+    "tests": "keeps_the_scrapers_own_device"
   }
 ]

@@ -1517,6 +1517,13 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 "row(s) and none of them was readable - keeping what was "
                 "there rather than reporting an empty account."
             )
+        # After the guard, which counts only the devices the portal names. The
+        # scraper's own device is one it never names - the placeholder of an
+        # install that began in `web` mode - and dropping it here blanked every
+        # web row until the next scrape, after each transport reset.
+        scraper_rows = previously_known_readings.get(str(self.scraper_device_id))
+        if self.scraper_device_id and scraper_rows is not None:
+            new_data.setdefault(str(self.scraper_device_id), scraper_rows)
 
         self.modules = new_modules
         self.data = new_data

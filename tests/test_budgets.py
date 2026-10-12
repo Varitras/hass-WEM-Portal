@@ -94,7 +94,9 @@ LINE_BUDGETS = {
     # the cohesive part to move out; that is the owner's call.
     # And by 16 for one answer to "which rows does the value read own",
     # shared by both ageing passes.
-    "wemportalapi.py": 2859,
+    # And by 7 for carrying the scraper's own device across a refresh of the
+    # device list, which is where that list is rebuilt.
+    "wemportalapi.py": 2866,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
