@@ -5690,5 +5690,12 @@
     "old": "            if failure_is_over(self._reported_failures, \"read\"):\n",
     "new": "            if False:\n",
     "tests": "read_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "web repair: raised in web mode with its both-mode text",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if self.mode != \"both\":\n",
+    "new": "        if self.mode == \"api\":\n",
+    "tests": "web_report_is_for_both_mode_only"
   }
 ]

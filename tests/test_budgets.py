@@ -87,7 +87,8 @@ LINE_BUDGETS = {
     # refusing a page with folded panels inside the scrape's try, where the
     # failure is counted - the check itself lives in scraper.py.
     # And by 3 for the poll's re-login failure, cleared with its deadline.
-    "wemportalapi.py": 2785,
+    # And by 1 for keeping the web repair to `both` mode.
+    "wemportalapi.py": 2786,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

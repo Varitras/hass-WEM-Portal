@@ -1321,6 +1321,19 @@ def integration_forget_if_last(hass, config_entry):
     coordinator.forget_account_state_if_last_entry(hass, config_entry)
 
 
+def test_the_web_report_is_for_both_mode_only():
+    """Its text says the API half keeps delivering. In pure `web` mode there is
+    no API half: the failed scrape is the failed cycle, every entity is
+    unavailable, and the repair told the user the opposite. That case already
+    reaches the user as the failed cycle it is."""
+    api = _api(config={"mode": "web"}, scraper_device_id="0000")
+    api.spider_retry_count = wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
+
+    assert api.web_scrape_is_failing(None) is False, (
+        "a repair about the API half was raised where there is none"
+    )
+
+
 def test_a_disabled_scraper_device_does_not_keep_the_web_report_standing():
     """The report says the web half has stopped delivering. A device the user
     switched off is not delivering either, and that is not a fault.

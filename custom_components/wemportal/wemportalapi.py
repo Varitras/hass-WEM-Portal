@@ -633,7 +633,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         filter, the report stood for as long as the user left the device off,
         with no action available that would clear it.
         """
-        if self.mode == "api":
+        # The repair speaks of an API half, which `web` mode does not have.
+        if self.mode != "both":
             return False
         if not self._scraper_enabled(enabled_devices):
             return False

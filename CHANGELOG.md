@@ -15,6 +15,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **No "web access is not working" repair in pure `web` mode.** Its text
+  says the API half keeps delivering, which `web` mode does not have; there
+  a failed read already shows as unavailable entities.
 - **A lasting failure of a weekly programme or of the expert read is logged
   once.** A programme the portal kept failing on was retried every 15
   minutes with a warning each time - about 190 a day for two programmes -
