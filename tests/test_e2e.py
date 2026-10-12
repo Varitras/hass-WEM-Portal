@@ -2291,6 +2291,61 @@ async def test_a_poll_skips_when_another_expert_operation_holds_the_lock(
     lock.release()
 
 
+async def _an_expert_write_held_in_the_portal(hass, monkeypatch):
+    """An expert entity whose write is in the portal and stays there until
+    `release` is set. Returns the entity, the write's task and `release`."""
+    entry = await _setup(hass, _entry(hass, _expert_options()))
+    entity = entry.runtime_data.expert.entities[0]
+    reached = threading.Event()
+    release = threading.Event()
+
+    def held_write(self, entityvalue, value, **_kwargs):
+        reached.set()
+        release.wait(timeout=5)
+        return expert_writer.ExpertParameterState(value, [10.0, 20.0, 30.0], {})
+
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "write_parameter", held_write
+    )
+    task = asyncio.create_task(entity.async_set_native_value(20))
+    for _ in range(500):
+        if reached.is_set():
+            break
+        await asyncio.sleep(0.01)
+    assert reached.is_set(), "the write never reached the portal"
+    return entity, task, release
+
+
+async def test_a_second_expert_write_while_the_first_runs_is_refused(hass, monkeypatch):
+    """Let through, the second write ended in its finally while the first was
+    still in the portal - clearing the flag that keeps a poll result from
+    overwriting the value the first one is about to confirm."""
+    entity, task, release = await _an_expert_write_held_in_the_portal(hass, monkeypatch)
+    try:
+        with pytest.raises(HomeAssistantError) as refused:
+            await entity.async_set_native_value(30)
+        assert refused.value.translation_key == "expert_write_in_progress"
+    finally:
+        release.set()
+        await task
+
+
+async def test_a_poll_result_during_an_expert_write_is_discarded(hass, monkeypatch):
+    """A poll that started before the write carries the value from before it;
+    applied, it overwrote the one the write was about to confirm."""
+    entity, task, release = await _an_expert_write_held_in_the_portal(hass, monkeypatch)
+    try:
+        entity.apply_read_state(
+            expert_writer.ExpertParameterState(99.0, [10.0, 20.0, 99.0], {})
+        )
+        assert entity.native_value != 99.0, (
+            "a poll result from before the write was applied during it"
+        )
+    finally:
+        release.set()
+        await task
+
+
 def _service_write(hass, entry, monkeypatch, in_portal):
     monkeypatch.setattr(
         expert_writer.WemPortalExpertClient,

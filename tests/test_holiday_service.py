@@ -436,3 +436,23 @@ async def test_a_write_into_an_unloading_entry_is_refused(monkeypatch):
         await holiday._write_holiday(hass, call)
 
     assert api.calls == []
+
+
+def test_a_holiday_across_two_accounts_is_refused():
+    """Begin of one account and end of another cannot be one range: the
+    service would have written each date to a different installation."""
+    row = Reading(value=0.0, platform="date", module_index=1, module_type=2)
+
+    def target(entity_id, entry_id):
+        return holiday.DateTarget(
+            entity_id,
+            types.SimpleNamespace(entry_id=entry_id),
+            None,
+            "1234",
+            entity_id,
+            row,
+        )
+
+    with pytest.raises(ServiceValidationError) as refused:
+        holiday._check_pair(target("date.begin", "one"), target("date.end", "two"))
+    assert refused.value.translation_key == "holiday_different_accounts"

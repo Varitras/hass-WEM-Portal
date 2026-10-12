@@ -10883,6 +10883,93 @@ def _read_back(client, monkeypatch, fetch):
         pass
 
 
+class _LoginPageSession:
+    """A session the portal answers with its login page, recording requests."""
+
+    def __init__(self, text=""):
+        self.requests = 0
+        self._text = text
+
+    def _answer(self, *_args, **_kwargs):
+        self.requests += 1
+        return FakeResponse_html(self._text)
+
+    get = post = _answer
+
+    def close(self):
+        pass
+
+
+def test_a_navigation_sent_to_the_login_page_stops_there():
+    """A postback redirected to the login page went on as navigation, with
+    the login form as the page the next step reads its state from."""
+    from custom_components.wemportal import expert_writer
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "pw")
+    client.session = _LoginPageSession()
+
+    with pytest.raises(exceptions.AuthError):
+        client._postback(
+            "https://www.wemportal.com/Web/Main.aspx",
+            "<html></html>",
+            "target",
+            async_postback=False,
+        )
+
+
+def test_a_dialog_sent_to_the_login_page_is_one_request_and_an_auth_error(
+    monkeypatch,
+):
+    """Read by its address, not its markup: a login page that does not look
+    like one was taken for a dialog still loading - four reads and three
+    timer postbacks, ending in "value field not found"."""
+    from custom_components.wemportal import expert_writer
+
+    monkeypatch.setattr(expert_writer.time, "sleep", lambda _seconds: None)
+    client = expert_writer.WemPortalExpertClient("user@example.org", "pw")
+    session = _LoginPageSession("<html><body>Please sign in</body></html>")
+    client.session = session
+
+    with pytest.raises(Exception) as raised:
+        client._fetch_form("a" * 36)
+    assert isinstance(raised.value, exceptions.AuthError), repr(raised.value)
+    assert session.requests == 1, f"{session.requests} requests to a login page"
+
+
+def test_a_dialog_that_is_the_login_form_is_an_auth_error():
+    """The other half: the dialog's own address, with the login form in it."""
+    from custom_components.wemportal import expert_writer
+
+    login_form = '<html><input name="tbxUserName" /></html>'
+
+    with pytest.raises(Exception) as raised:
+        expert_writer.WemPortalExpertClient.parse_parameter_form(login_form)
+    assert isinstance(raised.value, exceptions.AuthError), repr(raised.value)
+
+
+def test_a_confirmed_expert_write_ends_the_refusal_streak(caplog, monkeypatch):
+    """The read path ended the streak and the write path did not, so the
+    refusal after a write that worked was announced as the second in a row."""
+    import logging
+
+    _api_unused, refusing_client, refused = _expert_client_and_refusal()
+    _refuse(refusing_client, refused)
+    writer, _sent = _recording_write_client(
+        monkeypatch,
+        [
+            [("10", "1.0", True), ("15", "1.5", False)],
+            [("10", "1.0", False), ("15", "1.5", True)],
+        ],
+    )
+    writer.write_parameter("A" * 36, 1.5)
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        _refuse(refusing_client, refused)
+
+    assert [level for level, _message in _expert_lines(caplog)] == [logging.INFO]
+
+
 def test_an_expert_read_that_worked_starts_the_count_again(caplog, monkeypatch):
     import logging
 

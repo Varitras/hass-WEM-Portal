@@ -5886,5 +5886,54 @@
     "old": "        if not self._api_lock.acquire(timeout=API_LOCK_TIMEOUT_SECONDS):\n            # Best-effort by design. The recovery must not raise into the\n            # coordinator's error handling, and a connection still in use is\n            # exactly when tearing it down does the damage. The next failed\n            # cycle tries again.\n            _LOGGER.warning(\n                \"Not resetting the connection: it is still in use by another \"\n                \"operation. Trying again on the next failed cycle.\"\n            )\n            return\n        try:\n            self._reset_transport_locked()\n        finally:\n            self._api_lock.release()\n",
     "new": "        self._reset_transport_locked()\n",
     "tests": "recovery_leaves_a_busy_connection_alone"
+  },
+  {
+    "label": "expert entity: a second write while the first runs is let through",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        if self._write_in_progress:\n            raise HomeAssistantError(",
+    "new": "        if False:\n            raise HomeAssistantError(",
+    "tests": "second_expert_write_while_the_first_runs_is_refused"
+  },
+  {
+    "label": "expert entity: a poll result applied during a write",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        if self._write_in_progress:\n            _LOGGER.debug(\n",
+    "new": "        if False:\n            _LOGGER.debug(\n",
+    "tests": "poll_result_during_an_expert_write_is_discarded"
+  },
+  {
+    "label": "expert navigation: goes on from the login page",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self._check_response(response, \"navigation postback\")\n        if is_login_page(response.url):\n",
+    "new": "        self._check_response(response, \"navigation postback\")\n        if False:\n",
+    "tests": "navigation_sent_to_the_login_page_stops_there"
+  },
+  {
+    "label": "expert dialog: a login page by address taken for a loading dialog",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if is_login_page(response.url):\n                raise AuthError(\n                    \"Expert client: redirected to login when fetching the form.\"",
+    "new": "            if False:\n                raise AuthError(\n                    \"Expert client: redirected to login when fetching the form.\"",
+    "tests": "dialog_sent_to_the_login_page_is_one_request_and_an_auth_error"
+  },
+  {
+    "label": "expert dialog: the login form parsed as a broken dialog",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if \"tbxUserName\" in html_content or \"Login.aspx\" in html_content:",
+    "new": "            if False:",
+    "tests": "dialog_that_is_the_login_form_is_an_auth_error"
+  },
+  {
+    "label": "expert refusal: a confirmed write leaves the streak standing",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            self._went_through()\n            return verify\n",
+    "new": "            return verify\n",
+    "tests": "confirmed_expert_write_ends_the_refusal_streak"
+  },
+  {
+    "label": "holiday: a range across two accounts let through",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if begin.entry.entry_id != end.entry.entry_id:\n",
+    "new": "    if False:\n",
+    "tests": "holiday_across_two_accounts_is_refused"
   }
 ]
