@@ -149,7 +149,9 @@ COMPLEXITY_BUDGETS = {
     # the three sibling expert paths already do - added the acquire/release
     # guard and a busy handler. Extracting it would be the pass-through helper
     # this file's header warns against.
-    "__init__.py::_async_register_expert_service": 28,
+    # And by 2 for a refusal the client already said: raised to the caller
+    # without a second, ERROR-level line.
+    "__init__.py::_async_register_expert_service": 30,
     # Back to 22: whether a page is the expert view is now answered once, by
     # _load_expert_page, for the reused session and the fresh login alike.
     "scraper.py::WemPortalScraper.scrape": 22,

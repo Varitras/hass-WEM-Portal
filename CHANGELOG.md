@@ -38,6 +38,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   own that the portal's device list does not name. After two failed cycles
   the list was read again without it: every web sensor went unknown and
   warned about its missing reading until the next scrape.
+- **A refused expert request is logged once.** The `set_expert_parameter`
+  action logged a refused write a second time as an error, and the
+  parameter search in the options logged a refusal again as a warning that
+  blamed a pause - also when the refusal had just happened. The refusal is
+  now said once, and the action and the form still give the reason.
 - **An offline installation is no longer asked for its statistics.** The
   portal answers it with "offline", which counted as a failed read: with
   every device offline, the statistics were asked for again every 15

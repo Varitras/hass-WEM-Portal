@@ -5956,5 +5956,26 @@
     "old": "            and self.data[str(device_id)].get(\"ConnectionStatus\") in (None, 0)\n",
     "new": "",
     "tests": "offline_installation_are_not_asked_for"
+  },
+  {
+    "label": "expert service: a refusal logged again as an error",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        except ForbiddenError as exc:\n            # Already said by the client",
+    "new": "        except () as exc:\n            # Already said by the client",
+    "tests": "refused_expert_write_is_not_logged_again_as_an_error"
+  },
+  {
+    "label": "expert discovery: a refused module list said again as a warning",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                _LOGGER.debug(\"Expert discovery: module list not read - %s\", exc)\n",
+    "new": "                _LOGGER.warning(\"Expert discovery: module list not read - %s\", exc)\n",
+    "tests": "refused_module_list_is_not_said_again_as_a_cooldown"
+  },
+  {
+    "label": "expert discovery: a refused search said again as a warning",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                _LOGGER.debug(\"Expert discovery: not run - %s\", exc)\n",
+    "new": "                _LOGGER.warning(\"Expert discovery: not run - %s\", exc)\n",
+    "tests": "refused_discovery_is_not_said_a_second_time"
   }
 ]

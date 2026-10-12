@@ -4457,6 +4457,39 @@ async def test_a_login_turned_away_once_is_neither_a_warning_nor_a_password(
     assert not ours, [record.getMessage() for record in ours]
 
 
+async def test_a_refused_expert_write_is_not_logged_again_as_an_error(
+    hass, monkeypatch, caplog
+):
+    """The client says a refusal once, at the volume the streak calls for.
+    The service then logged the same 403 as an ERROR "write failed" - the
+    entity's write, which says it through the raised error alone, did not."""
+    import logging
+
+    entry = await _setup(hass, _entry(hass, _expert_options()))
+    assert entry.state is ConfigEntryState.LOADED
+
+    def refused(self, entityvalue, value, **_kwargs):
+        raise ForbiddenError("WEM Portal returned 403 for the parameter write.")
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", refused)
+
+    with caplog.at_level(logging.WARNING), pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A, "value": 30},
+            blocking=True,
+        )
+
+    ours = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("custom_components.wemportal")
+        and record.levelno >= logging.ERROR
+    ]
+    assert not ours, ours
+
+
 async def test_a_refused_poll_is_not_announced_a_second_time(hass, monkeypatch, caplog):
     """The refusal already said itself (expert_writer). The failed poll it
     caused was the third warning for the one event. What the missed polls

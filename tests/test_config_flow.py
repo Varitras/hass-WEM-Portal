@@ -821,6 +821,61 @@ async def test_discovery_blocked_by_cooldown_is_reported(hass, monkeypatch):
     assert "4 min remaining" in result["description_placeholders"]["status"]
 
 
+def _warnings_of_ours(caplog):
+    import logging
+
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("custom_components.wemportal")
+        and record.levelno >= logging.WARNING
+    ]
+
+
+async def test_a_refused_module_list_is_not_said_again_as_a_cooldown(
+    hass, monkeypatch, caplog
+):
+    """The client already said the refusal. The flow said it a second time at
+    WARNING, and blamed "the 403 cooldown" for a 403 that had just happened -
+    the reason reaches the form, where the user is looking anyway."""
+    import logging
+
+    entry = await _setup(hass, _entry(hass))
+
+    class _RefusingClient:
+        def list_modules(self):
+            raise ForbiddenError("WEM Portal returned 403 for the module list.")
+
+    monkeypatch.setattr(
+        "custom_components.wemportal.options_flow.WemportalOptionsFlow._expert_client",
+        lambda self: _RefusingClient(),
+    )
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        result = await _open_options(hass, entry, "discover_modules")
+
+    assert result["errors"] == {"base": "discovery_blocked"}
+    assert not _warnings_of_ours(caplog), _warnings_of_ours(caplog)
+
+
+async def test_a_refused_discovery_is_not_said_a_second_time(hass, monkeypatch, caplog):
+    """The same for the parameter search after the module list."""
+    import logging
+
+    entry = await _setup(hass, _entry(hass))
+
+    def refused(_selected):
+        raise ForbiddenError("WEM Portal returned 403 for a module page.")
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        result = await _run_discovery_with(hass, entry, monkeypatch, refused)
+
+    assert result["errors"] == {"base": "discovery_blocked"}
+    assert not _warnings_of_ours(caplog), _warnings_of_ours(caplog)
+
+
 async def test_discovery_status_is_not_carried_into_the_next_form(hass, monkeypatch):
     """A stale error from a previous run must not reappear later."""
     entry = await _setup(hass, _entry(hass))

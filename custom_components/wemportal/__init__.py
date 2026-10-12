@@ -46,7 +46,7 @@ from .coordinator import (
     get_modules_store,
     get_scraper_device_store,
 )
-from .exceptions import ExpertOperationAborted, ValueNotOffered
+from .exceptions import ExpertOperationAborted, ForbiddenError, ValueNotOffered
 from .migration import (
     ENTRY_TITLE,
     migrate_unique_ids,
@@ -555,6 +555,18 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="expert_value_not_offered",
+                translation_placeholders={
+                    "parameter": ev_short,
+                    "value": str(value),
+                    "error": str(exc),
+                },
+            ) from exc
+        except ForbiddenError as exc:
+            # Already said by the client that met it, at the volume its
+            # refusal streak calls for; the caller gets the reason below.
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="expert_write_failed",
                 translation_placeholders={
                     "parameter": ev_short,
                     "value": str(value),
