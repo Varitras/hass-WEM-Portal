@@ -231,8 +231,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # over what the reloaded entry already saved.
         self._store_writes = asyncio.Lock()
 
-    def _may_still_write_to_disk(self) -> bool:
-        """Whether a cycle finishing now still owns its entry's stores.
+    def _owns_its_entry(self) -> bool:
+        """Whether a cycle finishing now still owns its entry - its stores,
+        its repair issues and its account's auth streak.
 
         A cycle runs in an executor thread and cannot be cancelled, so a
         removal or reload landing mid-cycle is followed by the tail of that
@@ -249,7 +250,11 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
 
         Asked of both save paths rather than of the caller: they are what
         touches the disk, and a third one added later would otherwise have to
-        remember this on its own.
+        remember this on its own. The issue syncs and the auth streak ask it
+        for the same reason: the unload deletes the issues and clears the
+        streak, and a tail arriving after it put both back - an issue on a
+        disabled entry that nothing could withdraw, and a streak one login
+        page short of a reauth for the entry that replaced this one.
         """
         data = getattr(self.config_entry, "runtime_data", None)
         if data is not None:
@@ -299,7 +304,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         device_id = getattr(self.api, "scraper_device_id", None)
         if not device_id or device_id == self._saved_scraper_device_id:
             return
-        if not self._may_still_write_to_disk():
+        if not self._owns_its_entry():
             return
         try:
             await self._save_under_store_lock(self._scraper_device_store, device_id)
@@ -319,7 +324,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         """
         if not self.api.modules:
             return
-        if not self._may_still_write_to_disk():
+        if not self._owns_its_entry():
             return
         try:
             serialized = serialize_modules(self.api.modules)
@@ -348,7 +353,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         """
         if not self.api.modules:
             return
-        if not self._may_still_write_to_disk():
+        if not self._owns_its_entry():
             return
         serialized = serialize_modules(self.api.modules)
         await self._save_under_store_lock(self._modules_store, serialized)
@@ -460,6 +465,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         Idempotent in both directions, so running it on every path costs
         nothing.
         """
+        if not self._owns_its_entry():
+            return
         issue_id = f"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}"
         if self.api.is_rate_limited():
             async_create_issue(
@@ -486,6 +493,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
 
         Idempotent in both directions, like its sibling.
         """
+        if not self._owns_its_entry():
+            return
         issue_id = f"{self.config_entry.entry_id}_{WEB_SCRAPE_ISSUE}"
         if self.api.web_scrape_is_failing(device_filter):
             async_create_issue(
@@ -642,6 +651,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed(str(exc)) from exc
             except AuthError as exc:
                 self._note_failed_cycle()
+                if not self._owns_its_entry():
+                    # A reauth started from here lands on the entry that
+                    # replaced this one, or on none at all.
+                    raise UpdateFailed(str(exc)) from exc
                 self.num_auth_failed += 1
                 self._account_state.auth_failures = self.num_auth_failed
                 # Escalate to reauth only after several CONSECUTIVE auth

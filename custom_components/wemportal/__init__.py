@@ -192,7 +192,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         await coordinator.async_config_entry_first_refresh()
         _LOGGER.info("Migrating entity names for wemportal")
         try:
-            await migrate_unique_ids(hass, entry, coordinator)
+            migrate_unique_ids(hass, entry, coordinator)
         except Exception as exc:  # noqa: BLE001
             # Migration is a best-effort cleanup step (renames old unique_ids
             # to the new format). A failure here should never prevent the
@@ -210,9 +210,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # shutdown and when it takes too long, and CancelledError is not an
         # Exception - so the one ending that leaves the most behind was the
         # one this never ran for. Re-raised immediately, so a cancellation
-        # still cancels. The migration is inside for that reason too: it
-        # awaits a refresh, and a cancellation there passes its best-effort
-        # handler.
+        # still cancels.
         await hass.async_add_executor_job(api.close_transport)
         raise
 

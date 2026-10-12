@@ -418,6 +418,85 @@ async def test_a_poll_finishing_during_the_unload_does_not_write(hass, hass_stor
     )
 
 
+async def _a_poll_that_outlives_its_unload(hass, monkeypatch, outcome, auth_streak=0):
+    """Unload the entry while a refresh is still in its worker thread, then let
+    the refresh finish with `outcome` - the order a disable or reload meets
+    when it lands mid-cycle. Returns the entry and the refresh's exception."""
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_auth_failed = auth_streak
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_fetch(self, *_args, **_kwargs):
+        started.set()
+        release.wait(10)
+        raise outcome
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", slow_fetch)
+    refresh = hass.async_create_task(coordinator._update_within_timeout(None))
+    await hass.async_add_executor_job(started.wait, 10)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    release.set()
+    with pytest.raises(Exception) as raised:
+        await refresh
+    return entry, raised.value
+
+
+async def test_a_poll_outliving_its_unload_raises_no_repair_issue(hass, monkeypatch):
+    """The unload deletes the entry's repair issues, and the in-flight cycle's
+    tail put them straight back: a disabled entry then showed a rate-limit
+    report nothing could ever re-check or withdraw."""
+    from homeassistant.helpers import issue_registry
+
+    from custom_components.wemportal.coordinator import (
+        RATE_LIMIT_ISSUE,
+        WEB_SCRAPE_ISSUE,
+    )
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    monkeypatch.setattr(WemPortalApi, "is_rate_limited", lambda self: True)
+    monkeypatch.setattr(
+        WemPortalApi, "web_scrape_is_failing", lambda self, *_args: True
+    )
+
+    entry, _ = await _a_poll_that_outlives_its_unload(
+        hass, monkeypatch, WemPortalError("portal refused")
+    )
+
+    issues = issue_registry.async_get(hass).issues
+    for name in (RATE_LIMIT_ISSUE, WEB_SCRAPE_ISSUE):
+        assert (DOMAIN, f"{entry.entry_id}_{name}") not in issues, (
+            f"a cycle finishing after the unload raised {name} again"
+        )
+
+
+async def test_a_poll_outliving_its_unload_keeps_the_auth_streak_cleared(
+    hass, monkeypatch
+):
+    """The unload clears the account's auth streak, and the cycle still in
+    flight wrote its own count back - one login page after the reload then
+    reached the threshold. As the third failure it even asked the torn-down
+    entry for a reauth."""
+    from custom_components.wemportal.const import AUTH_ERROR_ESCALATION_THRESHOLD
+    from custom_components.wemportal.models import account_state
+
+    _, raised = await _a_poll_that_outlives_its_unload(
+        hass,
+        monkeypatch,
+        AuthError("login page"),
+        auth_streak=AUTH_ERROR_ESCALATION_THRESHOLD - 1,
+    )
+
+    assert account_state(USER).auth_failures == 0, (
+        "a cycle finishing after the unload wrote its auth streak back"
+    )
+    assert type(raised).__name__ == "UpdateFailed", (
+        f"a torn-down entry escalated its last auth failure: {raised!r}"
+    )
+
+
 def _prepare_module_cache_save(coordinator, slow_disk):
     """A module-cache save on the (slow) disk, holding the store lock."""
     coordinator.api.modules = {"1234": {(0, 1): {"Name": "Heat pump"}}}
@@ -1665,19 +1744,13 @@ async def test_failed_first_refresh_closes_its_sessions(hass, monkeypatch):
     assert closed, "a failed first refresh leaked its HTTP sessions"
 
 
-async def test_a_setup_cancelled_during_the_id_migration_closes_its_sessions(
+async def test_a_setup_cancelled_in_its_first_refresh_closes_its_sessions(
     hass, monkeypatch
 ):
-    """The migration ran between the two cleanup regions of the setup.
-
-    It awaits a refresh once it has renamed an entity, and a cancellation
-    there - shutdown, or a setup that took too long - is not an Exception, so
-    its best-effort handler let it through. The first refresh had already
-    opened the HTTP sessions, and nothing was published yet for an unload to
-    close them.
-    """
-    from homeassistant.helpers import entity_registry
-
+    """A cancellation - shutdown, or a setup that took too long - is not an
+    Exception, so a cleanup that caught only those let it through with the
+    sessions the first refresh had opened, and nothing was published yet for
+    an unload to close them."""
     from custom_components.wemportal.coordinator import (
         WemPortalDataUpdateCoordinator,
     )
@@ -1691,20 +1764,15 @@ async def test_a_setup_cancelled_during_the_id_migration_closes_its_sessions(
         raise asyncio.CancelledError
 
     monkeypatch.setattr(
-        WemPortalDataUpdateCoordinator, "async_request_refresh", cancelled
+        WemPortalDataUpdateCoordinator, "async_config_entry_first_refresh", cancelled
     )
     entry = _entry(hass)
-    # An id from before the migration, so it has something to rename and
-    # reaches the refresh.
-    entity_registry.async_get(hass).async_get_or_create(
-        "sensor", DOMAIN, "Outside temperature", config_entry=entry
-    )
 
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
     assert entry.state is not ConfigEntryState.LOADED
-    assert closed, "a cancelled migration leaked the first refresh's sessions"
+    assert closed, "a cancelled setup leaked the first refresh's sessions"
 
 
 async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
@@ -2910,6 +2978,9 @@ async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
     from custom_components.wemportal.const import AUTH_ERROR_ESCALATION_THRESHOLD
 
     entry = _entry(hass)
+    # Where a retry's first refresh runs: an entry outside it no longer owns
+    # the account's auth streak.
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
 
     def bad_credentials(self, *_args, **_kwargs):
         raise AuthError("Login failed: Invalid username or password.")

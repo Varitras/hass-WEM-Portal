@@ -22,7 +22,9 @@ from homeassistant.helpers import entity_registry
 
 from .const import DOMAIN, PLATFORMS
 from .models import Reading
+from .statistics import is_statistics_row
 from .utils import reading_label
+from .wemportalapi import DEVICE_STATUS_CONNECTION, DEVICE_STATUS_ROWS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,11 +81,10 @@ def _migrate_device_unique_ids(
     device_id: str,
     data: dict[str, Any],
     contested: Collection[str] = (),
-) -> bool:
+) -> None:
     """Migrate one device's entities from old unique_id formats to the current
-    one. Returns True if any entity was updated. Factored out so migration can
-    run for EVERY device, not just the first."""
-    change = False
+    one. Factored out so migration can run for EVERY device, not just the
+    first."""
     for unique_id, values in data.items():
         if not isinstance(values, Reading):
             continue
@@ -96,11 +97,36 @@ def _migrate_device_unique_ids(
             )
             if old_id not in contested
         ]
-        if _adopt_entity_under_its_old_id(
+        _adopt_entity_under_its_old_id(
             registry, config_entry, values.platform, old_ids, new_id
-        ):
-            change = True
-    return change
+        )
+
+
+def _a_device_has_not_answered_yet(per_device: Mapping[str, Any]) -> bool:
+    """Whether a device the poll reports on has delivered no reading of its
+    own yet - offline at the upgrade, or its parameters not read so far.
+
+    Its claims on the old id shapes cannot be seen until it does, and the
+    contested-id rule below is only as good as the claims it sees: an
+    online device adopted an entity the offline one also answers to, and
+    with it that device's history. Its status rows say nothing here - they
+    are there for an offline device too - and neither do statistics rows.
+    """
+    for device_id, rows in per_device.items():
+        rows = rows or {}
+        status_key = f"{device_id}-{DEVICE_STATUS_CONNECTION}"
+        if not isinstance(rows.get(status_key), Reading):
+            continue
+        status_rows = {f"{device_id}-{name}" for name in DEVICE_STATUS_ROWS}
+        answered = any(
+            isinstance(row, Reading)
+            and key not in status_rows
+            and not is_statistics_row(device_id, key)
+            for key, row in rows.items()
+        )
+        if not answered:
+            return True
+    return False
 
 
 def _ids_claimed_by_more_than_one_reading(
@@ -175,7 +201,7 @@ def _adopt_entity_under_its_old_id(
     platform: str,
     old_ids: list[str],
     new_id: str,
-) -> bool:
+) -> None:
     """Give the first entity of THIS account found under an old id the
     current one.
 
@@ -207,14 +233,13 @@ def _adopt_entity_under_its_old_id(
             registry.async_remove(new_entity_id)
 
         if old_id == new_id:
-            return False
+            return
         _LOGGER.info(
             "Migrating entity %s to the current unique_id",
             name_id,
         )
         registry.async_update_entity(name_id, new_unique_id=new_id)
-        return True
-    return False
+        return
 
 
 def _entities_of_this_entry_on_other_platforms(
@@ -402,14 +427,14 @@ def _record_as_migrated(
         migrated[(device_id, key)] = row.platform
 
 
-async def migrate_unique_ids(
+def migrate_unique_ids(
     hass: HomeAssistant, config_entry: ConfigEntry, coordinator: Any
 ) -> None:
     registry = entity_registry.async_get(hass)
     migrated: dict[tuple[str, str], str] = {}
 
     @callback
-    def _migrate_the_readings_not_seen_yet() -> bool:
+    def _migrate_the_readings_not_seen_yet() -> None:
         """Both migration steps, for whatever the coordinator holds now.
 
         Bound to a listener rather than run once, because the readings this
@@ -424,8 +449,12 @@ async def migrate_unique_ids(
 
         Only what is new: every cycle delivers the same rows, and each one
         costs up to eight registry lookups.
+
+        Nothing is renamed or removed while a device has not answered yet;
+        the pass after it does is the one that runs. An entity the builder
+        made in between is given up for the old one by
+        _adopt_entity_under_its_old_id, so the history still wins.
         """
-        change = False
         # Migrate EVERY device, not just the first: with multiple devices the
         # others' old unique_ids (and their history) were previously left
         # behind.
@@ -442,13 +471,16 @@ async def migrate_unique_ids(
         # entity down with nothing left to warn it off. Migrating only what is
         # due stays right; deciding what is contested from that slice is not.
         contested = _ids_claimed_by_more_than_one_reading(config_entry, everything)
+        # shortcut: a device that never answers again keeps the legacy ids
+        # unmigrated for good; disabling it in Home Assistant lifts that.
+        if _a_device_has_not_answered_yet(everything):
+            due = {}
         for device_id, fresh in due.items():
             if not fresh:
                 continue
-            if _migrate_device_unique_ids(
+            _migrate_device_unique_ids(
                 registry, config_entry, device_id, fresh, contested
-            ):
-                change = True
+            )
             # After the id migration, not before: that step may still move an
             # old entry onto the current unique_id, and removing it first
             # would throw away the history it exists to preserve.
@@ -474,7 +506,6 @@ async def migrate_unique_ids(
                     everything.get(device_id) or {},
                 ),
             )
-        return change
 
     # Registered here rather than after the platforms are forwarded, so this
     # runs BEFORE the listener that builds the entities: an entity added
@@ -487,11 +518,8 @@ async def migrate_unique_ids(
     config_entry.async_on_unload(
         coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)
     )
-    change = _migrate_the_readings_not_seen_yet()
-
-    if change:
-        # A debounced refresh is enough to update the migrated entities.
-        # async_config_entry_first_refresh() here ran a SECOND full portal
-        # cycle right after the initial one (and is meant for setup only) -
-        # needless extra requests against the portal's rate limit.
-        await coordinator.async_request_refresh()
+    # No refresh after it: the platforms that build the migrated entities
+    # are forwarded afterwards and read the first refresh's data. The
+    # coordinator's request refresh is not debounced on its first call, so
+    # asking for one polled the portal twice on every setup that renamed.
+    _migrate_the_readings_not_seen_yet()

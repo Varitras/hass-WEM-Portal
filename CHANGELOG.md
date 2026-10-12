@@ -20,6 +20,19 @@ versioning follows [Semantic Versioning](https://semver.org/).
   different position after the module list was read again kept its name
   - and the control wrote to whatever module now sat at the old position.
   Controls, dates and their read-back use the current address.
+- **Setup, upgrade and unload leave nothing behind.**
+  - Disabling or reloading the integration while it was reading the
+    portal let that read finish afterwards and put back what the unload
+    had cleared: a repair issue on a disabled entry that nothing could
+    withdraw, or a count of failed logins that made the next one ask for
+    credentials again - or even started that prompt for the entry being
+    taken down.
+  - The first start after an upgrade that renamed old entity ids read the
+    whole portal twice. It reads it once.
+  - On an installation with two devices, one of them offline at the first
+    start after the upgrade, the other could take over an old entity that
+    both answer to, with its history. Old ids are now renamed once every
+    device has answered.
 - **Units and merges follow one rule in every mode.**
   - A unitless number kept its empty unit in `both` mode but lost it in
     `api` mode, so it had long-term statistics in one and not the other -

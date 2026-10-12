@@ -969,8 +969,8 @@
   {
     "label": "migration: registering the listener only after a first pass that may raise must be noticed",
     "path": "custom_components/wemportal/migration.py",
-    "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )\n    change = _migrate_the_readings_not_seen_yet()",
-    "new": "    change = _migrate_the_readings_not_seen_yet()\n    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )",
+    "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )\n    # No refresh after it:",
+    "new": "    _migrate_the_readings_not_seen_yet()\n    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )\n    # No refresh after it:",
     "tests": "the_migration_keeps_listening_after_a_failed_first_pass"
   },
   {
@@ -5202,13 +5202,6 @@
     "tests": "read_back_is_asked_about_both_written_dates"
   },
   {
-    "label": "setup: the id migration outside the first refresh's cleanup again",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "    try:\n        await coordinator.async_config_entry_first_refresh()\n        _LOGGER.info(\"Migrating entity names for wemportal\")\n        try:\n            await migrate_unique_ids(hass, entry, coordinator)\n        except Exception as exc:  # noqa: BLE001\n            # Migration is a best-effort cleanup step (renames old unique_ids\n            # to the new format). A failure here should never prevent the\n            # integration from loading - worst case, some entities keep their\n            # old unique_id until the next successful migration attempt.\n            _LOGGER.warning(\n                \"Unique_id migration failed, continuing without it: %s\", exc\n            )\n",
-    "new": "    try:\n        await coordinator.async_config_entry_first_refresh()\n    except BaseException:\n        await hass.async_add_executor_job(api.close_transport)\n        raise\n    try:\n        await migrate_unique_ids(hass, entry, coordinator)\n    except Exception as exc:  # noqa: BLE001\n        _LOGGER.warning(\"migration failed: %s\", exc)\n    try:\n        pass\n",
-    "tests": "cancelled_during_the_id_migration_closes_its_sessions"
-  },
-  {
     "label": "harness: a name the type checker alone imports counted as defined again",
     "path": ".github/scripts/mutate.py",
     "old": "        if ast.unparse(node.test) not in (\"TYPE_CHECKING\", \"typing.TYPE_CHECKING\"):\n",
@@ -5823,5 +5816,61 @@
     "old": "        row = self._coordinator_row()\n        if row is None:\n            return None, None\n        return row.module_index, row.module_type\n",
     "new": "        return None, None\n",
     "tests": "module_its_row_now_has"
+  },
+  {
+    "label": "setup: a cancelled first refresh leaves its sessions open again",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    except BaseException:\n        # The api is not in hass.data yet",
+    "new": "    except Exception:\n        # The api is not in hass.data yet",
+    "tests": "cancelled_in_its_first_refresh_closes_its_sessions"
+  },
+  {
+    "label": "coordinator: a cycle after its unload raises the rate-limit issue again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if not self._owns_its_entry():\n            return\n        issue_id = f\"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}\"\n",
+    "new": "        issue_id = f\"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}\"\n",
+    "tests": "outliving_its_unload_raises_no_repair_issue"
+  },
+  {
+    "label": "coordinator: a cycle after its unload raises the web-scrape issue again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if not self._owns_its_entry():\n            return\n        issue_id = f\"{self.config_entry.entry_id}_{WEB_SCRAPE_ISSUE}\"\n",
+    "new": "        issue_id = f\"{self.config_entry.entry_id}_{WEB_SCRAPE_ISSUE}\"\n",
+    "tests": "outliving_its_unload_raises_no_repair_issue"
+  },
+  {
+    "label": "coordinator: a cycle after its unload writes the auth streak back",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                if not self._owns_its_entry():\n                    # A reauth started from here lands on the entry that\n",
+    "new": "                if False:\n                    # A reauth started from here lands on the entry that\n",
+    "tests": "outliving_its_unload_keeps_the_auth_streak_cleared"
+  },
+  {
+    "label": "migration: an online device adopts an id an unread one also claims",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "        if _a_device_has_not_answered_yet(everything):\n            due = {}\n",
+    "new": "",
+    "tests": "offline_at_the_upgrade_keeps_its_claim"
+  },
+  {
+    "label": "migration: status rows count as a device having answered",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "            and key not in status_rows\n",
+    "new": "",
+    "tests": "offline_at_the_upgrade_keeps_its_claim"
+  },
+  {
+    "label": "migration: a device not polled at all blocks the migration",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "        if not isinstance(rows.get(status_key), Reading):\n            continue\n",
+    "new": "",
+    "tests": "disabled_device_does_not_hold_the_migration_up"
+  },
+  {
+    "label": "migration: a statistics row counts as a device having answered",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "            and not is_statistics_row(device_id, key)\n",
+    "new": "",
+    "tests": "offline_at_the_upgrade_keeps_its_claim"
   }
 ]
