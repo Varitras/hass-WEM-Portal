@@ -38,6 +38,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   own that the portal's device list does not name. After two failed cycles
   the list was read again without it: every web sensor went unknown and
   warned about its missing reading until the next scrape.
+- **An expert parameter reported as failing is read once a day.** With the
+  periodic read-back on, a parameter that keeps failing was still asked on
+  every cycle after the repair had said so - and one whose dialog never
+  fills costs seven requests each time, against one for a working
+  parameter. It is now asked once a day until it answers again; a write
+  that works brings it back at once.
 - **An expert parameter made only of words takes the word.** A dropdown
   with no number in it - an operating mode, say - shows as the position of
   the option, a number the portal never displays, and

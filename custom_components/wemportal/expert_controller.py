@@ -18,7 +18,8 @@ import logging
 
 import random
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Collection
+from time import monotonic
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -67,6 +68,14 @@ FAILURES_BEFORE_NOTIFYING = 3
 # single id failing, a dead batch says nothing about which parameter is at
 # fault, so there is no per-id notification covering it either.
 BATCH_FAILURES_BEFORE_VALUES_ARE_STALE = 2
+
+# How often an id the user has been told is failing is still asked. An id
+# whose dialog never fills costs seven requests per read against one for a
+# working id, and asking it every cycle after the report turned a broken
+# slot into lasting extra traffic - an error state must not raise it. Once
+# a day still notices a parameter that came back; a write that works
+# brings it back at once.
+REPORTED_ID_RETRY_SECONDS = 24 * 3600
 
 
 def poll_interval_minutes(entry: ConfigEntry) -> int:
@@ -134,6 +143,8 @@ class ExpertController:
         # one id was missing from the answer - see apply_read.
         self.fail_counts: dict[str, int] = {}
         self.fail_notified: set[str] = set()
+        # When each reported id was last asked; see REPORTED_ID_RETRY_SECONDS.
+        self._reported_asked_at: dict[str, float] = {}
         # Consecutive cycles whose read produced nothing at all. Separate
         # from the per-id tally on purpose: a dead batch is not evidence
         # about any single id, but it is evidence about every VALUE.
@@ -231,6 +242,7 @@ class ExpertController:
             self.entities.remove(entity)
         entityvalue = entity.entityvalue
         self.fail_counts.pop(entityvalue, None)
+        self._reported_asked_at.pop(entityvalue, None)
         if entityvalue in self.fail_notified:
             self.fail_notified.discard(entityvalue)
             self._clear_read_failure_issue(entityvalue)
@@ -319,7 +331,11 @@ class ExpertController:
 
         try:
             entities = self.live_entities
-            entityvalues = [entity.entityvalue for entity in entities]
+            entityvalues = [
+                entity.entityvalue
+                for entity in entities
+                if self._is_due(entity.entityvalue)
+            ]
             if not entityvalues:
                 return
             # Collision guard: if any entity write is in flight, skip this
@@ -389,7 +405,7 @@ class ExpertController:
 
             if failure_is_over(self._reported_failures, "read"):
                 _LOGGER.info("Expert auto-poll reads again.")
-            self.apply_read(results)
+            self.apply_read(results, asked=entityvalues)
         finally:
             # Always reschedule the next run (with fresh jitter), even if this
             # cycle failed - a transient error must not stop future polls.
@@ -436,7 +452,19 @@ class ExpertController:
         for entity in self.live_entities:
             entity.forget_value()
 
-    def apply_read(self, results: dict[str, Any]) -> None:
+    def _is_due(self, entityvalue: str) -> bool:
+        """Whether this cycle asks for the id: always, unless it was reported
+        as failing and has been asked within REPORTED_ID_RETRY_SECONDS."""
+        asked_at = self._reported_asked_at.get(entityvalue)
+        if asked_at is not None and monotonic() - asked_at < REPORTED_ID_RETRY_SECONDS:
+            return False
+        if asked_at is not None:
+            self._reported_asked_at[entityvalue] = monotonic()
+        return True
+
+    def apply_read(
+        self, results: dict[str, Any], asked: Collection[str] | None = None
+    ) -> None:
         """Hand a batch to the entities and keep the per-id failure tally.
 
         A persistently failing id would otherwise only produce an hourly
@@ -486,7 +514,14 @@ class ExpertController:
                 len(failed),
             )
 
-        for entity in self.live_entities:
+        # Only what this cycle asked for: an id left out is missing from the
+        # answer too, and read as missing it was counted as unreadable.
+        asked_entities = [
+            entity
+            for entity in self.live_entities
+            if asked is None or entity.entityvalue in asked
+        ]
+        for entity in asked_entities:
             entityvalue = entity.entityvalue
             state = results.get(entityvalue)
             unreadable_id = entityvalue not in results
@@ -501,6 +536,7 @@ class ExpertController:
                     and entityvalue not in self.fail_notified
                 ):
                     self.fail_notified.add(entityvalue)
+                    self._reported_asked_at[entityvalue] = monotonic()
                     self._report_read_failure(
                         entity, self.fail_counts[entityvalue], unreadable_id
                     )
@@ -537,6 +573,7 @@ class ExpertController:
         was_reported = entityvalue in self.fail_notified
         self.fail_counts.pop(entityvalue, None)
         self.fail_notified.discard(entityvalue)
+        self._reported_asked_at.pop(entityvalue, None)
         self._batch_failures = 0
         if was_reported:
             self._clear_read_failure_issue(entityvalue)

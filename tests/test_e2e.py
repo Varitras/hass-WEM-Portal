@@ -2179,7 +2179,9 @@ async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
         await poll(None)
         await hass.async_block_till_done()
 
-    assert entry.runtime_data.expert.fail_counts[EV_A] == 5
+    # Counted up to the report and no further: a reported id is asked
+    # once a day from then on.
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 3
     assert len(raised_issues) == 1, (
         f"{len(raised_issues)} repair issues for one persistent failure"
     )
@@ -2198,6 +2200,10 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
     repair issue would outlive the problem it reports."""
     from homeassistant.helpers import issue_registry
 
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0])
     state = {"fail": True}
 
     def sometimes(_ids):
@@ -2219,6 +2225,8 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
     assert len(raised_issues) == 1, "three consecutive misses raised no issue"
 
     state["fail"] = False
+    # A reported id is next asked a day later.
+    now[0] += expert_controller.REPORTED_ID_RETRY_SECONDS
     await poll(None)
     await hass.async_block_till_done()
 
@@ -2237,6 +2245,9 @@ async def test_a_failed_poll_still_arms_the_next_one(hass, monkeypatch):
         raise RuntimeError("portal unavailable")
 
     _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, always_fails)
+    # The setup poll failed too; without this its missing successor would
+    # surface as an IndexError, not as the chain dying.
+    assert scheduled, "the poll chain died on its first failure"
     before = len(scheduled)
 
     await scheduled[-1](None)
@@ -4016,7 +4027,7 @@ async def test_a_single_configured_id_is_still_reported(hass, monkeypatch):
         await poll(None)
         await hass.async_block_till_done()
 
-    assert entry.runtime_data.expert.fail_counts[EV_A] == 4
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 3
     assert len(raised_issues) == 1
     # It was requested and failed, so the portal is a candidate too - the
     # read-failures wording must not assert the configuration is wrong.
@@ -4488,6 +4499,55 @@ async def test_a_refused_expert_write_is_not_logged_again_as_an_error(
         and record.levelno >= logging.ERROR
     ]
     assert not ours, ours
+
+
+async def test_an_expert_id_reported_as_failing_is_asked_once_a_day(hass, monkeypatch):
+    """An id whose dialog never fills costs seven requests per read, against
+    one for a working id, and the poll went on asking every cycle after the
+    repair had already said it was broken - with ten such slots at the
+    15-minute floor, about a third of the portal's budget. Once reported it
+    is asked once a day; a write that works brings it back at once."""
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0], raising=False)
+    reads = []
+
+    def never_answers(ids):
+        reads.append(list(ids))
+        return dict.fromkeys(ids)
+
+    _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, never_answers)
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        await scheduled[-1](None)
+    reads.clear()
+
+    await scheduled[-1](None)
+    assert reads == [], f"a reported id was asked again on the next cycle: {reads}"
+
+    now[0] += 24 * 3600
+    await scheduled[-1](None)
+    assert reads == [[EV_A]], "a reported id was never asked again"
+
+
+async def test_an_id_left_out_of_a_cycle_is_not_counted_against_it(hass, monkeypatch):
+    """A reported id sits out the cycles between its daily reads, and an id
+    that was not asked for is missing from the answer as well - the tally
+    read that as one more unreadable id on every cycle it sat out."""
+    healthy = expert_writer.ExpertParameterState(21.0, [0.0, 100.0], {})
+    entry, scheduled, _ = await _auto_poll_entry(
+        hass,
+        monkeypatch,
+        lambda ids: {EV_B: healthy} if EV_B in ids else {},
+        entityvalues=[EV_A, EV_B],
+    )
+    for _ in range(5):
+        await scheduled[-1](None)
+        await hass.async_block_till_done()
+
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 3, (
+        "an id the cycle never asked for was counted against it"
+    )
 
 
 async def test_a_refused_poll_is_not_announced_a_second_time(hass, monkeypatch, caplog):
