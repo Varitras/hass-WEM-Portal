@@ -1439,6 +1439,38 @@ async def test_reconfigure_keeps_the_entry_when_the_login_fails(hass, monkeypatc
     assert entry.data[CONF_PASSWORD] != "wrong"
 
 
+async def test_reconfiguring_a_legacy_duplicate_keeps_its_free_unique_id(hass, caplog):
+    """Two entries of one account from before unique_ids: the first got the
+    account id, the second was left without one, because assigning it twice
+    is not allowed. A new password for the second then assigned it anyway -
+    Home Assistant logs that as an integration bug and raises a repair, and
+    has announced it will refuse it outright."""
+    import logging
+
+    first = await _setup(hass, _entry(hass))
+    duplicate = MockConfigEntry(
+        domain=DOMAIN,
+        title="WEM Portal 2",
+        data={CONF_USERNAME: USER, CONF_PASSWORD: "secret"},
+    )
+    duplicate.add_to_hass(hass)
+    assert first.unique_id is not None and duplicate.unique_id is None
+
+    result = await duplicate.start_reconfigure_flow(hass)
+    with caplog.at_level(logging.ERROR):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "new-secret"}
+        )
+        await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful", result
+    assert duplicate.unique_id is None, "the duplicate took an id already in use"
+    clashes = [
+        r.getMessage() for r in caplog.records if "already in use" in r.getMessage()
+    ]
+    assert not clashes, clashes
+
+
 async def test_reconfigure_sees_an_older_entry_that_has_no_unique_id_yet(hass):
     """An entry from before unique_ids only gets one when it is set up, so a
     disabled one is invisible to the unique_id check. The login it holds is

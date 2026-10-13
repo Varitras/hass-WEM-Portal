@@ -3908,8 +3908,8 @@
   },
   {
     "label": "reconfigure: the entry keeping its old identity after a move",
-    "old": "            unique_id=account,\n",
-    "new": "",
+    "old": "            unique_id=account if moves_to_another_login else entry.unique_id,\n",
+    "new": "            unique_id=entry.unique_id,\n",
     "tests": "reconfigure_can_move_the_entry_to_a_new_login",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -6019,5 +6019,12 @@
     "old": "        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE_DELTA,\n",
     "new": "        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE,\n",
     "tests": "kelvin_reading_is_a_temperature_difference"
+  },
+  {
+    "label": "reconfigure: a legacy duplicate takes the account id already in use",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            unique_id=account if moves_to_another_login else entry.unique_id,\n",
+    "new": "            unique_id=account,\n",
+    "tests": "legacy_duplicate_keeps_its_free_unique_id"
   }
 ]

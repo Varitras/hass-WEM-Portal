@@ -38,6 +38,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   own that the portal's device list does not name. After two failed cycles
   the list was read again without it: every web sensor went unknown and
   warned about its missing reading until the next scrape.
+- **A new password for a duplicate entry no longer raises a Home Assistant
+  repair.** Two entries of one account from before account ids are still
+  loaded, and only the first holds the id. Reconfiguring the second gave it
+  the same id, which Home Assistant logs as an integration bug and reports
+  under Repairs.
 - **Readings in K are temperature differences.** Every K value the portal
   shows - a switching hysteresis, a superheat - is a difference, but was
   classed as a temperature: choosing °C as display unit turned 4.5 K into
