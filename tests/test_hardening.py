@@ -3745,6 +3745,17 @@ def test_portal_units_are_normalised_to_home_assistant_spelling():
     assert unit_to_device_class(unit) == "pressure"
 
 
+def test_a_kelvin_reading_is_a_temperature_difference():
+    """Every K row the portal shows is a difference - a switching hysteresis,
+    a superheat. Classed as a temperature, Home Assistant converted 4.5 K to
+    -268.65 °C for anyone who picked °C as display unit, and offered the
+    reading as a room temperature."""
+    from custom_components.wemportal.utils import unit_to_device_class
+
+    assert unit_to_device_class("K") == "temperature_delta"
+    assert unit_to_device_class("°C") == "temperature"
+
+
 def test_the_portals_spelling_of_a_flow_rate_carries_its_device_class():
     """The unit lookup matches case-insensitively, which covers "BAR" for
     "bar" - but not "m3/h" for "m³/h", a different character.

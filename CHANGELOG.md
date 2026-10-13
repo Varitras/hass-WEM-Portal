@@ -38,6 +38,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   own that the portal's device list does not name. After two failed cycles
   the list was read again without it: every web sensor went unknown and
   warned about its missing reading until the next scrape.
+- **Readings in K are temperature differences.** Every K value the portal
+  shows - a switching hysteresis, a superheat - is a difference, but was
+  classed as a temperature: choosing °C as display unit turned 4.5 K into
+  -268.65 °C, and the reading was offered as a room temperature. The unit
+  stays K, so the recorded history carries on.
 - **English names no longer leave German words in pieces.** With language
   `en`, "Heizung" became "Heating Ung", "Wärmepumpe - Leistungsanforderung"
   "Heat Pumpe - Output Sanforderung" and "Betriebsstunden" "Operating

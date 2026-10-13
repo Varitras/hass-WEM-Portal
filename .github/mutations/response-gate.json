@@ -6012,5 +6012,12 @@
     "old": "            \"heizung\": \"heating\",\n",
     "new": "",
     "tests": "no_german_word_is_left_in_pieces"
+  },
+  {
+    "label": "device class: kelvin classed as an absolute temperature again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE_DELTA,\n",
+    "new": "        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE,\n",
+    "tests": "kelvin_reading_is_a_temperature_difference"
   }
 ]

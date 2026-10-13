@@ -476,7 +476,9 @@ def unit_to_device_class(unit: str | None) -> SensorDeviceClass | None:
     mapping = {
         UnitOfPressure.BAR: SensorDeviceClass.PRESSURE,
         UnitOfTemperature.CELSIUS: SensorDeviceClass.TEMPERATURE,
-        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE,
+        # Every K row the portal shows is a difference (hysteresis, superheat);
+        # as an absolute temperature 4.5 K converted to -268.65 °C.
+        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE_DELTA,
         UnitOfEnergy.KILO_WATT_HOUR: SensorDeviceClass.ENERGY,
         UnitOfEnergy.WATT_HOUR: SensorDeviceClass.ENERGY,
         UnitOfPower.KILO_WATT: SensorDeviceClass.POWER,
