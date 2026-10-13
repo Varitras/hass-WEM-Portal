@@ -399,7 +399,7 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                 ): cv.boolean,
                 # Post a persistent notification after a SUCCESSFUL expert
                 # write. OFF by default (noisy when setting several
-                # values); failures always notify regardless.
+                # values); failures are raised to the caller instead.
                 vol.Optional(
                     CONF_EXPERT_NOTIFY_ON_SUCCESS,
                     default=prefill(CONF_EXPERT_NOTIFY_ON_SUCCESS, False),

@@ -135,8 +135,8 @@ CONF_EXPERT_AUTO_POLL: Final = "expert_auto_poll_enabled"
 CONF_EXPERT_POLL_INTERVAL: Final = "expert_poll_interval_minutes"
 # Whether a successful expert write posts a persistent notification.
 # OFF by default (a notification on every write gets noisy, especially when
-# setting several values). Failures always notify regardless, and successes
-# are always logged either way - this only controls the success popup.
+# setting several values). Failures are raised to the caller instead, and
+# successes are always logged either way - this only controls the success popup.
 CONF_EXPERT_NOTIFY_ON_SUCCESS: Final = "expert_notify_on_success"
 # Advanced/expert-only toggles for the two navigation steps that are
 # skipped by default (both proven unnecessary on the reference install).
