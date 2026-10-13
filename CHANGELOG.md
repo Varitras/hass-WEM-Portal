@@ -38,6 +38,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   own that the portal's device list does not name. After two failed cycles
   the list was read again without it: every web sensor went unknown and
   warned about its missing reading until the next scrape.
+- **An expert parameter made only of words takes the word.** A dropdown
+  with no number in it - an operating mode, say - shows as the position of
+  the option, a number the portal never displays, and
+  `set_expert_parameter` refused the word the portal does show. It now
+  takes the word, in any case, as it already did for "Aus" beside a scale.
 - **A refused expert request is logged once.** The `set_expert_parameter`
   action logged a refused write a second time as an error, and the
   parameter search in the options logged a refusal again as a warning that

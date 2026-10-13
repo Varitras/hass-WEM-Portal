@@ -5977,5 +5977,12 @@
     "old": "                _LOGGER.debug(\"Expert discovery: not run - %s\", exc)\n",
     "new": "                _LOGGER.warning(\"Expert discovery: not run - %s\", exc)\n",
     "tests": "refused_discovery_is_not_said_a_second_time"
+  },
+  {
+    "label": "expert words: a dropdown of words refuses its own words again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if not by_label:\n            # On a dropdown of words",
+    "new": "        if False:\n            # On a dropdown of words",
+    "tests": "made_only_of_words_takes_the_word_it_shows"
   }
 ]

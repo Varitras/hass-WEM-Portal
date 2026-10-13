@@ -117,7 +117,8 @@ LINE_BUDGETS = {
     # And by 12 for keeping a reused session only once it reached the
     # Fachmann level, which the portal can quietly answer with the user one.
     # And by 3 for asking the gates before the login a dead reuse falls to.
-    "expert_writer.py": 1927,
+    # And by 2 for naming the options of a dropdown of words by their word.
+    "expert_writer.py": 1929,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to
@@ -135,7 +136,9 @@ COMPLEXITY_BUDGETS = {
     # 19: a reading under its own key takes the API's unit like a plain
     # sensor does - its first unitless answer had kept it unitless all run.
     "mapper.py::_merge_into_scraped": 19,
-    "expert_writer.py::WemPortalExpertClient.parse_parameter_form": 29,
+    # 31: a dropdown of words is named by its words as well, since its
+    # number is a posted index the portal never shows.
+    "expert_writer.py::WemPortalExpertClient.parse_parameter_form": 31,
     # The per-parameter ageing decision, split out of _clear_unanswered once
     # the merge map carried a device-scoped key of its own - the split the old
     # 27-budget comment foresaw. _clear_unanswered itself dropped to 9; this is

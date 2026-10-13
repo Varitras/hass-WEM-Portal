@@ -1466,6 +1466,12 @@ class WemPortalExpertClient:
                 # entity cannot show "Aus", and the attribute below says so.
                 current = value
                 selected_text = label or attribute
+        if not by_label:
+            # On a dropdown of words the number is a posted index nobody sees,
+            # so the word is also how such an option is named.
+            special_values = {
+                label or attribute: attribute for *_, attribute, _s, label in pairs
+            }
 
         if not options:
             # Dropdown present but empty: the session has no active

@@ -1795,6 +1795,28 @@ def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
     assert sent["ctl00$DialogContent$ddlNewValue"] == "15"
 
 
+def test_a_parameter_made_only_of_words_takes_the_word_it_shows(monkeypatch):
+    """A dropdown with no numeric label - an operating mode - is read by its
+    posted index, so the entity shows a number the portal never displays.
+    The word was the one way to name a setting without knowing that index,
+    and the action refused it: no option sat beside the scale, so it offered
+    "no non-numeric option" for a parameter that has nothing else."""
+    client, sent = _recording_write_client(
+        monkeypatch,
+        [
+            [("0", "Automatik", True), ("1", "Party 2.5 h", False)],
+            [("0", "Automatik", False), ("1", "Party 2.5 h", True)],
+        ],
+    )
+
+    try:
+        client.write_parameter("A" * 36, "party 2.5 h")
+    except exceptions.ValueNotOffered as refused:
+        pytest.fail(f"the word the portal shows was refused: {refused}")
+
+    assert sent["ctl00$DialogContent$ddlNewValue"] == "1"
+
+
 def test_an_abort_during_the_verify_does_not_deny_a_write_that_happened(monkeypatch):
     """The gates are asked before every request, the verify's read included.
 
