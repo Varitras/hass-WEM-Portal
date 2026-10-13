@@ -38,6 +38,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
   own that the portal's device list does not name. After two failed cycles
   the list was read again without it: every web sensor went unknown and
   warned about its missing reading until the next scrape.
+- **English names no longer leave German words in pieces.** With language
+  `en`, "Heizung" became "Heating Ung", "Wärmepumpe - Leistungsanforderung"
+  "Heat Pumpe - Output Sanforderung" and "Betriebsstunden" "Operating
+  Stunden". They now read "Heating", "Heat Pump - Power Demand" and
+  "Operating Hours". The names of existing entities change; their entity
+  ids keep the spelling they were created with.
 - **An expert parameter reported as failing is read once a day.** With the
   periodic read-back on, a parameter that keeps failing was still asked on
   every cycle after the repair had said so - and one whose dialog never

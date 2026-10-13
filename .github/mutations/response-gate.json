@@ -6005,5 +6005,12 @@
     "old": "            if asked is None or entity.entityvalue in asked\n",
     "new": "            if True\n",
     "tests": "left_out_of_a_cycle_is_not_counted_against_it"
+  },
+  {
+    "label": "vocabulary: 'Heizung' comes out in pieces again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "            \"heizung\": \"heating\",\n",
+    "new": "",
+    "tests": "no_german_word_is_left_in_pieces"
   }
 ]

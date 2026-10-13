@@ -70,6 +70,14 @@ def translate(language: str, value: str) -> str:
     vocab = {
         "en": {
             "betriebsart": "operating mode",
+            # Compounds the portal really uses: their shorter parts below
+            # (heiz, wärme, leistung, betriebs) matched inside them and left
+            # the rest standing - "Heizung" came out as "Heating Ung".
+            "heizung": "heating",
+            "wärmepumpe": "heat pump",
+            "wärmemenge": "heat quantity",
+            "leistungsanforderung": "power demand",
+            "betriebsstunden": "operating hours",
             "wärmeerzeuger": "heat generator",
             "heizkreis": "heating circuit",
             "warmwasser": "hot water",
