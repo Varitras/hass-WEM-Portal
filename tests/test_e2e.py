@@ -2165,9 +2165,14 @@ async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
     hass, monkeypatch
 ):
     """The case the counting DOES exist for: the batch works, one id never
-    comes back. After three of those the user hears about it - once."""
+    comes back. After three of those the user hears about it - once, also
+    when the daily read of a reported id finds it failing again."""
     from homeassistant.helpers import issue_registry
 
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0])
     entry, scheduled, raised_issues = await _auto_poll_entry(
         hass,
         monkeypatch,
@@ -2175,13 +2180,15 @@ async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
     )
     poll = scheduled[-1]
 
-    for _ in range(5):
+    for _ in range(3):
+        await poll(None)
+        await hass.async_block_till_done()
+    for _ in range(2):
+        now[0] += expert_controller.REPORTED_ID_RETRY_SECONDS
         await poll(None)
         await hass.async_block_till_done()
 
-    # Counted up to the report and no further: a reported id is asked
-    # once a day from then on.
-    assert entry.runtime_data.expert.fail_counts[EV_A] == 3
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 5
     assert len(raised_issues) == 1, (
         f"{len(raised_issues)} repair issues for one persistent failure"
     )
