@@ -4581,3 +4581,40 @@ async def test_a_refused_poll_is_not_announced_a_second_time(hass, monkeypatch, 
         and "read failed" in record.getMessage()
     ]
     assert not said, said
+
+
+@pytest.mark.parametrize(
+    ("language", "name", "state"),
+    [("en", "Has Errors", "no"), ("de", "Störung vorhanden", "no")],
+)
+async def test_the_status_sensors_speak_home_assistants_language(
+    hass, monkeypatch, language, name, state
+):
+    """Home Assistant itself has to find the translation - a key it does not
+    load shows the entity without a name, whatever the file says."""
+    hass.config.language = language
+    with_status = {
+        "1234": {
+            "1234-HasErrors": Reading(
+                value="no",
+                platform="sensor",
+                friendly_name="Has Errors",
+                parameter_id="HasErrors",
+            ),
+        }
+    }
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: with_status
+    )
+
+    await _setup(hass, _entry(hass))
+
+    states = [
+        found
+        for found in hass.states.async_all("sensor")
+        if found.attributes.get("friendly_name", "").endswith(name)
+    ]
+    assert states, [
+        found.attributes.get("friendly_name") for found in hass.states.async_all()
+    ]
+    assert states[0].state == state

@@ -92,7 +92,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
 
         self._attr_native_value = epoch_to_date(entity_data.value)
 
-        _LOGGER.debug("Init date: %s: %s", self._attr_name, self._attr_native_value)
+        _LOGGER.debug("Init date: %s: %s", self._label, self._attr_native_value)
 
     def _companion_dates(self) -> dict[str, float]:
         """The other date parameters of this module, at their current value.
@@ -159,7 +159,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
                 "It is shown as unknown until the next update says what the "
                 "portal actually stored.",
                 value,
-                self._attr_name,
+                self._label,
                 failure,
             )
             self._forget_written_value()
@@ -194,5 +194,5 @@ class WemPortalDate(WemPortalEntity, DateEntity):
             return
 
         self._attr_native_value = epoch_to_date(row.value)
-        _LOGGER.debug("Update date: %s: %s", self._attr_name, self._attr_native_value)
+        _LOGGER.debug("Update date: %s: %s", self._label, self._attr_native_value)
         self.async_write_ha_state()

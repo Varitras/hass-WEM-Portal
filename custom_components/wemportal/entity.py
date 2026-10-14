@@ -153,11 +153,15 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         self._config_entry = config_entry
         self._device_id = device_id
         self._attr_has_entity_name = True
-        self._attr_name = (
+        # What the integration calls the entity in its own lines. Kept apart
+        # from _attr_name, which an entity named by its translation must not
+        # have: Home Assistant takes a set name over the translation.
+        self._label = (
             entity_data.friendly_name
             if entity_data.friendly_name is not None
             else _unique_id
         )
+        self._attr_name = self._label
         self._attr_unique_id = get_wemportal_unique_id(
             self._config_entry.entry_id, str(self._device_id), str(_unique_id)
         )
@@ -197,7 +201,7 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         became reachable when dropping those readings did, and would have
         been the same silent wrong write either way.
         """
-        what = self._attr_name or str(self._attr_unique_id)
+        what = self._label or str(self._attr_unique_id)
         raise_if_not_writable(self._config_entry, what)
         if self._coordinator_row() is None:
             raise HomeAssistantError(

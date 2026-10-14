@@ -114,7 +114,9 @@ rules:
       string: the mapper compares the words of a name when it merges an API row
       with a scraped one, and the migration rebuilds old unique ids from it.
       Moving to translation keys is therefore a rework of two invariants and a
-      visible rename for every user, not a presentation change.
+      visible rename for every user, not a presentation change. The three
+      device status sensors are the exception and are translated: they are
+      the same on every installation and take part in neither invariant.
   exception-translations: done
   icon-translations:
     status: todo

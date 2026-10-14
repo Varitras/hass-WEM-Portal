@@ -220,6 +220,11 @@ DEVICE_STATUS_ROWS = (
     DEVICE_STATUS_HAS_ERRORS,
     DEVICE_STATUS_ERROR_MESSAGES,
 )
+# The words two of those rows state. Fixed, because automations compare
+# against them; what a user reads is their translation (translations/*.json,
+# entity.sensor), in Home Assistant's language.
+CONNECTION_STATES: Final = ("online", "wrong_secret", "busy", "offline", "unknown")
+HAS_ERRORS_STATES: Final = ("yes", "no")
 
 
 def _report_missing_job_id(device_id: str, reported: set[str]) -> None:
@@ -2395,7 +2400,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             )
 
             errors = portal_list(status_response, "Errors")
-            has_errors = "Yes" if errors else "No"
+            has_errors = "yes" if errors else "no"
             error_message, error_detail = error_state_and_detail(errors)
 
             self.data[device_id][f"{device_id}-{DEVICE_STATUS_HAS_ERRORS}"] = Reading(

@@ -299,5 +299,29 @@
     "write_failed": {
       "message": "Writing {parameter} failed: {error}"
     }
+  },
+  "entity": {
+    "sensor": {
+      "connection_status": {
+        "name": "Connection Status",
+        "state": {
+          "online": "Online",
+          "offline": "Offline",
+          "busy": "Busy",
+          "wrong_secret": "Wrong device key",
+          "unknown": "Unknown"
+        }
+      },
+      "has_errors": {
+        "name": "Has Errors",
+        "state": {
+          "yes": "Yes",
+          "no": "No"
+        }
+      },
+      "error_messages": {
+        "name": "Error Messages"
+      }
+    }
   }
 }

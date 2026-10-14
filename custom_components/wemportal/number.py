@@ -153,7 +153,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         # bookkeeping as a fault. Same rule sensor.py states for its own
         # readings. A value that is present but unusable still warns below.
         if value is None:
-            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
+            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._label)
             return None
 
         # A setpoint without demand; a number has no text state, and a
@@ -166,7 +166,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
             if value == "":
                 _LOGGER.warning(
                     'Invalid number value for "%s": %r -> set to None',
-                    self._attr_name,
+                    self._label,
                     value,
                 )
                 return None
@@ -179,7 +179,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         except TypeError, ValueError:
             _LOGGER.warning(
                 'Invalid numeric number value for "%s": %r -> set to None',
-                self._attr_name,
+                self._label,
                 value,
             )
             return None
@@ -207,7 +207,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
 
         _LOGGER.debug(
             'Init number: %s: "%s" [%s]',
-            self._attr_name,
+            self._label,
             self._attr_native_value,
             self._attr_native_unit_of_measurement,
         )
@@ -251,7 +251,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
 
         _LOGGER.debug(
             'Update number: %s: "%s" [%s]',
-            self._attr_name,
+            self._label,
             self._attr_native_value,
             self._attr_native_unit_of_measurement,
         )

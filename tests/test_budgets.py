@@ -96,7 +96,9 @@ LINE_BUDGETS = {
     # shared by both ageing passes.
     # And by 7 for carrying the scraper's own device across a refresh of the
     # device list, which is where that list is rebuilt.
-    "wemportalapi.py": 2866,
+    # And by 5 for the two status rows' words, fixed so that automations keep
+    # comparing against them whatever language the user reads.
+    "wemportalapi.py": 2871,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

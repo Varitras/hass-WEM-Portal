@@ -299,5 +299,29 @@
     "write_failed": {
       "message": "Das Schreiben von {parameter} ist fehlgeschlagen: {error}"
     }
+  },
+  "entity": {
+    "sensor": {
+      "connection_status": {
+        "name": "Verbindungsstatus",
+        "state": {
+          "online": "Online",
+          "offline": "Offline",
+          "busy": "Belegt",
+          "wrong_secret": "Falscher Geräteschlüssel",
+          "unknown": "Unbekannt"
+        }
+      },
+      "has_errors": {
+        "name": "Störung vorhanden",
+        "state": {
+          "yes": "Ja",
+          "no": "Nein"
+        }
+      },
+      "error_messages": {
+        "name": "Störmeldungen"
+      }
+    }
   }
 }

@@ -4720,7 +4720,7 @@ def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
     fault sees the quiet and concludes there is none.
     """
     api = _api_with_a_read_status()
-    assert api.data["1234"]["1234-HasErrors"].value == "No"
+    assert api.data["1234"]["1234-HasErrors"].value == "no"
 
     def refuse(*_args, **_kwargs):
         raise exceptions.WemPortalError("portal unavailable")

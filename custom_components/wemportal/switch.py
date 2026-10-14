@@ -64,7 +64,7 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
 
         _LOGGER.debug(
             'Init switch: %s: "%s" [%s]',
-            self._attr_name,
+            self._label,
             self._attr_is_on,
             self._attr_unit,
         )
@@ -99,7 +99,7 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
         )
         _LOGGER.debug(
             'Update switch: %s: "%s" [%s]',
-            self._attr_name,
+            self._label,
             self._attr_is_on,
             self._attr_unit,
         )

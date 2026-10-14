@@ -8,6 +8,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Has Errors now states `yes` / `no` - check automations that compare
+  against `"Yes"` or `"No"`.** The three device status sensors (Connection
+  Status, Has Errors, Error Messages) are now named, and their states shown,
+  in Home Assistant's language - they were English for everyone. The
+  states themselves stay fixed words, so an automation works in every
+  language; Has Errors changed from "Yes"/"No" to "yes"/"no" for that.
+  The connection states (`online`, `offline` ...) are unchanged. Entity ids
+  stay as they are.
 - **Home Assistant 2026.9.0 or newer is required.** Home Assistant validates
   forms and service calls with probatio now, and the integration builds its
   schemas with it directly; 2026.9 is the first release that ships it. On

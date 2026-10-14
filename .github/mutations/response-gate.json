@@ -1865,15 +1865,15 @@
   {
     "label": "select: a missing reading reported as a value outside the options",
     "path": "custom_components/wemportal/select.py",
-    "old": "        if value is None:\n            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._attr_name)\n            return None\n\n        if value in self._options_names:",
+    "old": "        if value is None:\n            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._label)\n            return None\n\n        if value in self._options_names:",
     "new": "        if value in self._options_names:",
     "tests": "a_missing_reading_is_not_reported_as_a_fault"
   },
   {
     "label": "number: a missing reading reported as an invalid value",
     "path": "custom_components/wemportal/number.py",
-    "old": "            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._attr_name)",
-    "new": "            _LOGGER.warning('No value for \"%s\" this cycle -> unknown', self._attr_name)",
+    "old": "            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._label)",
+    "new": "            _LOGGER.warning('No value for \"%s\" this cycle -> unknown', self._label)",
     "tests": "a_missing_reading_is_not_reported_as_a_fault"
   },
   {
@@ -4924,8 +4924,8 @@
   {
     "label": "sensor: a number asked of the stored classes only, not Home Assistant's",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "            or self.native_unit_of_measurement is not None\n            or self.state_class is not None\n            or self.device_class is not None\n",
-    "new": "            or self._attr_state_class is not None\n            or self._attr_device_class is not None\n",
+    "old": "            or self.native_unit_of_measurement is not None\n            or self.state_class is not None\n            or self.device_class not in (None, *NON_NUMERIC_DEVICE_CLASSES)\n",
+    "new": "            or self._attr_state_class is not None\n            or self._attr_device_class not in (None, *NON_NUMERIC_DEVICE_CLASSES)\n",
     "tests": "word_after_a_number_on_a_sensor_without_a_unit_is_unknown"
   },
   {
@@ -6089,5 +6089,40 @@
     "old": "        \"beginn\": \"start\",\n",
     "new": "        \"beginn\": \"begin\",\n",
     "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "status sensors: a fixed name hides the translation again",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        del self._attr_name\n",
+    "new": "",
+    "tests": "status_sensor_is_named_by_its_translation"
+  },
+  {
+    "label": "status sensors: no translation key",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        self._attr_translation_key, states = status\n",
+    "new": "        _key, states = status\n",
+    "tests": "status_sensor_is_named_by_its_translation"
+  },
+  {
+    "label": "status sensors: states not offered as translated words",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            self._attr_device_class = SensorDeviceClass.ENUM\n",
+    "new": "",
+    "tests": "status_states_its_value_as_one_of_its_translated_words"
+  },
+  {
+    "label": "sensor: an enum value read as a number that failed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            or self.device_class not in (None, *NON_NUMERIC_DEVICE_CLASSES)\n",
+    "new": "            or self.device_class is not None\n",
+    "tests": "status_states_its_value_as_one_of_its_translated_words"
+  },
+  {
+    "label": "status: has errors states a capitalised English word again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            has_errors = \"yes\" if errors else \"no\"\n",
+    "new": "            has_errors = \"Yes\" if errors else \"No\"\n",
+    "tests": "has_errors_reads_as_a_stable_word"
   }
 ]
