@@ -113,7 +113,9 @@ LINE_BUDGETS = {
     # `with`, and the formatter wrapped what no longer fit. And by 19 for
     # keeping a failed mid-poll re-login for the rest of the poll, in its
     # own method so _recover_or_raise keeps its complexity.
-    "transport.py": 958,
+    # And by 5 for saying which pause holds and for how long, so a form
+    # can put it in the user's language.
+    "transport.py": 963,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     # And by 12 for keeping a reused session only once it reached the

@@ -4618,3 +4618,49 @@ async def test_the_status_sensors_speak_home_assistants_language(
         found.attributes.get("friendly_name") for found in hass.states.async_all()
     ]
     assert states[0].state == state
+
+
+@pytest.mark.parametrize("route", ["entity", "service"])
+async def test_a_confirmed_write_is_announced_in_home_assistants_language(
+    hass, monkeypatch, route
+):
+    """The success notification was English text built in code, also in a
+    German Home Assistant."""
+    from custom_components.wemportal import expert_number
+    import custom_components.wemportal as integration
+    from custom_components.wemportal.const import CONF_EXPERT_NOTIFY_ON_SUCCESS
+
+    hass.config.language = "de"
+    announced = []
+
+    def record(_hass, message, title=None, notification_id=None):
+        announced.append((title, message))
+
+    monkeypatch.setattr(expert_number.persistent_notification, "async_create", record)
+    monkeypatch.setattr(integration.persistent_notification, "async_create", record)
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient,
+        "write_parameter",
+        lambda self, entityvalue, value, **_kwargs: expert_writer.ExpertParameterState(
+            float(value), [10.0, 20.0, 30.0], {}
+        ),
+    )
+    entry = await _setup(
+        hass, _entry(hass, {**_expert_options(), CONF_EXPERT_NOTIFY_ON_SUCCESS: True})
+    )
+
+    if route == "entity":
+        await entry.runtime_data.expert.entities[0].async_set_native_value(30)
+    else:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A, "value": 30},
+            blocking=True,
+        )
+    await hass.async_block_till_done()
+
+    assert announced, "a confirmed write with notifications on announced nothing"
+    title, message = announced[0]
+    assert title == "WEM-Portal-Fachmann-Schreibvorgang"
+    assert message.endswith("gesetzt."), message

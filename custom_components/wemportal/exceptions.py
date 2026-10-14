@@ -81,6 +81,19 @@ class ForbiddenError(WemPortalError):
     """Exception to indicate a forbidden error (403)."""
 
 
+class PausedAfterRefusal(ForbiddenError):
+    """No request was sent: a 403 earlier started a pause that still holds.
+
+    Carries what a form needs to say so in the user's language - how long
+    it still holds, and whether it is the expert path's own pause or the
+    whole network's. The message is the log's."""
+
+    def __init__(self, message: str, remaining: str, expert_only: bool) -> None:
+        super().__init__(message)
+        self.remaining = remaining
+        self.expert_only = expert_only
+
+
 class ExpertLevelNotReached(WemPortalError):
     """The Fachmann postback was answered with the user level.
 

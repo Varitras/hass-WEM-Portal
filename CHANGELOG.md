@@ -8,14 +8,20 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **Has Errors now states `yes` / `no` - check automations that compare
-  against `"Yes"` or `"No"`.** The three device status sensors (Connection
+- **Has Errors now states `yes` / `no`, and Error Messages `none` without a
+  fault - check automations that compare against `"Yes"`, `"No"` or
+  `"None"`.** The three device status sensors (Connection
   Status, Has Errors, Error Messages) are now named, and their states shown,
   in Home Assistant's language - they were English for everyone. The
   states themselves stay fixed words, so an automation works in every
   language; Has Errors changed from "Yes"/"No" to "yes"/"no" for that.
   The connection states (`online`, `offline` ...) are unchanged. Entity ids
   stay as they are.
+- **The integration's own texts follow Home Assistant's language too.** A
+  slot without a name of its own is called "Fachmann-Parameter 3" in a
+  German Home Assistant, the notification after a confirmed expert write
+  is German there, and so is the line at the top of the options that
+  says why a discovery could not run and how long the pause still holds.
 - **Home Assistant 2026.9.0 or newer is required.** Home Assistant validates
   forms and service calls with probatio now, and the integration builds its
   schemas with it directly; 2026.9 is the first release that ships it. On

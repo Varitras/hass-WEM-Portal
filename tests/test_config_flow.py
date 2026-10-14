@@ -809,16 +809,23 @@ async def test_discovery_blocked_by_cooldown_is_reported(hass, monkeypatch):
     has no parameters" - the user must be told the search never ran."""
     entry = await _setup(hass, _entry(hass))
 
+    from custom_components.wemportal.exceptions import PausedAfterRefusal
+
     def blocked(_selected):
-        raise ForbiddenError("backing off (~4 min remaining)")
+        raise PausedAfterRefusal(
+            "backing off (~4 min remaining)", remaining="~4 min", expert_only=True
+        )
 
     result = await _run_discovery_with(hass, entry, monkeypatch, blocked)
 
     assert result["step_id"] == "configure"
     assert result["errors"] == {"base": "discovery_blocked"}
-    # The specifics (remaining time, which request was rejected) reach the
-    # form, so the user does not have to read the log to find out.
-    assert "4 min remaining" in result["description_placeholders"]["status"]
+    # How long it still holds reaches the form, so the user does not have
+    # to read the log to find out.
+    status = result["description_placeholders"]["status"]
+    assert "~4 min" in status
+    # In the form's words, not the log line the pause raised with.
+    assert status.startswith("Expert access is paused"), status
 
 
 def _warnings_of_ours(caplog):

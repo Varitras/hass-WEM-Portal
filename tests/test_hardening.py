@@ -4631,7 +4631,7 @@ def test_a_single_fault_reads_as_itself():
         "E12 Sensor defect",
         ["E12 Sensor defect"],
     )
-    assert error_state_and_detail([]) == ("None", [])
+    assert error_state_and_detail([]) == ("none", [])
 
 
 def test_a_fault_list_too_long_for_a_state_says_how_many_it_dropped():

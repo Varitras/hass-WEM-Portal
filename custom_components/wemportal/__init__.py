@@ -13,6 +13,7 @@ from datetime import timedelta
 
 import homeassistant.helpers.config_validation as cv
 import probatio as vol
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -58,7 +59,12 @@ from .models import (
     WemPortalData,
     is_still_serving,
 )
-from .utils import clamped_scan_interval, device_identifier, deserialize_modules
+from .utils import (
+    async_translated_message,
+    clamped_scan_interval,
+    device_identifier,
+    deserialize_modules,
+)
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -599,15 +605,18 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
             state.max_value,
         )
         if target_entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
-            await hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "WEM Portal expert write",
-                    "message": f"{ev_short} set to {written}.",
-                    "notification_id": f"wemportal_expert_{entityvalue_digest(entityvalue)}",
-                },
-                blocking=False,
+            persistent_notification.async_create(
+                hass,
+                await async_translated_message(
+                    hass,
+                    "expert_write_succeeded",
+                    parameter=ev_short,
+                    value=str(written),
+                ),
+                title=await async_translated_message(
+                    hass, "expert_write_succeeded_title"
+                ),
+                notification_id=f"wemportal_expert_{entityvalue_digest(entityvalue)}",
             )
 
     # Registered as an ADMIN service: it writes real settings on a heating

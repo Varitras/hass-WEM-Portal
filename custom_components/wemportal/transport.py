@@ -38,6 +38,7 @@ from .exceptions import (
     AuthError,
     ExpiredSessionError,
     ForbiddenError,
+    PausedAfterRefusal,
     LoginRefused,
     WebLoginRefused,
     PortalMaintenanceError,
@@ -246,9 +247,11 @@ class WemPortalTransport:
         self.check_cooldown()
         if self._expert_blocked_until and time.monotonic() < self._expert_blocked_until:
             remaining = time_left(self._expert_blocked_until - time.monotonic())
-            raise ForbiddenError(
+            raise PausedAfterRefusal(
                 f"Expert path is backing off after a previous 403 "
-                f"({remaining} remaining). Sensor polling is unaffected."
+                f"({remaining} remaining). Sensor polling is unaffected.",
+                remaining=remaining,
+                expert_only=True,
             )
 
     def is_rate_limited(self) -> bool:
@@ -275,9 +278,11 @@ class WemPortalTransport:
         """
         if self._blocked_until and time.monotonic() < self._blocked_until:
             remaining = time_left(self._blocked_until - time.monotonic())
-            raise ForbiddenError(
+            raise PausedAfterRefusal(
                 f"Still cooling down after a previous rate-limit response "
-                f"({remaining} remaining). Skipping requests until then."
+                f"({remaining} remaining). Skipping requests until then.",
+                remaining=remaining,
+                expert_only=False,
             )
 
     def reset_transport(self):

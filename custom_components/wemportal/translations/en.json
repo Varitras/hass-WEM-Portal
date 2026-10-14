@@ -298,6 +298,21 @@
     },
     "write_failed": {
       "message": "Writing {parameter} failed: {error}"
+    },
+    "expert_write_succeeded_title": {
+      "message": "WEM Portal expert write"
+    },
+    "expert_write_succeeded": {
+      "message": "{parameter} set to {value}."
+    },
+    "discovery_paused_expert": {
+      "message": "Expert access is paused after a refused request for another {remaining}. Sensor polling is unaffected."
+    },
+    "discovery_paused_network": {
+      "message": "The WEM Portal is refusing requests from this network; the pause holds for another {remaining}."
+    },
+    "discovery_refused": {
+      "message": "The portal has just refused an expert request (403)."
     }
   },
   "entity": {
@@ -320,7 +335,15 @@
         }
       },
       "error_messages": {
-        "name": "Error Messages"
+        "name": "Error Messages",
+        "state": {
+          "none": "No fault"
+        }
+      }
+    },
+    "number": {
+      "expert_parameter": {
+        "name": "Expert Parameter {slot}"
       }
     }
   }

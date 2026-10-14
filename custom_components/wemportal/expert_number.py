@@ -12,7 +12,9 @@ client at all.
 """
 
 import logging
+import re
 
+from homeassistant.components import persistent_notification
 from homeassistant.components.number import NumberMode, RestoreNumber
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
@@ -37,6 +39,12 @@ from .expert_options import canonical_entityvalue, entityvalue_digest
 from .migration import ENTRY_TITLE
 
 _LOGGER = logging.getLogger(__name__)
+
+
+# The name a slot gets when the user gave it none. Recognised again in the
+# entity, which names such a slot through its translation instead.
+DEFAULT_SLOT_NAME = "expert_parameter_{slot}"
+_DEFAULT_SLOT_NAME = re.compile(r"expert_parameter_(?P<slot>\d+)")
 
 
 def create_expert_number_entities(config_entry):
@@ -66,7 +74,9 @@ def create_expert_number_entities(config_entry):
         if not entityvalue:
             continue
         name = (options.get(CONF_EXPERT_SLOT_NAME_TEMPLATE % slot) or "").strip()
-        configured_slots.append((name or f"expert_parameter_{slot}", entityvalue))
+        configured_slots.append(
+            (name or DEFAULT_SLOT_NAME.format(slot=slot), entityvalue)
+        )
 
     entities = []
     seen = set()
@@ -138,7 +148,15 @@ class WemPortalExpertNumber(RestoreNumber):
         # "expert_parameter_3"); use it as the stable object_id source
         # but show a readable friendly name, consistent with
         # has_entity_name on the other platforms.
-        self._attr_name = name.replace("_", " ").title()
+        self._label = name.replace("_", " ").title()
+        default_slot = _DEFAULT_SLOT_NAME.fullmatch(name)
+        if default_slot is None:
+            self._attr_name = self._label
+        else:
+            # No name of the user's: Home Assistant names it in its own
+            # language - only when nothing is set as the name.
+            self._attr_translation_key = "expert_parameter"
+            self._attr_translation_placeholders = {"slot": default_slot["slot"]}
         # No translation_key: slot names are free text with no matching
         # translation entry, so the friendly name above is used directly
         # (setting an unresolvable translation_key would only log warnings).
@@ -280,7 +298,7 @@ class WemPortalExpertNumber(RestoreNumber):
         if self._write_in_progress:
             _LOGGER.debug(
                 "Discarding poll result for %s: a write is in progress.",
-                self._attr_name,
+                self._label,
             )
             return
         self._apply_state(state)
@@ -342,13 +360,13 @@ class WemPortalExpertNumber(RestoreNumber):
         from .models import raise_if_not_writable
 
         raise_if_not_writable(
-            self._config_entry, self._attr_name or str(self._attr_unique_id)
+            self._config_entry, self._label or str(self._attr_unique_id)
         )
         if self._write_in_progress:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="expert_write_in_progress",
-                translation_placeholders={"parameter": str(self._attr_name)},
+                translation_placeholders={"parameter": str(self._label)},
             )
         self._write_in_progress = True
         await self._async_write(value)
@@ -394,12 +412,12 @@ class WemPortalExpertNumber(RestoreNumber):
         """
         if self._removed:
             raise ExpertOperationAborted(
-                f"{self._attr_name}: the entity was removed before the "
+                f"{self._label}: the entity was removed before the "
                 "write reached the portal"
             )
         reason = owner.why_not_current(self._config_entry)
         if reason is not None:
-            raise ExpertOperationAborted(f"{self._attr_name}: {reason}")
+            raise ExpertOperationAborted(f"{self._label}: {reason}")
 
     async def _async_write(self, value: float) -> None:
         """Do the write and wait for the portal to confirm it."""
@@ -453,12 +471,12 @@ class WemPortalExpertNumber(RestoreNumber):
             # been set when nothing reached the portal at all. That the
             # configuration went away is a reason for the write not to
             # happen, not a reason to say it did.
-            _LOGGER.debug("Expert write for %s stopped: %s", self._attr_name, exc)
+            _LOGGER.debug("Expert write for %s stopped: %s", self._label, exc)
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="expert_write_stopped",
                 translation_placeholders={
-                    "parameter": str(self._attr_name),
+                    "parameter": str(self._label),
                     "error": str(exc),
                 },
             ) from exc
@@ -488,7 +506,7 @@ class WemPortalExpertNumber(RestoreNumber):
                     translation_domain=DOMAIN,
                     translation_key="expert_value_not_offered",
                     translation_placeholders={
-                        "parameter": str(self._attr_name),
+                        "parameter": str(self._label),
                         "value": str(value),
                         "error": str(exc),
                     },
@@ -497,7 +515,7 @@ class WemPortalExpertNumber(RestoreNumber):
                 translation_domain=DOMAIN,
                 translation_key="expert_write_failed",
                 translation_placeholders={
-                    "parameter": str(self._attr_name),
+                    "parameter": str(self._label),
                     "value": str(value),
                     "error": str(exc),
                 },
@@ -509,7 +527,7 @@ class WemPortalExpertNumber(RestoreNumber):
                 translation_domain=DOMAIN,
                 translation_key="expert_write_failed",
                 translation_placeholders={
-                    "parameter": str(self._attr_name),
+                    "parameter": str(self._label),
                     "value": str(value),
                     "error": str(exc),
                 },
@@ -520,12 +538,12 @@ class WemPortalExpertNumber(RestoreNumber):
             # the busy-lock refusal comes through here.
             raise
         except Exception as exc:
-            _LOGGER.error("Expert write failed for %s: %s", self._attr_name, exc)
+            _LOGGER.error("Expert write failed for %s: %s", self._label, exc)
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="expert_write_failed",
                 translation_placeholders={
-                    "parameter": str(self._attr_name),
+                    "parameter": str(self._label),
                     "value": str(value),
                     "error": str(exc),
                 },
@@ -548,18 +566,18 @@ class WemPortalExpertNumber(RestoreNumber):
             # as one and invited a second write.
             _LOGGER.info(
                 "Expert parameter %s was set, but its entry unloaded meanwhile.",
-                self._attr_name,
+                self._label,
             )
             return
         data.expert.apply_verified_write(self.entityvalue, state)
         _LOGGER.info(
             "Expert parameter %s set and verified: %s",
-            self._attr_name,
+            self._label,
             state.current,
         )
-        self._notify_success(f"{self._attr_name} set to {state.current}.")
+        await self._async_notify_success(state.current)
 
-    def _notify_success(self, message: str) -> None:
+    async def _async_notify_success(self, value) -> None:
         """Report a successful write, if the user asked to be told.
 
         Off by default (CONF_EXPERT_NOTIFY_ON_SUCCESS); the success is
@@ -569,17 +587,20 @@ class WemPortalExpertNumber(RestoreNumber):
         """
         if not self._config_entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
             return
-        self.hass.async_create_task(
-            self.hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "WEM Portal expert write",
-                    "message": message,
-                    "notification_id": f"wemportal_expert_{self._attr_unique_id}",
-                },
-                blocking=False,
-            )
+        from .utils import async_translated_message
+
+        persistent_notification.async_create(
+            self.hass,
+            await async_translated_message(
+                self.hass,
+                "expert_write_succeeded",
+                parameter=self._label,
+                value=str(value),
+            ),
+            title=await async_translated_message(
+                self.hass, "expert_write_succeeded_title"
+            ),
+            notification_id=f"wemportal_expert_{self._attr_unique_id}",
         )
 
     def _entry_api(self):

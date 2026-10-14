@@ -616,6 +616,22 @@ def latest_statistics_entry(
 _MORE = " (+{} more)"
 
 
+async def async_translated_message(hass: Any, key: str, **placeholders: str) -> str:
+    """One of the integration's own texts in Home Assistant's language.
+
+    For what Home Assistant does not translate by itself - a notification,
+    the status line of a form. Kept with the exception texts in
+    translations/*.json; Home Assistant falls back to English for a key a
+    language lacks."""
+    from homeassistant.helpers.translation import async_get_translations
+
+    texts = await async_get_translations(
+        hass, hass.config.language, "exceptions", [DOMAIN]
+    )
+    text = texts.get(f"component.{DOMAIN}.exceptions.{key}.message", key)
+    return text.format(**placeholders)
+
+
 def error_state_and_detail(errors: Iterable[Any] | None) -> tuple[str, list[str]]:
     """The fault sensor's state, and the full list for its attribute.
 
@@ -632,7 +648,7 @@ def error_state_and_detail(errors: Iterable[Any] | None) -> tuple[str, list[str]
     """
     messages = [text for text in (str(error).strip() for error in errors or []) if text]
     if not messages:
-        return "None", []
+        return "none", []
 
     joined = ", ".join(messages)
     if len(joined) <= MAX_LENGTH_STATE_STATE:

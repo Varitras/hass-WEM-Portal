@@ -402,7 +402,7 @@
   {
     "label": "unload gate: the expert entity must ask too",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        raise_if_not_writable(\n            self._config_entry, self._attr_name or str(self._attr_unique_id)\n        )",
+    "old": "        raise_if_not_writable(\n            self._config_entry, self._label or str(self._attr_unique_id)\n        )",
     "new": "        pass",
     "tests": "expert_entity_does_not_start_a_write_while_unloading"
   },
@@ -2383,15 +2383,15 @@
   {
     "label": "expert: an unexpected failure swallowed instead of wrapped",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._attr_name, exc)\n            raise HomeAssistantError(",
-    "new": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._attr_name, exc)\n            return\n            raise HomeAssistantError(",
+    "old": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._label, exc)\n            raise HomeAssistantError(",
+    "new": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._label, exc)\n            return\n            raise HomeAssistantError(",
     "tests": "a_write_that_fails_with_a_plain_error_still_reaches_the_caller"
   },
   {
     "label": "expert: a teardown reported to the caller as a successful write",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._attr_name, exc)\n            raise HomeAssistantError(\n",
-    "new": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._attr_name, exc)\n            return\n            raise HomeAssistantError(\n",
+    "old": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._label, exc)\n            raise HomeAssistantError(\n",
+    "new": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._label, exc)\n            return\n            raise HomeAssistantError(\n",
     "tests": "a_write_stopped_by_a_teardown_reaches_the_caller_too"
   },
   {
@@ -5127,7 +5127,7 @@
   {
     "label": "expert entity write: an unloading or reloaded entry not asked",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        reason = owner.why_not_current(self._config_entry)\n        if reason is not None:\n            raise ExpertOperationAborted(f\"{self._attr_name}: {reason}\")\n",
+    "old": "        reason = owner.why_not_current(self._config_entry)\n        if reason is not None:\n            raise ExpertOperationAborted(f\"{self._label}: {reason}\")\n",
     "new": "",
     "tests": "goes_away_during_the_login"
   },
@@ -6124,5 +6124,47 @@
     "old": "            has_errors = \"yes\" if errors else \"no\"\n",
     "new": "            has_errors = \"Yes\" if errors else \"No\"\n",
     "tests": "has_errors_reads_as_a_stable_word"
+  },
+  {
+    "label": "expert slot: an unnamed slot keeps an English set name again",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        if default_slot is None:\n",
+    "new": "        if True:\n",
+    "tests": "slot_without_a_name_is_named_by_its_translation"
+  },
+  {
+    "label": "expert entity write: success announced in English again",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "            title=await async_translated_message(\n                self.hass, \"expert_write_succeeded_title\"\n            ),\n",
+    "new": "            title=\"WEM Portal expert write\",\n",
+    "tests": "confirmed_write_is_announced_in_home_assistants_language"
+  },
+  {
+    "label": "expert service: success announced in English again",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "                title=await async_translated_message(\n                    hass, \"expert_write_succeeded_title\"\n                ),\n",
+    "new": "                title=\"WEM Portal expert write\",\n",
+    "tests": "confirmed_write_is_announced_in_home_assistants_language"
+  },
+  {
+    "label": "discovery: the form shows the log line of a pause again",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                self._discovery_detail = await blocked_discovery_status(self.hass, exc)\n",
+    "new": "                self._discovery_detail = str(exc)\n",
+    "tests": "discovery_blocked_by_cooldown_is_reported"
+  },
+  {
+    "label": "pause: the expert path's own pause taken for the network's",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                remaining=remaining,\n                expert_only=True,\n",
+    "new": "                remaining=remaining,\n                expert_only=False,\n",
+    "tests": "pause_says_whose_it_is_and_how_long_it_holds"
+  },
+  {
+    "label": "error messages: no fault stated as an English word again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        return \"none\", []\n",
+    "new": "        return \"None\", []\n",
+    "tests": "no_fault_is_a_stable_word"
   }
 ]

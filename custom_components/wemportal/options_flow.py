@@ -55,7 +55,8 @@ from .const import (
     MIN_SCAN_INTERVAL_API_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
 )
-from .exceptions import ExpertOperationAborted, ForbiddenError
+from .exceptions import ExpertOperationAborted, ForbiddenError, PausedAfterRefusal
+from .utils import async_translated_message
 from .expert_options import (
     discovery_option_list,
     canonical_entityvalue,
@@ -76,6 +77,22 @@ from .models import account_state
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def blocked_discovery_status(hass: Any, exc: ForbiddenError) -> str:
+    """Why discovery did not run, for the top of the form, in Home
+    Assistant's language. The exception's own text is the log's, and it
+    reached the German form in English."""
+    if isinstance(exc, PausedAfterRefusal):
+        # The keys literal in the call: the catalogue guard reads them there.
+        return await async_translated_message(
+            hass,
+            "discovery_paused_expert"
+            if exc.expert_only
+            else "discovery_paused_network",
+            remaining=exc.remaining,
+        )
+    return await async_translated_message(hass, "discovery_refused")
 
 
 class WemportalOptionsFlow(OptionsFlowWithReload):
@@ -677,7 +694,7 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                 # the form instead of making the user read the log.
                 _LOGGER.debug("Expert discovery: not run - %s", exc)
                 self._discovery_error = "discovery_blocked"
-                self._discovery_detail = str(exc)
+                self._discovery_detail = await blocked_discovery_status(self.hass, exc)
             except Exception:
                 _LOGGER.exception("Expert discovery: parameter discovery failed")
                 self._discovery_error = "discovery_failed"

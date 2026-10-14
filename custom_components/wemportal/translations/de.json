@@ -298,6 +298,21 @@
     },
     "write_failed": {
       "message": "Das Schreiben von {parameter} ist fehlgeschlagen: {error}"
+    },
+    "expert_write_succeeded_title": {
+      "message": "WEM-Portal-Fachmann-Schreibvorgang"
+    },
+    "expert_write_succeeded": {
+      "message": "{parameter} auf {value} gesetzt."
+    },
+    "discovery_paused_expert": {
+      "message": "Der Fachmann-Zugriff pausiert nach einer abgelehnten Anfrage noch {remaining}. Die Sensor-Abfrage läuft normal weiter."
+    },
+    "discovery_paused_network": {
+      "message": "Das WEM Portal weist Anfragen aus diesem Netz ab; die Pause dauert noch {remaining}."
+    },
+    "discovery_refused": {
+      "message": "Das Portal hat gerade eine Fachmann-Anfrage abgelehnt (403)."
     }
   },
   "entity": {
@@ -320,7 +335,15 @@
         }
       },
       "error_messages": {
-        "name": "Störmeldungen"
+        "name": "Störmeldungen",
+        "state": {
+          "none": "Keine Störung"
+        }
+      }
+    },
+    "number": {
+      "expert_parameter": {
+        "name": "Fachmann-Parameter {slot}"
       }
     }
   }
