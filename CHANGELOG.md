@@ -48,12 +48,22 @@ versioning follows [Semantic Versioning](https://semver.org/).
   classed as a temperature: choosing °C as display unit turned 4.5 K into
   -268.65 °C, and the reading was offered as a room temperature. The unit
   stays K, so the recorded history carries on.
-- **English names no longer leave German words in pieces.** With language
-  `en`, "Heizung" became "Heating Ung", "Wärmepumpe - Leistungsanforderung"
-  "Heat Pumpe - Output Sanforderung" and "Betriebsstunden" "Operating
-  Stunden". They now read "Heating", "Heat Pump - Power Demand" and
-  "Operating Hours". The names of existing entities change; their entity
-  ids keep the spelling they were created with.
+- **English names are English, and German ones keep the portal's
+  spelling.**
+  - With language `en`, names were translated by replacing parts of words,
+    which left the rest of a word standing: "Heizung" became "Heating Ung",
+    "Hochdruck" "Hoch Pressure", "Heizkennlinie" "Heating Kennlinie" - and
+    "Absenkmodus" "Reduced M Outdoor Unit S", because the abbreviation for
+    the outdoor unit matched inside it. Words are now translated whole, a
+    word the integration does not know stays as the portal wrote it, and
+    the names of the expert page and the statistics read in English
+    throughout: "High Pressure", "Heating Curve", "Discharge Gas
+    Temperature", "Superheat Compressor", "Thermal Energy Heating Day".
+  - With language `de`, every word was capitalised, so "Version WWP-SG"
+    showed as "Version Wwp-Sg" and "EVI" as "Evi". The portal's spelling
+    stays now.
+  - The names of existing entities change; their entity ids keep the
+    spelling they were created with.
 - **An expert parameter reported as failing is read once a day.** With the
   periodic read-back on, a parameter that keeps failing was still asked on
   every cycle after the repair had said so - and one whose dialog never

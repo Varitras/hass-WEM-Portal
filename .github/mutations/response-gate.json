@@ -6009,9 +6009,9 @@
   {
     "label": "vocabulary: 'Heizung' comes out in pieces again",
     "path": "custom_components/wemportal/translations.py",
-    "old": "            \"heizung\": \"heating\",\n",
+    "old": "        \"heizung\": \"heating\",\n",
     "new": "",
-    "tests": "no_german_word_is_left_in_pieces"
+    "tests": "every_real_name_comes_out_in_english"
   },
   {
     "label": "device class: kelvin classed as an absolute temperature again",
@@ -6026,5 +6026,47 @@
     "old": "            unique_id=account if moves_to_another_login else entry.unique_id,\n",
     "new": "            unique_id=account,\n",
     "tests": "legacy_duplicate_keeps_its_free_unique_id"
+  },
+  {
+    "label": "translation: a compound's linking s read as a word again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        if tail is None and rest.startswith(_LINKING_S):\n",
+    "new": "        if False:\n",
+    "tests": "every_real_name_comes_out_in_english or real_name_gets_its_technical_term"
+  },
+  {
+    "label": "translation: casefold spells away the sharp s again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "    parts = _parts(word.lower(), vocabulary)\n",
+    "new": "    parts = _parts(word.casefold(), vocabulary)\n",
+    "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "translation: every word capitalised, abbreviations too",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        return word.capitalize() if word.islower() and not before.isdigit() else word\n",
+    "new": "        return word.capitalize()\n",
+    "tests": "german_keeps_the_portals_spelling"
+  },
+  {
+    "label": "translation: a digit glued to a translated word again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "    return f\"{' ' if before.isalnum() else ''}{english}{' ' if after.isalnum() else ''}\"\n",
+    "new": "    return english\n",
+    "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "translation: the second heat generator loses its ordinal",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "            re.compile(r\"(?<![\\w.])2\\s*[._]?\\s*wez\\b\", re.IGNORECASE),\n",
+    "new": "            re.compile(r\"(?!x)x\", re.IGNORECASE),\n",
+    "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "translation: discharge gas read as pressure gas again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        \"druckgas\": \"discharge gas\",\n",
+    "new": "",
+    "tests": "real_name_gets_its_technical_term"
   }
 ]
