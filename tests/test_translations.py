@@ -213,9 +213,33 @@ def test_german_keeps_the_portals_spelling(name):
         ("heizprogramm1", "Heating Program 1"),
         ("th. Energie WW Tag", "Thermal Energy WW Day"),
         ("Version WWP-SG", "Version WWP-SG"),
+        ("Urlaub - Beginn", "Holiday - Start"),
+        ("Absenk", "Setback"),
     ],
 )
 def test_a_real_name_gets_its_technical_term(name, english):
     """Word by word is not always the term: 'Druckgas' is the discharge gas,
     not pressure gas, and the linking 's' of a compound is no word."""
     assert translate("en", name) == english
+
+
+@pytest.mark.parametrize(
+    ("language", "group", "name"),
+    [
+        ("en", {"GroupType": 5, "Description": ""}, "Heating Electricity Consumption"),
+        ("de", {"GroupType": 5, "Description": ""}, "Stromverbrauch Heizen"),
+        ("en", {"GroupType": 1, "Description": "Heizung"}, "Heating Energy"),
+        ("de", {"GroupType": 1, "Description": "Heizung"}, "Heizung Energie"),
+        ("de", {"GroupType": 1, "Description": "Wärmeenergie"}, "Wärmeenergie"),
+    ],
+)
+def test_a_statistics_group_is_named_in_the_names_language(language, group, name):
+    """kWh are energy, so a consumption group is electricity consumption, not
+    power; and a German name got the English word 'Energy' added to it,
+    because 'energy' never appeared in German."""
+    from custom_components.wemportal.wemportalapi import WemPortalApi
+
+    api = WemPortalApi("user@example.org", "secret")
+    api.language = language
+
+    assert api._statistics_group_name(group) == name

@@ -170,15 +170,15 @@
   {
     "label": "stats: the fallback name map must be frozen",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            group_name = fallback_names.get(group_id, f\"Energy {group_id}\")",
-    "new": "            group_name = f\"Energy {group_id}\"",
+    "old": "            return fallback_names.get(group_id, f\"{energy} {group_id}\")",
+    "new": "            return f\"{energy} {group_id}\"",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the Energy suffix rule must be frozen",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            if \"energy\" not in translated_group.lower():",
-    "new": "            if False:",
+    "old": "        if energy.lower() in translated_group.lower():\n            return translated_group\n",
+    "new": "        if True:\n            return translated_group\n",
     "tests": "statistics_output_is_unchanged"
   },
   {
@@ -6067,6 +6067,27 @@
     "path": "custom_components/wemportal/translations.py",
     "old": "        \"druckgas\": \"discharge gas\",\n",
     "new": "",
+    "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "stats: a German group name gets the English word added again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        energy = _ENERGY_WORD.get(self.language, _ENERGY_WORD[\"en\"])\n",
+    "new": "        energy = _ENERGY_WORD[\"en\"]\n",
+    "tests": "statistics_group_is_named_in_the_names_language"
+  },
+  {
+    "label": "stats: consumption named as power again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        5: \"Heating Electricity Consumption\",\n",
+    "new": "        5: \"Power Consumption Heating\",\n",
+    "tests": "statistics_group_is_named_in_the_names_language"
+  },
+  {
+    "label": "translation: a holiday begins again instead of starting",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        \"beginn\": \"start\",\n",
+    "new": "        \"beginn\": \"begin\",\n",
     "tests": "real_name_gets_its_technical_term"
   }
 ]

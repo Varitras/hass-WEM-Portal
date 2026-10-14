@@ -76,6 +76,36 @@ def statistics_row_key(device_id: str, group_id: Any) -> str:
     return f"{device_id}-Energy_{group_id}"
 
 
+# In the language of the entity names. A group the portal leaves without a
+# description gets one of these; kWh are energy, so the consumption groups
+# are electricity consumption, not power.
+_FALLBACK_GROUP_NAMES: Final = {
+    "en": {
+        1: "Heating Energy Yield",
+        2: "Hot Water Energy Yield",
+        3: "Cooling Energy Yield",
+        4: "Total Energy Yield",
+        5: "Heating Electricity Consumption",
+        6: "Hot Water Electricity Consumption",
+        7: "Cooling Electricity Consumption",
+        8: "Total Electricity Consumption",
+    },
+    "de": {
+        1: "Wärmemenge Heizen",
+        2: "Wärmemenge Warmwasser",
+        3: "Wärmemenge Kühlen",
+        4: "Wärmemenge gesamt",
+        5: "Stromverbrauch Heizen",
+        6: "Stromverbrauch Warmwasser",
+        7: "Stromverbrauch Kühlen",
+        8: "Stromverbrauch gesamt",
+    },
+}
+# What a group name ends in when it does not say energy yet - in German too,
+# where "energy" never appeared and every name got the English word added.
+_ENERGY_WORD: Final = {"en": "Energy", "de": "Energie"}
+
+
 def is_statistics_row(device_id: str, key: str) -> bool:
     """Whether a row is one this fetch owns - see the device-level ageing,
     which must leave it to the hourly read that keeps it."""
@@ -218,25 +248,16 @@ class WemPortalStatistics:
         description where it has one, a fixed fallback where it is blank."""
         group_id = group.get("GroupType")
         group_name = group.get("Description")
+        energy = _ENERGY_WORD.get(self.language, _ENERGY_WORD["en"])
         if not group_name or group_name.strip() == "":
-            fallback_names = {
-                1: "Heating Energy Yield",
-                2: "Hot Water Energy Yield",
-                3: "Cooling Energy Yield",
-                4: "Total Energy Yield",
-                5: "Power Consumption Heating",
-                6: "Power Consumption Hot Water",
-                7: "Power Consumption Cooling",
-                8: "Total Power Consumption",
-            }
-            group_name = fallback_names.get(group_id, f"Energy {group_id}")  # type: ignore[arg-type]
-        else:
-            translated_group = translate(self.language, group_name)
-            if "energy" not in translated_group.lower():
-                group_name = f"{translated_group} Energy"
-            else:
-                group_name = translated_group
-        return group_name
+            fallback_names = _FALLBACK_GROUP_NAMES.get(
+                self.language, _FALLBACK_GROUP_NAMES["en"]
+            )
+            return fallback_names.get(group_id, f"{energy} {group_id}")  # type: ignore[arg-type]
+        translated_group = translate(self.language, group_name)
+        if energy.lower() in translated_group.lower():
+            return translated_group
+        return f"{translated_group} {energy}"
 
     def _store_statistics_group(
         self, device_id, group_id, group_name, stats_resp

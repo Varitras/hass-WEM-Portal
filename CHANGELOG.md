@@ -48,6 +48,23 @@ versioning follows [Semantic Versioning](https://semver.org/).
   classed as a temperature: choosing °C as display unit turned 4.5 K into
   -268.65 °C, and the reading was offered as a room temperature. The unit
   stays K, so the recorded history carries on.
+- **The settings, messages and actions speak one language each.**
+  - German: the expert level is called "Fachmann" throughout, as on the
+    portal - the options said "Experten-" while the menu, errors and repairs
+    said "Fachmann-". Slot, service and login are "Platz", "Aktion" and
+    "Anmeldung" everywhere, one repair no longer switches to the formal
+    "Sie", and the action's ID field is no longer called "Entity-Value".
+  - English: the holiday action's fields say "Start" rather than "Begin",
+    the actions are called actions, and "Enable module select" reads
+    "Enable module selection".
+  - Both: a failed discovery said the portal itself was rate-limited; it is
+    this network the portal is refusing.
+- **Statistics groups without a name of their own are named correctly.**
+  The consumption groups are electricity, measured in kWh, but were called
+  "Power Consumption"; they read "Heating Electricity Consumption" and so on
+  now, and with language `de` they and the yields have German names. A
+  German group name also no longer gets the English word "Energy" added -
+  it is "Energie".
 - **English names are English, and German ones keep the portal's
   spelling.**
   - With language `en`, names were translated by replacing parts of words,
@@ -58,7 +75,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
     word the integration does not know stays as the portal wrote it, and
     the names of the expert page and the statistics read in English
     throughout: "High Pressure", "Heating Curve", "Discharge Gas
-    Temperature", "Superheat Compressor", "Thermal Energy Heating Day".
+    Temperature", "Superheat Compressor", "Thermal Energy Heating Day". A
+    holiday has a "Start" now, not a "Begin", and the lowered temperatures
+    share one word, "Setback".
   - With language `de`, every word was capitalised, so "Version WWP-SG"
     showed as "Version Wwp-Sg" and "EVI" as "Evi". The portal's spelling
     stays now.

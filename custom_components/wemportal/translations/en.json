@@ -98,17 +98,17 @@
           "expert_slot_9_id": "Expert parameter 9: ID",
           "expert_slot_10_name": "Expert parameter 10: name",
           "expert_slot_10_id": "Expert parameter 10: ID",
-          "expert_enable_module_nav": "⚠ Enable module select",
+          "expert_enable_module_nav": "⚠ Enable module selection",
           "expert_enable_security_code": "⚠ Enable security-code step",
           "expert_notify_on_success": "Notify on successful expert write"
         },
         "data_description": {
-          "scan_interval": "In seconds; used in web and both mode. Default 1800, below 900 is not recommended. Every request counts against the portal's limit per IP address.",
-          "api_scan_interval": "In seconds; used in api and both mode. Default 300, below 180 is not recommended. Every request counts against the portal's limit per IP address.",
+          "scan_interval": "In seconds; used in web and both modes. Default 1800, below 900 is not recommended. Every request counts against the portal's limit per IP address.",
+          "api_scan_interval": "In seconds; used in api and both modes. Default 300, below 180 is not recommended. Every request counts against the portal's limit per IP address.",
           "language": "English (en) or German (de). Names are built from what the portal reports, so Home Assistant's own language does not change them. Default: en.",
           "mode": "Where readings come from: api (the mobile app's interface, covers every device - right for most people), web (the expert web page) or both. Checked against the portal before it is saved. Default: api.",
           "expert_write_enabled": "Makes each filled parameter slot below a writable number entity and enables the set_expert_parameter action. Changes real settings on your heating system. Default: off.",
-          "expert_module_arg": "Only used when module select is enabled. Empty means 6, the heat pump on the reference installation.",
+          "expert_module_arg": "Only used when module selection is enabled. Empty means 6, the heat pump on the reference installation.",
           "expert_auto_poll_enabled": "Reads the slot parameters on a timer, so their entities show current values without a write. Each read is a full web navigation; polling too often can trigger a temporary block (403). Default: off.",
           "expert_poll_interval_minutes": "In minutes. Default 60, minimum 15.",
           "expert_slot_1_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
@@ -153,7 +153,7 @@
       "invalid_entityvalue": "Invalid entityvalue ID: must be a long hex string (0-9, A-F only; typically 36 characters). Short values like 0 are not a valid ID.",
       "invalid_module_arg": "Invalid module menu index: digits only (e.g. 6). Leave empty to use the default.",
       "duplicate_entityvalue": "This parameter is already selected in another slot. Each expert parameter can be used only once.",
-      "discovery_failed": "Could not read from the portal. Try again later (the portal may be temporarily rate-limited).",
+      "discovery_failed": "Could not read from the portal. Try again later (the portal may be refusing requests from this network for a while).",
       "discovery_blocked": "Expert access was not attempted: the portal rejected an expert request with 403, so this path is backing off briefly. Sensor polling is unaffected. The exact remaining time and the rejected request are shown at the top of this form. A 403 here does not necessarily mean your IP is rate-limited - it can also mean the portal did not accept that particular request.",
       "discovery_empty": "The search ran, but the selected module(s) returned no readable parameters. Try another module, or enter the entityvalue manually.",
       "discovery_busy": "Another expert operation is running for this account right now - a scheduled read, or a value being written. Only one at a time is allowed, so this search was not started. Try again in a moment.",
@@ -188,7 +188,7 @@
   "services": {
     "set_expert_parameter": {
       "name": "Set expert parameter",
-      "description": "Writes a Fachmann/expert parameter via the WEM Portal web frontend. Only available while the \"Expert write access (web)\" option is enabled. The value is validated against the device's own allowed range and the write is verified by re-reading the parameter afterwards. Two limits the service enforces: it only accepts a parameter ID that is configured in one of the ten expert slots, and it refuses when more than one account has expert write enabled - a single service cannot say which account a write is meant for, and guessing would change a setting on the wrong heating system. Requires an administrator: a service call is not covered by the per-user entity permissions Home Assistant applies to the entities themselves.",
+      "description": "Writes an expert parameter (the portal's Fachmann level) via the WEM Portal web frontend. Only available while the \"Expert write access via web\" option is enabled. The value is validated against the device's own allowed range and the write is verified by re-reading the parameter afterwards. Two limits the action enforces: it only accepts a parameter ID that is configured in one of the ten expert slots, and it refuses when more than one account has expert write enabled - a single action cannot say which account a write is meant for, and guessing would change a setting on the wrong heating system. Requires an administrator: an action call is not covered by the per-user entity permissions Home Assistant applies to the entities themselves.",
       "fields": {
         "entityvalue": {
           "name": "Entity value",
@@ -202,23 +202,23 @@
     },
     "set_holiday": {
       "name": "Set holiday",
-      "description": "Writes the beginning and the end of a holiday in one request. Home Assistant sets one entity at a time, and the portal takes these two parameters only together and only when the range they describe makes sense - a write carrying one of them alone is refused, and a pair whose begin falls after its end is reported as successful and stores nothing. So whichever of the two date entities is set first describes half a range that the portal may discard, which is what this service avoids. Both entities must belong to the same module, and the service refuses a range that ends before it starts rather than reporting a setting that never happened. Requires an administrator: a service call is not covered by the per-user entity permissions Home Assistant applies to the entities themselves.",
+      "description": "Writes the start and the end of a holiday in one request. Home Assistant sets one entity at a time, and the portal takes these two parameters only together and only when the range they describe makes sense - a write carrying one of them alone is refused, and a pair whose start falls after its end is reported as successful and stores nothing. So whichever of the two date entities is set first describes half a range that the portal may discard, which is what this action avoids. Both entities must belong to the same module, and the action refuses a range that ends before it starts rather than reporting a setting that never happened. Requires an administrator: an action call is not covered by the per-user entity permissions Home Assistant applies to the entities themselves.",
       "fields": {
         "begin_entity": {
-          "name": "Begin entity",
+          "name": "Start entity",
           "description": "The date entity holding the first day of the holiday."
         },
         "begin": {
-          "name": "Begin",
+          "name": "Start",
           "description": "First day of the holiday."
         },
         "end_entity": {
           "name": "End entity",
-          "description": "The date entity holding the last day of the holiday. Must belong to the same module as the begin entity - the portal addresses parameters per module."
+          "description": "The date entity holding the last day of the holiday. Must belong to the same module as the start entity - the portal addresses parameters per module."
         },
         "end": {
           "name": "End",
-          "description": "Last day of the holiday. Must not be before the begin."
+          "description": "Last day of the holiday. Must not be before the start."
         }
       }
     }

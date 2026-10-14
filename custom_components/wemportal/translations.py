@@ -94,7 +94,7 @@ _PHRASES: dict[str, list[tuple[re.Pattern[str], str]]] = {
 _VOCABULARY: dict[str, dict[str, str]] = {
     "en": {
         "abtauen": "defrost",
-        "absenk": "reduced",
+        "absenk": "setback",
         "absenkmodus": "setback mode",
         "anforderung": "demand",
         "anforderungsüberhöhung": "demand boost",
@@ -107,7 +107,7 @@ _VOCABULARY: dict[str, dict[str, str]] = {
         "außen": "outside",
         "außenfühler": "outdoor sensor",
         "außengerät": "outdoor unit",
-        "beginn": "begin",
+        "beginn": "start",
         "betrieb": "operation",
         "betriebs": "operating",
         "betriebsart": "operating mode",

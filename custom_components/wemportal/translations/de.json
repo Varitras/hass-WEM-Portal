@@ -12,7 +12,7 @@
           "username": "Die E-Mail-Adresse, mit der du dich am WEM Portal anmeldest.",
           "password": "Dein Passwort für das WEM Portal.",
           "language": "Englisch (en) oder Deutsch (de). Die Namen entstehen aus dem, was das Portal meldet; die Sprache von Home Assistant ändert sie nicht. Standard: en.",
-          "mode": "Woher die Werte kommen: api (die Schnittstelle der App, deckt jedes Gerät ab - für die meisten richtig), web (die Fachmann-Webseite) oder both. Wird vor dem Speichern am Portal geprüft. Standard: api."
+          "mode": "Woher die Werte kommen: api (die Schnittstelle der App, deckt jedes Gerät ab – für die meisten richtig), web (die Fachmann-Webseite) oder both. Wird vor dem Speichern am Portal geprüft. Standard: api."
         }
       },
       "reauth_confirm": {
@@ -45,7 +45,7 @@
       "invalid_auth": "Ungültige Anmeldedaten",
       "unknown": "Unerwarteter Fehler",
       "wrong_account": "Der Benutzername stimmt nicht mit diesem Konto überein. Die Neuanmeldung behält dasselbe Konto; nur das Passwort kann geändert werden.",
-      "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz gerade ab - das tut es nach zu vielen Anfragen in kurzer Zeit. Hier hilft nur warten: Die Sperre löst sich von selbst, und jeder weitere Versuch verlängert sie. An Benutzername und Passwort liegt es nicht."
+      "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz gerade ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Hier hilft nur Warten: Die Sperre löst sich von selbst, und jeder weitere Versuch verlängert sie. An Benutzername und Passwort liegt es nicht."
     },
     "abort": {
       "already_configured": "Konto ist bereits konfiguriert",
@@ -62,7 +62,7 @@
     "step": {
       "init": {
         "menu_options": {
-          "configure": "Einstellungen und Fachmann-Slots konfigurieren",
+          "configure": "Einstellungen und Fachmann-Plätze konfigurieren",
           "discover_modules": "Fachmann-Parameter aus dem Portal auslesen",
           "rescan_parameters": "Portal nach neuen API-Parametern durchsuchen"
         }
@@ -74,64 +74,64 @@
           "api_scan_interval": "API-Abfrageintervall",
           "language": "Sprache der Entitätsnamen",
           "mode": "Modus",
-          "expert_write_enabled": "Experten-Schreibzugriff über Web",
+          "expert_write_enabled": "Fachmann-Schreibzugriff über Web",
           "expert_module_arg": "Modul-Menüindex",
-          "expert_auto_poll_enabled": "Experten-Parameter regelmäßig abfragen",
-          "expert_poll_interval_minutes": "Experten-Abfrageintervall",
-          "expert_slot_1_name": "Experten-Parameter 1: Name",
-          "expert_slot_1_id": "Experten-Parameter 1: ID",
-          "expert_slot_2_name": "Experten-Parameter 2: Name",
-          "expert_slot_2_id": "Experten-Parameter 2: ID",
-          "expert_slot_3_name": "Experten-Parameter 3: Name",
-          "expert_slot_3_id": "Experten-Parameter 3: ID",
-          "expert_slot_4_name": "Experten-Parameter 4: Name",
-          "expert_slot_4_id": "Experten-Parameter 4: ID",
-          "expert_slot_5_name": "Experten-Parameter 5: Name",
-          "expert_slot_5_id": "Experten-Parameter 5: ID",
-          "expert_slot_6_name": "Experten-Parameter 6: Name",
-          "expert_slot_6_id": "Experten-Parameter 6: ID",
-          "expert_slot_7_name": "Experten-Parameter 7: Name",
-          "expert_slot_7_id": "Experten-Parameter 7: ID",
-          "expert_slot_8_name": "Experten-Parameter 8: Name",
-          "expert_slot_8_id": "Experten-Parameter 8: ID",
-          "expert_slot_9_name": "Experten-Parameter 9: Name",
-          "expert_slot_9_id": "Experten-Parameter 9: ID",
-          "expert_slot_10_name": "Experten-Parameter 10: Name",
-          "expert_slot_10_id": "Experten-Parameter 10: ID",
-          "expert_enable_module_nav": "⚠ Modul-Auswahl aktivieren",
+          "expert_auto_poll_enabled": "Fachmann-Parameter regelmäßig abfragen",
+          "expert_poll_interval_minutes": "Fachmann-Abfrageintervall",
+          "expert_slot_1_name": "Fachmann-Parameter 1: Name",
+          "expert_slot_1_id": "Fachmann-Parameter 1: ID",
+          "expert_slot_2_name": "Fachmann-Parameter 2: Name",
+          "expert_slot_2_id": "Fachmann-Parameter 2: ID",
+          "expert_slot_3_name": "Fachmann-Parameter 3: Name",
+          "expert_slot_3_id": "Fachmann-Parameter 3: ID",
+          "expert_slot_4_name": "Fachmann-Parameter 4: Name",
+          "expert_slot_4_id": "Fachmann-Parameter 4: ID",
+          "expert_slot_5_name": "Fachmann-Parameter 5: Name",
+          "expert_slot_5_id": "Fachmann-Parameter 5: ID",
+          "expert_slot_6_name": "Fachmann-Parameter 6: Name",
+          "expert_slot_6_id": "Fachmann-Parameter 6: ID",
+          "expert_slot_7_name": "Fachmann-Parameter 7: Name",
+          "expert_slot_7_id": "Fachmann-Parameter 7: ID",
+          "expert_slot_8_name": "Fachmann-Parameter 8: Name",
+          "expert_slot_8_id": "Fachmann-Parameter 8: ID",
+          "expert_slot_9_name": "Fachmann-Parameter 9: Name",
+          "expert_slot_9_id": "Fachmann-Parameter 9: ID",
+          "expert_slot_10_name": "Fachmann-Parameter 10: Name",
+          "expert_slot_10_id": "Fachmann-Parameter 10: ID",
+          "expert_enable_module_nav": "⚠ Modulauswahl aktivieren",
           "expert_enable_security_code": "⚠ Sicherheitscode-Schritt aktivieren",
-          "expert_notify_on_success": "Bei erfolgreichem Experten-Schreibvorgang benachrichtigen"
+          "expert_notify_on_success": "Bei erfolgreichem Fachmann-Schreibvorgang benachrichtigen"
         },
         "data_description": {
           "scan_interval": "In Sekunden; gilt im Modus web und both. Standard 1800, unter 900 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
           "api_scan_interval": "In Sekunden; gilt im Modus api und both. Standard 300, unter 180 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
           "language": "Englisch (en) oder Deutsch (de). Die Namen entstehen aus dem, was das Portal meldet; die Sprache von Home Assistant ändert sie nicht. Standard: en.",
-          "mode": "Woher die Werte kommen: api (die Schnittstelle der App, deckt jedes Gerät ab - für die meisten richtig), web (die Fachmann-Webseite) oder both. Wird vor dem Speichern am Portal geprüft. Standard: api.",
+          "mode": "Woher die Werte kommen: api (die Schnittstelle der App, deckt jedes Gerät ab – für die meisten richtig), web (die Fachmann-Webseite) oder both. Wird vor dem Speichern am Portal geprüft. Standard: api.",
           "expert_write_enabled": "Macht jeden gefüllten Parameter-Platz unten zu einer beschreibbaren Zahl-Entität und schaltet die Aktion set_expert_parameter frei. Ändert echte Einstellungen deiner Heizung. Standard: aus.",
-          "expert_module_arg": "Nur wirksam bei aktivierter Modul-Auswahl. Leer bedeutet 6, die Wärmepumpe der Referenzanlage.",
+          "expert_module_arg": "Nur wirksam bei aktivierter Modulauswahl. Leer bedeutet 6, die Wärmepumpe der Referenzanlage.",
           "expert_auto_poll_enabled": "Liest die Parameter der Plätze zeitgesteuert, damit ihre Entitäten ohne Schreibvorgang aktuelle Werte zeigen. Jeder Lesevorgang ist eine vollständige Web-Navigation; zu häufiges Abfragen kann eine vorübergehende Sperre (403) auslösen. Standard: aus.",
           "expert_poll_interval_minutes": "In Minuten. Standard 60, Minimum 15.",
           "expert_slot_1_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_1_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_1_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_2_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_2_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_2_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_3_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_3_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_3_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_4_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_4_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_4_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_5_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_5_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_5_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_6_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_6_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_6_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_7_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_7_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_7_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_8_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_8_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_8_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_9_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_9_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_slot_9_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_10_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
-          "expert_slot_10_id": "Die entityvalue des Parameters - aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
-          "expert_enable_module_nav": "Führt vor jedem Experten-Vorgang die Modulauswahl des Portals aus. Normalerweise unnötig und kostet Anfragen - nur aktivieren, wenn Lesen oder Schreiben ohne sie fehlschlägt. Standard: aus.",
+          "expert_slot_10_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
+          "expert_enable_module_nav": "Führt vor jedem Fachmann-Vorgang die Modulauswahl des Portals aus. Normalerweise unnötig und kostet Anfragen – nur aktivieren, wenn Lesen oder Schreiben ohne sie fehlschlägt. Standard: aus.",
           "expert_enable_security_code": "Entsperrt die Fachmann-Ebene in jeder Sitzung mit dem Sicherheitscode. Nur für ein Portal, das ihn verlangt; kostet Anfragen. Standard: aus.",
           "expert_notify_on_success": "Zeigt eine Benachrichtigung, wenn ein Schreibvorgang bestätigt wurde. Fehler werden immer an den Auslöser des Schreibvorgangs gemeldet. Standard: aus."
         }
@@ -145,21 +145,21 @@
         },
         "data_description": {
           "modules": "Ein Modul nach dem anderen schont das Portal.",
-          "refresh": "Selten nötig: Die Liste ist gespeichert, und ein zusätzlicher Portal-Login direkt nach dem ersten kann eine 403-Sperre auslösen."
+          "refresh": "Selten nötig: Die Liste ist gespeichert, und eine zusätzliche Portal-Anmeldung direkt nach der ersten kann eine 403-Sperre auslösen."
         }
       }
     },
     "error": {
       "invalid_entityvalue": "Ungültige entityvalue-ID: muss eine lange Hex-Zeichenkette sein (nur 0-9, A-F; typisch 36 Zeichen). Kurze Werte wie 0 sind keine gültige ID.",
       "invalid_module_arg": "Ungültiger Modul-Menüindex: nur Ziffern (z. B. 6). Leer lassen für den Standardwert.",
-      "duplicate_entityvalue": "Dieser Parameter ist bereits in einem anderen Slot ausgewählt. Jeder Fachmann-Parameter kann nur einmal verwendet werden.",
-      "discovery_failed": "Konnte nicht vom Portal lesen. Bitte später erneut versuchen (das Portal ist evtl. kurzzeitig gesperrt/limitiert).",
+      "duplicate_entityvalue": "Dieser Parameter ist bereits auf einem anderen Platz ausgewählt. Jeder Fachmann-Parameter kann nur einmal verwendet werden.",
+      "discovery_failed": "Lesen vom Portal fehlgeschlagen. Bitte später erneut versuchen (das Portal weist Anfragen aus diesem Netz evtl. gerade ab).",
       "discovery_blocked": "Der Fachmann-Zugriff wurde nicht versucht: Das Portal hat eine Fachmann-Anfrage mit 403 abgelehnt, daher pausiert dieser Pfad kurz. Die Sensor-Abfrage läuft normal weiter. Die genaue Restzeit und die abgelehnte Anfrage stehen oben in diesem Formular. Ein 403 bedeutet hier nicht zwingend eine IP-Sperre – es kann ebenso heißen, dass das Portal genau diese Anfrage nicht akzeptiert hat.",
       "discovery_empty": "Die Suche lief, aber die gewählten Module lieferten keine lesbaren Parameter. Ein anderes Modul versuchen oder die entityvalue-ID manuell eintragen.",
       "discovery_busy": "Für dieses Konto läuft gerade eine andere Fachmann-Operation – eine geplante Abfrage oder ein Schreibvorgang. Es ist immer nur eine gleichzeitig erlaubt, daher wurde diese Suche nicht gestartet. Bitte gleich noch einmal versuchen.",
-      "invalid_auth": "Die gespeicherten Zugangsdaten funktionieren nicht für die Verbindung, die dieser Modus verwendet. Mobile API und Web-Portal sind getrennte Logins – dass eines geht, sagt nichts über das andere. Der Modus wurde nicht geändert.",
+      "invalid_auth": "Die gespeicherten Zugangsdaten funktionieren nicht für die Verbindung, die dieser Modus verwendet. Mobile API und Web-Portal sind getrennte Anmeldungen – dass eines geht, sagt nichts über das andere. Der Modus wurde nicht geändert.",
       "cannot_connect": "Die Verbindung, die dieser Modus verwendet, war nicht erreichbar. Der Modus wurde nicht geändert. Bitte später erneut versuchen.",
-      "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz derzeit ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Der Modus wurde nicht geändert. Hilft nur warten: Die Sperre löst sich von selbst, und jeder Versuch verlängert sie."
+      "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz derzeit ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Der Modus wurde nicht geändert. Hier hilft nur Warten: Die Sperre löst sich von selbst, und jeder Versuch verlängert sie."
     },
     "abort": {
       "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen.",
@@ -174,7 +174,7 @@
     },
     "web_scrape_failing": {
       "title": "Der Webzugriff auf das WEM Portal funktioniert nicht",
-      "description": "Dieses Konto ruft sowohl die mobile API als auch die Weboberfläche ab, und der Webteil ist mehrmals hintereinander fehlgeschlagen. Der API-Teil ist davon nicht betroffen und liefert weiter, seine Sensoren sind also aktuell - die Werte von der Webseite sind es nicht und werden als unbekannt angezeigt. Beides sind getrennte Anmeldungen: dass die eine funktioniert, sagt nichts über die andere. Prüfen Sie, ob sich die Weboberfläche des Portals mit diesen Zugangsdaten im Browser öffnen lässt, oder stellen Sie die Integration in den Optionen auf reinen API-Betrieb um. Dieser Hinweis verschwindet von selbst, sobald ein Web-Abruf wieder gelingt."
+      "description": "Dieses Konto ruft sowohl die mobile API als auch die Weboberfläche ab, und der Webteil ist mehrmals hintereinander fehlgeschlagen. Der API-Teil ist davon nicht betroffen und liefert weiter, seine Sensoren sind also aktuell – die Werte von der Webseite sind es nicht und werden als unbekannt angezeigt. Beides sind getrennte Anmeldungen: dass die eine funktioniert, sagt nichts über die andere. Prüfe, ob sich die Weboberfläche des Portals mit diesen Zugangsdaten im Browser öffnen lässt, oder stelle die Integration in den Optionen auf reinen API-Betrieb um. Dieser Hinweis verschwindet von selbst, sobald ein Web-Abruf wieder gelingt."
     },
     "expert_poll_unreadable_id": {
       "title": "Fachmann-Parameter „{name}“ kann nicht angefragt werden",
@@ -188,10 +188,10 @@
   "services": {
     "set_expert_parameter": {
       "name": "Fachmann-Parameter setzen",
-      "description": "Schreibt einen Fachmann-Parameter über das Web-Frontend des WEM Portals. Nur verfügbar, solange die Option „Fachmann-Schreibzugriff (Web)“ aktiv ist. Der Wert wird gegen den vom Gerät erlaubten Bereich geprüft und der Schreibvorgang anschließend durch erneutes Lesen bestätigt. Zwei Grenzen, die der Dienst durchsetzt: Er akzeptiert nur Parameter-IDs, die in einem der zehn Fachmann-Slots eingetragen sind, und er verweigert, sobald mehr als ein Konto den Fachmann-Schreibzugriff aktiviert hat – ein einzelner Dienst kann nicht sagen, welches Konto gemeint ist, und Raten würde eine Einstellung an der falschen Heizung ändern. Erfordert einen Administrator: Ein Service-Aufruf fällt nicht unter die nutzerbezogenen Entity-Berechtigungen, die Home Assistant auf die Entities selbst anwendet.",
+      "description": "Schreibt einen Fachmann-Parameter über das Web-Frontend des WEM Portals. Nur verfügbar, solange die Option „Fachmann-Schreibzugriff über Web“ aktiv ist. Der Wert wird gegen den vom Gerät erlaubten Bereich geprüft und der Schreibvorgang anschließend durch erneutes Lesen bestätigt. Zwei Grenzen, die die Aktion durchsetzt: Sie akzeptiert nur Parameter-IDs, die in einem der zehn Fachmann-Plätze eingetragen sind, und sie verweigert, sobald mehr als ein Konto den Fachmann-Schreibzugriff aktiviert hat – eine einzelne Aktion kann nicht sagen, welches Konto gemeint ist, und Raten würde eine Einstellung an der falschen Heizung ändern. Erfordert einen Administrator: Ein Aktionsaufruf fällt nicht unter die nutzerbezogenen Berechtigungen, die Home Assistant auf die Entitäten selbst anwendet.",
       "fields": {
         "entityvalue": {
-          "name": "Entity-Value",
+          "name": "Parameter-ID (entityvalue)",
           "description": "Hex-Parameter-ID DEINER Anlage, aus der URL des Bearbeiten-Dialogs im Portal (entityvalue=...). Anlagenspezifisch – nicht öffentlich teilen."
         },
         "value": {
@@ -202,7 +202,7 @@
     },
     "set_holiday": {
       "name": "Urlaub setzen",
-      "description": "Schreibt Beginn und Ende eines Urlaubs in einer Anfrage. Home Assistant setzt immer nur eine Entität, das Portal nimmt diese beiden Parameter aber nur gemeinsam an - und nur, wenn der Zeitraum in sich stimmig ist. Ein Schreibvorgang mit nur einem der beiden wird abgelehnt, und ein Paar, dessen Beginn nach dem Ende liegt, wird als erfolgreich gemeldet und trotzdem nicht gespeichert. Wer die beiden Datums-Entitäten nacheinander setzt, beschreibt also zwischendurch einen halben Zeitraum, den das Portal verwerfen darf - genau das vermeidet dieser Dienst. Beide Entitäten müssen zum selben Modul gehören, und ein Zeitraum, der vor seinem Beginn endet, wird abgelehnt statt als Einstellung gemeldet, die nie stattgefunden hat. Erfordert einen Administrator: Ein Service-Aufruf fällt nicht unter die nutzerbezogenen Entity-Berechtigungen, die Home Assistant auf die Entities selbst anwendet.",
+      "description": "Schreibt Beginn und Ende eines Urlaubs in einer Anfrage. Home Assistant setzt immer nur eine Entität, das Portal nimmt diese beiden Parameter aber nur gemeinsam an – und nur, wenn der Zeitraum in sich stimmig ist. Ein Schreibvorgang mit nur einem der beiden wird abgelehnt, und ein Paar, dessen Beginn nach dem Ende liegt, wird als erfolgreich gemeldet und trotzdem nicht gespeichert. Wer die beiden Datums-Entitäten nacheinander setzt, beschreibt also zwischendurch einen halben Zeitraum, den das Portal verwerfen darf – genau das vermeidet diese Aktion. Beide Entitäten müssen zum selben Modul gehören, und ein Zeitraum, der vor seinem Beginn endet, wird abgelehnt statt als Einstellung gemeldet, die nie stattgefunden hat. Erfordert einen Administrator: Ein Aktionsaufruf fällt nicht unter die nutzerbezogenen Berechtigungen, die Home Assistant auf die Entitäten selbst anwendet.",
       "fields": {
         "begin_entity": {
           "name": "Entität für den Beginn",
@@ -214,7 +214,7 @@
         },
         "end_entity": {
           "name": "Entität für das Ende",
-          "description": "Die Datums-Entität mit dem letzten Urlaubstag. Muss zum selben Modul gehören wie die Entität für den Beginn - das Portal adressiert Parameter je Modul."
+          "description": "Die Datums-Entität mit dem letzten Urlaubstag. Muss zum selben Modul gehören wie die Entität für den Beginn – das Portal adressiert Parameter je Modul."
         },
         "end": {
           "name": "Ende",
@@ -234,13 +234,13 @@
       "message": "Das Portal hat {written} angenommen, aber {kept} behalten."
     },
     "expert_account_ambiguous": {
-      "message": "Es ist nicht eindeutig, auf welches Konto geschrieben werden soll. Aktiviere den Expertenzugriff für genau einen WEM-Portal-Eintrag."
+      "message": "Es ist nicht eindeutig, auf welches Konto geschrieben werden soll. Aktiviere den Fachmann-Schreibzugriff für genau einen WEM-Portal-Eintrag."
     },
     "expert_operation_in_progress": {
-      "message": "Für dieses Konto läuft bereits ein anderer Expertenvorgang; bitte gleich noch einmal versuchen."
+      "message": "Für dieses Konto läuft bereits ein anderer Fachmann-Vorgang; bitte gleich noch einmal versuchen."
     },
     "expert_parameter_not_configured": {
-      "message": "{entityvalue} ist keiner der in den Optionen dieser Integration eingerichteten Parameter. Lege ihn zuerst in einem Slot an."
+      "message": "{entityvalue} ist keiner der in den Optionen dieser Integration eingerichteten Parameter. Lege ihn zuerst auf einem Platz an."
     },
     "expert_value_not_offered": {
       "message": "{value} ist kein zulässiger Wert für {parameter}: {error}"
@@ -282,7 +282,7 @@
       "message": "Das Portal hat den Urlaub angenommen, aber {begin} bis {end} behalten."
     },
     "holiday_reclassified": {
-      "message": "{entity_id} ist als Datum angelegt, das Portal beschreibt diesen Parameter inzwischen aber als {platform}. Lade die Integration neu, damit die Änderung übernommen wird; es wurde nichts geschrieben."
+      "message": "{entity_id} ist als Datum angelegt, das Portal beschreibt diesen Parameter inzwischen aber als anderen Typ ({platform}). Lade die Integration neu, damit die Änderung übernommen wird; es wurde nichts geschrieben."
     },
     "holiday_same_entity": {
       "message": "Beginn und Ende nennen dieselbe Entität ({entity_id}). Ein Urlaub braucht zwei."
