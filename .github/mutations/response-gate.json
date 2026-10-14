@@ -737,7 +737,7 @@
   },
   {
     "label": "discovery: a disabled device asked for its parameter definitions",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not self._device_is_enabled(device_id, enabled_devices):\n            return False\n",
     "new": "        if False:\n            return False\n",
     "tests": "a_disabled_device_is_not_asked_for_its_parameter_definitions"
@@ -1003,7 +1003,7 @@
   },
   {
     "label": "discovery: a refused network walked into module after module",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "                short_device_id(device_id),\n            )\n            raise exc\n        if status_code == 400:",
     "new": "                short_device_id(device_id),\n            )\n            return\n        if status_code == 400:",
     "tests": "a_refused_discovery_stops_at_the_first_module"
@@ -1143,35 +1143,35 @@
   },
   {
     "label": "rediscovery: caching the parameter list forever must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:",
     "new": "        if True:",
     "tests": "stale_parameter_list_is_re_read or list_with_no_timestamp_is_re_read_once"
   },
   {
     "label": "rediscovery: re-reading a list that is still fresh must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:",
     "new": "        if False:",
     "tests": "fresh_parameter_list_is_not_re_read"
   },
   {
     "label": "rediscovery: a failed re-read must not drop what it had",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if values.get(\"parameters\"):",
     "new": "        if False:",
     "tests": "failed_re_read_keeps_the_parameters_it_had"
   },
   {
     "label": "rediscovery: retrying a refused module at once must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "                len(values[\"parameters\"]),\n                PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,\n            )\n            values[\"parameters_fetched_at\"] = time.time() - max(",
     "new": "                len(values[\"parameters\"]),\n                PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,\n            )\n            values[\"parameters_fetched_at\"] = 0 * max(",
     "tests": "failed_re_read_is_not_retried_on_the_very_next_cycle"
   },
   {
     "label": "rediscovery: forgetting the timestamp across a device refresh must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "                module_entry[\"parameters_fetched_at\"] = cached_module.get(\n                    \"parameters_fetched_at\", 0\n                )",
     "new": "                pass",
     "tests": "get_devices_carries_the_parameter_timestamp_too"
@@ -1220,21 +1220,21 @@
   },
   {
     "label": "rediscovery: asking an empty module again every cycle must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if \"parameters\" not in values:\n            return True",
     "new": "        if \"parameters\" not in values or not values[\"parameters\"]:\n            return True",
     "tests": "module_described_as_empty_is_kept_and_not_asked_again"
   },
   {
     "label": "startup: re-reading during the first refresh must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not (missing or (stale and self._first_cycle_done)):\n            return",
     "new": "        if not (missing or stale):\n            return",
     "tests": "stale_definitions_wait_for_the_second_cycle"
   },
   {
     "label": "startup: never re-reading at all must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not (missing or (stale and self._first_cycle_done)):",
     "new": "        if not missing:",
     "tests": "stale_definitions_are_read_on_a_later_cycle"
@@ -1598,14 +1598,14 @@
   },
   {
     "label": "rediscovery: deleting a module the portal rejects must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        values[\"parameters\"] = {}",
     "new": "        if unsupported:\n            self.modules[device_id] = {\n                k: v for k, v in self.modules[device_id].items() if v is not values\n            }\n            return\n        values[\"parameters\"] = {}",
     "tests": "a_module_the_portal_rejects_is_kept_and_asked_again"
   },
   {
     "label": "rediscovery: retrying a rejected module at once must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() - max(",
     "new": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = 0 - max(",
     "tests": "a_rejected_module_is_not_asked_again_on_the_next_cycle"
@@ -1766,7 +1766,7 @@
   },
   {
     "label": "discovery: an unreadable answer skipped without being booked",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            self._note_undescribed_module(\n                device_id,\n                values,\n                \"its description could not be read\",\n                unsupported=True,\n            )",
     "new": "            pass",
     "tests": "an_unreadable_description_is_not_asked_again_every_cycle or an_answer_that_is_not_json_still_books_the_module"
@@ -2102,14 +2102,14 @@
   },
   {
     "label": "rediscovery: a refused first description left waiting a full day",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() - max(",
     "new": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() + 0 * max(",
     "tests": "a_refused_description_is_retried_within_the_hour_not_the_day"
   },
   {
     "label": "rediscovery: an empty answer retried as often as a refusal",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            values.pop(\"description_refused\", None)\n            values[\"parameters_fetched_at\"] = time.time()",
     "new": "            values.pop(\"description_refused\", None)\n            values[\"parameters_fetched_at\"] = time.time() - PARAMETER_REDISCOVERY_INTERVAL_SECONDS",
     "tests": "a_module_that_says_it_is_empty_keeps_the_daily_round"
@@ -2123,7 +2123,7 @@
   },
   {
     "label": "rediscovery: a refusal that survives the description fixing it",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        modules[device_id][key].pop(\"description_refused\", None)",
     "new": "        pass",
     "tests": "a_description_that_arrives_clears_the_refusal"
@@ -2872,14 +2872,14 @@
   },
   {
     "label": "boundary: a device list outside the contract exploding raw again",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not isinstance(device_rows, list):",
     "new": "        if device_rows is None and False:",
     "tests": "a_device_list_outside_the_contract_is_a_classified_failure"
   },
   {
     "label": "boundary: a malformed device row taking the account with it",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            except (KeyError, TypeError) as exc:",
     "new": "            except KeyError as exc:",
     "tests": "a_device_row_outside_the_contract_is_skipped_not_fatal"
@@ -3222,7 +3222,7 @@
   },
   {
     "label": "contract: a device list with no usable row must be reported",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not new_data:",
     "new": "        if False:",
     "tests": "device_list_where_no_row_is_usable_is_reported_not_adopted"
@@ -3285,7 +3285,7 @@
   },
   {
     "label": "device list: a refresh must keep the readings of a device it still names",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            **previously_known_readings.get(device_id_str, {}),\n",
     "new": "",
     "tests": "device_list_refresh_keeps_the_readings_of_a_device_it_still_names"
@@ -3432,7 +3432,7 @@
   },
   {
     "label": "logs: dumping the account's readings from the parameter read",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "                \"Fetching api parameters data for device %s\", short_device_id(device_id)\n            )\n",
     "new": "                \"Fetching api parameters data for device %s\", short_device_id(device_id)\n            )\n            _LOGGER.debug(self.data)\n",
     "tests": "no_log_call_hands_over_a_whole_store or parameter_read_does_not_log_the_whole_account"
@@ -4356,7 +4356,7 @@
   },
   {
     "label": "heavy turns: the parameter re-read does not take the turn",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n            return\n",
     "new": "",
     "tests": "heavy_fetches_that_fall_due_together_take_turns"
@@ -4384,7 +4384,7 @@
   },
   {
     "label": "heavy turns: missing definitions wait their turn",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "tests": "missing_parameter_definitions_are_never_deferred"
@@ -4405,7 +4405,7 @@
   },
   {
     "label": "discovery: an offline device makes the re-read due again",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        return self.data.get(device_id, {}).get(\"ConnectionStatus\") == 0\n",
     "new": "        return True\n",
     "tests": "unreachable_device_does_not_make_the_parameter_read_due"
@@ -4419,7 +4419,7 @@
   },
   {
     "label": "heavy turns: missing definitions queue up for a turn they do not need",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
     "tests": "missing_definitions_do_not_join_the_queue"
@@ -4769,21 +4769,21 @@
   },
   {
     "label": "discovery: a failed refresh of a working list fails the cycle again",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if refused_for_the_account:\n            raise exc\n        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
     "new": "        raise exc\n        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
     "tests": "re_read_the_portal_fails_keeps_the_cycle_and_the_list"
   },
   {
     "label": "discovery: a refused account shrugged off as one module",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if refused_for_the_account:\n            raise exc\n",
     "new": "        if False:\n            raise exc\n",
     "tests": "re_read_refused_for_the_account_still_stops_the_cycle"
   },
   {
     "label": "discovery: a list still missing shrugged off",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
     "new": "        if \"parameters\" not in values:\n            return\n",
     "tests": "missing_list_the_portal_fails_still_fails_the_cycle"
@@ -4818,21 +4818,21 @@
   },
   {
     "label": "discovery: an empty list's failed refresh fails the cycle again",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
     "new": "        if not values.get(\"parameters\"):\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
     "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
   },
   {
     "label": "discovery: a dead session asked module after module",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        session_gone = status_code == 401 or isinstance(\n",
     "new": "        session_gone = False and isinstance(\n",
     "tests": "session_that_ran_out_stops_the_re_read_at_the_first_module"
   },
   {
     "label": "discovery: a failed refresh rewrites what the portal said",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            unsupported=values.get(\"description_refused\", False),\n",
     "new": "            unsupported=True,\n",
     "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
@@ -4867,7 +4867,7 @@
   },
   {
     "label": "discovery: a dropped login read as a dead session",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        session_gone = status_code == 401 or isinstance(\n",
     "new": "        session_gone = not self.valid_login or isinstance(\n",
     "tests": "re_read_the_real_transport_fails_keeps_the_cycle"
@@ -4895,7 +4895,7 @@
   },
   {
     "label": "discovery: a session redirected to the login read as one module's failure",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        session_gone = status_code == 401 or isinstance(\n            exc.__cause__, ExpiredSessionError\n        )\n",
     "new": "        session_gone = status_code == 401\n",
     "tests": "session_redirected_to_the_login_stops_the_re_read"
@@ -5700,7 +5700,7 @@
   },
   {
     "label": "discovery: one new module the portal fails takes every device down again",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not any(\n            \"parameters\" in module\n",
     "new": "        if True or not any(\n            \"parameters\" in module\n",
     "tests": "new_module_the_portal_fails_does_not_stop_the_described_ones"
@@ -5938,7 +5938,7 @@
   },
   {
     "label": "devices: a list refresh drops the scraper's own device again",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            new_data.setdefault(str(self.scraper_device_id), scraper_rows)\n",
     "new": "            pass\n",
     "tests": "keeps_the_scrapers_own_device"

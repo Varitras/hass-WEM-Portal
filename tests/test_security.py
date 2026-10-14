@@ -83,7 +83,7 @@ def test_login_error_message_excludes_response_body(monkeypatch, caplog):
     body = b"<html>SECRET-SERVER-PAGE</html>"
     response = FakeResponse(400, {"Status": 5, "Message": "bad credentials"}, body)
     api = WemPortalApi("user@example.org", "secret")
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: FakeSession(response))
+    monkeypatch.setattr(real_requests, "Session", lambda: FakeSession(response))
 
     with (
         caplog.at_level(logging.WARNING),
@@ -155,7 +155,7 @@ def test_a_successful_login_does_not_log_the_username(monkeypatch, caplog):
     """
     response = FakeResponse(200, {"Status": 0, "Version": "3.1.3.0"})
     api = WemPortalApi("user@example.org", "secret")
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: FakeSession(response))
+    monkeypatch.setattr(real_requests, "Session", lambda: FakeSession(response))
 
     with caplog.at_level(logging.DEBUG):
         api.api_login()
@@ -1027,7 +1027,7 @@ _REFUSALS_SAID_ELSEWHERE = {
     ("transport.py", "make_api_call"),
     # Reads the status off an exception; the answer was described where it
     # arrived.
-    ("wemportalapi.py", "_survive_a_failed_description"),
+    ("discovery.py", "_survive_a_failed_description"),
 }
 
 

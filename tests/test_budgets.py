@@ -90,15 +90,15 @@ LINE_BUDGETS = {
     # And by 1 for keeping the web repair to `both` mode. And by 57 for the
     # cycle class: a null status read as missing, a new module the portal
     # fails skipped while the described ones are read, and the scrape
-    # backoff counted in web intervals. The discovery half (~400 lines) is
-    # the cohesive part to move out; that is the owner's call.
+    # backoff counted in web intervals.
     # And by 16 for one answer to "which rows does the value read own",
     # shared by both ageing passes.
     # And by 7 for carrying the scraper's own device across a refresh of the
     # device list, which is where that list is rebuilt.
     # And by 5 for the two status rows' words, fixed so that automations keep
     # comparing against them whatever language the user reads.
-    "wemportalapi.py": 2871,
+    # Down to 2279: the discovery half moved to discovery.py.
+    "wemportalapi.py": 2279,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

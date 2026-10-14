@@ -13,6 +13,7 @@ import pytest
 import requests as real_requests
 
 from custom_components.wemportal import (
+    discovery,
     exceptions,
     schedule,
     statistics,
@@ -117,7 +118,7 @@ def test_api_login_network_error_raises_clean_auth_error(monkeypatch):
     session = RecordingSession(
         post_exc=real_requests.exceptions.ConnectionError("reset")
     )
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
     with pytest.raises(exceptions.UnknownAuthError):
         api.api_login()
     assert api.valid_login is False
@@ -158,7 +159,7 @@ def test_a_rejected_login_gives_up_the_session_it_had_already_replaced(monkeypat
     # The state the re-login path is actually in: a session that WAS good.
     api.valid_login = True
     session = RecordingSession(post_json={"Status": 1})
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
 
     with pytest.raises(exceptions.AuthError):
         api.api_login()
@@ -2661,7 +2662,7 @@ def test_a_login_without_budget_left_sends_nothing(monkeypatch):
     """
     api = _api()
     session = RecordingSession()
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
     api._deadline = time.monotonic() - 1
 
     with pytest.raises(exceptions.PollDeadlineExceeded):
@@ -2676,7 +2677,7 @@ def test_a_login_outside_a_poll_is_not_deadlined(monkeypatch):
     to be out of, and refusing there would break setup."""
     api = _api()
     session = RecordingSession()
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
 
     api.api_login()
 
@@ -3930,7 +3931,7 @@ def test_a_real_window_is_still_maintenance_and_not_a_wrong_password(monkeypatch
             posted.append(True)
             return FakeResponse_html(MAINTENANCE_PAGE)
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     api = _api()
 
     with pytest.raises(exceptions.PortalMaintenanceError):
@@ -3963,7 +3964,7 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
         def post(self, *_args, **_kwargs):
             return post_answer
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     return _api()
 
 
@@ -3989,7 +3990,7 @@ def test_the_web_login_check_closes_its_session(monkeypatch, outcome):
         def close(self):
             closed.append(True)
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
 
     with contextlib.suppress(exceptions.WemPortalError):
         _api().web_login()
@@ -4021,7 +4022,7 @@ def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
             posted.append(True)
             return FakeResponse_html("")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
 
     api = _api()
 
@@ -4053,7 +4054,7 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
         def post(self, *_args, **_kwargs):
             raise AssertionError("credentials were sent to a refusing portal")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     api = _api()
 
     # The first one in a row is let pass without the pause (WebLoginRefused);
@@ -4092,7 +4093,7 @@ def test_a_page_without_a_login_form_gets_no_credentials(monkeypatch):
         def post(self, *_args, **_kwargs):
             raise AssertionError("credentials were sent to a page with no login form")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
 
     with pytest.raises(exceptions.UnknownAuthError):
         _api().web_login()
@@ -4140,7 +4141,7 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
         def post(self, *_args, **_kwargs):
             raise AssertionError("a request was sent during the cooldown")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     api = _api()
     api._activate_cooldown("a test 403")
 
@@ -4187,7 +4188,7 @@ def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
             posted.update(data)
             return FakeResponse_html("<html>ctl00_btnLogout</html>")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     _api().web_login()
 
     hidden = {
@@ -4263,7 +4264,7 @@ def test_a_login_refused_with_http_200_is_classified_like_any_refusal(
     error text."""
     api = _api()
     session = RecordingSession(post_json=answer)
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
 
     with pytest.raises(exceptions.WemPortalError) as excinfo:
         api.api_login()
@@ -6929,7 +6930,7 @@ def test_the_login_rejects_a_false_status(monkeypatch):
     about what the same field means."""
     api = _api()
     session = RecordingSession(post_json={"Status": False, "Version": "3.1"})
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
 
     with pytest.raises(exceptions.AuthError):
         api.api_login()
@@ -7671,8 +7672,8 @@ def test_a_refused_description_is_retried_within_the_hour_not_the_day():
     )
 
     age = time.time() - values["parameters_fetched_at"]
-    due_in = wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS - age
-    assert due_in <= wemportalapi.PARAMETER_REDISCOVERY_RETRY_SECONDS + 5, (
+    due_in = discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS - age
+    assert due_in <= discovery.PARAMETER_REDISCOVERY_RETRY_SECONDS + 5, (
         "a refused description waits the full day before it is asked again"
     )
     assert values["description_refused"] is True
@@ -8326,12 +8327,12 @@ def test_a_stale_parameter_list_is_re_read():
     api, calls = _discovery_api(
         [{"Parameters": [{"ParameterID": "Known"}, {"ParameterID": "New"}]}],
         fetched_at=time.time()
-        - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60),
+        - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60),
     )
 
     api.get_parameters()
 
-    assert calls == [wemportalapi.API_EVENT_TYPE_READ_URL]
+    assert calls == [discovery.API_EVENT_TYPE_READ_URL]
     assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known", "New"}
 
 
@@ -8341,7 +8342,7 @@ def test_a_list_with_no_timestamp_is_re_read_once():
 
     api.get_parameters()
 
-    assert calls == [wemportalapi.API_EVENT_TYPE_READ_URL]
+    assert calls == [discovery.API_EVENT_TYPE_READ_URL]
     assert api.modules["1234"][(0, 1)]["parameters_fetched_at"] > 0
 
 
@@ -8353,7 +8354,7 @@ def test_a_failed_re_read_keeps_the_parameters_it_had():
     again, and one 403 or maintenance window would throw away a working
     parameter list - straight into "device has no parameters".
     """
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, _calls = _discovery_api([{"Parameters": []}], fetched_at=stale)
 
     api.get_parameters()
@@ -8377,7 +8378,7 @@ def test_a_re_read_the_portal_fails_keeps_the_cycle_and_the_list(http_status):
     before a single value was read. Nothing booked the attempt, so the next
     cycle asked again and failed again - no readings at all for as long as
     the portal kept failing an optional refresh of a list that still works."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api(
         [_portal_error(http_status), _portal_error(http_status)], fetched_at=stale
     )
@@ -8398,7 +8399,7 @@ def test_a_re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle(known):
     """An empty list is a known answer too, and the check read it as a
     missing one: the failed refresh of a module that has nothing to poll
     raised out of get_data every cycle, exactly like the case fixed above."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api(
         [_portal_error(500), _portal_error(500)], fetched_at=stale
     )
@@ -8422,7 +8423,7 @@ def test_a_re_read_the_real_transport_fails_keeps_the_cycle(monkeypatch):
     session being gone - a 500 is about the request. Dropped here by hand
     as well, so the test holds whichever transport decides that."""
     monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, _calls = _discovery_api([], fetched_at=stale)
     del api.make_api_call  # the real one
 
@@ -8442,7 +8443,7 @@ def test_a_session_that_ran_out_stops_the_re_read_at_the_first_module():
     """A 401 comes back from discovery as a plain portal error - it does not
     log in again - and was booked as that one module's failure, so every
     further stale module was asked on the same dead session."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api([], fetched_at=stale)
     api.modules["1234"][(1, 1)] = dict(api.modules["1234"][(0, 1)], Index=1)
     api.valid_login = True
@@ -8464,7 +8465,7 @@ def test_a_session_redirected_to_the_login_stops_the_re_read(monkeypatch):
     Through the real transport, which is what turns that redirect into the
     plain portal error discovery sees - with the expiry as its cause."""
     monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, _calls = _discovery_api([], fetched_at=stale)
     api.modules["1234"][(1, 1)] = dict(api.modules["1234"][(0, 1)], Index=1)
     del api.make_api_call  # the real one
@@ -8492,7 +8493,7 @@ def test_a_session_redirected_to_the_login_stops_the_re_read(monkeypatch):
 )
 def test_a_re_read_refused_for_the_account_still_stops_the_cycle(error):
     """Those say something about the account, not about one module."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, _calls = _discovery_api([error], fetched_at=stale)
 
     with pytest.raises(type(error)):
@@ -8536,7 +8537,7 @@ def test_a_new_module_the_portal_fails_does_not_stop_the_described_ones(
 
 
 def test_a_failed_re_read_is_not_retried_on_the_very_next_cycle():
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api(
         [{"Parameters": []}, {"Parameters": []}], fetched_at=stale
     )
@@ -8595,7 +8596,7 @@ def test_an_unreadable_description_is_not_asked_again_every_cycle():
 def test_an_unreadable_description_keeps_the_parameters_it_had():
     """Same rule as a failed re-read: one bad answer must not empty a working
     list. The retry is the shorter one, because this module DID work."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api([{"NotParameters": []}], fetched_at=stale)
 
     api.get_parameters()
@@ -8748,7 +8749,7 @@ def test_stale_definitions_wait_for_the_second_cycle():
     then complains about. Nothing is lost by waiting one interval for
     something that is already a day old."""
     api, read = _cycle_api(
-        time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+        time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     )
 
     api.fetch_data()
@@ -8758,7 +8759,7 @@ def test_stale_definitions_wait_for_the_second_cycle():
 
 def test_stale_definitions_are_read_on_a_later_cycle():
     api, read = _cycle_api(
-        time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+        time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     )
 
     api.fetch_data()
@@ -10279,7 +10280,7 @@ def test_a_login_that_went_through_says_so(monkeypatch):
     """Whoever called it: the auth streak is the coordinator's, and a write's
     login is as good a proof of the credentials as the poll's."""
     session = RecordingSession()
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
     api = _api()
 
     api.api_login()
@@ -10326,7 +10327,7 @@ def test_a_failed_api_login_leaves_the_saying_to_whoever_handles_it(
     session = RecordingSession(
         post_exc=real_requests.exceptions.ConnectionError("reset")
     )
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
 
     with caplog.at_level(logging.DEBUG), pytest.raises(exceptions.WemPortalError):
         _api().api_login()
@@ -10345,7 +10346,7 @@ def test_an_html_answer_to_the_api_login_is_left_to_its_handler(monkeypatch, cap
         def post(self, url, **kwargs):
             return HtmlResponse(content=b"<html></html>")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", HtmlSession)
+    monkeypatch.setattr(real_requests, "Session", HtmlSession)
 
     with caplog.at_level(logging.DEBUG), pytest.raises(exceptions.WemPortalError):
         _api().api_login()
@@ -11410,7 +11411,7 @@ def test_a_setup_web_login_that_worked_starts_the_count_again(monkeypatch):
             )
 
     sessions = [_RefusingSession(), _WorkingSession(), _RefusingSession()]
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: sessions.pop(0))
+    monkeypatch.setattr(real_requests, "Session", lambda: sessions.pop(0))
     api = _api()
 
     with pytest.raises(exceptions.ForbiddenError):

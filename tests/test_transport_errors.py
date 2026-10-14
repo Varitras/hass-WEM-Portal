@@ -415,7 +415,7 @@ def test_a_login_refused_without_details_says_what_came_back(monkeypatch):
         def post(self, url, **kwargs):
             return FakeResponse({}, status_code=403, content=b"<html>")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", RefusingSession)
+    monkeypatch.setattr(real_requests, "Session", RefusingSession)
 
     with pytest.raises(exceptions.WemPortalError) as excinfo:
         WemPortalApi("user@example.org", "secret").api_login()
@@ -529,7 +529,7 @@ def _login_answering(monkeypatch, *answers):
         def post(self, url, **kwargs):
             return queue.pop(0)
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", AnsweringSession)
+    monkeypatch.setattr(real_requests, "Session", AnsweringSession)
 
 
 def _bare_403():
