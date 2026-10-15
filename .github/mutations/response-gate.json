@@ -5939,7 +5939,7 @@
   {
     "label": "devices: a list refresh drops the scraper's own device again",
     "path": "custom_components/wemportal/discovery.py",
-    "old": "            new_data.setdefault(str(self.scraper_device_id), scraper_rows)\n",
+    "old": "            new_data.setdefault(str(self.scraper_device_id), scraped)\n",
     "new": "            pass\n",
     "tests": "keeps_the_scrapers_own_device"
   },
@@ -6215,5 +6215,12 @@
     "old": "        self.fail_notified.discard(entityvalue)\n        self._reported_asked_at.pop(entityvalue, None)\n        self._batch_failures = 0\n",
     "new": "        self.fail_notified.discard(entityvalue)\n        self._batch_failures = 0\n",
     "tests": "id_that_answered_again_is_asked_every_cycle_again"
+  },
+  {
+    "label": "devices: a list refresh carries the api rows of a device it stopped naming",
+    "path": "custom_components/wemportal/discovery.py",
+    "old": "            if key in (self._previous_scraper_keys or ())\n",
+    "new": "            if True\n",
+    "tests": "device_the_list_stops_naming_keeps_only_its_scraped_rows"
   }
 ]

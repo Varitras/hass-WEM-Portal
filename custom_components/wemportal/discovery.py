@@ -78,6 +78,7 @@ class WemPortalDiscovery:
         modules: dict[str, Any] | None
         device_types: dict[str, Any]
         scraper_device_id: str | None
+        _previous_scraper_keys: set[str] | None
         scraping_mapper: dict[Any, Any]
         heavy_fetch_turns: HeavyFetchTurns
         _reported_failures: dict[str, str]
@@ -210,9 +211,19 @@ class WemPortalDiscovery:
         # scraper's own device is one it never names - the placeholder of an
         # install that began in `web` mode - and dropping it here blanked every
         # web row until the next scrape, after each transport reset.
-        scraper_rows = previously_known_readings.get(str(self.scraper_device_id))
-        if self.scraper_device_id and scraper_rows is not None:
-            new_data.setdefault(str(self.scraper_device_id), scraper_rows)
+        #
+        # Only the rows the scrape wrote: the scraper's device can also be a
+        # real one the list stopped naming, and its api and status rows have
+        # nothing left to refresh them - "no fault" stood there for good.
+        scraped = {
+            key: row
+            for key, row in (
+                previously_known_readings.get(str(self.scraper_device_id)) or {}
+            ).items()
+            if key in (self._previous_scraper_keys or ())
+        }
+        if self.scraper_device_id and scraped:
+            new_data.setdefault(str(self.scraper_device_id), scraped)
 
         self.modules = new_modules
         self.data = new_data

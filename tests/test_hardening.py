@@ -241,6 +241,8 @@ def test_a_device_list_refresh_keeps_the_scrapers_own_device():
 
     api = _api(cached_modules=CACHED_MODULES)
     api.scraper_device_id = SCRAPER_FALLBACK_DEVICE_ID
+    # Rows exist under the placeholder only because a scrape wrote them.
+    api._previous_scraper_keys = {"heat_pump-outside"}
     api.data = {
         "1234": {"ConnectionStatus": 0},
         SCRAPER_FALLBACK_DEVICE_ID: {
@@ -265,6 +267,43 @@ def test_a_device_list_refresh_keeps_the_scrapers_own_device():
     assert scraped is not None and scraped.value == 11.5, (
         "the scraper's own device was dropped by a refresh of the device list"
     )
+
+
+def test_a_device_the_list_stops_naming_keeps_only_its_scraped_rows():
+    """The scraper's device can be a real one. When the device list stopped
+    naming it, the refresh carried every row it had - its api readings and
+    status rows too, which nothing refreshes any more: "no fault" stood there
+    as current for good."""
+    from custom_components.wemportal.wemportalapi import DEVICE_STATUS_HAS_ERRORS
+
+    status_key = f"5678-{DEVICE_STATUS_HAS_ERRORS}"
+    api = _api(cached_modules=CACHED_MODULES)
+    api.scraper_device_id = "5678"
+    api._previous_scraper_keys = {"heat_pump-outside"}
+    api.data = {
+        "1234": {"ConnectionStatus": 0},
+        "5678": {
+            "heat_pump-outside": Reading(value=11.5, parameter_id="heat_pump-outside"),
+            status_key: Reading(value="no", parameter_id=status_key),
+        },
+    }
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {
+            "Devices": [
+                {
+                    "ID": 1234,
+                    "ConnectionStatus": 0,
+                    "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}],
+                }
+            ]
+        }
+    )
+
+    api.get_devices()
+
+    rows = api.data.get("5678", {})
+    assert rows.get("heat_pump-outside") is not None, "the scraped row was dropped"
+    assert status_key not in rows, "a status row nobody refreshes was carried over"
 
 
 def test_a_device_list_where_no_row_is_usable_is_reported_not_adopted():
