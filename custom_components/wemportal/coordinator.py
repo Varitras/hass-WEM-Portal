@@ -40,7 +40,12 @@ from .exceptions import (
     PortalMaintenanceError,
     WemPortalError,
 )
-from .models import account_state, account_unique_id, forget_account_state
+from .models import (
+    WemPortalData,
+    account_state,
+    account_unique_id,
+    forget_account_state,
+)
 from .utils import (
     device_identifier,
     failure_is_new,
@@ -230,6 +235,12 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # store that had just been deleted, or putting the old api's modules
         # over what the reloaded entry already saved.
         self._store_writes = asyncio.Lock()
+        # The store this coordinator went live in; see _owns_its_entry.
+        self._published_in: WemPortalData | None = None
+
+    def publish_in(self, data: WemPortalData) -> None:
+        """Record the store the entry now carries this coordinator in."""
+        self._published_in = data
 
     def _owns_its_entry(self) -> bool:
         """Whether a cycle finishing now still owns its entry - its stores,
@@ -257,6 +268,11 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         page short of a reauth for the entry that replaced this one.
         """
         data = getattr(self.config_entry, "runtime_data", None)
+        if self._published_in is not None:
+            # Once live, owner only through that store: after its unload the
+            # entry may be setting up the next coordinator, and the state test
+            # below said yes to this one for that whole window.
+            return data is self._published_in and not data.unloading
         if data is not None:
             # `unloading` beside the identity, because the store is still
             # there and still holds THIS coordinator for the whole teardown -

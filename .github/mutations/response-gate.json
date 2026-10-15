@@ -6278,5 +6278,19 @@
     "old": "        self.taken_down = True\n",
     "new": "        pass\n",
     "tests": "entity_the_waiting_migration_gives_up_comes_back_under_the_old_one"
+  },
+  {
+    "label": "lifecycle: an unloaded coordinator owns the next setup again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if self._published_in is not None:\n",
+    "new": "        if False:\n",
+    "tests": "coordinator_unloaded_once_does_not_own_the_next_setup"
+  },
+  {
+    "label": "lifecycle: the setup no longer tells the coordinator its store",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    coordinator.publish_in(entry.runtime_data)\n",
+    "new": "",
+    "tests": "coordinator_unloaded_once_does_not_own_the_next_setup"
   }
 ]

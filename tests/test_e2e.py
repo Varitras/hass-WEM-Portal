@@ -436,6 +436,30 @@ async def test_a_poll_finishing_during_the_unload_does_not_write(hass, hass_stor
     )
 
 
+async def test_a_coordinator_unloaded_once_does_not_own_the_next_setup(
+    hass, hass_storage
+):
+    """After an unload the entry carries no store, and the gate read that as
+    "still setting up" - which the entry is, for the NEXT coordinator, while
+    a tail of the old one wrote its module cache for a setup it is no part
+    of."""
+    entry = await _setup(hass, _entry(hass))
+    old = entry.runtime_data.coordinator
+    old.api.modules = {"1234": {(0, 1): {"Name": "Heat pump", "parameters": {}}}}
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    modules_key = f"{DOMAIN}_{entry.entry_id}_modules"
+    hass_storage.pop(modules_key, None)
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
+
+    await old._async_save_modules_cache()
+    await hass.async_block_till_done()
+
+    assert modules_key not in hass_storage, (
+        "a coordinator already unloaded wrote into the next setup"
+    )
+
+
 async def _a_poll_that_outlives_its_unload(hass, monkeypatch, outcome, auth_streak=0):
     """Unload the entry while a refresh is still in its worker thread, then let
     the refresh finish with `outcome` - the order a disable or reload meets

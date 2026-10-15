@@ -221,6 +221,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         raise
 
     entry.runtime_data = WemPortalData(api=api, coordinator=coordinator)
+    coordinator.publish_in(entry.runtime_data)
 
     # Everything past this point runs with the store already PUBLISHED, so a
     # failure here cannot be left to async_unload_entry: Home Assistant only
