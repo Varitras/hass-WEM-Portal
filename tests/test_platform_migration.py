@@ -303,6 +303,13 @@ def test_a_value_without_a_platform_counts_as_a_sensor():
     assert registry.removed == []
 
 
+class _Built(tuple):
+    """What a build hands over, as far as the builder's memo asks: an entity
+    Home Assistant has not taken down."""
+
+    taken_down = False
+
+
 class FakeCoordinator:
     """Enough of the coordinator to hand out an update and be asked for one."""
 
@@ -607,7 +614,7 @@ async def test_a_platform_that_flickers_gets_its_control_entity_back(monkeypatch
     wemportal.migrate_unique_ids(None, entry, coordinator)
     built = []
     async_add_readings_as_they_appear(
-        entry, built.extend, "date", lambda *arguments: arguments
+        entry, built.extend, "date", lambda *arguments: _Built(arguments)
     )
     assert len(built) == 1, "the control case never built the date entity"
 
@@ -653,7 +660,7 @@ async def test_an_api_sensor_comes_back_when_the_merge_that_retired_it_ends(
     wemportal.migrate_unique_ids(None, entry, coordinator)
     built = []
     async_add_readings_as_they_appear(
-        entry, built.extend, "sensor", lambda *arguments: arguments
+        entry, built.extend, "sensor", lambda *arguments: _Built(arguments)
     )
     assert [call[3] for call in built] == [OWN_KEY], "the control case built nothing"
 

@@ -194,7 +194,7 @@ def test_a_reading_gets_one_entity_however_often_the_coordinator_updates():
         entry,
         built.extend,
         "sensor",
-        lambda *arguments: object(),
+        lambda *arguments: types.SimpleNamespace(taken_down=False),
     )
     for update in list(coordinator.listeners):
         update()
@@ -296,7 +296,7 @@ def test_a_reading_whose_entity_failed_to_build_gets_another_chance():
     def build_once_failing(*arguments):
         if failures:
             raise failures.pop()
-        return object()
+        return types.SimpleNamespace(taken_down=False)
 
     async_add_readings_as_they_appear(entry, built.extend, "sensor", build_once_failing)
     coordinator.data = {"1234": {"Heat pump-P1": Reading(value=1.0, platform="sensor")}}

@@ -1122,6 +1122,57 @@ async def test_unique_ids_are_migrated_for_every_device(hass, monkeypatch):
         )
 
 
+async def test_an_entity_the_waiting_migration_gives_up_comes_back_under_the_old_one(
+    hass, monkeypatch
+):
+    """While a device has not answered, nothing is migrated - and the builder
+    makes an entity for the reading under its current id in the meantime.
+    The pass that runs gives that entity up for the old one, which keeps the
+    history, but the builder had marked the reading as built: the old entity
+    then stood in the registry with no entity behind it until a reload."""
+    from homeassistant.helpers import entity_registry
+
+    silent = "5678"
+    cycle = {
+        "1234": {"Outside temperature": _sensor()},
+        silent: {
+            f"{silent}-ConnectionStatus": Reading(value="offline", platform="sensor")
+        },
+    }
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: cycle
+    )
+    entry = _entry(hass)
+    registry = entity_registry.async_get(hass)
+    old = registry.async_get_or_create(
+        "sensor", DOMAIN, "1234-Outside temperature", config_entry=entry
+    )
+    await _setup(hass, entry)
+    new_unique_id = f"{entry.entry_id}:1234:Outside temperature"
+    built = registry.async_get_entity_id("sensor", DOMAIN, new_unique_id)
+    assert built is not None and built != old.entity_id, (
+        "the control case migrated before the silent device answered"
+    )
+
+    coordinator = entry.runtime_data.coordinator
+    cycle[silent] = {
+        **cycle[silent],
+        "Pump": Reading(value=1.0, platform="sensor", parameter_id="Pump"),
+    }
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert registry.async_get_entity_id("sensor", DOMAIN, new_unique_id) == (
+        old.entity_id
+    ), "the old entity did not take the current id"
+    state = hass.states.get(old.entity_id)
+    assert state is not None and state.state == "12.5", (
+        f"the old entity has nothing behind it: {state}"
+    )
+
+
 async def test_a_migrated_entity_is_logged_without_its_device_id(
     hass, monkeypatch, caplog
 ):

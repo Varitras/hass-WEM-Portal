@@ -450,7 +450,8 @@ def migrate_unique_ids(
         Nothing is renamed or removed while a device has not answered yet;
         the pass after it does is the one that runs. An entity the builder
         made in between is given up for the old one by
-        _adopt_entity_under_its_old_id, so the history still wins.
+        _adopt_entity_under_its_old_id, so the history still wins - and the
+        builder, seeing its entity taken down, builds one for the old entry.
         """
         # Migrate EVERY device, not just the first: with multiple devices the
         # others' old unique_ids (and their history) were previously left

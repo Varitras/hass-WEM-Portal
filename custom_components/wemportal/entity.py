@@ -86,7 +86,7 @@ def async_add_readings_as_they_appear(
     # migration takes the abandoned registry entry down in between. An
     # add-only memo then never rebuilt it, and the control stayed gone until
     # the entry was reloaded.
-    known: set[tuple[str, str]] = set()
+    known: dict[tuple[str, str], WemPortalEntity] = {}
 
     @callback
     def _add_the_ones_without_an_entity() -> None:
@@ -94,7 +94,13 @@ def async_add_readings_as_they_appear(
         # AND the migration took its entity down this same cycle - unlike a
         # merely absent row, whose entity stays. Forgotten here so that when
         # the merge ends and the key returns with a value, it is rebuilt.
-        known.difference_update(_keys_a_merge_retired(coordinator))
+        for retired in _keys_a_merge_retired(coordinator):
+            known.pop(retired, None)
+        # And one whose entity Home Assistant took down: the migration gives
+        # the entity built under the current id up for the old one that
+        # keeps the history, and that one needs an entity behind it again.
+        for taken_down in [key for key, built in known.items() if built.taken_down]:
+            del known[taken_down]
         fresh = []
         arriving = []
         for device_id, key, reading in _readings_of(coordinator.data):
@@ -104,7 +110,7 @@ def async_add_readings_as_they_appear(
                 # still registered and showing unknown; a row loses its place
                 # only when the entity is actually taken away - gone to
                 # another platform here, retired by a merge above.
-                known.discard((device_id, key))
+                known.pop((device_id, key), None)
                 continue
             if (device_id, key) in known:
                 continue
@@ -115,7 +121,7 @@ def async_add_readings_as_they_appear(
         # Remembered AFTER the build and the hand-over, not before: a
         # constructor that raised once used to leave its key recorded with
         # no entity behind it, for as long as the entry stayed loaded.
-        known.update(arriving)
+        known.update(zip(arriving, fresh, strict=True))
 
     _add_the_ones_without_an_entity()
     # Removed on unload with everything else: a listener that outlives its
@@ -139,6 +145,11 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
     property, so the `_attr_should_poll = False` three of the platforms used
     to carry was never read.
     """
+
+    # Set when Home Assistant takes the entity down after adding it. An add
+    # it aborts - a disabled entity, say - never gets here, so the builder
+    # does not try that one again on every cycle.
+    taken_down = False
 
     def __init__(
         self,
@@ -180,6 +191,10 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         # platform for the same row - so "the row is still there" stopped
         # being the same question as "the row is still mine".
         self._platform = entity_data.platform
+
+    async def async_will_remove_from_hass(self) -> None:
+        self.taken_down = True
+        await super().async_will_remove_from_hass()
 
     async def async_write_parameter(self, value, together_with=None) -> None:
         """The one way an entity changes a value on the portal.

@@ -871,7 +871,7 @@
   {
     "label": "entities: a control must come back after its platform flickers",
     "path": "custom_components/wemportal/entity.py",
-    "old": "                known.discard((device_id, key))\n                continue",
+    "old": "                known.pop((device_id, key), None)\n                continue",
     "new": "                pass\n                continue",
     "tests": "a_platform_that_flickers_gets_its_control_entity_back"
   },
@@ -955,8 +955,8 @@
   {
     "label": "merge: the memo keeping a key whose entity a merge took down must be noticed",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        known.difference_update(_keys_a_merge_retired(coordinator))",
-    "new": "        pass",
+    "old": "        for retired in _keys_a_merge_retired(coordinator):\n            known.pop(retired, None)\n",
+    "new": "",
     "tests": "an_api_sensor_comes_back_when_the_merge_that_retired_it_ends"
   },
   {
@@ -6264,5 +6264,19 @@
     "old": "                parameter=self._shown_name(),\n                value=str(value),\n",
     "new": "                parameter=self._shown_name(),\n",
     "tests": "placeholders_of_a_text_and_its_call_agree"
+  },
+  {
+    "label": "entities: the memo keeps a key whose entity was taken down",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        for taken_down in [key for key, built in known.items() if built.taken_down]:\n            del known[taken_down]\n",
+    "new": "",
+    "tests": "entity_the_waiting_migration_gives_up_comes_back_under_the_old_one"
+  },
+  {
+    "label": "entities: a removal no longer marks the entity taken down",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        self.taken_down = True\n",
+    "new": "        pass\n",
+    "tests": "entity_the_waiting_migration_gives_up_comes_back_under_the_old_one"
   }
 ]
