@@ -6257,5 +6257,12 @@
     "old": "        if tail is not None:\n            return [head, *tail]\n",
     "new": "        return [head, *(tail or [])]\n",
     "tests": "word_only_partly_in_the_vocabulary_keeps_the_portals_spelling"
+  },
+  {
+    "label": "texts: a notification passes fewer placeholders than its text names",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "                parameter=self._shown_name(),\n                value=str(value),\n",
+    "new": "                parameter=self._shown_name(),\n",
+    "tests": "placeholders_of_a_text_and_its_call_agree"
   }
 ]
