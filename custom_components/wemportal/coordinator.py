@@ -257,7 +257,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         first version of this got wrong: during SETUP it has not been
         published yet - and that is the cycle which discovers everything, so
         barring it wrote nothing down at all - while after an unload it has
-        been taken away again. The entry's own state tells the two apart.
+        been taken away again. For a coordinator not live yet the entry's own
+        state tells the two apart; one that went live answers by the store
+        it went live in.
 
         Asked of both save paths rather than of the caller: they are what
         touches the disk, and a third one added later would otherwise have to
@@ -267,20 +269,20 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         disabled entry that nothing could withdraw, and a streak one login
         page short of a reauth for the entry that replaced this one.
         """
-        data = getattr(self.config_entry, "runtime_data", None)
         if self._published_in is not None:
-            # Once live, owner only through that store: after its unload the
-            # entry may be setting up the next coordinator, and the state test
-            # below said yes to this one for that whole window.
-            return data is self._published_in and not data.unloading
-        if data is not None:
+            # Once live, owner only through the store it went live in: after
+            # that store's unload the entry may be setting up the next
+            # coordinator, and the setup state below said yes to this one for
+            # that whole window.
+            #
             # `unloading` beside the identity, because the store is still
             # there and still holds THIS coordinator for the whole teardown -
             # identity alone said yes for exactly the window the flag exists
             # to mark, and the save it let through is asynchronous, so it can
             # land after the stores are deleted or after a reload published
             # new ones.
-            return data.coordinator is self and not data.unloading
+            data = getattr(self.config_entry, "runtime_data", None)
+            return data is self._published_in and not data.unloading
         return self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS
 
     async def async_wait_for_store_writes(self) -> None:

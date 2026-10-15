@@ -1018,8 +1018,8 @@
   {
     "label": "stores: a cycle outliving its entry writing them back",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "        return self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS",
-    "new": "        return True",
+    "old": "            return data is self._published_in and not data.unloading",
+    "new": "            return True",
     "tests": "a_poll_that_outlives_the_entry_does_not_rebuild_its_stores"
   },
   {
@@ -3006,8 +3006,8 @@
   {
     "label": "storage: a save starting after the teardown began",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "            return data.coordinator is self and not data.unloading",
-    "new": "            return data.coordinator is self",
+    "old": "            return data is self._published_in and not data.unloading",
+    "new": "            return data is self._published_in",
     "tests": "poll_finishing_during_the_unload_does_not_write"
   },
   {
