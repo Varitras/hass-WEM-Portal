@@ -456,11 +456,7 @@ class ExpertController:
         """Whether this cycle asks for the id: always, unless it was reported
         as failing and has been asked within REPORTED_ID_RETRY_SECONDS."""
         asked_at = self._reported_asked_at.get(entityvalue)
-        if asked_at is not None and monotonic() - asked_at < REPORTED_ID_RETRY_SECONDS:
-            return False
-        if asked_at is not None:
-            self._reported_asked_at[entityvalue] = monotonic()
-        return True
+        return asked_at is None or monotonic() - asked_at >= REPORTED_ID_RETRY_SECONDS
 
     def apply_read(
         self, results: dict[str, Any], asked: Collection[str] | None = None
@@ -486,7 +482,7 @@ class ExpertController:
         itself: that is one bad batch, and blaming each configured id for it
         would tell the user to go fix settings that are fine.
 
-        That last rule needs at least TWO requested ids to mean anything.
+        That last rule needs at least TWO configured ids to mean anything.
         With one configured parameter "all of them failed" is true every time
         it fails, so applying it there would silence the notification for
         exactly the installation that has the least other information - the
@@ -497,7 +493,14 @@ class ExpertController:
         failed = [
             entityvalue for entityvalue, state in results.items() if state is None
         ]
-        whole_batch_failed = len(results) >= 2 and len(failed) == len(results)
+        # Over every configured id, not only the ones asked: a reported id
+        # sitting out is one that fails, and leaving it out of the count
+        # took the rule away from the id left on its own - an outage then
+        # reported a healthy parameter and set it aside for a day.
+        known = {entity.entityvalue for entity in self.live_entities} | set(results)
+        whole_batch_failed = (
+            bool(results) and len(known) >= 2 and len(failed) == len(results)
+        )
         self._note_batch_outcome(results, whole_batch_failed)
         if whole_batch_failed:
             # Once per outage, not once per hour: the streak the outcome
@@ -521,6 +524,15 @@ class ExpertController:
             for entity in self.live_entities
             if asked is None or entity.entityvalue in asked
         ]
+        # The day's try is used here, where the read happened: stamped when
+        # the list was built, a cycle that stopped before reading used it up
+        # without asking.
+        read_at = monotonic()
+        self._reported_asked_at.update(
+            (entity.entityvalue, read_at)
+            for entity in asked_entities
+            if entity.entityvalue in self._reported_asked_at
+        )
         for entity in asked_entities:
             entityvalue = entity.entityvalue
             state = results.get(entityvalue)

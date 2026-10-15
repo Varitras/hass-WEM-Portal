@@ -682,15 +682,15 @@
   {
     "label": "expert tally: blaming a failed batch on each id must be noticed",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "        whole_batch_failed = len(results) >= 2 and len(failed) == len(results)",
-    "new": "        whole_batch_failed = False",
+    "old": "        whole_batch_failed = (\n            bool(results) and len(known) >= 2 and len(failed) == len(results)\n        )\n",
+    "new": "        whole_batch_failed = False\n",
     "tests": "one_bad_batch_is_not_blamed_on_every_configured_id"
   },
   {
     "label": "expert tally: silencing a single configured id must be noticed",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "        whole_batch_failed = len(results) >= 2 and len(failed) == len(results)",
-    "new": "        whole_batch_failed = len(failed) == len(results)",
+    "old": "        whole_batch_failed = (\n            bool(results) and len(known) >= 2 and len(failed) == len(results)\n        )\n",
+    "new": "        whole_batch_failed = bool(results) and len(failed) == len(results)\n",
     "tests": "a_single_configured_id_is_still_reported"
   },
   {
@@ -5988,14 +5988,14 @@
   {
     "label": "expert poll: a reported id asked again on every cycle",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "        if asked_at is not None and monotonic() - asked_at < REPORTED_ID_RETRY_SECONDS:\n            return False\n",
-    "new": "",
+    "old": "        return asked_at is None or monotonic() - asked_at >= REPORTED_ID_RETRY_SECONDS\n",
+    "new": "        return True\n",
     "tests": "reported_as_failing_is_asked_once_a_day"
   },
   {
     "label": "expert poll: a reported id never asked again",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "        if asked_at is not None:\n            self._reported_asked_at[entityvalue] = monotonic()\n        return True\n",
+    "old": "        return asked_at is None or monotonic() - asked_at >= REPORTED_ID_RETRY_SECONDS\n",
     "new": "        return asked_at is None\n",
     "tests": "reported_as_failing_is_asked_once_a_day"
   },
@@ -6187,5 +6187,33 @@
     "old": "            _LOGGER.info(\"Migrated an expert entity to a digest-based unique_id.\")\n",
     "new": "            _LOGGER.info(\"Migrated expert entity %s.\", entity.name)\n",
     "tests": "unnamed_slot_moved_off_its_raw_id_keeps_its_translated_name"
+  },
+  {
+    "label": "expert poll: the day's try is used when the list is built again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        return asked_at is None or monotonic() - asked_at >= REPORTED_ID_RETRY_SECONDS\n",
+    "new": "        due = asked_at is None or monotonic() - asked_at >= REPORTED_ID_RETRY_SECONDS\n        if due and asked_at is not None:\n            self._reported_asked_at[entityvalue] = monotonic()\n        return due\n",
+    "tests": "cycle_that_stops_before_reading_keeps_the_days_try"
+  },
+  {
+    "label": "expert poll: a read no longer uses up the day's try",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            if entity.entityvalue in self._reported_asked_at\n",
+    "new": "            if False\n",
+    "tests": "reported_as_failing_is_asked_once_a_day"
+  },
+  {
+    "label": "expert tally: the ids sitting out are left out of the batch again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        known = {entity.entityvalue for entity in self.live_entities} | set(results)\n",
+    "new": "        known = set(results)\n",
+    "tests": "outage_after_one_id_was_reported_is_not_blamed_on_the_other"
+  },
+  {
+    "label": "expert poll: an id that answered stays on the daily clock",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        self.fail_notified.discard(entityvalue)\n        self._reported_asked_at.pop(entityvalue, None)\n        self._batch_failures = 0\n",
+    "new": "        self.fail_notified.discard(entityvalue)\n        self._batch_failures = 0\n",
+    "tests": "id_that_answered_again_is_asked_every_cycle_again"
   }
 ]

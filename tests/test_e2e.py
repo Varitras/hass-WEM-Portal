@@ -4601,6 +4601,111 @@ async def test_an_expert_id_reported_as_failing_is_asked_once_a_day(hass, monkey
     await scheduled[-1](None)
     assert reads == [[EV_A]], "a reported id was never asked again"
 
+    await scheduled[-1](None)
+    assert reads == [[EV_A]], "the daily read started a new day of asking"
+
+
+async def test_an_outage_after_one_id_was_reported_is_not_blamed_on_the_other(
+    hass, monkeypatch
+):
+    """With one of two ids reported and sitting out, a cycle asks only the
+    other - and an outage then failed it alone, outside the "whole batch
+    failed" rule. Three hours of outage reported a healthy parameter and set
+    it aside for a day."""
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0], raising=False)
+    healthy = expert_writer.ExpertParameterState(21.0, [0.0, 100.0], {})
+    outage = {"on": False}
+
+    def reader(ids):
+        answers = dict.fromkeys(ids)
+        if EV_B in ids and not outage["on"]:
+            answers[EV_B] = healthy
+        return answers
+
+    entry, scheduled, _ = await _auto_poll_entry(
+        hass, monkeypatch, reader, entityvalues=[EV_A, EV_B]
+    )
+    controller = entry.runtime_data.expert
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        await scheduled[-1](None)
+        await hass.async_block_till_done()
+    assert EV_A in controller.fail_notified, "the control case reported nothing"
+
+    outage["on"] = True
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING + 1):
+        await scheduled[-1](None)
+        await hass.async_block_till_done()
+
+    assert EV_B not in controller.fail_notified
+    assert controller.fail_counts.get(EV_B, 0) == 0, (
+        "an outage was counted against the one id the cycle asked for"
+    )
+
+
+async def test_a_cycle_that_stops_before_reading_keeps_the_days_try(hass, monkeypatch):
+    """A reported id is asked once a day, and the day's try was taken when
+    the list was built. A cycle that then stopped before reading - a write
+    in progress, a busy lock, a refusal - used it up, and the id waited
+    another day without having been asked."""
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0], raising=False)
+    reads = []
+
+    def never_answers(ids):
+        reads.append(list(ids))
+        return dict.fromkeys(ids)
+
+    entry, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, never_answers)
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        await scheduled[-1](None)
+    entity = entry.runtime_data.expert.entities[0]
+    now[0] += expert_controller.REPORTED_ID_RETRY_SECONDS
+    reads.clear()
+
+    entity._write_in_progress = True
+    await scheduled[-1](None)
+    entity._write_in_progress = False
+    assert reads == [], "the control case read during a write"
+    await scheduled[-1](None)
+
+    assert reads == [[EV_A]], "a cycle that never read used up the day's try"
+
+
+async def test_an_id_that_answered_again_is_asked_every_cycle_again(hass, monkeypatch):
+    """The once-a-day rule is for an id that keeps failing. One that answered
+    has ended its streak, and kept on the daily clock it would go unasked
+    for a day the next time it failed."""
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0], raising=False)
+    healthy = expert_writer.ExpertParameterState(21.0, [0.0, 100.0], {})
+    answers = {"on": False}
+    reads = []
+
+    def reader(ids):
+        reads.append(list(ids))
+        return {EV_A: healthy if answers["on"] else None}
+
+    _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, reader)
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        await scheduled[-1](None)
+    now[0] += expert_controller.REPORTED_ID_RETRY_SECONDS
+    answers["on"] = True
+    await scheduled[-1](None)
+    answers["on"] = False
+    reads.clear()
+
+    await scheduled[-1](None)
+    await scheduled[-1](None)
+
+    assert reads == [[EV_A], [EV_A]], f"an id that answered was rationed: {reads}"
+
 
 async def test_an_id_left_out_of_a_cycle_is_not_counted_against_it(hass, monkeypatch):
     """A reported id sits out the cycles between its daily reads, and an id
