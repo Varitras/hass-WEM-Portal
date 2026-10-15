@@ -541,6 +541,29 @@ def _smallest_gap(options):
     return round(min(gaps), PORTAL_DECIMALS) if gaps else None
 
 
+def _option_named(special_values, word):
+    """The (token, word) of the option beside the scale `word` names, or None.
+
+    The exact spelling first, then case-insensitively - and a word two
+    options answer to that way names neither: taking the first wrote a
+    setting nobody chose, and the verify against its label confirmed it.
+    """
+    if word in special_values:
+        return special_values[word], word
+    folded = [
+        (token, offered)
+        for offered, token in special_values.items()
+        if offered.casefold() == word.casefold()
+    ]
+    if len(folded) > 1:
+        raise ValueNotOffered(
+            f"{word!r} names more than one option "
+            f"({', '.join(offered for _token, offered in folded)}); "
+            "write it exactly as the portal shows it."
+        )
+    return folded[0] if folded else None
+
+
 def _option_meant_by(options, value):
     """The offered option `value` names, or None if it names none of them.
 
@@ -1802,11 +1825,15 @@ class WemPortalExpertClient:
         itself accepts both spellings, and the service used to refuse one.
         """
         word = str(value).strip()
-        for offered, attribute in state.special_values.items():
-            if offered.casefold() == word.casefold():
-                return attribute, offered, None
-
         value_number = parse_portal_number(value)
+        # Only for what is not a number: a number addresses the scale, and
+        # an option without a label is keyed by its token, which can look
+        # like one.
+        is_a_word = value_number is None
+        named = _option_named(state.special_values, word) if is_a_word else None
+        if named is not None:
+            return *named, None
+
         if value_number is None:
             offers = ", ".join(state.special_values) or "no non-numeric option"
             raise ValueNotOffered(

@@ -2370,6 +2370,44 @@ def test_an_unevenly_spaced_option_list_takes_its_smallest_gap():
     assert entity.native_step == 0.25
 
 
+def test_a_number_addresses_the_scale_even_where_an_option_has_no_word():
+    """An option beside the scale with no label is keyed by its token, and
+    a token can look like a number: 0.5 matched it as a word and wrote that
+    option instead of the 0.5 on the scale."""
+    from custom_components.wemportal.expert_writer import (
+        ExpertParameterState,
+        WemPortalExpertClient,
+    )
+
+    state = ExpertParameterState(
+        0.0, [0.0, 0.5, 1.0], {}, post_values={0.5: "5"}, special_values={"0.5": "-1"}
+    )
+
+    token, word, number = WemPortalExpertClient._requested_option(state, 0.5)
+
+    assert (token, word, number) == ("5", None, 0.5)
+
+
+def test_a_word_two_options_answer_to_is_refused_rather_than_guessed():
+    """Matched case-insensitively, a word the dialog shows twice in two
+    spellings picked whichever came first - and the write then verified
+    against that one, so the wrong setting read back as confirmed. The exact
+    spelling still names its own option."""
+    from custom_components.wemportal.exceptions import ValueNotOffered
+    from custom_components.wemportal.expert_writer import (
+        ExpertParameterState,
+        WemPortalExpertClient,
+    )
+
+    state = ExpertParameterState(
+        0.0, [0.0, 1.0], {}, special_values={"Aus": "-1", "AUS": "-2"}
+    )
+
+    assert WemPortalExpertClient._requested_option(state, "AUS") == ("-2", "AUS", None)
+    with pytest.raises(ValueNotOffered):
+        WemPortalExpertClient._requested_option(state, "aus")
+
+
 def _heating_curve_options():
     """A heating curve as the portal offers it: 0 to 2, 0.05 apart."""
     return [round(index * 0.05, 10) for index in range(41)]

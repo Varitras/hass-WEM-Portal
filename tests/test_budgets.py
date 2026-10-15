@@ -124,7 +124,9 @@ LINE_BUDGETS = {
     # Fachmann level, which the portal can quietly answer with the user one.
     # And by 3 for asking the gates before the login a dead reuse falls to.
     # And by 2 for naming the options of a dropdown of words by their word.
-    "expert_writer.py": 1929,
+    # And by 27 for refusing a word two options answer to, and for keeping
+    # a number off the word lookup.
+    "expert_writer.py": 1956,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to

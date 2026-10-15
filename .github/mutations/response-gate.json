@@ -2817,8 +2817,8 @@
   {
     "label": "expert: a word that has to be spelled exactly as the portal does",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            if offered.casefold() == word.casefold():",
-    "new": "            if offered == word:",
+    "old": "        if offered.casefold() == word.casefold()\n",
+    "new": "        if offered == word\n",
     "tests": "a_special_value_can_be_written_by_the_word_the_portal_shows"
   },
   {
@@ -2852,8 +2852,8 @@
   {
     "label": "service: a typed comma refused by the write again",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "        value_number = parse_portal_number(value)\n        if value_number is None:",
-    "new": "        try:\n            value_number = float(value)\n        except TypeError, ValueError:\n            value_number = None\n        if value_number is None:",
+    "old": "        value_number = parse_portal_number(value)\n",
+    "new": "        try:\n            value_number = float(value)\n        except TypeError, ValueError:\n            value_number = None\n",
     "tests": "a_german_decimal_reaches_the_write_as_the_number_it_means"
   },
   {
@@ -6229,5 +6229,26 @@
     "old": "            if is_statistics_row(device_id, key) and self._statistics_reads(device_id):\n",
     "new": "            if is_statistics_row(device_id, key):\n",
     "tests": "statistics_of_a_device_their_fetch_skips_age_with_the_rest"
+  },
+  {
+    "label": "expert: a number is looked up as a word again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        is_a_word = value_number is None\n",
+    "new": "        is_a_word = True\n",
+    "tests": "number_addresses_the_scale_even_where_an_option_has_no_word"
+  },
+  {
+    "label": "expert: a word two options answer to picks the first again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "    if len(folded) > 1:\n",
+    "new": "    if False:\n",
+    "tests": "word_two_options_answer_to_is_refused_rather_than_guessed"
+  },
+  {
+    "label": "expert: the exact spelling no longer goes first",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "    if word in special_values:\n        return special_values[word], word\n",
+    "new": "",
+    "tests": "word_two_options_answer_to_is_refused_rather_than_guessed"
   }
 ]
