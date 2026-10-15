@@ -6180,5 +6180,12 @@
     "old": "        return name if isinstance(name, str) else self._label\n",
     "new": "        return self._label\n",
     "tests": "confirmed_write_is_announced_in_home_assistants_language"
+  },
+  {
+    "label": "expert: the raw-id move asks an unadded slot for its name again",
+    "path": "custom_components/wemportal/number.py",
+    "old": "            _LOGGER.info(\"Migrated an expert entity to a digest-based unique_id.\")\n",
+    "new": "            _LOGGER.info(\"Migrated expert entity %s.\", entity.name)\n",
+    "tests": "unnamed_slot_moved_off_its_raw_id_keeps_its_translated_name"
   }
 ]

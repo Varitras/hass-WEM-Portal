@@ -725,6 +725,35 @@ async def test_a_reload_drops_expert_entities_whose_slot_is_gone(hass):
     ), "the configured slot's entity was removed with the ghost"
 
 
+async def test_an_unnamed_slot_moved_off_its_raw_id_keeps_its_translated_name(
+    hass, caplog
+):
+    """The move to the digest unique_id logged `entity.name` before the entity
+    was added - before Home Assistant can resolve the name of a slot that is
+    named by its translation."""
+    from homeassistant.helpers import entity_registry
+
+    hass.config.language = "de"
+    entry = _entry(hass, _expert_options())
+    registry = entity_registry.async_get(hass)
+    old = registry.async_get_or_create(
+        "number", DOMAIN, f"{entry.entry_id}:expert:{EV_A}", config_entry=entry
+    )
+
+    await _setup(hass, entry)
+
+    digest = expert_options.entityvalue_digest(EV_A)
+    assert (
+        registry.async_get_entity_id(
+            "number", DOMAIN, f"{entry.entry_id}:expert:{digest}"
+        )
+        == old.entity_id
+    ), "the raw-id entity was not moved onto the digest"
+    friendly_name = hass.states.get(old.entity_id).attributes["friendly_name"]
+    assert friendly_name.endswith("Fachmann-Parameter 1"), friendly_name
+    assert "UndefinedType" not in caplog.text
+
+
 async def test_disabling_expert_write_drops_its_registry_entries(hass):
     """With the option off there are no expert entities, so entries under the
     expert unique_id prefix are ghosts - and ONLY those may go: an entity of
