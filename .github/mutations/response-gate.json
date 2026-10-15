@@ -6007,7 +6007,7 @@
     "tests": "left_out_of_a_cycle_is_not_counted_against_it"
   },
   {
-    "label": "vocabulary: 'Heizung' comes out in pieces again",
+    "label": "vocabulary: 'Heizung' is left untranslated again",
     "path": "custom_components/wemportal/translations.py",
     "old": "        \"heizung\": \"heating\",\n",
     "new": "",
@@ -6250,5 +6250,12 @@
     "old": "    if word in special_values:\n        return special_values[word], word\n",
     "new": "",
     "tests": "word_two_options_answer_to_is_refused_rather_than_guessed"
+  },
+  {
+    "label": "translation: a word is translated by the part it starts with",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        if tail is not None:\n            return [head, *tail]\n",
+    "new": "        return [head, *(tail or [])]\n",
+    "tests": "word_only_partly_in_the_vocabulary_keeps_the_portals_spelling"
   }
 ]

@@ -223,6 +223,13 @@ def test_a_real_name_gets_its_technical_term(name, english):
     assert translate("en", name) == english
 
 
+@pytest.mark.parametrize("name", ["Absenkung", "Heizungsregler"])
+def test_a_word_only_partly_in_the_vocabulary_keeps_the_portals_spelling(name):
+    """A known start is not the word: with the rest uncovered, the start alone
+    came out ("Setback" for "Absenkung") and the rest of the word was gone."""
+    assert translate("en", name) == name
+
+
 @pytest.mark.parametrize(
     ("language", "group", "name"),
     [
