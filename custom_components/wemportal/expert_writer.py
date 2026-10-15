@@ -40,7 +40,7 @@ from .exceptions import (
     ValueNotOffered,
 )
 from .models import account_state
-from .utils import parse_portal_number
+from .utils import failure_is_new, failure_is_over, parse_portal_number
 from .web_protocol import (
     log_refusal,
     is_expert_view,
@@ -1576,8 +1576,14 @@ class WemPortalExpertClient:
             self._login()
             for entityvalue in ids:
                 self._check_gates()
+                failing = self._account_state.expert_reads_failing
                 try:
                     result[entityvalue] = self._fetch_form(entityvalue)
+                    if failure_is_over(failing, entityvalue):
+                        _LOGGER.info(
+                            "Expert auto-poll: %s reads again.",
+                            short_entityvalue(entityvalue),
+                        )
                 # A 403 is about the connection, not this id: it has to reach
                 # the caller so the shared cooldown engages. A dead session
                 # is not this id's either: every further one would go to the
@@ -1586,7 +1592,15 @@ class WemPortalExpertClient:
                 except ForbiddenError, AuthError:
                     raise
                 except Exception as exc:  # noqa: BLE001
-                    _LOGGER.warning(
+                    # Once per id and reason: every cycle builds a new client,
+                    # and a broken dialog otherwise said this hourly per slot.
+                    level = (
+                        logging.WARNING
+                        if failure_is_new(failing, entityvalue, str(exc))
+                        else logging.DEBUG
+                    )
+                    _LOGGER.log(
+                        level,
                         "Expert auto-poll: reading %s failed: %s",
                         short_entityvalue(entityvalue),
                         exc,

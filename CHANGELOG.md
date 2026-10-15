@@ -29,6 +29,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An expert parameter that keeps failing to read is warned about once.**
+  The auto-poll wrote the same warning for it on every cycle; now it says
+  so once per reason, and once more when the parameter reads again.
 - **A setting is written to the module it belongs to now.** A control took
   its module's address when it was created. A module that came back at a
   different position after the module list was read again kept its name

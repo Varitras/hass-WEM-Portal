@@ -6049,6 +6049,38 @@ def test_a_batch_read_without_an_abort_reads_everything():
     assert len(result) == 2
 
 
+def test_a_parameter_that_keeps_failing_to_read_is_warned_once(caplog):
+    """Every cycle builds a new client, and each warned about the same id
+    failing the same way - hourly, for every slot, for as long as a dialog
+    stayed broken. Said again when it reads, and when the reason changes."""
+    from custom_components.wemportal import expert_writer
+
+    reasons = ["the dialog never filled", "the dialog never filled", None]
+
+    def cycle():
+        client = expert_writer.WemPortalExpertClient("dampened@example.org", "x")
+        client._login = lambda: None
+        client.close = lambda: None
+        reason = reasons.pop(0)
+
+        def fetch(*_args, **_kwargs):
+            if reason:
+                raise RuntimeError(reason)
+            return expert_writer.ExpertParameterState(20.0, [20.0], {})
+
+        client._fetch_form = fetch
+        client.read_many(["a" * 36])
+
+    with caplog.at_level(logging.DEBUG):
+        cycle()
+        cycle()
+        cycle()
+
+    warned = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warned) == 1, [r.getMessage() for r in warned]
+    assert "reads again" in caplog.text, "the recovery was never said"
+
+
 def test_a_batch_read_stops_at_a_session_found_dead():
     """A dialog sent to the login page is the session, not that id: the batch
     went on with every further id over the same dead session - one more trip

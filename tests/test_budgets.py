@@ -126,7 +126,8 @@ LINE_BUDGETS = {
     # And by 2 for naming the options of a dropdown of words by their word.
     # And by 27 for refusing a word two options answer to, and for keeping
     # a number off the word lookup.
-    "expert_writer.py": 1956,
+    # And by 14 for saying a failing expert read once per id and reason.
+    "expert_writer.py": 1970,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to

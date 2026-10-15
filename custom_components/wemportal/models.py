@@ -108,6 +108,8 @@ class AccountState:
     unreadable_values_reported: set[tuple[str, str]] = field(default_factory=set)
     maintenance_announcements_reported: set[str] = field(default_factory=set)
     missing_job_ids_reported: set[str] = field(default_factory=set)
+    # Per expert id, the reason its read last failed - see read_many.
+    expert_reads_failing: dict[str, str] = field(default_factory=dict)
     # Only one expert portal operation per ACCOUNT at a time - the poll, an
     # entity write and the domain service all drive the same Fachmann
     # session. It lived on the controller, which is per ENTRY, and a legacy

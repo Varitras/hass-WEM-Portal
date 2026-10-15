@@ -6292,5 +6292,19 @@
     "old": "    coordinator.publish_in(entry.runtime_data)\n",
     "new": "",
     "tests": "coordinator_unloaded_once_does_not_own_the_next_setup"
+  },
+  {
+    "label": "expert poll: a failing read is warned on every cycle again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                        if failure_is_new(failing, entityvalue, str(exc))\n",
+    "new": "                        if True\n",
+    "tests": "parameter_that_keeps_failing_to_read_is_warned_once"
+  },
+  {
+    "label": "expert poll: a read that works again is not said",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                    if failure_is_over(failing, entityvalue):\n",
+    "new": "                    if False:\n",
+    "tests": "parameter_that_keeps_failing_to_read_is_warned_once"
   }
 ]
