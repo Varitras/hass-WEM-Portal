@@ -11,7 +11,7 @@
         "data_description": {
           "username": "The e-mail address you log into the WEM Portal with.",
           "password": "Your WEM Portal password.",
-          "language": "English (en) or German (de). Names are built from what the portal reports, so Home Assistant's own language does not change them. Default: en.",
+          "language": "English (en) or German (de) for the names built from what the portal reports; Home Assistant's own language does not change them. The names the integration gives itself - the status sensors, an expert slot left unnamed - follow Home Assistant's language. Default: en.",
           "mode": "Where readings come from: api (the mobile app's interface, covers every device - right for most people), web (the expert web page) or both. Checked against the portal before it is saved. Default: api."
         }
       },
@@ -105,7 +105,7 @@
         "data_description": {
           "scan_interval": "In seconds; used in web and both modes. Default 1800, below 900 is not recommended. Every request counts against the portal's limit per IP address.",
           "api_scan_interval": "In seconds; used in api and both modes. Default 300, below 180 is not recommended. Every request counts against the portal's limit per IP address.",
-          "language": "English (en) or German (de). Names are built from what the portal reports, so Home Assistant's own language does not change them. Default: en.",
+          "language": "English (en) or German (de) for the names built from what the portal reports; Home Assistant's own language does not change them. The names the integration gives itself - the status sensors, an expert slot left unnamed - follow Home Assistant's language. Default: en.",
           "mode": "Where readings come from: api (the mobile app's interface, covers every device - right for most people), web (the expert web page) or both. Checked against the portal before it is saved. Default: api.",
           "expert_write_enabled": "Makes each filled parameter slot below a writable number entity and enables the set_expert_parameter action. Changes real settings on your heating system. Default: off.",
           "expert_module_arg": "Only used when module selection is enabled. Empty means 6, the heat pump on the reference installation.",
@@ -154,7 +154,7 @@
       "invalid_module_arg": "Invalid module menu index: digits only (e.g. 6). Leave empty to use the default.",
       "duplicate_entityvalue": "This parameter is already selected in another slot. Each expert parameter can be used only once.",
       "discovery_failed": "Could not read from the portal. Try again later (the portal may be refusing requests from this network for a while).",
-      "discovery_blocked": "Expert access was not attempted: the portal rejected an expert request with 403, so this path is backing off briefly. Sensor polling is unaffected. The exact remaining time and the rejected request are shown at the top of this form. A 403 here does not necessarily mean your IP is rate-limited - it can also mean the portal did not accept that particular request.",
+      "discovery_blocked": "Expert access did not run: the portal refused an expert request with 403, or this path is still pausing after one. Sensor polling is unaffected. A 403 here does not necessarily mean your IP is rate-limited - it can also mean the portal did not accept that particular request.",
       "discovery_empty": "The search ran, but the selected module(s) returned no readable parameters. Try another module, or enter the entityvalue manually.",
       "discovery_busy": "Another expert operation is running for this account right now - a scheduled read, or a value being written. Only one at a time is allowed, so this search was not started. Try again in a moment.",
       "invalid_auth": "Your stored credentials do not work for the connection this mode uses. The mobile API and the web portal are separate logins, so one of them working says nothing about the other. The mode was not changed.",
@@ -285,7 +285,7 @@
       "message": "{entity_id} is filed as a date, but the portal now describes that parameter as a {platform}. Reload the integration to pick up the change; nothing was written."
     },
     "holiday_same_entity": {
-      "message": "Begin and end name the same entity ({entity_id}). A holiday needs two."
+      "message": "Start and end name the same entity ({entity_id}). A holiday needs two."
     },
     "holiday_write_failed": {
       "message": "The portal did not take the holiday: {error}"

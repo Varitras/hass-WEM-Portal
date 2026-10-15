@@ -229,7 +229,8 @@ class ExpertOperationAborted(BaseException):
     """Raised when the configuration a portal operation belongs to is gone.
 
     Its own type so the caller can tell "we deliberately stopped" apart from
-    "the portal rejected the write" and skip the user-facing notification.
+    "the portal rejected the write" and tell the user the write was
+    stopped rather than that it failed.
 
     NOT an Exception subclass, for the same reason as PollDeadlineExceeded:
     it is a control-flow signal that has to travel out through code whose job

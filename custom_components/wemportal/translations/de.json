@@ -11,7 +11,7 @@
         "data_description": {
           "username": "Die E-Mail-Adresse, mit der du dich am WEM Portal anmeldest.",
           "password": "Dein Passwort für das WEM Portal.",
-          "language": "Englisch (en) oder Deutsch (de). Die Namen entstehen aus dem, was das Portal meldet; die Sprache von Home Assistant ändert sie nicht. Standard: en.",
+          "language": "Englisch (en) oder Deutsch (de) für die Namen, die aus dem entstehen, was das Portal meldet; die Sprache von Home Assistant ändert sie nicht. Die Namen, die die Integration selbst vergibt – die Status-Sensoren, ein unbenannter Fachmann-Platz –, folgen der Sprache von Home Assistant. Standard: en.",
           "mode": "Woher die Werte kommen: api (die Schnittstelle der App, deckt jedes Gerät ab – für die meisten richtig), web (die Fachmann-Webseite) oder both. Wird vor dem Speichern am Portal geprüft. Standard: api."
         }
       },
@@ -105,7 +105,7 @@
         "data_description": {
           "scan_interval": "In Sekunden; gilt im Modus web und both. Standard 1800, unter 900 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
           "api_scan_interval": "In Sekunden; gilt im Modus api und both. Standard 300, unter 180 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
-          "language": "Englisch (en) oder Deutsch (de). Die Namen entstehen aus dem, was das Portal meldet; die Sprache von Home Assistant ändert sie nicht. Standard: en.",
+          "language": "Englisch (en) oder Deutsch (de) für die Namen, die aus dem entstehen, was das Portal meldet; die Sprache von Home Assistant ändert sie nicht. Die Namen, die die Integration selbst vergibt – die Status-Sensoren, ein unbenannter Fachmann-Platz –, folgen der Sprache von Home Assistant. Standard: en.",
           "mode": "Woher die Werte kommen: api (die Schnittstelle der App, deckt jedes Gerät ab – für die meisten richtig), web (die Fachmann-Webseite) oder both. Wird vor dem Speichern am Portal geprüft. Standard: api.",
           "expert_write_enabled": "Macht jeden gefüllten Parameter-Platz unten zu einer beschreibbaren Zahl-Entität und schaltet die Aktion set_expert_parameter frei. Ändert echte Einstellungen deiner Heizung. Standard: aus.",
           "expert_module_arg": "Nur wirksam bei aktivierter Modulauswahl. Leer bedeutet 6, die Wärmepumpe der Referenzanlage.",
@@ -154,7 +154,7 @@
       "invalid_module_arg": "Ungültiger Modul-Menüindex: nur Ziffern (z. B. 6). Leer lassen für den Standardwert.",
       "duplicate_entityvalue": "Dieser Parameter ist bereits auf einem anderen Platz ausgewählt. Jeder Fachmann-Parameter kann nur einmal verwendet werden.",
       "discovery_failed": "Lesen vom Portal fehlgeschlagen. Bitte später erneut versuchen (das Portal weist Anfragen aus diesem Netz evtl. gerade ab).",
-      "discovery_blocked": "Der Fachmann-Zugriff wurde nicht versucht: Das Portal hat eine Fachmann-Anfrage mit 403 abgelehnt, daher pausiert dieser Pfad kurz. Die Sensor-Abfrage läuft normal weiter. Die genaue Restzeit und die abgelehnte Anfrage stehen oben in diesem Formular. Ein 403 bedeutet hier nicht zwingend eine IP-Sperre – es kann ebenso heißen, dass das Portal genau diese Anfrage nicht akzeptiert hat.",
+      "discovery_blocked": "Der Fachmann-Zugriff lief nicht: Das Portal hat eine Fachmann-Anfrage mit 403 abgelehnt, oder dieser Pfad pausiert noch danach. Die Sensor-Abfrage läuft normal weiter. Ein 403 bedeutet hier nicht zwingend eine IP-Sperre – es kann ebenso heißen, dass das Portal genau diese Anfrage nicht akzeptiert hat.",
       "discovery_empty": "Die Suche lief, aber die gewählten Module lieferten keine lesbaren Parameter. Ein anderes Modul versuchen oder die entityvalue-ID manuell eintragen.",
       "discovery_busy": "Für dieses Konto läuft gerade eine andere Fachmann-Operation – eine geplante Abfrage oder ein Schreibvorgang. Es ist immer nur eine gleichzeitig erlaubt, daher wurde diese Suche nicht gestartet. Bitte gleich noch einmal versuchen.",
       "invalid_auth": "Die gespeicherten Zugangsdaten funktionieren nicht für die Verbindung, die dieser Modus verwendet. Mobile API und Web-Portal sind getrennte Anmeldungen – dass eines geht, sagt nichts über das andere. Der Modus wurde nicht geändert.",

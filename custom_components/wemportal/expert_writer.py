@@ -787,7 +787,7 @@ class WemPortalExpertClient:
                 "" if first else f" ({self._account_state.expert_refusals} in a row)",
             )
             # Backs off the EXPERT path only (see activate_expert_cooldown in
-            # wemportalapi.py); sensor polling keeps running.
+            # transport.py); sensor polling keeps running.
             if self._cooldown_activate is not None:
                 self._cooldown_activate()
             raise ForbiddenError(

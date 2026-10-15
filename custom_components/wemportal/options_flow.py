@@ -629,8 +629,8 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                 errors["base"] = "discovery_busy"
                 modules = self._known_modules()
             except ForbiddenError as exc:
-                # The client said the refusal; a fresh 403 is not a
-                # cooldown, so its own text says which one this was.
+                # A pause after an earlier refusal and a fresh 403 land
+                # here alike, and the error text covers both.
                 _LOGGER.debug("Expert discovery: module list not read - %s", exc)
                 errors["base"] = "discovery_blocked"
                 modules = self._known_modules()
@@ -689,9 +689,9 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                 self._discovery_error = "discovery_busy"
             except ForbiddenError as exc:
                 # Either the expert path is backing off from an earlier 403,
-                # or the portal rejected a request just now. The exception
-                # text says which, and names the request - pass it through to
-                # the form instead of making the user read the log.
+                # or the portal rejected a request just now. The status line
+                # at the top of the form says which, so the user need not
+                # read the log.
                 _LOGGER.debug("Expert discovery: not run - %s", exc)
                 self._discovery_error = "discovery_blocked"
                 self._discovery_detail = await blocked_discovery_status(self.hass, exc)

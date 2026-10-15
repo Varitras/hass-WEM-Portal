@@ -316,9 +316,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         """Persist discovered device/module/parameter metadata to disk.
 
         This is what lets a future Home Assistant restart skip the slow,
-        rate-limited per-module parameter discovery in
-        WemPortalApi.get_parameters() (see get_devices()/fetch_data() in
-        wemportalapi.py). This is purely a "nice to have" cache: any
+        rate-limited per-module parameter discovery (get_devices() and
+        get_parameters() in discovery.py). This is purely a "nice to have" cache: any
         failure to save it is logged and otherwise ignored, since losing
         it only costs a slower next startup, never incorrect data.
         """

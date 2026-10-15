@@ -117,6 +117,8 @@ rules:
       visible rename for every user, not a presentation change. The three
       device status sensors are the exception and are translated: they are
       the same on every installation and take part in neither invariant.
+      So is the default name of an expert slot left unnamed, which the
+      integration makes up itself.
   exception-translations: done
   icon-translations:
     status: todo

@@ -469,7 +469,7 @@ class ExpertController:
 
         A persistently failing id would otherwise only produce an hourly
         debug line nobody sees. After three consecutive failures raise ONE
-        notification per id; reset on the next success, so a recurring
+        repair issue per id; reset on the next success, so a recurring
         problem re-notifies at most once per streak.
 
         The tally has to say WHY, because it ends up in front of the user,
