@@ -6306,5 +6306,40 @@
     "old": "                    if failure_is_over(failing, entityvalue):\n",
     "new": "                    if False:\n",
     "tests": "parameter_that_keeps_failing_to_read_is_warned_once"
+  },
+  {
+    "label": "expert poll: a slot put back keeps its daily ration",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        self.fail_counts.pop(entityvalue, None)\n        self._reported_asked_at.pop(entityvalue, None)\n        if entityvalue in self.fail_notified:\n",
+    "new": "        self.fail_counts.pop(entityvalue, None)\n        if entityvalue in self.fail_notified:\n",
+    "tests": "parameter_taken_off_and_put_back_is_asked_at_once"
+  },
+  {
+    "label": "options: a paused network is said as an expert pause",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "            else \"discovery_paused_network\",\n",
+    "new": "            else \"discovery_paused_expert\",\n",
+    "tests": "paused_network_and_a_fresh_refusal_are_said_too"
+  },
+  {
+    "label": "options: a fresh refusal is said in the log's English",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "    return await async_translated_message(hass, \"discovery_refused\")\n",
+    "new": "    return str(exc)\n",
+    "tests": "paused_network_and_a_fresh_refusal_are_said_too"
+  },
+  {
+    "label": "ci: the workflow scan finds nothing",
+    "path": "tests/test_ci_matrix.py",
+    "old": ".glob(\"*.y*ml\")",
+    "new": ".glob(\"*.nothing\")",
+    "tests": "workflow_scan_finds_the_workflows"
+  },
+  {
+    "label": "entities: the memo forgets every key on every cycle",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        for taken_down in [key for key, built in known.items() if built.taken_down]:\n",
+    "new": "        for taken_down in list(known):\n",
+    "tests": "disabled_entity_is_not_built_again_on_every_cycle"
   }
 ]

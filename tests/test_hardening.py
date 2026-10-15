@@ -6049,6 +6049,24 @@ def test_a_batch_read_without_an_abort_reads_everything():
     assert len(result) == 2
 
 
+def test_a_parameter_taken_off_and_put_back_is_asked_at_once():
+    """Taking a slot off ends what is known about its id, the daily ration
+    included: put back, a reported id otherwise sat out the rest of its day
+    without a read."""
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = types.SimpleNamespace(entityvalue="a" * 36)
+    controller.attach_entity(entity)
+    controller._reported_asked_at[entity.entityvalue] = expert_controller.monotonic()
+    assert not controller._is_due(entity.entityvalue), "the control case is due"
+
+    controller.detach_entity(entity)
+    controller.attach_entity(entity)
+
+    assert controller._is_due(entity.entityvalue)
+
+
 def test_a_parameter_that_keeps_failing_to_read_is_warned_once(caplog):
     """Every cycle builds a new client, and each warned about the same id
     failing the same way - hourly, for every slot, for as long as a dialog

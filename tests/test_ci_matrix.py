@@ -396,6 +396,12 @@ WORKFLOWS = sorted(
 )
 
 
+def test_the_workflow_scan_finds_the_workflows():
+    """An empty list parametrizes the test below into a skip, which reads as
+    green: a moved folder would have turned the check off without a word."""
+    assert WORKFLOWS, "no workflow file found under .github/workflows"
+
+
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda path: path.name)
 def test_a_feature_branch_runs_through_its_pull_request_only(workflow):
     """A bare `push:` beside `pull_request:` ran every workflow twice for

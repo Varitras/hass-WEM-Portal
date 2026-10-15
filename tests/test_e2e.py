@@ -1197,6 +1197,42 @@ async def test_an_entity_the_waiting_migration_gives_up_comes_back_under_the_old
     )
 
 
+async def test_a_disabled_entity_is_not_built_again_on_every_cycle(hass, monkeypatch):
+    """Home Assistant aborts adding an entity the user disabled. The builder
+    forgets an entity only once one it added is taken down - an abort is
+    not that, or every cycle would build the disabled one anew."""
+    from homeassistant.helpers import entity_registry
+
+    from custom_components.wemportal import sensor as sensor_platform
+
+    entry = _entry(hass)
+    registry = entity_registry.async_get(hass)
+    registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}:1234:Outside temperature",
+        config_entry=entry,
+        disabled_by=entity_registry.RegistryEntryDisabler.USER,
+    )
+    built = []
+    real_init = sensor_platform.WemPortalSensor.__init__
+
+    def counting_init(self, *args, **kwargs):
+        built.append(args)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(sensor_platform.WemPortalSensor, "__init__", counting_init)
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data.coordinator
+    assert len(built) == 1, "the control case never built the entity"
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert len(built) == 1, f"a disabled entity was built {len(built)} times"
+
+
 async def test_a_migrated_entity_is_logged_without_its_device_id(
     hass, monkeypatch, caplog
 ):

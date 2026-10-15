@@ -110,6 +110,31 @@ async def test_a_paused_expert_path_is_reported_in_home_assistants_language(
     assert "Fachmann" in status
 
 
+async def test_a_paused_network_and_a_fresh_refusal_are_said_too(
+    hass, _custom_integrations
+):
+    """The other two answers of the status line - only the expert pause had a
+    test, so the other two could have said anything."""
+    from custom_components.wemportal.exceptions import (
+        ForbiddenError,
+        PausedAfterRefusal,
+    )
+    from custom_components.wemportal.options_flow import blocked_discovery_status
+
+    hass.config.language = "de"
+    texts = _catalogue("de")["exceptions"]
+
+    paused = await blocked_discovery_status(
+        hass, PausedAfterRefusal("paused", remaining="~4 min", expert_only=False)
+    )
+    refused = await blocked_discovery_status(hass, ForbiddenError("refused"))
+
+    assert paused == texts["discovery_paused_network"]["message"].format(
+        remaining="~4 min"
+    )
+    assert refused == texts["discovery_refused"]["message"]
+
+
 def test_a_pause_says_whose_it_is_and_how_long_it_holds():
     """The form tells the expert path's own pause from the network's."""
     import time
