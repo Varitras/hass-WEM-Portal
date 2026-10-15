@@ -154,7 +154,7 @@
       "invalid_module_arg": "Invalid module menu index: digits only (e.g. 6). Leave empty to use the default.",
       "duplicate_entityvalue": "This parameter is already selected in another slot. Each expert parameter can be used only once.",
       "discovery_failed": "Could not read from the portal. Try again later (the portal may be refusing requests from this network for a while).",
-      "discovery_blocked": "Expert access did not run: the portal refused an expert request with 403, or this path is still pausing after one. Sensor polling is unaffected. A 403 here does not necessarily mean your IP is rate-limited - it can also mean the portal did not accept that particular request.",
+      "discovery_blocked": "Expert access did not run: the portal refused a request with 403, or a pause after one is still running - for the expert path alone, or for this whole network after too many requests. The status line above says which, where this form has one. A 403 here does not necessarily mean your IP is rate-limited - it can also mean the portal did not accept that particular request.",
       "discovery_empty": "The search ran, but the selected module(s) returned no readable parameters. Try another module, or enter the entityvalue manually.",
       "discovery_busy": "Another expert operation is running for this account right now - a scheduled read, or a value being written. Only one at a time is allowed, so this search was not started. Try again in a moment.",
       "invalid_auth": "Your stored credentials do not work for the connection this mode uses. The mobile API and the web portal are separate logins, so one of them working says nothing about the other. The mode was not changed.",
@@ -196,7 +196,7 @@
         },
         "value": {
           "name": "Value",
-          "description": "New value: a number, or the word the portal shows for an option that is not one (for example \"Aus\"; case does not matter). Must be one of the options the device offers."
+          "description": "New value: a number, or the word the portal shows for an option that is not one (for example \"Aus\"; case does not matter, unless two options differ only in case - then write it exactly as the portal shows it). Must be one of the options the device offers."
         }
       }
     },

@@ -154,7 +154,7 @@
       "invalid_module_arg": "Ungültiger Modul-Menüindex: nur Ziffern (z. B. 6). Leer lassen für den Standardwert.",
       "duplicate_entityvalue": "Dieser Parameter ist bereits auf einem anderen Platz ausgewählt. Jeder Fachmann-Parameter kann nur einmal verwendet werden.",
       "discovery_failed": "Lesen vom Portal fehlgeschlagen. Bitte später erneut versuchen (das Portal weist Anfragen aus diesem Netz evtl. gerade ab).",
-      "discovery_blocked": "Der Fachmann-Zugriff lief nicht: Das Portal hat eine Fachmann-Anfrage mit 403 abgelehnt, oder dieser Pfad pausiert noch danach. Die Sensor-Abfrage läuft normal weiter. Ein 403 bedeutet hier nicht zwingend eine IP-Sperre – es kann ebenso heißen, dass das Portal genau diese Anfrage nicht akzeptiert hat.",
+      "discovery_blocked": "Der Fachmann-Zugriff lief nicht: Das Portal hat eine Anfrage mit 403 abgelehnt, oder eine Pause danach läuft noch – nur für den Fachmann-Pfad oder nach zu vielen Anfragen für dieses ganze Netz. Die Statuszeile oben sagt, welche, wo dieses Formular eine hat. Ein 403 bedeutet hier nicht zwingend eine IP-Sperre – es kann ebenso heißen, dass das Portal genau diese Anfrage nicht akzeptiert hat.",
       "discovery_empty": "Die Suche lief, aber die gewählten Module lieferten keine lesbaren Parameter. Ein anderes Modul versuchen oder die entityvalue-ID manuell eintragen.",
       "discovery_busy": "Für dieses Konto läuft gerade eine andere Fachmann-Operation – eine geplante Abfrage oder ein Schreibvorgang. Es ist immer nur eine gleichzeitig erlaubt, daher wurde diese Suche nicht gestartet. Bitte gleich noch einmal versuchen.",
       "invalid_auth": "Die gespeicherten Zugangsdaten funktionieren nicht für die Verbindung, die dieser Modus verwendet. Mobile API und Web-Portal sind getrennte Anmeldungen – dass eines geht, sagt nichts über das andere. Der Modus wurde nicht geändert.",
@@ -196,7 +196,7 @@
         },
         "value": {
           "name": "Wert",
-          "description": "Neuer Wert: eine Zahl oder das Wort, das das Portal für eine Option anzeigt, die keine Zahl ist (z. B. \"Aus\"; Groß-/Kleinschreibung egal). Muss einer der vom Gerät angebotenen Optionen entsprechen."
+          "description": "Neuer Wert: eine Zahl oder das Wort, das das Portal für eine Option anzeigt, die keine Zahl ist (z. B. \"Aus\"; Groß-/Kleinschreibung egal, außer zwei Optionen unterscheiden sich nur darin – dann genau so schreiben, wie das Portal es zeigt). Muss einer der vom Gerät angebotenen Optionen entsprechen."
         }
       }
     },
