@@ -157,9 +157,6 @@ class WemPortalExpertNumber(RestoreNumber):
             # language - only when nothing is set as the name.
             self._attr_translation_key = "expert_parameter"
             self._attr_translation_placeholders = {"slot": default_slot["slot"]}
-        # No translation_key: slot names are free text with no matching
-        # translation entry, so the friendly name above is used directly
-        # (setting an unresolvable translation_key would only log warnings).
         # unique_id carries a DIGEST of the entityvalue, not the raw id:
         # unique_ids are persisted in .storage/core.entity_registry, and
         # the installation-specific raw id shouldn't leak into files
@@ -176,6 +173,19 @@ class WemPortalExpertNumber(RestoreNumber):
         # bail out before it opens a portal session. See
         # async_will_remove_from_hass for why cancelling is not enough.
         self._removed = False
+
+    def _shown_name(self) -> str:
+        """The entity as the user sees it, for the texts that reach them.
+
+        An unnamed slot is named by its translation, which only Home
+        Assistant resolves; `_label` is the English spelling the log keeps.
+        Before the entity is added there is nothing to resolve it with, and
+        asking raises.
+        """
+        if self.platform is None:
+            return self._label
+        name = self.name
+        return name if isinstance(name, str) else self._label
 
     async def async_added_to_hass(self):
         """Restore what the last run knew, and join the poll.
@@ -359,14 +369,12 @@ class WemPortalExpertNumber(RestoreNumber):
         """
         from .models import raise_if_not_writable
 
-        raise_if_not_writable(
-            self._config_entry, self._label or str(self._attr_unique_id)
-        )
+        raise_if_not_writable(self._config_entry, self._shown_name())
         if self._write_in_progress:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="expert_write_in_progress",
-                translation_placeholders={"parameter": str(self._label)},
+                translation_placeholders={"parameter": self._shown_name()},
             )
         self._write_in_progress = True
         await self._async_write(value)
@@ -476,7 +484,7 @@ class WemPortalExpertNumber(RestoreNumber):
                 translation_domain=DOMAIN,
                 translation_key="expert_write_stopped",
                 translation_placeholders={
-                    "parameter": str(self._label),
+                    "parameter": self._shown_name(),
                     "error": str(exc),
                 },
             ) from exc
@@ -506,7 +514,7 @@ class WemPortalExpertNumber(RestoreNumber):
                     translation_domain=DOMAIN,
                     translation_key="expert_value_not_offered",
                     translation_placeholders={
-                        "parameter": str(self._label),
+                        "parameter": self._shown_name(),
                         "value": str(value),
                         "error": str(exc),
                     },
@@ -515,7 +523,7 @@ class WemPortalExpertNumber(RestoreNumber):
                 translation_domain=DOMAIN,
                 translation_key="expert_write_failed",
                 translation_placeholders={
-                    "parameter": str(self._label),
+                    "parameter": self._shown_name(),
                     "value": str(value),
                     "error": str(exc),
                 },
@@ -527,7 +535,7 @@ class WemPortalExpertNumber(RestoreNumber):
                 translation_domain=DOMAIN,
                 translation_key="expert_write_failed",
                 translation_placeholders={
-                    "parameter": str(self._label),
+                    "parameter": self._shown_name(),
                     "value": str(value),
                     "error": str(exc),
                 },
@@ -543,7 +551,7 @@ class WemPortalExpertNumber(RestoreNumber):
                 translation_domain=DOMAIN,
                 translation_key="expert_write_failed",
                 translation_placeholders={
-                    "parameter": str(self._label),
+                    "parameter": self._shown_name(),
                     "value": str(value),
                     "error": str(exc),
                 },
@@ -594,7 +602,7 @@ class WemPortalExpertNumber(RestoreNumber):
             await async_translated_message(
                 self.hass,
                 "expert_write_succeeded",
-                parameter=self._label,
+                parameter=self._shown_name(),
                 value=str(value),
             ),
             title=await async_translated_message(

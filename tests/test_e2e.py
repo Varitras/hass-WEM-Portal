@@ -4700,3 +4700,7 @@ async def test_a_confirmed_write_is_announced_in_home_assistants_language(
     title, message = announced[0]
     assert title == "WEM-Portal-Fachmann-Schreibvorgang"
     assert message.endswith("gesetzt."), message
+    if route == "entity":
+        # The slot has no name of its own, so the text names it as Home
+        # Assistant does - it said "Expert Parameter 1" in German.
+        assert message.startswith("Fachmann-Parameter 1 "), message

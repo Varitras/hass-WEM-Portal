@@ -402,7 +402,7 @@
   {
     "label": "unload gate: the expert entity must ask too",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        raise_if_not_writable(\n            self._config_entry, self._label or str(self._attr_unique_id)\n        )",
+    "old": "        raise_if_not_writable(self._config_entry, self._shown_name())",
     "new": "        pass",
     "tests": "expert_entity_does_not_start_a_write_while_unloading"
   },
@@ -6173,5 +6173,12 @@
     "old": "        _LOGGER.info(\"Migrating a %s entity to the current unique_id\", platform)\n",
     "new": "        _LOGGER.info(\"Migrating entity %s to the current unique_id\", old_entity_id)\n",
     "tests": "migrated_entity_is_logged_without_its_device_id or no_log_call_names_the_installation"
+  },
+  {
+    "label": "expert: an unnamed slot is named in English again in its texts",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        return name if isinstance(name, str) else self._label\n",
+    "new": "        return self._label\n",
+    "tests": "confirmed_write_is_announced_in_home_assistants_language"
   }
 ]
