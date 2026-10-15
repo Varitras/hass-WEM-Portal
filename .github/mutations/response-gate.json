@@ -5400,8 +5400,8 @@
   {
     "label": "entity: a missing reading names its device in full again",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    return f\"{short_device_id(device_id)}:{key}\"\n",
-    "new": "    return f\"{device_id}:{key}\"\n",
+    "old": "    short = short_device_id(device_id)\n",
+    "new": "    short = str(device_id)\n",
     "tests": "missing_reading_names_its_device_only_by_the_tail"
   },
   {
@@ -6166,5 +6166,19 @@
     "old": "        return \"none\", []\n",
     "new": "        return \"None\", []\n",
     "tests": "no_fault_is_a_stable_word"
+  },
+  {
+    "label": "log: a status key keeps the full device id again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        key = key.replace(str(device_id), short)\n",
+    "new": "        pass\n",
+    "tests": "status_or_statistics_row_is_logged_without_the_full_device_id"
+  },
+  {
+    "label": "log: the migration names the entity id again",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "        _LOGGER.info(\"Migrating a %s entity to the current unique_id\", platform)\n",
+    "new": "        _LOGGER.info(\"Migrating entity %s to the current unique_id\", old_entity_id)\n",
+    "tests": "migrated_entity_is_logged_without_its_device_id or no_log_call_names_the_installation"
   }
 ]

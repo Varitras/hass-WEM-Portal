@@ -1093,6 +1093,42 @@ async def test_unique_ids_are_migrated_for_every_device(hass, monkeypatch):
         )
 
 
+async def test_a_migrated_entity_is_logged_without_its_device_id(
+    hass, monkeypatch, caplog
+):
+    """The entity id is built from the old unique id, the device id in it, and
+    the migration logged it whole at info level - in the log a user attaches
+    to a public issue."""
+    device_id = "1234567"
+    monkeypatch.setattr(
+        WemPortalApi,
+        "fetch_data",
+        lambda self, *_args, **_kwargs: {device_id: {"Outside temperature": _sensor()}},
+    )
+    entry = _entry(hass)
+    from homeassistant.helpers import entity_registry
+
+    er = entity_registry.async_get(hass)
+    old = er.async_get_or_create(
+        "sensor", DOMAIN, f"{device_id}-Outside temperature", config_entry=entry
+    )
+    assert device_id in old.entity_id
+    caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")
+
+    await _setup(hass, entry)
+
+    assert er.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}:{device_id}:Outside temperature"
+    )
+    ours = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("custom_components.wemportal")
+    ]
+    assert ours
+    assert not [line for line in ours if device_id in line]
+
+
 async def test_migration_is_skipped_when_no_data_arrived(hass, monkeypatch):
     """An empty first refresh must not abort setup - the migration simply
     has nothing to do."""

@@ -114,8 +114,14 @@ def short_device_id(device_id: str | None) -> str:
 def reading_label(device_id: str | None, key: str) -> str:
     """A reading as a log names it: its key under the shortened device id,
     in place of the unique or entity id, both of which carry the full one.
+
+    The status and statistics rows are keyed by the device id itself
+    (`1234567-ConnectionStatus`), so the key is shortened as well.
     """
-    return f"{short_device_id(device_id)}:{key}"
+    short = short_device_id(device_id)
+    if device_id:
+        key = key.replace(str(device_id), short)
+    return f"{short}:{key}"
 
 
 def short_device_ids(device_ids: Iterable[str] | None) -> list[str] | None:

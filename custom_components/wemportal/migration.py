@@ -218,15 +218,15 @@ def _adopt_entity_under_its_old_id(
     for old_id in old_ids:
         if not old_id:
             continue
-        name_id = registry.async_get_entity_id(platform, DOMAIN, old_id)
-        if name_id is None:
+        old_entity_id = registry.async_get_entity_id(platform, DOMAIN, old_id)
+        if old_entity_id is None:
             continue
-        found = registry.async_get(name_id)
+        found = registry.async_get(old_entity_id)
         if found is None or found.config_entry_id != config_entry.entry_id:
             continue
 
         new_entity_id = registry.async_get_entity_id(platform, DOMAIN, new_id)
-        if new_entity_id is not None and new_entity_id != name_id:
+        if new_entity_id is not None and new_entity_id != old_entity_id:
             _LOGGER.info(
                 "Found entity with old id and an entity with a new unique_id. Preserving old entity..."
             )
@@ -234,11 +234,8 @@ def _adopt_entity_under_its_old_id(
 
         if old_id == new_id:
             return
-        _LOGGER.info(
-            "Migrating entity %s to the current unique_id",
-            name_id,
-        )
-        registry.async_update_entity(name_id, new_unique_id=new_id)
+        _LOGGER.info("Migrating a %s entity to the current unique_id", platform)
+        registry.async_update_entity(old_entity_id, new_unique_id=new_id)
         return
 
 
