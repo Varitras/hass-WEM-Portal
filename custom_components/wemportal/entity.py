@@ -78,7 +78,8 @@ def async_add_readings_as_they_appear(
     which is a state a user can read and act on - removing the entity would
     take its history with it for what is often one bad cycle.
     """
-    coordinator = config_entry.runtime_data.coordinator
+    data = config_entry.runtime_data
+    coordinator = data.coordinator
     # What this platform currently HAS an entity for - not what it has ever
     # seen. The difference decides whether a control survives a flicker: a
     # parameter's platform is read from the value of that cycle, so one odd
@@ -90,17 +91,22 @@ def async_add_readings_as_they_appear(
 
     @callback
     def _add_the_ones_without_an_entity() -> None:
+        # The unload takes every entity down before this listener goes, and
+        # a cycle finishing in between would rebuild them all onto platforms
+        # already gone.
+        if data.unloading:
+            return
         # The memo's one blind spot: a key a merge retired. Its row is absent
         # AND the migration took its entity down this same cycle - unlike a
         # merely absent row, whose entity stays. Forgotten here so that when
         # the merge ends and the key returns with a value, it is rebuilt.
-        for retired in _keys_a_merge_retired(coordinator):
-            known.pop(retired, None)
+        retired = set(_keys_a_merge_retired(coordinator))
         # And one whose entity Home Assistant took down: the migration gives
         # the entity built under the current id up for the old one that
         # keeps the history, and that one needs an entity behind it again.
-        for taken_down in [key for key, built in known.items() if built.taken_down]:
-            del known[taken_down]
+        taken_down = {key for key, built in known.items() if built.taken_down}
+        for key in retired | taken_down:
+            known.pop(key, None)
         fresh = []
         arriving = []
         for device_id, key, reading in _readings_of(coordinator.data):
@@ -191,6 +197,12 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         # platform for the same row - so "the row is still there" stopped
         # being the same question as "the row is still mine".
         self._platform = entity_data.platform
+
+    async def async_added_to_hass(self) -> None:
+        # Back, too: renaming an entity id takes the same object down and
+        # adds it again.
+        self.taken_down = False
+        await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self) -> None:
         self.taken_down = True

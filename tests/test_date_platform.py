@@ -501,7 +501,9 @@ def test_only_date_rows_become_date_entities():
         }
     }
     entry = _Entry()
-    entry.runtime_data = types.SimpleNamespace(coordinator=_Coordinator(data))
+    entry.runtime_data = types.SimpleNamespace(
+        coordinator=_Coordinator(data), unloading=False
+    )
 
     asyncio.run(async_setup_entry(None, entry, lambda entities: added.extend(entities)))
 

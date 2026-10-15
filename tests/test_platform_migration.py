@@ -569,7 +569,7 @@ async def test_the_migration_keeps_listening_after_a_failed_first_pass(monkeypat
 def _entry_with_a_coordinator(coordinator):
     """A config entry the entity builder accepts, sharing `coordinator`."""
     entry = FakeConfigEntry()
-    entry.runtime_data = types.SimpleNamespace(coordinator=coordinator)
+    entry.runtime_data = types.SimpleNamespace(coordinator=coordinator, unloading=False)
     return entry
 
 

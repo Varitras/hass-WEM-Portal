@@ -1197,6 +1197,29 @@ async def test_an_entity_the_waiting_migration_gives_up_comes_back_under_the_old
     )
 
 
+async def test_an_entity_renamed_by_the_user_is_not_built_twice(hass, caplog):
+    """Home Assistant takes an entity down and adds the same object back when
+    its entity id is renamed. Marked as taken down for good, the builder made
+    a second one on the next cycle - refused as a duplicate, with the full
+    unique id in an error line - and then held the refused one in its memo."""
+    from homeassistant.helpers import entity_registry
+
+    entry = await _setup(hass, _entry(hass))
+    registry = entity_registry.async_get(hass)
+    unique_id = f"{entry.entry_id}:1234:Outside temperature"
+    old_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+    registry.async_update_entity(old_id, new_entity_id="sensor.renamed_outside")
+    await hass.async_block_till_done()
+
+    coordinator = entry.runtime_data.coordinator
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert "does not generate unique IDs" not in caplog.text
+    state = hass.states.get("sensor.renamed_outside")
+    assert state is not None and state.state == "12.5", state
+
+
 async def test_a_disabled_entity_is_not_built_again_on_every_cycle(hass, monkeypatch):
     """Home Assistant aborts adding an entity the user disabled. The builder
     forgets an entity only once one it added is taken down - an abort is

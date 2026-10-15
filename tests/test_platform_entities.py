@@ -168,10 +168,38 @@ class _Coordinator:
 
 class _Entry:
     def __init__(self, coordinator):
-        self.runtime_data = types.SimpleNamespace(coordinator=coordinator)
+        self.runtime_data = types.SimpleNamespace(
+            coordinator=coordinator, unloading=False
+        )
 
     def async_on_unload(self, remove) -> None:
         """Home Assistant keeps these; nothing here unloads."""
+
+
+def test_an_unload_in_progress_builds_nothing_again():
+    """The unload takes every entity down before the coordinator listener is
+    removed, and a cycle finishing in between rebuilt the whole set onto
+    platforms already gone: entities that nothing ever removes, and a
+    reloaded entry whose own entities were refused as duplicates."""
+    built = []
+    coordinator = _Coordinator(
+        {"1234": {"Heat pump-P1": Reading(value=1.0, platform="sensor")}}
+    )
+    entry = _Entry(coordinator)
+    async_add_readings_as_they_appear(
+        entry,
+        built.extend,
+        "sensor",
+        lambda *arguments: types.SimpleNamespace(taken_down=False),
+    )
+    assert len(built) == 1, "the control case built nothing"
+
+    entry.runtime_data.unloading = True
+    built[0].taken_down = True
+    for update in list(coordinator.listeners):
+        update()
+
+    assert len(built) == 1, "an unload in progress rebuilt its entities"
 
 
 def test_a_reading_gets_one_entity_however_often_the_coordinator_updates():
