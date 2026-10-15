@@ -76,31 +76,6 @@ def statistics_row_key(device_id: str, group_id: Any) -> str:
     return f"{device_id}-Energy_{group_id}"
 
 
-# In the language of the entity names. A group the portal leaves without a
-# description gets one of these; kWh are energy, so the consumption groups
-# are electricity consumption, not power.
-_FALLBACK_GROUP_NAMES: Final = {
-    "en": {
-        1: "Heating Energy Yield",
-        2: "Hot Water Energy Yield",
-        3: "Cooling Energy Yield",
-        4: "Total Energy Yield",
-        5: "Heating Electricity Consumption",
-        6: "Hot Water Electricity Consumption",
-        7: "Cooling Electricity Consumption",
-        8: "Total Electricity Consumption",
-    },
-    "de": {
-        1: "Wärmemenge Heizen",
-        2: "Wärmemenge Warmwasser",
-        3: "Wärmemenge Kühlen",
-        4: "Wärmemenge gesamt",
-        5: "Stromverbrauch Heizen",
-        6: "Stromverbrauch Warmwasser",
-        7: "Stromverbrauch Kühlen",
-        8: "Stromverbrauch gesamt",
-    },
-}
 # What a group name ends in when it does not say energy yet - in German too,
 # where "energy" never appeared and every name got the English word added.
 _ENERGY_WORD: Final = {"en": "Energy", "de": "Energie"}
@@ -245,15 +220,14 @@ class WemPortalStatistics:
 
     def _statistics_group_name(self, group: dict[str, Any]) -> str:
         """The display name for one statistics group: the portal's own
-        description where it has one, a fixed fallback where it is blank."""
+        description where it has one, its number where it is blank."""
         group_id = group.get("GroupType")
         group_name = group.get("Description")
         energy = _ENERGY_WORD.get(self.language, _ENERGY_WORD["en"])
+        # Numbered, not named: what each number means differs between
+        # installations, and the fixed names once given here were a guess.
         if not group_name or group_name.strip() == "":
-            fallback_names = _FALLBACK_GROUP_NAMES.get(
-                self.language, _FALLBACK_GROUP_NAMES["en"]
-            )
-            return fallback_names.get(group_id, f"{energy} {group_id}")  # type: ignore[arg-type]
+            return f"{energy} {group_id}"
         translated_group = translate(self.language, group_name)
         if energy.lower() in translated_group.lower():
             return translated_group

@@ -226,17 +226,18 @@ def test_a_real_name_gets_its_technical_term(name, english):
 @pytest.mark.parametrize(
     ("language", "group", "name"),
     [
-        ("en", {"GroupType": 5, "Description": ""}, "Heating Electricity Consumption"),
-        ("de", {"GroupType": 5, "Description": ""}, "Stromverbrauch Heizen"),
+        ("en", {"GroupType": 3, "Description": ""}, "Energy 3"),
+        ("de", {"GroupType": 3, "Description": ""}, "Energie 3"),
         ("en", {"GroupType": 1, "Description": "Heizung"}, "Heating Energy"),
         ("de", {"GroupType": 1, "Description": "Heizung"}, "Heizung Energie"),
         ("de", {"GroupType": 1, "Description": "Wärmeenergie"}, "Wärmeenergie"),
     ],
 )
 def test_a_statistics_group_is_named_in_the_names_language(language, group, name):
-    """kWh are energy, so a consumption group is electricity consumption, not
-    power; and a German name got the English word 'Energy' added to it,
-    because 'energy' never appeared in German."""
+    """A group the portal leaves unnamed is numbered, not named: a fixed name
+    per number was a guess, and a real installation numbers them differently
+    (3 is its total, not cooling). And a German name got the English word
+    'Energy' added to it, because 'energy' never appeared in German."""
     from custom_components.wemportal.wemportalapi import WemPortalApi
 
     api = WemPortalApi("user@example.org", "secret")

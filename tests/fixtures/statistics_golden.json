@@ -228,7 +228,7 @@
         },
         "1234-Energy_4": {
           "device_class": "energy",
-          "friendly_name": "Total Energy Yield",
+          "friendly_name": "Energy 4",
           "last_reset": "2026-04-27 00:00:00+00:00",
           "parameter_id": "Energy_4",
           "platform": "sensor",

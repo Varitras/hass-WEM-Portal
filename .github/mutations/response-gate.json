@@ -168,10 +168,10 @@
     "tests": "statistics_output_is_unchanged"
   },
   {
-    "label": "stats: the fallback name map must be frozen",
+    "label": "stats: an unnamed group keeps its number",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            return fallback_names.get(group_id, f\"{energy} {group_id}\")",
-    "new": "            return f\"{energy} {group_id}\"",
+    "old": "            return f\"{energy} {group_id}\"\n",
+    "new": "            return energy\n",
     "tests": "statistics_output_is_unchanged"
   },
   {
@@ -6074,13 +6074,6 @@
     "path": "custom_components/wemportal/statistics.py",
     "old": "        energy = _ENERGY_WORD.get(self.language, _ENERGY_WORD[\"en\"])\n",
     "new": "        energy = _ENERGY_WORD[\"en\"]\n",
-    "tests": "statistics_group_is_named_in_the_names_language"
-  },
-  {
-    "label": "stats: consumption named as power again",
-    "path": "custom_components/wemportal/statistics.py",
-    "old": "        5: \"Heating Electricity Consumption\",\n",
-    "new": "        5: \"Power Consumption Heating\",\n",
     "tests": "statistics_group_is_named_in_the_names_language"
   },
   {

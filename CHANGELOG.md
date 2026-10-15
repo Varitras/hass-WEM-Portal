@@ -73,11 +73,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
     "Enable module selection".
   - Both: a failed discovery said the portal itself was rate-limited; it is
     this network the portal is refusing.
-- **Statistics groups without a name of their own are named correctly.**
-  The consumption groups are electricity, measured in kWh, but were called
-  "Power Consumption"; they read "Heating Electricity Consumption" and so on
-  now, and with language `de` they and the yields have German names. A
-  German group name also no longer gets the English word "Energy" added -
+- **Statistics groups without a name of their own are numbered.** The
+  portal sends a name for each group; where it leaves one blank, the group
+  was given a fixed name by its number ("Cooling Energy Yield", "Power
+  Consumption Heating" ...) - but installations number their groups
+  differently, and on a real heat pump group 3 is the total, not cooling.
+  Such a group is now called "Energy 3" ("Energie 3" with language `de`).
+  A German group name also no longer gets the English word "Energy" added -
   it is "Energie".
 - **English names are English, and German ones keep the portal's
   spelling.**
