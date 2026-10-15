@@ -213,10 +213,17 @@ class WemPortalStatistics:
         return [
             str(device_id)
             for device_id in target_devices
-            if str(device_id) in self.data
-            and str(device_id) in (self.modules or {})
-            and self.data[str(device_id)].get("ConnectionStatus") in (None, 0)
+            if self._statistics_reads(str(device_id))
         ]
+
+    def _statistics_reads(self, device_id: str) -> bool:
+        """Whether the statistics fetch asks the portal about this device -
+        and so whether anything keeps its statistics rows current."""
+        return (
+            device_id in self.data
+            and device_id in (self.modules or {})
+            and self.data[device_id].get("ConnectionStatus") in (None, 0)
+        )
 
     def _statistics_group_name(self, group: dict[str, Any]) -> str:
         """The display name for one statistics group: the portal's own

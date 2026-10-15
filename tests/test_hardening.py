@@ -6316,6 +6316,8 @@ def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
 def _device_gone_quiet(rows):
     api = _api()
     api.data = {"1234": rows}
+    # A device with modules: the one the statistics fetch reads.
+    api.modules = {"1234": {}}
     api._last_device_read["1234"] = (
         time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
     )
@@ -6341,6 +6343,28 @@ def test_a_device_gone_quiet_leaves_the_statistics_rows_alone():
     assert api.data["1234"]["Heat pump-T1"].value is None
     assert api.data["1234"]["1234-Energy_2"].value == 2.9, (
         "a statistics row was aged by a value read that does not own it"
+    )
+
+
+def test_the_statistics_of_a_device_their_fetch_skips_age_with_the_rest():
+    """The rows are left to the hourly statistics fetch - which does not ask a
+    device whose status is busy or offline. Nothing aged them then, and the
+    last day's energy stood as current for as long as the device was away."""
+    api = _device_gone_quiet(
+        {
+            "ConnectionStatus": 1,
+            "Heat pump-T1": Reading(
+                value=21.0, unit="°C", module_index=0, module_type=1
+            ),
+            "1234-Energy_2": Reading(value=2.9, unit="kWh"),
+        }
+    )
+
+    api._forget_stale_device_values("1234")
+
+    assert api.data["1234"]["Heat pump-T1"].value is None
+    assert api.data["1234"]["1234-Energy_2"].value is None, (
+        "a statistics row nothing reads any more was kept as current"
     )
 
 

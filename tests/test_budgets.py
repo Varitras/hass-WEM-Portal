@@ -98,7 +98,9 @@ LINE_BUDGETS = {
     # And by 5 for the two status rows' words, fixed so that automations keep
     # comparing against them whatever language the user reads.
     # Down to 2279: the discovery half moved to discovery.py.
-    "wemportalapi.py": 2279,
+    # And up by 4: the device pass leaves the statistics rows alone only
+    # while their own fetch still asks the device.
+    "wemportalapi.py": 2283,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

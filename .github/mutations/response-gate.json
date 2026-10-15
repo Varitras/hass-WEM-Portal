@@ -2425,8 +2425,8 @@
   {
     "label": "freshness: the rows explaining the silence blanked with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows or is_statistics_row(device_id, key):",
-    "new": "            if is_statistics_row(device_id, key):",
+    "old": "            if key in status_rows:\n                continue\n",
+    "new": "",
     "tests": "the_rows_that_explain_the_silence_are_not_blanked_with_it"
   },
   {
@@ -5736,8 +5736,8 @@
   {
     "label": "freshness: a statistics row aged by a value read that does not own it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows or is_statistics_row(device_id, key):",
-    "new": "            if key in status_rows:",
+    "old": "            if is_statistics_row(device_id, key) and self._statistics_reads(device_id):\n                continue\n",
+    "new": "",
     "tests": "gone_quiet_leaves_the_statistics_rows_alone"
   },
   {
@@ -5953,7 +5953,7 @@
   {
     "label": "statistics: an offline installation asked every fifteen minutes again",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            and self.data[str(device_id)].get(\"ConnectionStatus\") in (None, 0)\n",
+    "old": "            and self.data[device_id].get(\"ConnectionStatus\") in (None, 0)\n",
     "new": "",
     "tests": "offline_installation_are_not_asked_for"
   },
@@ -6222,5 +6222,12 @@
     "old": "            if key in (self._previous_scraper_keys or ())\n",
     "new": "            if True\n",
     "tests": "device_the_list_stops_naming_keeps_only_its_scraped_rows"
+  },
+  {
+    "label": "freshness: a device the statistics fetch skips keeps its energy as current",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if is_statistics_row(device_id, key) and self._statistics_reads(device_id):\n",
+    "new": "            if is_statistics_row(device_id, key):\n",
+    "tests": "statistics_of_a_device_their_fetch_skips_age_with_the_rest"
   }
 ]

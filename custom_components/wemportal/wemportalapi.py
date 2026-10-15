@@ -513,7 +513,11 @@ class WemPortalApi(
         status_rows = {f"{device_id}-{row_name}" for row_name in DEVICE_STATUS_ROWS}
         forgotten = []
         for key, row in (self.data.get(device_id) or {}).items():
-            if key in status_rows or is_statistics_row(device_id, key):
+            if key in status_rows:
+                continue
+            # Left to the statistics fetch only while it still asks this
+            # device: one that is busy or offline it skips.
+            if is_statistics_row(device_id, key) and self._statistics_reads(device_id):
                 continue
             if not isinstance(row, Reading) or row.value is None:
                 continue
