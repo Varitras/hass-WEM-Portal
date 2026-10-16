@@ -711,7 +711,7 @@ Portal, click the three dots on the card, choose `Enable debug logging`.
 | A sensor shows *unknown* for a cycle | The portal answered without that parameter. Deliberate: a stale reading is not shown as current. |
 | Web-only sensors go *unknown* together | Three scrapes in a row failed. They come back on the next successful one. |
 | A setpoint shows 0 while the heat pump is idle | The portal shows `--` there: no setpoint without demand. Read as 0, like a pump's `Aus`; a counter showing `--` stays *unknown*, since Home Assistant would take a 0 as a reset. |
-| Asked to re-authenticate although the password is right | On the web login (`web` and `both` mode), only a re-rendered login form counts as wrong credentials, but a portal in an odd state can still get there. The mobile API login counts any refusal that does not announce maintenance as wrong credentials. |
+| Asked to re-authenticate although the password is right | In `web` mode, repeatedly receiving the login form again can trigger re-authentication, even if the portal caused the problem; in `both` mode, web login failures alone do not trigger it. The mobile API treats HTTP 400 and HTTP 200 with an unsuccessful JSON `Status` as credential failures unless the response message announces maintenance; HTTP 403, server errors, and network failures do not count. |
 | A new parameter does not appear | Parameter lists are cached for 24 hours. Use `Search the portal for new API parameters`. |
 | Expert discovery says another operation is running | The auto-poll or a write holds the per-account lock. Try again in a moment. |
 
