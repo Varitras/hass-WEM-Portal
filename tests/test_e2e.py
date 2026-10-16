@@ -67,18 +67,23 @@ BASE_OPTIONS = {
     CONF_MODE: "api",
 }
 
-# One device with one sensor data point, in the shape fetch_data() returns.
-FAKE_DATA = {
-    "1234": {
-        "Outside temperature": Reading(
-            value=12.5,
-            unit="°C",
-            platform="sensor",
-            friendly_name="Outside temperature",
-            parameter_id="P1",
-        )
+
+def _fake_data():
+    """One device with one sensor data point, in the shape fetch_data() returns.
+
+    Built per call: the coordinator publishes what the stub returns as its
+    live data, and tests write rows into it."""
+    return {
+        "1234": {
+            "Outside temperature": Reading(
+                value=12.5,
+                unit="°C",
+                platform="sensor",
+                friendly_name="Outside temperature",
+                parameter_id="P1",
+            )
+        }
     }
-}
 
 
 @pytest.fixture(autouse=True)
@@ -97,7 +102,7 @@ def _mock_portal(monkeypatch):
     the production types.
     """
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: _fake_data()
     )
     monkeypatch.setattr(WemPortalApi, "api_login", lambda self, *_args, **_kwargs: None)
     monkeypatch.setattr(WemPortalApi, "web_login", lambda self, *_args, **_kwargs: None)
@@ -145,6 +150,19 @@ async def _setup(hass, entry):
 
 
 # --- setup / unload ---------------------------------------------------
+
+
+def test_every_cycle_of_the_portal_stub_hands_out_its_own_rows():
+    """The stub handed out one module-level dict as the live coordinator data,
+    so rows a test wrote into it were there at the next test's setup - which
+    one depended on how the workers split the run."""
+    api = WemPortalApi(USER, "secret")
+    first = api.fetch_data()
+    first["1234"]["Late-Parameter"] = Reading(value=1.0, platform="sensor")
+
+    assert "Late-Parameter" not in api.fetch_data()["1234"], (
+        "a row written into one cycle's data reached the next"
+    )
 
 
 async def test_setup_creates_entities_and_devices(hass):
@@ -418,6 +436,109 @@ async def test_a_poll_finishing_during_the_unload_does_not_write(hass, hass_stor
     )
 
 
+async def test_a_coordinator_unloaded_once_does_not_own_the_next_setup(
+    hass, hass_storage
+):
+    """After an unload the entry carries no store, and the gate read that as
+    "still setting up" - which the entry is, for the NEXT coordinator, while
+    a tail of the old one wrote its module cache for a setup it is no part
+    of."""
+    entry = await _setup(hass, _entry(hass))
+    old = entry.runtime_data.coordinator
+    old.api.modules = {"1234": {(0, 1): {"Name": "Heat pump", "parameters": {}}}}
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    modules_key = f"{DOMAIN}_{entry.entry_id}_modules"
+    hass_storage.pop(modules_key, None)
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
+
+    await old._async_save_modules_cache()
+    await hass.async_block_till_done()
+
+    assert modules_key not in hass_storage, (
+        "a coordinator already unloaded wrote into the next setup"
+    )
+
+
+async def _a_poll_that_outlives_its_unload(hass, monkeypatch, outcome, auth_streak=0):
+    """Unload the entry while a refresh is still in its worker thread, then let
+    the refresh finish with `outcome` - the order a disable or reload meets
+    when it lands mid-cycle. Returns the entry and the refresh's exception."""
+    entry = await _setup(hass, _entry(hass))
+    coordinator = entry.runtime_data.coordinator
+    coordinator.num_auth_failed = auth_streak
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_fetch(self, *_args, **_kwargs):
+        started.set()
+        release.wait(10)
+        raise outcome
+
+    monkeypatch.setattr(WemPortalApi, "fetch_data", slow_fetch)
+    refresh = hass.async_create_task(coordinator._update_within_timeout(None))
+    await hass.async_add_executor_job(started.wait, 10)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    release.set()
+    with pytest.raises(Exception) as raised:
+        await refresh
+    return entry, raised.value
+
+
+async def test_a_poll_outliving_its_unload_raises_no_repair_issue(hass, monkeypatch):
+    """The unload deletes the entry's repair issues, and the in-flight cycle's
+    tail put them straight back: a disabled entry then showed a rate-limit
+    report nothing could ever re-check or withdraw."""
+    from homeassistant.helpers import issue_registry
+
+    from custom_components.wemportal.coordinator import (
+        RATE_LIMIT_ISSUE,
+        WEB_SCRAPE_ISSUE,
+    )
+    from custom_components.wemportal.exceptions import WemPortalError
+
+    monkeypatch.setattr(WemPortalApi, "is_rate_limited", lambda self: True)
+    monkeypatch.setattr(
+        WemPortalApi, "web_scrape_is_failing", lambda self, *_args: True
+    )
+
+    entry, _ = await _a_poll_that_outlives_its_unload(
+        hass, monkeypatch, WemPortalError("portal refused")
+    )
+
+    issues = issue_registry.async_get(hass).issues
+    for name in (RATE_LIMIT_ISSUE, WEB_SCRAPE_ISSUE):
+        assert (DOMAIN, f"{entry.entry_id}_{name}") not in issues, (
+            f"a cycle finishing after the unload raised {name} again"
+        )
+
+
+async def test_a_poll_outliving_its_unload_keeps_the_auth_streak_cleared(
+    hass, monkeypatch
+):
+    """The unload clears the account's auth streak, and the cycle still in
+    flight wrote its own count back - one login page after the reload then
+    reached the threshold. As the third failure it even asked the torn-down
+    entry for a reauth."""
+    from custom_components.wemportal.const import AUTH_ERROR_ESCALATION_THRESHOLD
+    from custom_components.wemportal.models import account_state
+
+    _, raised = await _a_poll_that_outlives_its_unload(
+        hass,
+        monkeypatch,
+        AuthError("login page"),
+        auth_streak=AUTH_ERROR_ESCALATION_THRESHOLD - 1,
+    )
+
+    assert account_state(USER).auth_failures == 0, (
+        "a cycle finishing after the unload wrote its auth streak back"
+    )
+    assert type(raised).__name__ == "UpdateFailed", (
+        f"a torn-down entry escalated its last auth failure: {raised!r}"
+    )
+
+
 def _prepare_module_cache_save(coordinator, slow_disk):
     """A module-cache save on the (slow) disk, holding the store lock."""
     coordinator.api.modules = {"1234": {(0, 1): {"Name": "Heat pump"}}}
@@ -628,6 +749,35 @@ async def test_a_reload_drops_expert_entities_whose_slot_is_gone(hass):
     ), "the configured slot's entity was removed with the ghost"
 
 
+async def test_an_unnamed_slot_moved_off_its_raw_id_keeps_its_translated_name(
+    hass, caplog
+):
+    """The move to the digest unique_id logged `entity.name` before the entity
+    was added - before Home Assistant can resolve the name of a slot that is
+    named by its translation."""
+    from homeassistant.helpers import entity_registry
+
+    hass.config.language = "de"
+    entry = _entry(hass, _expert_options())
+    registry = entity_registry.async_get(hass)
+    old = registry.async_get_or_create(
+        "number", DOMAIN, f"{entry.entry_id}:expert:{EV_A}", config_entry=entry
+    )
+
+    await _setup(hass, entry)
+
+    digest = expert_options.entityvalue_digest(EV_A)
+    assert (
+        registry.async_get_entity_id(
+            "number", DOMAIN, f"{entry.entry_id}:expert:{digest}"
+        )
+        == old.entity_id
+    ), "the raw-id entity was not moved onto the digest"
+    friendly_name = hass.states.get(old.entity_id).attributes["friendly_name"]
+    assert friendly_name.endswith("Fachmann-Parameter 1"), friendly_name
+    assert "UndefinedType" not in caplog.text
+
+
 async def test_disabling_expert_write_drops_its_registry_entries(hass):
     """With the option off there are no expert entities, so entries under the
     expert unique_id prefix are ghosts - and ONLY those may go: an entity of
@@ -743,7 +893,7 @@ async def test_a_rate_limit_becomes_a_repair_issue_until_the_block_lapses(
 
     transport.reset_cooldowns_for_tests()
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: _fake_data()
     )
     await entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
@@ -777,7 +927,7 @@ async def test_a_403_a_sub_task_swallowed_still_raises_the_repair_issue(
         # Exactly what a swallowed 403 leaves behind: the backoff is set,
         # and the cycle returns data anyway.
         self._activate_cooldown("a test 403")
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", succeed_but_earn_a_403)
     await entry.runtime_data.coordinator.async_refresh()
@@ -794,7 +944,7 @@ async def test_a_403_a_sub_task_swallowed_still_raises_the_repair_issue(
     # because some later cycle happened to work.
     transport.reset_cooldowns_for_tests()
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: _fake_data()
     )
     await entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
@@ -821,7 +971,7 @@ async def test_a_successful_cycle_under_an_active_block_keeps_the_issue(
 
     def blocked_but_returning_data(self, *_args, **_kwargs):
         self._activate_cooldown("a test 403")
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", blocked_but_returning_data)
     await entry.runtime_data.coordinator.async_refresh()
@@ -829,7 +979,7 @@ async def test_a_successful_cycle_under_an_active_block_keeps_the_issue(
 
     # A second cycle that raises nothing at all, with the backoff still on.
     monkeypatch.setattr(
-        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: FAKE_DATA
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: _fake_data()
     )
     await entry.runtime_data.coordinator.async_refresh()
     await hass.async_block_till_done()
@@ -994,6 +1144,152 @@ async def test_unique_ids_are_migrated_for_every_device(hass, monkeypatch):
             er.async_get_entity_id("sensor", DOMAIN, f"{device_id}-Outside temperature")
             is None
         )
+
+
+async def test_an_entity_the_waiting_migration_gives_up_comes_back_under_the_old_one(
+    hass, monkeypatch
+):
+    """While a device has not answered, nothing is migrated - and the builder
+    makes an entity for the reading under its current id in the meantime.
+    The pass that runs gives that entity up for the old one, which keeps the
+    history, but the builder had marked the reading as built: the old entity
+    then stood in the registry with no entity behind it until a reload."""
+    from homeassistant.helpers import entity_registry
+
+    silent = "5678"
+    cycle = {
+        "1234": {"Outside temperature": _sensor()},
+        silent: {
+            f"{silent}-ConnectionStatus": Reading(value="offline", platform="sensor")
+        },
+    }
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: cycle
+    )
+    entry = _entry(hass)
+    registry = entity_registry.async_get(hass)
+    old = registry.async_get_or_create(
+        "sensor", DOMAIN, "1234-Outside temperature", config_entry=entry
+    )
+    await _setup(hass, entry)
+    new_unique_id = f"{entry.entry_id}:1234:Outside temperature"
+    built = registry.async_get_entity_id("sensor", DOMAIN, new_unique_id)
+    assert built is not None and built != old.entity_id, (
+        "the control case migrated before the silent device answered"
+    )
+
+    coordinator = entry.runtime_data.coordinator
+    cycle[silent] = {
+        **cycle[silent],
+        "Pump": Reading(value=1.0, platform="sensor", parameter_id="Pump"),
+    }
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert registry.async_get_entity_id("sensor", DOMAIN, new_unique_id) == (
+        old.entity_id
+    ), "the old entity did not take the current id"
+    state = hass.states.get(old.entity_id)
+    assert state is not None and state.state == "12.5", (
+        f"the old entity has nothing behind it: {state}"
+    )
+
+
+async def test_an_entity_renamed_by_the_user_is_not_built_twice(hass, caplog):
+    """Home Assistant takes an entity down and adds the same object back when
+    its entity id is renamed. Marked as taken down for good, the builder made
+    a second one on the next cycle - refused as a duplicate, with the full
+    unique id in an error line - and then held the refused one in its memo."""
+    from homeassistant.helpers import entity_registry
+
+    entry = await _setup(hass, _entry(hass))
+    registry = entity_registry.async_get(hass)
+    unique_id = f"{entry.entry_id}:1234:Outside temperature"
+    old_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+    registry.async_update_entity(old_id, new_entity_id="sensor.renamed_outside")
+    await hass.async_block_till_done()
+
+    coordinator = entry.runtime_data.coordinator
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert "does not generate unique IDs" not in caplog.text
+    state = hass.states.get("sensor.renamed_outside")
+    assert state is not None and state.state == "12.5", state
+
+
+async def test_a_disabled_entity_is_not_built_again_on_every_cycle(hass, monkeypatch):
+    """Home Assistant aborts adding an entity the user disabled. The builder
+    forgets an entity only once one it added is taken down - an abort is
+    not that, or every cycle would build the disabled one anew."""
+    from homeassistant.helpers import entity_registry
+
+    from custom_components.wemportal import sensor as sensor_platform
+
+    entry = _entry(hass)
+    registry = entity_registry.async_get(hass)
+    registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}:1234:Outside temperature",
+        config_entry=entry,
+        disabled_by=entity_registry.RegistryEntryDisabler.USER,
+    )
+    built = []
+    real_init = sensor_platform.WemPortalSensor.__init__
+
+    def counting_init(self, *args, **kwargs):
+        built.append(args)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(sensor_platform.WemPortalSensor, "__init__", counting_init)
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data.coordinator
+    assert len(built) == 1, "the control case never built the entity"
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert len(built) == 1, f"a disabled entity was built {len(built)} times"
+
+
+async def test_a_migrated_entity_is_logged_without_its_device_id(
+    hass, monkeypatch, caplog
+):
+    """The entity id is built from the old unique id, the device id in it, and
+    the migration logged it whole at info level - in the log a user attaches
+    to a public issue."""
+    device_id = "1234567"
+    monkeypatch.setattr(
+        WemPortalApi,
+        "fetch_data",
+        lambda self, *_args, **_kwargs: {device_id: {"Outside temperature": _sensor()}},
+    )
+    entry = _entry(hass)
+    from homeassistant.helpers import entity_registry
+
+    er = entity_registry.async_get(hass)
+    old = er.async_get_or_create(
+        "sensor", DOMAIN, f"{device_id}-Outside temperature", config_entry=entry
+    )
+    assert device_id in old.entity_id
+    caplog.set_level(logging.DEBUG, logger="custom_components.wemportal")
+
+    await _setup(hass, entry)
+
+    assert er.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}:{device_id}:Outside temperature"
+    )
+    ours = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("custom_components.wemportal")
+    ]
+    assert ours
+    assert not [line for line in ours if device_id in line]
 
 
 async def test_migration_is_skipped_when_no_data_arrived(hass, monkeypatch):
@@ -1276,10 +1572,8 @@ async def test_the_service_can_set_the_option_that_is_not_a_number(hass, monkeyp
 
 
 def _writeable_rows(number_row=None, select_row=None):
-    """FAKE_DATA plus one writeable row, in the mapper's own shape."""
-    import copy
-
-    data = copy.deepcopy(FAKE_DATA)
+    """_fake_data() plus one writeable row, in the mapper's own shape."""
+    data = _fake_data()
     if number_row is not None:
         data["1234"]["Heat pump-Komfort"] = number_row
     if select_row is not None:
@@ -1443,7 +1737,7 @@ async def test_diagnostics_carry_no_credentials_and_no_installation_ids(hass):
         CONF_EXPERT_MODULE_LIST: [{"value": EV_B, "label": "Heating"}],
     }
     entry = await _setup(hass, _entry(hass, options))
-    # A row keyed the way production keys its status rows. FAKE_DATA has no
+    # A row keyed the way production keys its status rows. _fake_data() has no
     # such key, so without this the report simply never contains one - and
     # the assertion below would pass while the aliasing did nothing. The
     # mutation run is what said so: breaking the row-key aliasing left the
@@ -1549,7 +1843,7 @@ async def test_first_refresh_does_not_filter_devices_away(hass, monkeypatch):
 
     def record(self, enabled_devices=None):
         seen.append(enabled_devices)
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", record)
 
@@ -1597,7 +1891,7 @@ async def test_a_disabled_device_is_filtered_out_on_the_first_cycle(hass, monkey
 
     def record(self, enabled_devices=None):
         seen.append(enabled_devices)
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", record)
     await coordinator._async_update_data()
@@ -1632,7 +1926,7 @@ async def test_the_persisted_scraper_id_survives_a_restart_in_the_device_filter(
 
     def record(self, enabled_devices=None):
         seen.append(enabled_devices)
-        return FAKE_DATA
+        return _fake_data()
 
     monkeypatch.setattr(WemPortalApi, "fetch_data", record)
     await coordinator._async_update_data()
@@ -1665,19 +1959,13 @@ async def test_failed_first_refresh_closes_its_sessions(hass, monkeypatch):
     assert closed, "a failed first refresh leaked its HTTP sessions"
 
 
-async def test_a_setup_cancelled_during_the_id_migration_closes_its_sessions(
+async def test_a_setup_cancelled_in_its_first_refresh_closes_its_sessions(
     hass, monkeypatch
 ):
-    """The migration ran between the two cleanup regions of the setup.
-
-    It awaits a refresh once it has renamed an entity, and a cancellation
-    there - shutdown, or a setup that took too long - is not an Exception, so
-    its best-effort handler let it through. The first refresh had already
-    opened the HTTP sessions, and nothing was published yet for an unload to
-    close them.
-    """
-    from homeassistant.helpers import entity_registry
-
+    """A cancellation - shutdown, or a setup that took too long - is not an
+    Exception, so a cleanup that caught only those let it through with the
+    sessions the first refresh had opened, and nothing was published yet for
+    an unload to close them."""
     from custom_components.wemportal.coordinator import (
         WemPortalDataUpdateCoordinator,
     )
@@ -1691,20 +1979,15 @@ async def test_a_setup_cancelled_during_the_id_migration_closes_its_sessions(
         raise asyncio.CancelledError
 
     monkeypatch.setattr(
-        WemPortalDataUpdateCoordinator, "async_request_refresh", cancelled
+        WemPortalDataUpdateCoordinator, "async_config_entry_first_refresh", cancelled
     )
     entry = _entry(hass)
-    # An id from before the migration, so it has something to rename and
-    # reaches the refresh.
-    entity_registry.async_get(hass).async_get_or_create(
-        "sensor", DOMAIN, "Outside temperature", config_entry=entry
-    )
 
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
     assert entry.state is not ConfigEntryState.LOADED
-    assert closed, "a cancelled migration leaked the first refresh's sessions"
+    assert closed, "a cancelled setup leaked the first refresh's sessions"
 
 
 async def test_unloaded_entry_does_not_rearm_the_auto_poll(hass, monkeypatch):
@@ -2045,13 +2328,50 @@ async def test_a_failed_read_does_not_count_as_a_broken_parameter(hass, monkeypa
     assert raised_issues == [], "an outage produced a 'check your ID' issue"
 
 
+async def test_a_read_that_keeps_failing_is_announced_once(hass, monkeypatch, caplog):
+    """A login that stays broken warned on every hourly poll - 24 times a day
+    for one outage - although the log policy is once when it breaks and once
+    when it heals. The damping existed, on the path for a dead batch; this
+    one, where the read itself raises, was left out."""
+    import logging
+
+    reads = []
+
+    def reader(_ids):
+        reads.append(True)
+        if len(reads) <= 3:
+            raise RuntimeError("expert login keeps failing")
+        return {}
+
+    _entry, scheduled, _issues = await _auto_poll_entry(hass, monkeypatch, reader)
+    poll = scheduled[-1]
+
+    with caplog.at_level(logging.DEBUG):
+        for _ in range(4):
+            await poll(None)
+            await hass.async_block_till_done()
+
+    warned = [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.WARNING and "read failed" in record.getMessage()
+    ]
+    assert len(warned) == 1, f"one outage was announced {len(warned)} times"
+    assert "reads again" in caplog.text, "the recovery was never said"
+
+
 async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
     hass, monkeypatch
 ):
     """The case the counting DOES exist for: the batch works, one id never
-    comes back. After three of those the user hears about it - once."""
+    comes back. After three of those the user hears about it - once, also
+    when the daily read of a reported id finds it failing again."""
     from homeassistant.helpers import issue_registry
 
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0])
     entry, scheduled, raised_issues = await _auto_poll_entry(
         hass,
         monkeypatch,
@@ -2059,7 +2379,11 @@ async def test_a_parameter_the_portal_keeps_omitting_is_reported_once(
     )
     poll = scheduled[-1]
 
-    for _ in range(5):
+    for _ in range(3):
+        await poll(None)
+        await hass.async_block_till_done()
+    for _ in range(2):
+        now[0] += expert_controller.REPORTED_ID_RETRY_SECONDS
         await poll(None)
         await hass.async_block_till_done()
 
@@ -2082,6 +2406,10 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
     repair issue would outlive the problem it reports."""
     from homeassistant.helpers import issue_registry
 
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0])
     state = {"fail": True}
 
     def sometimes(_ids):
@@ -2103,6 +2431,8 @@ async def test_a_recovered_parameter_clears_its_failure_streak(hass, monkeypatch
     assert len(raised_issues) == 1, "three consecutive misses raised no issue"
 
     state["fail"] = False
+    # A reported id is next asked a day later.
+    now[0] += expert_controller.REPORTED_ID_RETRY_SECONDS
     await poll(None)
     await hass.async_block_till_done()
 
@@ -2121,6 +2451,9 @@ async def test_a_failed_poll_still_arms_the_next_one(hass, monkeypatch):
         raise RuntimeError("portal unavailable")
 
     _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, always_fails)
+    # The setup poll failed too; without this its missing successor would
+    # surface as an IndexError, not as the chain dying.
+    assert scheduled, "the poll chain died on its first failure"
     before = len(scheduled)
 
     await scheduled[-1](None)
@@ -2175,46 +2508,142 @@ async def test_a_poll_skips_when_another_expert_operation_holds_the_lock(
     lock.release()
 
 
-async def test_a_cancelled_service_write_keeps_the_lock_until_the_worker_ends(
-    hass, monkeypatch
-):
-    """The service took the account lock on the event loop and released it in
-    the awaiting coroutine's finally. Cancel that await - a reload, an unload,
-    or shutdown cancelling the automation that called the action - and the
-    finally freed the lock while the executor thread was still driving the
-    portal, so the next expert operation could open a second session beside
-    it. The worker must own the lock, the way the entity write and the
-    auto-poll already do, so a cancellation cannot free it early.
-    """
+async def _an_expert_write_held_in_the_portal(hass, monkeypatch):
+    """An expert entity whose write is in the portal and stays there until
+    `release` is set. Returns the entity, the write's task and `release`."""
     entry = await _setup(hass, _entry(hass, _expert_options()))
-    lock = entry.runtime_data.expert.lock
-
-    in_write = threading.Event()
+    entity = entry.runtime_data.expert.entities[0]
+    reached = threading.Event()
     release = threading.Event()
 
-    def blocking_write(self, entityvalue, value, **_kwargs):
-        in_write.set()
+    def held_write(self, entityvalue, value, **_kwargs):
+        reached.set()
         release.wait(timeout=5)
         return expert_writer.ExpertParameterState(value, [10.0, 20.0, 30.0], {})
 
     monkeypatch.setattr(
-        expert_writer.WemPortalExpertClient, "write_parameter", blocking_write
+        expert_writer.WemPortalExpertClient, "write_parameter", held_write
     )
-
-    task = asyncio.create_task(
-        hass.services.async_call(
-            DOMAIN,
-            SERVICE_SET_EXPERT_PARAMETER,
-            {"entityvalue": EV_A, "value": 30},
-            blocking=True,
-        )
-    )
-    # Let the worker reach the portal write, where it holds the lock.
+    task = asyncio.create_task(entity.async_set_native_value(20))
     for _ in range(500):
-        if in_write.is_set():
+        if reached.is_set():
             break
         await asyncio.sleep(0.01)
-    assert in_write.is_set(), "the worker never reached the portal write"
+    assert reached.is_set(), "the write never reached the portal"
+    return entity, task, release
+
+
+async def test_a_second_expert_write_while_the_first_runs_is_refused(hass, monkeypatch):
+    """Let through, the second write ended in its finally while the first was
+    still in the portal - clearing the flag that keeps a poll result from
+    overwriting the value the first one is about to confirm."""
+    entity, task, release = await _an_expert_write_held_in_the_portal(hass, monkeypatch)
+    try:
+        with pytest.raises(HomeAssistantError) as refused:
+            await entity.async_set_native_value(30)
+        assert refused.value.translation_key == "expert_write_in_progress"
+    finally:
+        release.set()
+        await task
+
+
+async def test_a_poll_result_during_an_expert_write_is_discarded(hass, monkeypatch):
+    """A poll that started before the write carries the value from before it;
+    applied, it overwrote the one the write was about to confirm."""
+    entity, task, release = await _an_expert_write_held_in_the_portal(hass, monkeypatch)
+    try:
+        entity.apply_read_state(
+            expert_writer.ExpertParameterState(99.0, [10.0, 20.0, 99.0], {})
+        )
+        assert entity.native_value != 99.0, (
+            "a poll result from before the write was applied during it"
+        )
+    finally:
+        release.set()
+        await task
+
+
+def _service_write(hass, entry, monkeypatch, in_portal):
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient,
+        "write_parameter",
+        lambda self, entityvalue, value, **_kwargs: in_portal(),
+    )
+    return hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_EXPERT_PARAMETER,
+        {"entityvalue": EV_A, "value": 30},
+        blocking=True,
+    )
+
+
+def _entity_write(hass, entry, monkeypatch, in_portal):
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient,
+        "write_parameter",
+        lambda self, entityvalue, value, **_kwargs: in_portal(),
+    )
+    return entry.runtime_data.expert.entities[0].async_set_native_value(30)
+
+
+def _auto_poll(hass, entry, monkeypatch, in_portal):
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient, "read_many", lambda self, ids: in_portal()
+    )
+    return entry.runtime_data.expert.poll()
+
+
+def _discovery(hass, entry, monkeypatch, in_portal):
+    from custom_components.wemportal.options_flow import WemportalOptionsFlow
+
+    flow = WemportalOptionsFlow()
+    flow.hass = hass
+    monkeypatch.setattr(type(flow), "config_entry", property(lambda self: entry))
+    return flow._run_expert(in_portal)
+
+
+@pytest.mark.parametrize(
+    "start", [_service_write, _entity_write, _auto_poll, _discovery]
+)
+async def test_a_cancelled_expert_operation_keeps_the_lock_until_the_worker_ends(
+    hass, monkeypatch, start
+):
+    """A lock taken on the event loop and released in the awaiting coroutine's
+    finally is freed by a cancellation - a reload, an unload, or shutdown
+    cancelling the automation - while the executor thread is still driving the
+    portal, so the next expert operation opens a second session beside it.
+    The service path was fixed and tested alone; the entity write, the
+    auto-poll and discovery could have gone back to that shape unnoticed.
+    """
+    from custom_components.wemportal import expert_controller
+    from custom_components.wemportal.const import CONF_EXPERT_AUTO_POLL
+
+    # No real timer: the poll case calls poll() itself, beside the one armed.
+    monkeypatch.setattr(
+        expert_controller, "async_call_later", lambda *_args: lambda: None
+    )
+    # The auto-poll armed for every path, so all four meet the same entry; its
+    # first read is waited out, or it could hold the lock the case needs.
+    entry = await _setup(
+        hass, _entry(hass, {**_expert_options(), CONF_EXPERT_AUTO_POLL: True})
+    )
+    if entry.runtime_data.expert._initial_task is not None:
+        await entry.runtime_data.expert._initial_task
+    lock = entry.runtime_data.expert.lock
+    reached = threading.Event()
+    release = threading.Event()
+
+    def in_portal(*_args):
+        reached.set()
+        release.wait(timeout=5)
+        return {}
+
+    task = asyncio.create_task(start(hass, entry, monkeypatch, in_portal))
+    for _ in range(500):
+        if reached.is_set():
+            break
+        await asyncio.sleep(0.01)
+    assert reached.is_set(), "the worker never reached the portal"
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -2773,7 +3202,7 @@ async def test_a_good_cycle_between_two_bad_ones_keeps_the_entities(hass, monkey
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
 
-    cycles = iter([ForbiddenError("blocked"), FAKE_DATA, ForbiddenError("blocked")])
+    cycles = iter([ForbiddenError("blocked"), _fake_data(), ForbiddenError("blocked")])
 
     def next_cycle(self, *_args, **_kwargs):
         outcome = next(cycles)
@@ -2878,6 +3307,9 @@ async def test_auth_failures_survive_setup_retries(hass, monkeypatch):
     from custom_components.wemportal.const import AUTH_ERROR_ESCALATION_THRESHOLD
 
     entry = _entry(hass)
+    # Where a retry's first refresh runs: an entry outside it no longer owns
+    # the account's auth streak.
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
 
     def bad_credentials(self, *_args, **_kwargs):
         raise AuthError("Login failed: Invalid username or password.")
@@ -3801,7 +4233,7 @@ async def test_a_single_configured_id_is_still_reported(hass, monkeypatch):
         await poll(None)
         await hass.async_block_till_done()
 
-    assert entry.runtime_data.expert.fail_counts[EV_A] == 4
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 3
     assert len(raised_issues) == 1
     # It was requested and failed, so the portal is a candidate too - the
     # read-failures wording must not assert the configuration is wrong.
@@ -4242,6 +4674,193 @@ async def test_a_login_turned_away_once_is_neither_a_warning_nor_a_password(
     assert not ours, [record.getMessage() for record in ours]
 
 
+async def test_a_refused_expert_write_is_not_logged_again_as_an_error(
+    hass, monkeypatch, caplog
+):
+    """The client says a refusal once, at the volume the streak calls for.
+    The service then logged the same 403 as an ERROR "write failed" - the
+    entity's write, which says it through the raised error alone, did not."""
+    import logging
+
+    entry = await _setup(hass, _entry(hass, _expert_options()))
+    assert entry.state is ConfigEntryState.LOADED
+
+    def refused(self, entityvalue, value, **_kwargs):
+        raise ForbiddenError("WEM Portal returned 403 for the parameter write.")
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", refused)
+
+    with caplog.at_level(logging.WARNING), pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A, "value": 30},
+            blocking=True,
+        )
+
+    ours = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("custom_components.wemportal")
+        and record.levelno >= logging.ERROR
+    ]
+    assert not ours, ours
+
+
+async def test_an_expert_id_reported_as_failing_is_asked_once_a_day(hass, monkeypatch):
+    """An id whose dialog never fills costs seven requests per read, against
+    one for a working id, and the poll went on asking every cycle after the
+    repair had already said it was broken - with ten such slots at the
+    15-minute floor, about a third of the portal's budget. Once reported it
+    is asked once a day; a write that works brings it back at once."""
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0], raising=False)
+    reads = []
+
+    def never_answers(ids):
+        reads.append(list(ids))
+        return dict.fromkeys(ids)
+
+    _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, never_answers)
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        await scheduled[-1](None)
+    reads.clear()
+
+    await scheduled[-1](None)
+    assert reads == [], f"a reported id was asked again on the next cycle: {reads}"
+
+    now[0] += 24 * 3600
+    await scheduled[-1](None)
+    assert reads == [[EV_A]], "a reported id was never asked again"
+
+    await scheduled[-1](None)
+    assert reads == [[EV_A]], "the daily read started a new day of asking"
+
+
+async def test_an_outage_after_one_id_was_reported_is_not_blamed_on_the_other(
+    hass, monkeypatch
+):
+    """With one of two ids reported and sitting out, a cycle asks only the
+    other - and an outage then failed it alone, outside the "whole batch
+    failed" rule. Three hours of outage reported a healthy parameter and set
+    it aside for a day."""
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0], raising=False)
+    healthy = expert_writer.ExpertParameterState(21.0, [0.0, 100.0], {})
+    outage = {"on": False}
+
+    def reader(ids):
+        answers = dict.fromkeys(ids)
+        if EV_B in ids and not outage["on"]:
+            answers[EV_B] = healthy
+        return answers
+
+    entry, scheduled, _ = await _auto_poll_entry(
+        hass, monkeypatch, reader, entityvalues=[EV_A, EV_B]
+    )
+    controller = entry.runtime_data.expert
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        await scheduled[-1](None)
+        await hass.async_block_till_done()
+    assert EV_A in controller.fail_notified, "the control case reported nothing"
+
+    outage["on"] = True
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING + 1):
+        await scheduled[-1](None)
+        await hass.async_block_till_done()
+
+    assert EV_B not in controller.fail_notified
+    assert controller.fail_counts.get(EV_B, 0) == 0, (
+        "an outage was counted against the one id the cycle asked for"
+    )
+
+
+async def test_a_cycle_that_stops_before_reading_keeps_the_days_try(hass, monkeypatch):
+    """A reported id is asked once a day, and the day's try was taken when
+    the list was built. A cycle that then stopped before reading - a write
+    in progress, a busy lock, a refusal - used it up, and the id waited
+    another day without having been asked."""
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0], raising=False)
+    reads = []
+
+    def never_answers(ids):
+        reads.append(list(ids))
+        return dict.fromkeys(ids)
+
+    entry, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, never_answers)
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        await scheduled[-1](None)
+    entity = entry.runtime_data.expert.entities[0]
+    now[0] += expert_controller.REPORTED_ID_RETRY_SECONDS
+    reads.clear()
+
+    entity._write_in_progress = True
+    await scheduled[-1](None)
+    entity._write_in_progress = False
+    assert reads == [], "the control case read during a write"
+    await scheduled[-1](None)
+
+    assert reads == [[EV_A]], "a cycle that never read used up the day's try"
+
+
+async def test_an_id_that_answered_again_is_asked_every_cycle_again(hass, monkeypatch):
+    """The once-a-day rule is for an id that keeps failing. One that answered
+    has ended its streak, and kept on the daily clock it would go unasked
+    for a day the next time it failed."""
+    from custom_components.wemportal import expert_controller
+
+    now = [1000.0]
+    monkeypatch.setattr(expert_controller, "monotonic", lambda: now[0], raising=False)
+    healthy = expert_writer.ExpertParameterState(21.0, [0.0, 100.0], {})
+    answers = {"on": False}
+    reads = []
+
+    def reader(ids):
+        reads.append(list(ids))
+        return {EV_A: healthy if answers["on"] else None}
+
+    _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, reader)
+    for _ in range(expert_controller.FAILURES_BEFORE_NOTIFYING):
+        await scheduled[-1](None)
+    now[0] += expert_controller.REPORTED_ID_RETRY_SECONDS
+    answers["on"] = True
+    await scheduled[-1](None)
+    answers["on"] = False
+    reads.clear()
+
+    await scheduled[-1](None)
+    await scheduled[-1](None)
+
+    assert reads == [[EV_A], [EV_A]], f"an id that answered was rationed: {reads}"
+
+
+async def test_an_id_left_out_of_a_cycle_is_not_counted_against_it(hass, monkeypatch):
+    """A reported id sits out the cycles between its daily reads, and an id
+    that was not asked for is missing from the answer as well - the tally
+    read that as one more unreadable id on every cycle it sat out."""
+    healthy = expert_writer.ExpertParameterState(21.0, [0.0, 100.0], {})
+    entry, scheduled, _ = await _auto_poll_entry(
+        hass,
+        monkeypatch,
+        lambda ids: {EV_B: healthy} if EV_B in ids else {},
+        entityvalues=[EV_A, EV_B],
+    )
+    for _ in range(5):
+        await scheduled[-1](None)
+        await hass.async_block_till_done()
+
+    assert entry.runtime_data.expert.fail_counts[EV_A] == 3, (
+        "an id the cycle never asked for was counted against it"
+    )
+
+
 async def test_a_refused_poll_is_not_announced_a_second_time(hass, monkeypatch, caplog):
     """The refusal already said itself (expert_writer). The failed poll it
     caused was the third warning for the one event. What the missed polls
@@ -4251,10 +4870,11 @@ async def test_a_refused_poll_is_not_announced_a_second_time(hass, monkeypatch, 
     def refused(_ids):
         raise ForbiddenError("WEM Portal returned 403 for an expert request.")
 
-    _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, refused)
-    caplog.clear()
-
+    # From the setup on: the first refused poll runs there, and a repeat of
+    # the same failure is quiet anyway now - checked after it, a refusal
+    # handled like any failure would pass unseen.
     with caplog.at_level(logging.WARNING):
+        _entry_obj, scheduled, _ = await _auto_poll_entry(hass, monkeypatch, refused)
         await scheduled[-1](None)
         await hass.async_block_till_done()
 
@@ -4265,3 +4885,90 @@ async def test_a_refused_poll_is_not_announced_a_second_time(hass, monkeypatch, 
         and "read failed" in record.getMessage()
     ]
     assert not said, said
+
+
+@pytest.mark.parametrize(
+    ("language", "name", "state"),
+    [("en", "Has Errors", "no"), ("de", "Störung vorhanden", "no")],
+)
+async def test_the_status_sensors_speak_home_assistants_language(
+    hass, monkeypatch, language, name, state
+):
+    """Home Assistant itself has to find the translation - a key it does not
+    load shows the entity without a name, whatever the file says."""
+    hass.config.language = language
+    with_status = {
+        "1234": {
+            "1234-HasErrors": Reading(
+                value="no",
+                platform="sensor",
+                friendly_name="Has Errors",
+                parameter_id="HasErrors",
+            ),
+        }
+    }
+    monkeypatch.setattr(
+        WemPortalApi, "fetch_data", lambda self, *_args, **_kwargs: with_status
+    )
+
+    await _setup(hass, _entry(hass))
+
+    states = [
+        found
+        for found in hass.states.async_all("sensor")
+        if found.attributes.get("friendly_name", "").endswith(name)
+    ]
+    assert states, [
+        found.attributes.get("friendly_name") for found in hass.states.async_all()
+    ]
+    assert states[0].state == state
+
+
+@pytest.mark.parametrize("route", ["entity", "service"])
+async def test_a_confirmed_write_is_announced_in_home_assistants_language(
+    hass, monkeypatch, route
+):
+    """The success notification was English text built in code, also in a
+    German Home Assistant."""
+    from custom_components.wemportal import expert_number
+    import custom_components.wemportal as integration
+    from custom_components.wemportal.const import CONF_EXPERT_NOTIFY_ON_SUCCESS
+
+    hass.config.language = "de"
+    announced = []
+
+    def record(_hass, message, title=None, notification_id=None):
+        announced.append((title, message))
+
+    monkeypatch.setattr(expert_number.persistent_notification, "async_create", record)
+    monkeypatch.setattr(integration.persistent_notification, "async_create", record)
+    monkeypatch.setattr(
+        expert_writer.WemPortalExpertClient,
+        "write_parameter",
+        lambda self, entityvalue, value, **_kwargs: expert_writer.ExpertParameterState(
+            float(value), [10.0, 20.0, 30.0], {}
+        ),
+    )
+    entry = await _setup(
+        hass, _entry(hass, {**_expert_options(), CONF_EXPERT_NOTIFY_ON_SUCCESS: True})
+    )
+
+    if route == "entity":
+        await entry.runtime_data.expert.entities[0].async_set_native_value(30)
+    else:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_EXPERT_PARAMETER,
+            {"entityvalue": EV_A, "value": 30},
+            blocking=True,
+        )
+    await hass.async_block_till_done()
+
+    assert announced, "a confirmed write with notifications on announced nothing"
+    title, message = announced[0]
+    assert title == "WEM-Portal-Fachmann-Schreibvorgang"
+    assert message.endswith("gesetzt."), message
+    if route == "entity":
+        # The slot has no name of its own, so the text names it as Home
+        # Assistant does - it said "Expert Parameter 1" in German.
+        assert message.startswith("Fachmann-Parameter 1 "), message

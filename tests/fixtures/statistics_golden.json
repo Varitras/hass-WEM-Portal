@@ -61,7 +61,7 @@
       "1234": {
         "1234-Energy_1": {
           "device_class": "energy",
-          "friendly_name": "Heating Ung Energy",
+          "friendly_name": "Heating Energy",
           "last_reset": "2026-04-27 00:00:00+00:00",
           "parameter_id": "Energy_1",
           "platform": "sensor",
@@ -100,7 +100,7 @@
       "1234": {
         "1234-Energy_1": {
           "device_class": "energy",
-          "friendly_name": "Heating Ung Energy",
+          "friendly_name": "Heating Energy",
           "parameter_id": "Energy_1",
           "platform": "sensor",
           "state_class": "total_increasing",
@@ -218,7 +218,7 @@
       "1234": {
         "1234-Energy_1": {
           "device_class": "energy",
-          "friendly_name": "Heating Ung Energy",
+          "friendly_name": "Heating Energy",
           "last_reset": "2026-04-27 00:00:00+00:00",
           "parameter_id": "Energy_1",
           "platform": "sensor",
@@ -228,7 +228,7 @@
         },
         "1234-Energy_4": {
           "device_class": "energy",
-          "friendly_name": "Total Energy Yield",
+          "friendly_name": "Energy 4",
           "last_reset": "2026-04-27 00:00:00+00:00",
           "parameter_id": "Energy_4",
           "platform": "sensor",
@@ -327,7 +327,7 @@
       "5678": {
         "5678-Energy_1": {
           "device_class": "energy",
-          "friendly_name": "Heating Ung Energy",
+          "friendly_name": "Heating Energy",
           "last_reset": "2026-04-27 00:00:00+00:00",
           "parameter_id": "Energy_1",
           "platform": "sensor",
@@ -433,7 +433,7 @@
       "1234": {
         "1234-Energy_1": {
           "device_class": "energy",
-          "friendly_name": "Heating Ung Energy",
+          "friendly_name": "Heating Energy",
           "last_reset": "2026-04-27 00:00:00+00:00",
           "parameter_id": "Energy_1",
           "platform": "sensor",

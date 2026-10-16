@@ -114,8 +114,14 @@ def short_device_id(device_id: str | None) -> str:
 def reading_label(device_id: str | None, key: str) -> str:
     """A reading as a log names it: its key under the shortened device id,
     in place of the unique or entity id, both of which carry the full one.
+
+    The status and statistics rows are keyed by the device id itself
+    (`1234567-ConnectionStatus`), so the key is shortened as well.
     """
-    return f"{short_device_id(device_id)}:{key}"
+    short = short_device_id(device_id)
+    if device_id:
+        key = key.replace(str(device_id), short)
+    return f"{short}:{key}"
 
 
 def short_device_ids(device_ids: Iterable[str] | None) -> list[str] | None:
@@ -476,7 +482,9 @@ def unit_to_device_class(unit: str | None) -> SensorDeviceClass | None:
     mapping = {
         UnitOfPressure.BAR: SensorDeviceClass.PRESSURE,
         UnitOfTemperature.CELSIUS: SensorDeviceClass.TEMPERATURE,
-        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE,
+        # Every K row the portal shows is a difference (hysteresis, superheat);
+        # as an absolute temperature 4.5 K converted to -268.65 °C.
+        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE_DELTA,
         UnitOfEnergy.KILO_WATT_HOUR: SensorDeviceClass.ENERGY,
         UnitOfEnergy.WATT_HOUR: SensorDeviceClass.ENERGY,
         UnitOfPower.KILO_WATT: SensorDeviceClass.POWER,
@@ -496,6 +504,25 @@ def unit_to_device_class(unit: str | None) -> SensorDeviceClass | None:
     return {_unit_lookup_key(key): value for key, value in mapping.items()}.get(
         _unit_lookup_key(unit)
     )
+
+
+def kept_unit(new: str | None, old: str | None) -> str | None:
+    """The unit a reading keeps when an answer brings `new` over `old`.
+
+    A real unit always wins. The empty one means "a number without a
+    unit" and is taken only where nothing better is known: over a real
+    unit it is an answer that left the unit out (a "--"), over nothing
+    it is the one fact there is. None says nothing and changes nothing.
+
+    One rule for the mapper's two write paths and the sensor: apart, the
+    `api` mode dropped the empty unit that `both` kept, and a number's
+    state class depended on the mode.
+    """
+    if new:
+        return new
+    if old:
+        return old
+    return new if new is not None else old
 
 
 def unit_to_icon(unit: str | None) -> str | None:
@@ -595,6 +622,22 @@ def latest_statistics_entry(
 _MORE = " (+{} more)"
 
 
+async def async_translated_message(hass: Any, key: str, **placeholders: str) -> str:
+    """One of the integration's own texts in Home Assistant's language.
+
+    For what Home Assistant does not translate by itself - a notification,
+    the status line of a form. Kept with the exception texts in
+    translations/*.json; Home Assistant falls back to English for a key a
+    language lacks."""
+    from homeassistant.helpers.translation import async_get_translations
+
+    texts = await async_get_translations(
+        hass, hass.config.language, "exceptions", [DOMAIN]
+    )
+    text = texts.get(f"component.{DOMAIN}.exceptions.{key}.message", key)
+    return text.format(**placeholders)
+
+
 def error_state_and_detail(errors: Iterable[Any] | None) -> tuple[str, list[str]]:
     """The fault sensor's state, and the full list for its attribute.
 
@@ -611,7 +654,7 @@ def error_state_and_detail(errors: Iterable[Any] | None) -> tuple[str, list[str]
     """
     messages = [text for text in (str(error).strip() for error in errors or []) if text]
     if not messages:
-        return "None", []
+        return "none", []
 
     joined = ", ".join(messages)
     if len(joined) <= MAX_LENGTH_STATE_STATE:

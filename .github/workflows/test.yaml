@@ -1,7 +1,10 @@
 name: Test
 
 on:
+  # Feature branches run through their pull request; a push counts on
+  # master only, so a commit to an open PR does not run everything twice.
   push:
+    branches: [master]
   pull_request:
 
 # Minimal GITHUB_TOKEN scope: this workflow only checks out and runs tests,

@@ -13,6 +13,7 @@ import pytest
 import requests as real_requests
 
 from custom_components.wemportal import (
+    discovery,
     exceptions,
     schedule,
     statistics,
@@ -117,7 +118,7 @@ def test_api_login_network_error_raises_clean_auth_error(monkeypatch):
     session = RecordingSession(
         post_exc=real_requests.exceptions.ConnectionError("reset")
     )
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
     with pytest.raises(exceptions.UnknownAuthError):
         api.api_login()
     assert api.valid_login is False
@@ -158,7 +159,7 @@ def test_a_rejected_login_gives_up_the_session_it_had_already_replaced(monkeypat
     # The state the re-login path is actually in: a session that WAS good.
     api.valid_login = True
     session = RecordingSession(post_json={"Status": 1})
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
 
     with pytest.raises(exceptions.AuthError):
         api.api_login()
@@ -229,6 +230,80 @@ def test_a_device_list_refresh_keeps_the_readings_of_a_device_it_still_names():
         "a web-only reading was dropped by a refresh of the device list"
     )
     assert api.data["1234"]["ConnectionStatus"] == 0
+
+
+def test_a_device_list_refresh_keeps_the_scrapers_own_device():
+    """The sibling the test above missed: an install that started in `web`
+    mode files its scraped rows under a placeholder device the device list
+    never names. A refresh after a transport reset dropped all of them, and
+    every web sensor warned that its reading was gone until the next scrape."""
+    from custom_components.wemportal.wemportalapi import SCRAPER_FALLBACK_DEVICE_ID
+
+    api = _api(cached_modules=CACHED_MODULES)
+    api.scraper_device_id = SCRAPER_FALLBACK_DEVICE_ID
+    # Rows exist under the placeholder only because a scrape wrote them.
+    api._previous_scraper_keys = {"heat_pump-outside"}
+    api.data = {
+        "1234": {"ConnectionStatus": 0},
+        SCRAPER_FALLBACK_DEVICE_ID: {
+            "heat_pump-outside": Reading(value=11.5, parameter_id="heat_pump-outside")
+        },
+    }
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {
+            "Devices": [
+                {
+                    "ID": 1234,
+                    "ConnectionStatus": 0,
+                    "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}],
+                }
+            ]
+        }
+    )
+
+    api.get_devices()
+
+    scraped = api.data.get(SCRAPER_FALLBACK_DEVICE_ID, {}).get("heat_pump-outside")
+    assert scraped is not None and scraped.value == 11.5, (
+        "the scraper's own device was dropped by a refresh of the device list"
+    )
+
+
+def test_a_device_the_list_stops_naming_keeps_only_its_scraped_rows():
+    """The scraper's device can be a real one. When the device list stopped
+    naming it, the refresh carried every row it had - its api readings and
+    status rows too, which nothing refreshes any more: "no fault" stood there
+    as current for good."""
+    from custom_components.wemportal.wemportalapi import DEVICE_STATUS_HAS_ERRORS
+
+    status_key = f"5678-{DEVICE_STATUS_HAS_ERRORS}"
+    api = _api(cached_modules=CACHED_MODULES)
+    api.scraper_device_id = "5678"
+    api._previous_scraper_keys = {"heat_pump-outside"}
+    api.data = {
+        "1234": {"ConnectionStatus": 0},
+        "5678": {
+            "heat_pump-outside": Reading(value=11.5, parameter_id="heat_pump-outside"),
+            status_key: Reading(value="no", parameter_id=status_key),
+        },
+    }
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
+        {
+            "Devices": [
+                {
+                    "ID": 1234,
+                    "ConnectionStatus": 0,
+                    "Modules": [{"Index": 0, "Type": 1, "Name": "Heat pump"}],
+                }
+            ]
+        }
+    )
+
+    api.get_devices()
+
+    rows = api.data.get("5678", {})
+    assert rows.get("heat_pump-outside") is not None, "the scraped row was dropped"
+    assert status_key not in rows, "a status row nobody refreshes was carried over"
 
 
 def test_a_device_list_where_no_row_is_usable_is_reported_not_adopted():
@@ -515,6 +590,24 @@ def test_a_statistics_refresh_that_lists_no_groups_as_null_is_not_an_error(caplo
         if record.levelno >= logging.INFO
     ]
     assert not complaints, f"a device with nothing to report was an error: {complaints}"
+
+
+def test_the_statistics_of_an_offline_installation_are_not_asked_for():
+    """The portal answers an offline installation with status 5001, and the
+    cycle counted that as a failure: with every device offline the read was
+    back-dated and asked again every fifteen minutes instead of hourly - two
+    requests each time, for an installation that could not answer."""
+    api = _api()
+    api.data = {"1234": {"ConnectionStatus": 50}}
+    api.modules = {"1234": {}}
+    asked = []
+    api.make_api_call = lambda *_args, **_kwargs: (
+        asked.append(1) or FakeResponse({"GroupTypeDescriptions": None})
+    )
+
+    api.get_statistics(enabled_devices=["1234"])
+
+    assert asked == [], f"{len(asked)} statistics requests for an offline device"
 
 
 def _statistics_api_with_groups(groups, read_answer):
@@ -822,6 +915,39 @@ def test_a_missing_entity_class_fails_loud_instead_of_dropping_configured_slots(
 
     with pytest.raises(NameError):
         expert_number.create_expert_number_entities(entry)
+
+
+@pytest.mark.parametrize(
+    ("first", "second"), [("3A7F", "3a7f"), ("3a7f", "3A7F")], ids=["upper", "lower"]
+)
+def test_one_expert_id_in_two_spellings_builds_one_entity(monkeypatch, first, second):
+    """The options form compares ids case-blind since 1.12; options saved
+    before that can hold one id in two slots, and the entity builder still
+    compared verbatim - two entities, and the auto-poll read the same dialog
+    twice. The first configured spelling is the one kept."""
+    from custom_components.wemportal import expert_number
+    from custom_components.wemportal.const import (
+        CONF_EXPERT_SLOT_ID_TEMPLATE,
+        CONF_EXPERT_WRITE,
+    )
+
+    built = []
+    monkeypatch.setattr(
+        expert_number,
+        "WemPortalExpertNumber",
+        lambda _entry, name, entityvalue: built.append((name, entityvalue)),
+    )
+    entry = types.SimpleNamespace(
+        options={
+            CONF_EXPERT_WRITE: True,
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 1: first + "0" * 32,
+            CONF_EXPERT_SLOT_ID_TEMPLATE % 2: second + "0" * 32,
+        }
+    )
+
+    expert_number.create_expert_number_entities(entry)
+
+    assert built == [("expert_parameter_1", first + "0" * 32)], built
 
 
 def test_building_an_expert_entity_does_not_import_the_client(monkeypatch):
@@ -1321,6 +1447,19 @@ def integration_forget_if_last(hass, config_entry):
     coordinator.forget_account_state_if_last_entry(hass, config_entry)
 
 
+def test_the_web_report_is_for_both_mode_only():
+    """Its text says the API half keeps delivering. In pure `web` mode there is
+    no API half: the failed scrape is the failed cycle, every entity is
+    unavailable, and the repair told the user the opposite. That case already
+    reaches the user as the failed cycle it is."""
+    api = _api(config={"mode": "web"}, scraper_device_id="0000")
+    api.spider_retry_count = wemportalapi.SCRAPE_FAILURES_BEFORE_VALUES_ARE_STALE
+
+    assert api.web_scrape_is_failing(None) is False, (
+        "a repair about the API half was raised where there is none"
+    )
+
+
 def test_a_disabled_scraper_device_does_not_keep_the_web_report_standing():
     """The report says the web half has stopped delivering. A device the user
     switched off is not delivering either, and that is not a fault.
@@ -1694,6 +1833,28 @@ def test_a_scaled_parameter_posts_the_string_the_form_offered(monkeypatch):
     client.write_parameter("A" * 36, 1.5)
 
     assert sent["ctl00$DialogContent$ddlNewValue"] == "15"
+
+
+def test_a_parameter_made_only_of_words_takes_the_word_it_shows(monkeypatch):
+    """A dropdown with no numeric label - an operating mode - is read by its
+    posted index, so the entity shows a number the portal never displays.
+    The word was the one way to name a setting without knowing that index,
+    and the action refused it: no option sat beside the scale, so it offered
+    "no non-numeric option" for a parameter that has nothing else."""
+    client, sent = _recording_write_client(
+        monkeypatch,
+        [
+            [("0", "Automatik", True), ("1", "Party 2.5 h", False)],
+            [("0", "Automatik", False), ("1", "Party 2.5 h", True)],
+        ],
+    )
+
+    try:
+        client.write_parameter("A" * 36, "party 2.5 h")
+    except exceptions.ValueNotOffered as refused:
+        pytest.fail(f"the word the portal shows was refused: {refused}")
+
+    assert sent["ctl00$DialogContent$ddlNewValue"] == "1"
 
 
 def test_an_abort_during_the_verify_does_not_deny_a_write_that_happened(monkeypatch):
@@ -2209,6 +2370,44 @@ def test_an_unevenly_spaced_option_list_takes_its_smallest_gap():
     assert entity.native_step == 0.25
 
 
+def test_a_number_addresses_the_scale_even_where_an_option_has_no_word():
+    """An option beside the scale with no label is keyed by its token, and
+    a token can look like a number: 0.5 matched it as a word and wrote that
+    option instead of the 0.5 on the scale."""
+    from custom_components.wemportal.expert_writer import (
+        ExpertParameterState,
+        WemPortalExpertClient,
+    )
+
+    state = ExpertParameterState(
+        0.0, [0.0, 0.5, 1.0], {}, post_values={0.5: "5"}, special_values={"0.5": "-1"}
+    )
+
+    token, word, number = WemPortalExpertClient._requested_option(state, 0.5)
+
+    assert (token, word, number) == ("5", None, 0.5)
+
+
+def test_a_word_two_options_answer_to_is_refused_rather_than_guessed():
+    """Matched case-insensitively, a word the dialog shows twice in two
+    spellings picked whichever came first - and the write then verified
+    against that one, so the wrong setting read back as confirmed. The exact
+    spelling still names its own option."""
+    from custom_components.wemportal.exceptions import ValueNotOffered
+    from custom_components.wemportal.expert_writer import (
+        ExpertParameterState,
+        WemPortalExpertClient,
+    )
+
+    state = ExpertParameterState(
+        0.0, [0.0, 1.0], {}, special_values={"Aus": "-1", "AUS": "-2"}
+    )
+
+    assert WemPortalExpertClient._requested_option(state, "AUS") == ("-2", "AUS", None)
+    with pytest.raises(ValueNotOffered):
+        WemPortalExpertClient._requested_option(state, "aus")
+
+
 def _heating_curve_options():
     """A heating curve as the portal offers it: 0 to 2, 0.05 apart."""
     return [round(index * 0.05, 10) for index in range(41)]
@@ -2540,7 +2739,7 @@ def test_a_login_without_budget_left_sends_nothing(monkeypatch):
     """
     api = _api()
     session = RecordingSession()
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
     api._deadline = time.monotonic() - 1
 
     with pytest.raises(exceptions.PollDeadlineExceeded):
@@ -2555,7 +2754,7 @@ def test_a_login_outside_a_poll_is_not_deadlined(monkeypatch):
     to be out of, and refusing there would break setup."""
     api = _api()
     session = RecordingSession()
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
 
     api.api_login()
 
@@ -2699,6 +2898,63 @@ def test_the_deadline_is_not_swallowed_by_the_schedule_fetch():
         api._fetch_circuit_times("1234")
 
 
+def _schedule_api(*parameter_ids):
+    """Two programmes on one module, with recognition and throttle stubbed
+    past - the handler around the read is what these tests are about."""
+    api = _api()
+    api.data = {"1234": {}}
+    parameters = {parameter_id: {} for parameter_id in parameter_ids}
+    api.modules = {"1234": {(0, 1): {"Index": 0, "Type": 1, "parameters": parameters}}}
+    api._is_schedule_parameter = lambda *_args: True
+    api._schedule_is_due = lambda *_args: True
+    api._record_schedule_attempt = lambda *_args: None
+    return api
+
+
+def test_a_programme_that_keeps_failing_is_announced_once(caplog):
+    """Back-dated, a failing programme is retried every 15 minutes, and each
+    retry warned: two programmes made about 190 warnings a day for one
+    outage. The statistics beside it say it once and once when it heals."""
+    import logging
+
+    api = _schedule_api("p1")
+    module = api.modules["1234"][(0, 1)]
+    answers = iter([False, False, False, True])
+
+    def read(*_args):
+        if not next(answers):
+            raise exceptions.ServerError("Job konnte nicht abgeschlossen werden")
+        return True
+
+    api._read_one_schedule = read
+    with caplog.at_level(logging.DEBUG):
+        for _ in range(4):
+            api._read_and_record_one_schedule("1234", module, "p1")
+
+    warned = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warned) == 1, f"one outage was announced {len(warned)} times"
+    assert "read again" in caplog.text, "the recovery was never said"
+
+
+def test_a_refusal_is_not_walked_into_by_every_remaining_programme():
+    """A 403 on one programme was swallowed like any failure, so every
+    programme after it met the cooldown and warned on its own, and the
+    coordinator never heard the network is refused. The statistics path lets
+    it out for its handler; this one now does too."""
+    api = _schedule_api("p1", "p2")
+    asked = []
+
+    def refused(_device_id, _module, parameter_id):
+        asked.append(parameter_id)
+        raise exceptions.ForbiddenError("WemPortal forbidden error: 403")
+
+    api._read_one_schedule = refused
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api._fetch_circuit_times("1234")
+    assert asked == ["p1"], f"programmes after the refusal were tried: {asked}"
+
+
 def test_the_deadline_is_not_swallowed_by_the_statistics_fetch(monkeypatch):
     """The statistics path already lets ForbiddenError past its catch-all for
     the same reason. The deadline was not given the same treatment.
@@ -2738,6 +2994,70 @@ def _refused_relogin(*_args, **_kwargs):
     cycle where the login normally happens.
     """
     raise exceptions.AuthError("Login failed: Invalid username or password.")
+
+
+def test_a_relogin_that_failed_is_not_repeated_by_every_later_request(monkeypatch):
+    """The session ran out mid-cycle and the re-login met a 500 - not an
+    AuthError, so the call site's shield swallowed it. Every later request of
+    the cycle then went out on the dead session, collected its 401 and logged
+    in again: one login per call site against a portal that was failing.
+    The failure stands for the rest of the cycle; the next cycle tries."""
+    api = _api()
+    api.valid_login = True
+    sent, logins = [], []
+
+    def _send(*_args, **_kwargs):
+        sent.append(True)
+        return FakeResponse({}, status_code=401)
+
+    def _login():
+        logins.append(True)
+        api.valid_login = False
+        raise exceptions.ServerError("WemPortal server error: 500")
+
+    api._send = _send
+    api.api_login = _login
+    monkeypatch.setattr(transport.time, "sleep", lambda _seconds: None)
+    api._deadline = time.monotonic() + 600  # inside a poll cycle
+
+    for _call_site in range(2):
+        with pytest.raises(exceptions.ServerError):
+            api.make_api_call("https://www.wemportal.com/app/x")
+
+    assert (len(sent), len(logins)) == (1, 1), (
+        "a later request of the same cycle tried the failed login again"
+    )
+
+    api.valid_login = True
+    api._fetch_data = lambda *_args, **_kwargs: {}
+    api.fetch_data()
+    with pytest.raises(exceptions.ServerError):
+        api.make_api_call("https://www.wemportal.com/app/x")
+    assert len(logins) == 2, "the next cycle did not try to log in again"
+
+
+def test_a_relogin_that_failed_outside_a_poll_does_not_block_the_next_request(
+    monkeypatch,
+):
+    """A write has no poll around it, and nothing would clear a kept failure
+    until the next one: the following write would be refused unsent."""
+    api = _api()
+    api.valid_login = True
+    logins = []
+
+    def _login():
+        logins.append(True)
+        raise exceptions.ServerError("WemPortal server error: 500")
+
+    api._send = lambda *_args, **_kwargs: FakeResponse({}, status_code=401)
+    api.api_login = _login
+    monkeypatch.setattr(transport.time, "sleep", lambda _seconds: None)
+
+    for _write in range(2):
+        with pytest.raises(exceptions.ServerError):
+            api.make_api_call("https://www.wemportal.com/app/x")
+
+    assert len(logins) == 2, "a failure outside a poll refused the next request"
 
 
 def test_a_refused_relogin_is_not_reported_as_one_device_failing():
@@ -3503,6 +3823,17 @@ def test_portal_units_are_normalised_to_home_assistant_spelling():
     assert unit_to_device_class(unit) == "pressure"
 
 
+def test_a_kelvin_reading_is_a_temperature_difference():
+    """Every K row the portal shows is a difference - a switching hysteresis,
+    a superheat. Classed as a temperature, Home Assistant converted 4.5 K to
+    -268.65 °C for anyone who picked °C as display unit, and offered the
+    reading as a room temperature."""
+    from custom_components.wemportal.utils import unit_to_device_class
+
+    assert unit_to_device_class("K") == "temperature_delta"
+    assert unit_to_device_class("°C") == "temperature"
+
+
 def test_the_portals_spelling_of_a_flow_rate_carries_its_device_class():
     """The unit lookup matches case-insensitively, which covers "BAR" for
     "bar" - but not "m3/h" for "m³/h", a different character.
@@ -3667,6 +3998,9 @@ def test_a_real_window_is_still_maintenance_and_not_a_wrong_password(monkeypatch
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             return FakeResponse_html(MAINTENANCE_PAGE)
 
@@ -3674,7 +4008,7 @@ def test_a_real_window_is_still_maintenance_and_not_a_wrong_password(monkeypatch
             posted.append(True)
             return FakeResponse_html(MAINTENANCE_PAGE)
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     api = _api()
 
     with pytest.raises(exceptions.PortalMaintenanceError):
@@ -3690,6 +4024,9 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             # A real login page by default. These tests are about the answer
             # to the POST, and an empty body here is not a shortcut but a
@@ -3704,8 +4041,38 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
         def post(self, *_args, **_kwargs):
             return post_answer
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     return _api()
+
+
+@pytest.mark.parametrize("outcome", ["logged in", "page not reached"])
+def test_the_web_login_check_closes_its_session(monkeypatch, outcome):
+    """The config flow's web check opened a session and dropped it; the
+    comment there said validation closes it, and only the API one was."""
+    closed = []
+
+    class _Session:
+        cookies = {}
+
+        def get(self, *_args, **_kwargs):
+            if outcome == "page not reached":
+                raise real_requests.exceptions.ConnectionError("reset")
+            return FakeResponse_html(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse_html(
+                f"<html><body><div id='{WEB_LOGGED_IN_MARKER}'></div></body></html>"
+            )
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+
+    with contextlib.suppress(exceptions.WemPortalError):
+        _api().web_login()
+
+    assert closed == [True], f"the session was left open ({outcome})"
 
 
 def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
@@ -3722,6 +4089,9 @@ def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             return FakeResponse_html("")
 
@@ -3729,7 +4099,7 @@ def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
             posted.append(True)
             return FakeResponse_html("")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
 
     api = _api()
 
@@ -3752,13 +4122,16 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             return _Refused("forbidden", status_code=403)
 
         def post(self, *_args, **_kwargs):
             raise AssertionError("credentials were sent to a refusing portal")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     api = _api()
 
     # The first one in a row is let pass without the pause (WebLoginRefused);
@@ -3785,6 +4158,9 @@ def test_a_page_without_a_login_form_gets_no_credentials(monkeypatch):
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             # Parses fine. Has no form.
             return FakeResponse_html(
@@ -3794,7 +4170,7 @@ def test_a_page_without_a_login_form_gets_no_credentials(monkeypatch):
         def post(self, *_args, **_kwargs):
             raise AssertionError("credentials were sent to a page with no login form")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
 
     with pytest.raises(exceptions.UnknownAuthError):
         _api().web_login()
@@ -3833,13 +4209,16 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             raise AssertionError("a request was sent during the cooldown")
 
         def post(self, *_args, **_kwargs):
             raise AssertionError("a request was sent during the cooldown")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     api = _api()
     api._activate_cooldown("a test 403")
 
@@ -3876,6 +4255,9 @@ def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
     class _Session:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             return FakeResponse_html(FORM_PAGE)
 
@@ -3883,7 +4265,7 @@ def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
             posted.update(data)
             return FakeResponse_html("<html>ctl00_btnLogout</html>")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: _Session())
+    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
     _api().web_login()
 
     hidden = {
@@ -3933,6 +4315,39 @@ def test_a_maintenance_message_on_the_api_login_is_not_a_wrong_password():
     )
     with pytest.raises(exceptions.PortalMaintenanceError):
         api._raise_login_failure(maintenance, real_requests.exceptions.HTTPError())
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        (
+            {"Status": 8000, "Message": "WEM-Portal wird derzeit gewartet."},
+            exceptions.PortalMaintenanceError,
+        ),
+        (
+            {"Status": 1, "Message": "Benutzer oder Passwort falsch"},
+            exceptions.AuthError,
+        ),
+    ],
+    ids=["maintenance", "credentials"],
+)
+def test_a_login_refused_with_http_200_is_classified_like_any_refusal(
+    monkeypatch, answer, expected
+):
+    """The API refuses a login with HTTP 200 and a non-zero Status too, and
+    that branch skipped the classification the HTTP errors get: downtime
+    worded in the message became a wrong password - three cycles of it
+    asked for working credentials - and the whole answer went into the
+    error text."""
+    api = _api()
+    session = RecordingSession(post_json=answer)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
+
+    with pytest.raises(exceptions.WemPortalError) as excinfo:
+        api.api_login()
+
+    assert type(excinfo.value) is expected
+    assert "'Status'" not in str(excinfo.value), "the raw answer reached the message"
 
 
 def test_a_login_refused_with_a_maintenance_message_still_says_who_answered(
@@ -4294,7 +4709,7 @@ def test_a_single_fault_reads_as_itself():
         "E12 Sensor defect",
         ["E12 Sensor defect"],
     )
-    assert error_state_and_detail([]) == ("None", [])
+    assert error_state_and_detail([]) == ("none", [])
 
 
 def test_a_fault_list_too_long_for_a_state_says_how_many_it_dropped():
@@ -4383,7 +4798,7 @@ def test_a_status_that_could_not_be_read_stops_claiming_no_fault():
     fault sees the quiet and concludes there is none.
     """
     api = _api_with_a_read_status()
-    assert api.data["1234"]["1234-HasErrors"].value == "No"
+    assert api.data["1234"]["1234-HasErrors"].value == "no"
 
     def refuse(*_args, **_kwargs):
         raise exceptions.WemPortalError("portal unavailable")
@@ -5026,8 +5441,14 @@ def test_a_returning_device_becomes_eligible_for_parameter_discovery():
     assert api.data["1234"]["ConnectionStatus"] == 0, "the discovery gate stayed stale"
 
 
-def test_a_status_answer_without_a_status_is_a_failed_read(caplog):
-    """An answer that does not say is not an answer that says "unknown".
+@pytest.mark.parametrize(
+    "answer",
+    [{}, {"ConnectionStatus": None, "Errors": None}],
+    ids=["field missing", "field null"],
+)
+def test_a_status_answer_without_a_status_is_a_failed_read(caplog, answer):
+    """An answer that does not say is not an answer that says "unknown" -
+    whether the field is missing or sent as null, which this portal does.
 
     `.get("ConnectionStatus", -1)` turned a payload with the field missing
     into the "unknown" state - which this method reports as a SUCCESSFUL read
@@ -5053,7 +5474,7 @@ def test_a_status_answer_without_a_status_is_a_failed_read(caplog):
         }
     }
     api.modules = {"1234": {}}
-    api.make_api_call = lambda *_args, **_kwargs: FakeResponse({})
+    api.make_api_call = lambda *_args, **_kwargs: FakeResponse(answer)
 
     # info, not warning: an unreadable status is the device becoming
     # unavailable, which Home Assistant's rule puts at info level - said once
@@ -5628,6 +6049,56 @@ def test_a_batch_read_without_an_abort_reads_everything():
     assert len(result) == 2
 
 
+def test_a_parameter_taken_off_and_put_back_is_asked_at_once():
+    """Taking a slot off ends what is known about its id, the daily ration
+    included: put back, a reported id otherwise sat out the rest of its day
+    without a read."""
+    from custom_components.wemportal import expert_controller
+
+    controller = expert_controller.ExpertController()
+    entity = types.SimpleNamespace(entityvalue="a" * 36)
+    controller.attach_entity(entity)
+    controller._reported_asked_at[entity.entityvalue] = expert_controller.monotonic()
+    assert not controller._is_due(entity.entityvalue), "the control case is due"
+
+    controller.detach_entity(entity)
+    controller.attach_entity(entity)
+
+    assert controller._is_due(entity.entityvalue)
+
+
+def test_a_parameter_that_keeps_failing_to_read_is_warned_once(caplog):
+    """Every cycle builds a new client, and each warned about the same id
+    failing the same way - hourly, for every slot, for as long as a dialog
+    stayed broken. Said again when it reads, and when the reason changes."""
+    from custom_components.wemportal import expert_writer
+
+    reasons = ["the dialog never filled", "the dialog never filled", None]
+
+    def cycle():
+        client = expert_writer.WemPortalExpertClient("dampened@example.org", "x")
+        client._login = lambda: None
+        client.close = lambda: None
+        reason = reasons.pop(0)
+
+        def fetch(*_args, **_kwargs):
+            if reason:
+                raise RuntimeError(reason)
+            return expert_writer.ExpertParameterState(20.0, [20.0], {})
+
+        client._fetch_form = fetch
+        client.read_many(["a" * 36])
+
+    with caplog.at_level(logging.DEBUG):
+        cycle()
+        cycle()
+        cycle()
+
+    warned = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warned) == 1, [r.getMessage() for r in warned]
+    assert "reads again" in caplog.text, "the recovery was never said"
+
+
 def test_a_batch_read_stops_at_a_session_found_dead():
     """A dialog sent to the login page is the session, not that id: the batch
     went on with every further id over the same dead session - one more trip
@@ -5930,6 +6401,84 @@ def test_a_fresh_scrape_is_not_cleared_with_a_silent_api_device():
     )
 
 
+def _device_gone_quiet(rows):
+    api = _api()
+    api.data = {"1234": rows}
+    # A device with modules: the one the statistics fetch reads.
+    api.modules = {"1234": {}}
+    api._last_device_read["1234"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+    return api
+
+
+def test_a_device_gone_quiet_leaves_the_statistics_rows_alone():
+    """The hourly statistics fetch reads a device whatever its value read
+    does, and owns its rows. The device pass blanked them with the rest, so
+    the energy sensors flapped to unknown every 30 minutes of an outage of
+    another fetch."""
+    api = _device_gone_quiet(
+        {
+            "Heat pump-T1": Reading(
+                value=21.0, unit="°C", module_index=0, module_type=1
+            ),
+            "1234-Energy_2": Reading(value=2.9, unit="kWh"),
+        }
+    )
+
+    api._forget_stale_device_values("1234")
+
+    assert api.data["1234"]["Heat pump-T1"].value is None
+    assert api.data["1234"]["1234-Energy_2"].value == 2.9, (
+        "a statistics row was aged by a value read that does not own it"
+    )
+
+
+def test_the_statistics_of_a_device_their_fetch_skips_age_with_the_rest():
+    """The rows are left to the hourly statistics fetch - which does not ask a
+    device whose status is busy or offline. Nothing aged them then, and the
+    last day's energy stood as current for as long as the device was away."""
+    api = _device_gone_quiet(
+        {
+            "ConnectionStatus": 1,
+            "Heat pump-T1": Reading(
+                value=21.0, unit="°C", module_index=0, module_type=1
+            ),
+            "1234-Energy_2": Reading(value=2.9, unit="kWh"),
+        }
+    )
+
+    api._forget_stale_device_values("1234")
+
+    assert api.data["1234"]["Heat pump-T1"].value is None
+    assert api.data["1234"]["1234-Energy_2"].value is None, (
+        "a statistics row nothing reads any more was kept as current"
+    )
+
+
+@pytest.mark.parametrize(("schedule_runs", "kept"), [(True, True), (False, False)])
+def test_a_programme_the_schedule_fetch_feeds_ages_only_where_it_does_not_run(
+    schedule_runs, kept
+):
+    """The per-module pass exempts a programme its own fetch still feeds; the
+    device pass did not, and the schedule fetch never puts the value back,
+    so a current week went blank. Where the device is skipped for its status
+    that fetch does not run either, and exempting it there would keep a
+    pre-outage plan on display without limit."""
+    programme = Reading(
+        value='{"MO-1":"06:00-10:10"}',
+        data_type=wemportalapi.WemDataType.PROGRAM,
+        circuit_times_day=A_FED_WEEK,
+        module_index=0,
+        module_type=1,
+    )
+    api = _device_gone_quiet({"Heat pump-Programme": programme})
+
+    api._forget_stale_device_values("1234", schedule_runs=schedule_runs)
+
+    assert (programme.value is not None) is kept
+
+
 def test_the_third_scrape_failure_before_any_success_is_survivable():
     """_previous_scraper_keys is None until a scrape has succeeded.
 
@@ -6010,6 +6559,31 @@ def test_a_device_that_is_busy_forever_still_stops_showing_old_values():
     )
 
 
+def test_a_busy_device_ages_its_programme_too():
+    """The schedule fetch does not run for a device skipped for its status,
+    so nothing keeps its programme current there - exempting it as fed kept
+    the plan from before the outage on display without limit."""
+    api = _two_device_api_with_status(None)
+    api.get_data(enabled_devices=["1234", "5678"])
+    api.data["5678"]["programme"] = Reading(
+        value='{"MO-1":"06:00-10:10"}',
+        data_type=wemportalapi.WemDataType.PROGRAM,
+        circuit_times_day=A_FED_WEEK,
+        module_index=0,
+        module_type=1,
+    )
+    api._fetch_device_status = lambda device_id: device_id != "5678"
+    api._last_device_read["5678"] = (
+        time.monotonic() - wemportalapi.DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+
+    api.get_data(enabled_devices=["1234", "5678"])
+
+    assert api.data["5678"]["programme"].value is None, (
+        "a programme nothing refreshes stayed on display as current"
+    )
+
+
 def test_a_device_that_answers_again_starts_its_clock_over():
     """Without this the window would be measured from the first success ever,
     so a device answering fine could still be cleared once it had been
@@ -6040,6 +6614,31 @@ def test_one_failed_scrape_does_not_throw_the_readings_away():
     api._register_scrape_failure()
 
     assert api.data["0000"]["pump-flow"].value == 1.0
+
+
+def test_a_failed_scrape_waits_web_intervals_not_api_ticks(monkeypatch):
+    """`both` mode ticks at the shorter interval - the API's 5 minutes beside
+    a 30-minute scrape - and the backoff counted those ticks: a failing
+    scrape was retried after 5, then 10, 15 minutes, about twice as often
+    as a working one. The backoff waits whole web intervals."""
+    from datetime import timedelta
+
+    now = [1000.0]
+    monkeypatch.setattr(wemportalapi.time, "monotonic", lambda: now[0])
+    api = _api(config={"mode": "both"})
+    api.scan_interval = timedelta(minutes=30)
+
+    api._register_scrape_failure()
+    for _tick in range(5):  # 25 minutes of five-minute ticks
+        now[0] += 300
+        api._count_down_scrape_backoff()
+        assert api.spider_wait_interval == 1, (
+            f"the scrape was due again after {(now[0] - 1000) / 60:.0f} minutes"
+        )
+
+    now[0] += 300
+    api._count_down_scrape_backoff()
+    assert api.spider_wait_interval == 0, "the backoff never ran out"
 
 
 def test_a_successful_scrape_clears_the_backoff():
@@ -6308,6 +6907,9 @@ TRANSPORT_FIELDS = frozenset(
 # between cycles and finds it None either way - but "the transport was
 # rebuilt" is not a reason for a running cycle to gain more time, and having
 # it in TRANSPORT_FIELDS would say it was.
+# _relogin_failure follows _deadline: it says this poll's re-login failed,
+# and fetch_data clears it when the poll ends. A new connection mid-poll
+# is no reason for the rest of that poll to try the login again.
 # _last_device_read says when each device last returned values. Not transport:
 # replacing the connection does not make readings from half an hour ago any
 # fresher, and dropping it would restart the staleness clock on every
@@ -6331,6 +6933,7 @@ PRESERVED_FIELDS = frozenset(
         "_account_state",
         "_first_cycle_done",
         "_deadline",
+        "_relogin_failure",
         # Like _deadline, it belongs to the poll cycle in progress: which
         # burst that cycle has spent. A new connection does not un-spend it.
         "heavy_fetch_turns",
@@ -6368,6 +6971,9 @@ PRESERVED_FIELDS = frozenset(
         "_last_circuit_times_fetch",
         "expert_cookies",
         "spider_wait_interval",
+        # The step clock of that backoff: dropped, a recovery would hand
+        # the failing scrape its next attempt on the very next tick.
+        "_backoff_stepped_at",
         "spider_retry_count",
         "last_scraping_update",
         # Same rule as the scrape backoff above: a recovery runs after the
@@ -6475,7 +7081,7 @@ def test_the_login_rejects_a_false_status(monkeypatch):
     about what the same field means."""
     api = _api()
     session = RecordingSession(post_json={"Status": False, "Version": "3.1"})
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
 
     with pytest.raises(exceptions.AuthError):
         api.api_login()
@@ -7217,8 +7823,8 @@ def test_a_refused_description_is_retried_within_the_hour_not_the_day():
     )
 
     age = time.time() - values["parameters_fetched_at"]
-    due_in = wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS - age
-    assert due_in <= wemportalapi.PARAMETER_REDISCOVERY_RETRY_SECONDS + 5, (
+    due_in = discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS - age
+    assert due_in <= discovery.PARAMETER_REDISCOVERY_RETRY_SECONDS + 5, (
         "a refused description waits the full day before it is asked again"
     )
     assert values["description_refused"] is True
@@ -7872,12 +8478,12 @@ def test_a_stale_parameter_list_is_re_read():
     api, calls = _discovery_api(
         [{"Parameters": [{"ParameterID": "Known"}, {"ParameterID": "New"}]}],
         fetched_at=time.time()
-        - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60),
+        - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60),
     )
 
     api.get_parameters()
 
-    assert calls == [wemportalapi.API_EVENT_TYPE_READ_URL]
+    assert calls == [discovery.API_EVENT_TYPE_READ_URL]
     assert set(api.modules["1234"][(0, 1)]["parameters"]) == {"Known", "New"}
 
 
@@ -7887,7 +8493,7 @@ def test_a_list_with_no_timestamp_is_re_read_once():
 
     api.get_parameters()
 
-    assert calls == [wemportalapi.API_EVENT_TYPE_READ_URL]
+    assert calls == [discovery.API_EVENT_TYPE_READ_URL]
     assert api.modules["1234"][(0, 1)]["parameters_fetched_at"] > 0
 
 
@@ -7899,7 +8505,7 @@ def test_a_failed_re_read_keeps_the_parameters_it_had():
     again, and one 403 or maintenance window would throw away a working
     parameter list - straight into "device has no parameters".
     """
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, _calls = _discovery_api([{"Parameters": []}], fetched_at=stale)
 
     api.get_parameters()
@@ -7923,7 +8529,7 @@ def test_a_re_read_the_portal_fails_keeps_the_cycle_and_the_list(http_status):
     before a single value was read. Nothing booked the attempt, so the next
     cycle asked again and failed again - no readings at all for as long as
     the portal kept failing an optional refresh of a list that still works."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api(
         [_portal_error(http_status), _portal_error(http_status)], fetched_at=stale
     )
@@ -7944,7 +8550,7 @@ def test_a_re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle(known):
     """An empty list is a known answer too, and the check read it as a
     missing one: the failed refresh of a module that has nothing to poll
     raised out of get_data every cycle, exactly like the case fixed above."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api(
         [_portal_error(500), _portal_error(500)], fetched_at=stale
     )
@@ -7968,7 +8574,7 @@ def test_a_re_read_the_real_transport_fails_keeps_the_cycle(monkeypatch):
     session being gone - a 500 is about the request. Dropped here by hand
     as well, so the test holds whichever transport decides that."""
     monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, _calls = _discovery_api([], fetched_at=stale)
     del api.make_api_call  # the real one
 
@@ -7988,7 +8594,7 @@ def test_a_session_that_ran_out_stops_the_re_read_at_the_first_module():
     """A 401 comes back from discovery as a plain portal error - it does not
     log in again - and was booked as that one module's failure, so every
     further stale module was asked on the same dead session."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api([], fetched_at=stale)
     api.modules["1234"][(1, 1)] = dict(api.modules["1234"][(0, 1)], Index=1)
     api.valid_login = True
@@ -8010,7 +8616,7 @@ def test_a_session_redirected_to_the_login_stops_the_re_read(monkeypatch):
     Through the real transport, which is what turns that redirect into the
     plain portal error discovery sees - with the expiry as its cause."""
     monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, _calls = _discovery_api([], fetched_at=stale)
     api.modules["1234"][(1, 1)] = dict(api.modules["1234"][(0, 1)], Index=1)
     del api.make_api_call  # the real one
@@ -8038,7 +8644,7 @@ def test_a_session_redirected_to_the_login_stops_the_re_read(monkeypatch):
 )
 def test_a_re_read_refused_for_the_account_still_stops_the_cycle(error):
     """Those say something about the account, not about one module."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, _calls = _discovery_api([error], fetched_at=stale)
 
     with pytest.raises(type(error)):
@@ -8054,8 +8660,35 @@ def test_a_missing_list_the_portal_fails_still_fails_the_cycle():
         api.get_parameters()
 
 
+@pytest.mark.parametrize("failure", [500, "timeout"])
+def test_a_new_module_the_portal_fails_does_not_stop_the_described_ones(
+    monkeypatch, failure
+):
+    """A module without a list yet - a fresh install, or one Device/Read just
+    added - whose description fails raised out of discovery before the device
+    loop, so no device was read at all: every entity of the account went
+    unavailable for as long as the portal failed that one module. With a
+    described module to read, it is skipped this cycle and asked again on
+    the next; with none, the cycle still fails (the test above)."""
+    monkeypatch.setattr(wemportalapi.time, "sleep", lambda _s: None)
+    error = (
+        _portal_error(500)
+        if failure == 500
+        else exceptions.WemPortalError("Could not reach the WEM Portal: timeout")
+    )
+    api, _calls = _discovery_api([error])
+    api.modules["1234"][(1, 1)] = {"Index": 1, "Type": 1, "Name": "New module"}
+    api.modules["1234"][(0, 1)]["parameters_fetched_at"] = time.time()
+
+    api.get_parameters()
+
+    assert "parameters" not in api.modules["1234"][(1, 1)], (
+        "the failure was booked as an empty description"
+    )
+
+
 def test_a_failed_re_read_is_not_retried_on_the_very_next_cycle():
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api(
         [{"Parameters": []}, {"Parameters": []}], fetched_at=stale
     )
@@ -8114,7 +8747,7 @@ def test_an_unreadable_description_is_not_asked_again_every_cycle():
 def test_an_unreadable_description_keeps_the_parameters_it_had():
     """Same rule as a failed re-read: one bad answer must not empty a working
     list. The retry is the shorter one, because this module DID work."""
-    stale = time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+    stale = time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     api, calls = _discovery_api([{"NotParameters": []}], fetched_at=stale)
 
     api.get_parameters()
@@ -8267,7 +8900,7 @@ def test_stale_definitions_wait_for_the_second_cycle():
     then complains about. Nothing is lost by waiting one interval for
     something that is already a day old."""
     api, read = _cycle_api(
-        time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+        time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     )
 
     api.fetch_data()
@@ -8277,7 +8910,7 @@ def test_stale_definitions_wait_for_the_second_cycle():
 
 def test_stale_definitions_are_read_on_a_later_cycle():
     api, read = _cycle_api(
-        time.time() - (wemportalapi.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
+        time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     )
 
     api.fetch_data()
@@ -8631,6 +9264,17 @@ def test_a_level_the_portal_did_not_name_keeps_its_times():
 
     row = _measured_monday()
     row.possible_values = []
+
+    assert _readable_schedule(row)["DI"] == ["00:00-24:00"]
+
+
+def test_a_level_the_portal_named_null_keeps_its_times_too():
+    """`"Text": null` became the word None, which then passed as a name:
+    "00:00-24:00 None" where an absent name shows the bare times."""
+    from custom_components.wemportal.sensor import _readable_schedule
+
+    row = _measured_monday()
+    row.possible_values = [{"Value": 3, "Text": None}]
 
     assert _readable_schedule(row)["DI"] == ["00:00-24:00"]
 
@@ -9303,6 +9947,24 @@ def test_a_dead_expert_batch_is_announced_once_per_outage(caplog):
 # --- upstream #146: a word in a cell that otherwise carries a unit --------
 
 
+def test_a_unitless_number_that_started_as_a_dash_still_gets_a_state_class():
+    """The empty unit means "a number without a unit", None means "text".
+    A unitless cell that read "--" on the first scrape after a start was
+    built as text, and the update took only units other than "" - so the
+    numbers that followed had no state class all session: no long-term
+    statistics, a timeline instead of a line."""
+    from homeassistant.components.sensor import SensorStateClass
+
+    row = Reading(value=None, unit=None, parameter_id="Code", platform="sensor")
+    sensor = _sensor_from_row("Code", row)
+    sensor.async_write_ha_state = lambda: None
+
+    row.value, row.unit = 1234, ""
+    sensor._handle_coordinator_update()
+
+    assert sensor.state_class == SensorStateClass.MEASUREMENT
+
+
 def test_an_hour_counter_is_shown_without_decimals():
     """Home Assistant derives a precision when the integration suggests none:
     duration counts from milliseconds with no decimals, and the ratio to
@@ -9769,7 +10431,7 @@ def test_a_login_that_went_through_says_so(monkeypatch):
     """Whoever called it: the auth streak is the coordinator's, and a write's
     login is as good a proof of the credentials as the poll's."""
     session = RecordingSession()
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
     api = _api()
 
     api.api_login()
@@ -9816,7 +10478,7 @@ def test_a_failed_api_login_leaves_the_saying_to_whoever_handles_it(
     session = RecordingSession(
         post_exc=real_requests.exceptions.ConnectionError("reset")
     )
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: session)
+    monkeypatch.setattr(real_requests, "Session", lambda: session)
 
     with caplog.at_level(logging.DEBUG), pytest.raises(exceptions.WemPortalError):
         _api().api_login()
@@ -9835,7 +10497,7 @@ def test_an_html_answer_to_the_api_login_is_left_to_its_handler(monkeypatch, cap
         def post(self, url, **kwargs):
             return HtmlResponse(content=b"<html></html>")
 
-    monkeypatch.setattr(wemportalapi.requests, "Session", HtmlSession)
+    monkeypatch.setattr(real_requests, "Session", HtmlSession)
 
     with caplog.at_level(logging.DEBUG), pytest.raises(exceptions.WemPortalError):
         _api().api_login()
@@ -10492,6 +11154,93 @@ def _read_back(client, monkeypatch, fetch):
         pass
 
 
+class _LoginPageSession:
+    """A session the portal answers with its login page, recording requests."""
+
+    def __init__(self, text=""):
+        self.requests = 0
+        self._text = text
+
+    def _answer(self, *_args, **_kwargs):
+        self.requests += 1
+        return FakeResponse_html(self._text)
+
+    get = post = _answer
+
+    def close(self):
+        pass
+
+
+def test_a_navigation_sent_to_the_login_page_stops_there():
+    """A postback redirected to the login page went on as navigation, with
+    the login form as the page the next step reads its state from."""
+    from custom_components.wemportal import expert_writer
+
+    client = expert_writer.WemPortalExpertClient("user@example.org", "pw")
+    client.session = _LoginPageSession()
+
+    with pytest.raises(exceptions.AuthError):
+        client._postback(
+            "https://www.wemportal.com/Web/Main.aspx",
+            "<html></html>",
+            "target",
+            async_postback=False,
+        )
+
+
+def test_a_dialog_sent_to_the_login_page_is_one_request_and_an_auth_error(
+    monkeypatch,
+):
+    """Read by its address, not its markup: a login page that does not look
+    like one was taken for a dialog still loading - four reads and three
+    timer postbacks, ending in "value field not found"."""
+    from custom_components.wemportal import expert_writer
+
+    monkeypatch.setattr(expert_writer.time, "sleep", lambda _seconds: None)
+    client = expert_writer.WemPortalExpertClient("user@example.org", "pw")
+    session = _LoginPageSession("<html><body>Please sign in</body></html>")
+    client.session = session
+
+    with pytest.raises(Exception) as raised:
+        client._fetch_form("a" * 36)
+    assert isinstance(raised.value, exceptions.AuthError), repr(raised.value)
+    assert session.requests == 1, f"{session.requests} requests to a login page"
+
+
+def test_a_dialog_that_is_the_login_form_is_an_auth_error():
+    """The other half: the dialog's own address, with the login form in it."""
+    from custom_components.wemportal import expert_writer
+
+    login_form = '<html><input name="tbxUserName" /></html>'
+
+    with pytest.raises(Exception) as raised:
+        expert_writer.WemPortalExpertClient.parse_parameter_form(login_form)
+    assert isinstance(raised.value, exceptions.AuthError), repr(raised.value)
+
+
+def test_a_confirmed_expert_write_ends_the_refusal_streak(caplog, monkeypatch):
+    """The read path ended the streak and the write path did not, so the
+    refusal after a write that worked was announced as the second in a row."""
+    import logging
+
+    _api_unused, refusing_client, refused = _expert_client_and_refusal()
+    _refuse(refusing_client, refused)
+    writer, _sent = _recording_write_client(
+        monkeypatch,
+        [
+            [("10", "1.0", True), ("15", "1.5", False)],
+            [("10", "1.0", False), ("15", "1.5", True)],
+        ],
+    )
+    writer.write_parameter("A" * 36, 1.5)
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        _refuse(refusing_client, refused)
+
+    assert [level for level, _message in _expert_lines(caplog)] == [logging.INFO]
+
+
 def test_an_expert_read_that_worked_starts_the_count_again(caplog, monkeypatch):
     import logging
 
@@ -10792,11 +11541,17 @@ def test_a_setup_web_login_that_worked_starts_the_count_again(monkeypatch):
     class _RefusingSession:
         cookies = {}
 
+        def close(self):
+            pass
+
         def get(self, *_args, **_kwargs):
             return _Refused("forbidden", status_code=403)
 
     class _WorkingSession:
         cookies = {}
+
+        def close(self):
+            pass
 
         def get(self, *_args, **_kwargs):
             return FakeResponse_html(NORMAL_LOGIN_PAGE)
@@ -10807,7 +11562,7 @@ def test_a_setup_web_login_that_worked_starts_the_count_again(monkeypatch):
             )
 
     sessions = [_RefusingSession(), _WorkingSession(), _RefusingSession()]
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: sessions.pop(0))
+    monkeypatch.setattr(real_requests, "Session", lambda: sessions.pop(0))
     api = _api()
 
     with pytest.raises(exceptions.ForbiddenError):

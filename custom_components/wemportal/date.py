@@ -20,8 +20,10 @@ from datetime import UTC, date, datetime
 from homeassistant.components.date import DateEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .const import DOMAIN
 from .entity import async_add_readings_as_they_appear, WemPortalEntity
 from .models import date_companions
 
@@ -90,7 +92,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
 
         self._attr_native_value = epoch_to_date(entity_data.value)
 
-        _LOGGER.debug("Init date: %s: %s", self._attr_name, self._attr_native_value)
+        _LOGGER.debug("Init date: %s: %s", self._label, self._attr_native_value)
 
     def _companion_dates(self) -> dict[str, float]:
         """The other date parameters of this module, at their current value.
@@ -108,8 +110,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         """
         return date_companions(
             self.coordinator.api.data.get(self._device_id, {}),
-            self._module_index,
-            self._module_type,
+            *self._module_address,
             self._data_key,
         )
 
@@ -144,7 +145,7 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         failure = await self.hass.async_add_executor_job(
             self.coordinator.api.reread_device_values,
             self._device_id,
-            (self._module_index, self._module_type),
+            self._module_address,
             (self._parameter_id,),
         )
         if failure is not None:
@@ -158,12 +159,24 @@ class WemPortalDate(WemPortalEntity, DateEntity):
                 "It is shown as unknown until the next update says what the "
                 "portal actually stored.",
                 value,
-                self._attr_name,
+                self._label,
                 failure,
             )
             self._forget_written_value()
         self._attr_native_value = epoch_to_date(self._current_value())
         self.coordinator.async_update_listeners()
+        # A read-back that worked and found another day: the portal accepted
+        # the request and kept something else. Shown as kept, and said - the
+        # action succeeding looked like a setting that changed by itself.
+        if failure is None and self._attr_native_value != value:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="date_not_kept",
+                translation_placeholders={
+                    "written": str(value),
+                    "kept": str(self._attr_native_value),
+                },
+            )
 
     def _current_value(self):
         """This parameter's value as the coordinator now holds it."""
@@ -181,5 +194,5 @@ class WemPortalDate(WemPortalEntity, DateEntity):
             return
 
         self._attr_native_value = epoch_to_date(row.value)
-        _LOGGER.debug("Update date: %s: %s", self._attr_name, self._attr_native_value)
+        _LOGGER.debug("Update date: %s: %s", self._label, self._attr_native_value)
         self.async_write_ha_state()

@@ -175,6 +175,9 @@ def _recorder(entity):
         seen["together_with"] = (
             together_with() if callable(together_with) else together_with
         )
+        # As the real write path does with what the portal accepted, so the
+        # read-back finds the written day kept.
+        entity._coordinator_row().value = value
 
     entity.async_write_parameter = record
     return seen
@@ -225,7 +228,12 @@ async def test_a_day_the_portal_did_not_keep_is_not_displayed():
     the written day on the strength of that answer showed a holiday nobody
     had - until the next poll took it away again, minutes later and with no
     explanation. So the entity asks what was kept instead of assuming.
+
+    And says so: showing the kept day while the action succeeded looked like
+    a setting that had worked and then changed by itself.
     """
+    from homeassistant.exceptions import HomeAssistantError
+
     entity, data = _entity()
     _wired(entity)
 
@@ -234,8 +242,16 @@ async def test_a_day_the_portal_did_not_keep_is_not_displayed():
 
     entity.coordinator.api.reread_device_values = portal_kept_the_old_value
 
-    await entity.async_set_value(date(2026, 12, 24))
+    with pytest.raises(HomeAssistantError) as excinfo:
+        await entity.async_set_value(date(2026, 12, 24))
 
+    assert excinfo.value.translation_key == "date_not_kept", (
+        "a day the portal discarded was reported as set"
+    )
+    assert excinfo.value.translation_placeholders == {
+        "written": "2026-12-24",
+        "kept": "2026-08-03",
+    }
     assert entity.native_value == date(2026, 8, 3), (
         "a day the portal discarded was displayed as if it had been set"
     )
@@ -485,7 +501,9 @@ def test_only_date_rows_become_date_entities():
         }
     }
     entry = _Entry()
-    entry.runtime_data = types.SimpleNamespace(coordinator=_Coordinator(data))
+    entry.runtime_data = types.SimpleNamespace(
+        coordinator=_Coordinator(data), unloading=False
+    )
 
     asyncio.run(async_setup_entry(None, entry, lambda entities: added.extend(entities)))
 
@@ -578,12 +596,17 @@ async def test_a_read_back_without_the_written_module_does_not_confirm_the_day(
 async def test_a_read_back_with_the_written_module_shows_what_the_portal_kept(
     monkeypatch,
 ):
-    """The counter-test: an old value that comes back IS the answer."""
+    """The counter-test: an old value that comes back IS the answer - shown,
+    and said, through the real read-back."""
+    from homeassistant.exceptions import HomeAssistantError
+
     entity, data = _entity()
     _with_companion(data)
     _wired(entity)
     _real_read_back(entity, [_OTHER_MODULE, _HOLIDAY_MODULE], monkeypatch)
 
-    await entity.async_set_value(date(2026, 12, 24))
+    with pytest.raises(HomeAssistantError) as excinfo:
+        await entity.async_set_value(date(2026, 12, 24))
 
+    assert excinfo.value.translation_key == "date_not_kept"
     assert entity.native_value == date(2026, 8, 3)

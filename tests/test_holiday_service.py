@@ -66,6 +66,13 @@ class _Api:
         self.calls.append((args, kwargs))
         if self.refuse:
             raise RuntimeError("portal said no")
+        # As the real api publishes what the portal accepted, so a read-back
+        # that changes nothing finds the written days kept.
+        _device, parameter, _index, _type, value = args
+        written = {parameter: value, **kwargs.get("together_with", {})}
+        for parameter_id, epoch in written.items():
+            if f"Circuit-{parameter_id}" in self.rows:
+                self.rows[f"Circuit-{parameter_id}"].value = epoch
 
     def reread_device_values(self, device_id, module, parameter_ids):
         self.rereads.append((device_id, module, tuple(parameter_ids)))
@@ -182,7 +189,7 @@ async def test_the_written_range_reaches_the_coordinator(monkeypatch):
     assert rows["Circuit-U_Ende"].value == date_to_epoch(date(2026, 8, 27))
 
 
-async def test_the_service_publishes_what_the_portal_kept(monkeypatch):
+async def test_the_service_publishes_what_the_portal_kept(monkeypatch, caplog):
     """A write that returns without raising was ACCEPTED, not stored.
 
     Measured on this endpoint: a range that ends before it starts comes
@@ -191,15 +198,30 @@ async def test_the_service_publishes_what_the_portal_kept(monkeypatch):
     back and this did not - but the check only covers the one rejection
     anybody has measured. Anything else the portal declines to keep was
     published here as fact until the next poll took it away again.
+
+    Then the kept days were shown, but the call still succeeded and logged
+    "Holiday set" for the days asked for: an automation went on as if the
+    holiday was set. It fails now, naming the days the portal kept.
     """
+    import logging
+
     kept = {
         "Circuit-U_Beginn": date_to_epoch(date(2026, 9, 1)),
         "Circuit-U_Ende": date_to_epoch(date(2026, 9, 8)),
     }
     hass, api, rows = _world(monkeypatch, kept=kept)
 
-    await holiday._write_holiday(hass, _call())
+    with caplog.at_level(logging.INFO), pytest.raises(HomeAssistantError) as excinfo:
+        await holiday._write_holiday(hass, _call())
 
+    assert excinfo.value.translation_key == "holiday_not_kept", (
+        "a holiday the portal did not keep was reported as set"
+    )
+    assert excinfo.value.translation_placeholders == {
+        "begin": "2026-09-01",
+        "end": "2026-09-08",
+    }
+    assert "Holiday set" not in caplog.text
     assert len(api.rereads) == 1, "the write was published without asking back"
     assert rows["Circuit-U_Beginn"].value == kept["Circuit-U_Beginn"]
     assert rows["Circuit-U_Ende"].value == kept["Circuit-U_Ende"]
@@ -414,3 +436,23 @@ async def test_a_write_into_an_unloading_entry_is_refused(monkeypatch):
         await holiday._write_holiday(hass, call)
 
     assert api.calls == []
+
+
+def test_a_holiday_across_two_accounts_is_refused():
+    """Begin of one account and end of another cannot be one range: the
+    service would have written each date to a different installation."""
+    row = Reading(value=0.0, platform="date", module_index=1, module_type=2)
+
+    def target(entity_id, entry_id):
+        return holiday.DateTarget(
+            entity_id,
+            types.SimpleNamespace(entry_id=entry_id),
+            None,
+            "1234",
+            entity_id,
+            row,
+        )
+
+    with pytest.raises(ServiceValidationError) as refused:
+        holiday._check_pair(target("date.begin", "one"), target("date.end", "two"))
+    assert refused.value.translation_key == "holiday_different_accounts"

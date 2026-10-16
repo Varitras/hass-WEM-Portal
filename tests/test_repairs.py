@@ -145,3 +145,22 @@ def test_every_issue_id_starts_with_the_config_entry_id():
             f"{file_name}: {ast.unparse(issue_id)} does not start with the "
             "config entry id - async_remove_entry could never clean it up"
         )
+
+
+def test_the_expert_read_repair_claims_only_what_is_known():
+    """It said the failing parameter was the only one: "while other
+    parameters were read successfully". With one configured slot - counted
+    on purpose - there are none, and the text sent the user looking for a
+    wrong ID instead of at the portal."""
+    import json
+    from pathlib import Path
+
+    translations = Path(__file__).resolve().parents[1] / (
+        "custom_components/wemportal/translations"
+    )
+    for language, claim in (("en", "other parameters"), ("de", "andere Parameter")):
+        issues = json.loads(
+            (translations / f"{language}.json").read_text(encoding="utf-8")
+        )["issues"]
+        text = issues["expert_poll_read_failures"]["description"]
+        assert claim not in text, f"{language}: {text}"

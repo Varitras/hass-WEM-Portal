@@ -81,6 +81,19 @@ class ForbiddenError(WemPortalError):
     """Exception to indicate a forbidden error (403)."""
 
 
+class PausedAfterRefusal(ForbiddenError):
+    """No request was sent: a 403 earlier started a pause that still holds.
+
+    Carries what a form needs to say so in the user's language - how long
+    it still holds, and whether it is the expert path's own pause or the
+    whole network's. The message is the log's."""
+
+    def __init__(self, message: str, remaining: str, expert_only: bool) -> None:
+        super().__init__(message)
+        self.remaining = remaining
+        self.expert_only = expert_only
+
+
 class ExpertLevelNotReached(WemPortalError):
     """The Fachmann postback was answered with the user level.
 
@@ -216,7 +229,8 @@ class ExpertOperationAborted(BaseException):
     """Raised when the configuration a portal operation belongs to is gone.
 
     Its own type so the caller can tell "we deliberately stopped" apart from
-    "the portal rejected the write" and skip the user-facing notification.
+    "the portal rejected the write" and tell the user the write was
+    stopped rather than that it failed.
 
     NOT an Exception subclass, for the same reason as PollDeadlineExceeded:
     it is a control-flow signal that has to travel out through code whose job

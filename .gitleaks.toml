@@ -26,8 +26,8 @@ entropy = 3.0
 
 [rules.allowlist]
 regexes = [
-  # The documented placeholder entityvalue, used verbatim in README.md, both
-  # translations and test_security.py. It is high-entropy on purpose (it has
+  # The documented placeholder entityvalue, used verbatim in README.md and
+  # test_security.py. It is high-entropy on purpose (it has
   # to look real in the docs), so the entropy floor does not clear it - only
   # this explicit exception does.
   '''(?i)3A7F91C2E0B48D5619F2A0C7B4E83D105C2A''',

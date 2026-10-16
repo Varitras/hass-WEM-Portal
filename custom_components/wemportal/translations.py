@@ -1,5 +1,6 @@
 """Translations for WEM Portal."""
 
+import re
 from typing import NamedTuple
 
 from homeassistant.const import UnitOfTemperature
@@ -63,105 +64,218 @@ def known_unit(parameter_id: str, sent: str | None) -> str | None:
     return known.unit
 
 
-def translate(language: str, value: str) -> str:
-    value = value.lower()
+# Phrases spanning more than one word, matched before the words themselves.
+_PHRASES: dict[str, list[tuple[re.Pattern[str], str]]] = {
+    "en": [
+        (
+            re.compile(r"(?<![\w.])1\s*[._]?\s*wez\b", re.IGNORECASE),
+            "1st heat generator",
+        ),
+        (
+            re.compile(r"(?<![\w.])2\s*[._]?\s*wez\b", re.IGNORECASE),
+            "2nd heat generator",
+        ),
+        (re.compile(r"\bso\s*/\s*wi\b", re.IGNORECASE), "summer/winter"),
+        (re.compile(r"\bth\.\s*", re.IGNORECASE), "thermal "),
+        (re.compile(r"\bbetriebsstd\.\s*", re.IGNORECASE), "operating hours "),
+        (re.compile(r"\bel\.\s*", re.IGNORECASE), "electrical "),
+        (re.compile(r"\bswitching e2\b", re.IGNORECASE), "switchings e2"),
+    ]
+}
 
-    # Safe word fragments and full words, sorted by length later to match longest first
-    vocab = {
-        "en": {
-            "betriebsart": "operating mode",
-            "wärmeerzeuger": "heat generator",
-            "heizkreis": "heating circuit",
-            "warmwasser": "hot water",
-            "außentemperatur": "outside temperature",
-            "aussentemperatur": "outside temperature",
-            "raumtemperatur": "room temperature",
-            "vorlauftemperatur": "flow temperature",
-            "warmwassertemperatur": "hot water temperature",
-            "kollektortemperatur": "collector temperature",
-            "anlagendruck": "system pressure",
-            "wärmeleistung": "heat output",
-            "raumsolltemperatur": "room setpoint temperature",
-            "warmwassersolltemperatur": "hot water setpoint temperature",
-            "temperatur": "temperature",
-            "vorlauf": "flow",
-            "rücklauf": "return",
-            "raum": "room",
-            "außen": "outside",
-            "aussen": "outside",
-            "anlage": "system",
-            "kollektor": "collector",
-            "betriebs": "operating",
-            "wärme": "heat",
-            "1_wez": "1st heat generator",
-            "1.wez": "1st heat generator",
-            "2_wez": "2nd heat generator",
-            "2.wez": "2nd heat generator",
-            "wez": "heat generator",
-            "erzeuger": "generator",
-            "druck": "pressure",
-            "leistung": "output",
-            "soll": "setpoint",
-            "absenk": "reduced",
-            "normal": "normal",
-            "komfort": "comfort",
-            "party": "party",
-            "urlaub": "holiday",
-            "funktion": "function",
-            "beginn": "begin",
-            "ende": "end",
-            "push": "push",
-            "programm": "program",
-            "program": "program",
-            "gesamt": "total",
-            "energie": "energy",
-            "el.": "electrical",
-            "kühlen": "cooling",
-            "heizen": "heating",
-            "kühl": "cooling",
-            "heiz": "heating",
-            "wasser": "water",
-            "consuption": "consumption",
-            "compresso": "compressor",
-            "mont": "month",
-            "months": "month",
-            "switching_e2": "switchings e2",
-            "oat": "outside air temperature",
-            "ctt": "compressor discharge temperature",
-            "ict": "indoor coil temperature",
-            "irt": "indoor return temperature",
-            "omt": "outdoor middle temperature",
-            "lwt": "leaving water temperature",
-            "odu": "outdoor unit",
-            "wwp sg": "wwp sg",
-            "wwp em hk": "wwp em hk",
-            "r130": "r130",
-        }
+# Whole words, and the parts a compound is built from. A word is translated
+# only when it is one of these or made of them entirely (with the German
+# linking "s" between parts); anything else stays as the portal wrote it.
+# Matching parts inside words of any length is what produced "Heating Ung"
+# for "Heizung" and "Reduced M Outdoor Unit S" for "Absenkmodus".
+#
+# A compound whose parts translate to the wrong term gets an entry of its
+# own: "Druckgas" is discharge gas, not pressure gas.
+_VOCABULARY: dict[str, dict[str, str]] = {
+    "en": {
+        "abtauen": "defrost",
+        "absenk": "setback",
+        "absenkmodus": "setback mode",
+        "anforderung": "demand",
+        "anforderungsüberhöhung": "demand boost",
+        "anhebung": "boost",
+        "anlage": "system",
+        "anlagendruck": "system pressure",
+        "aussen": "outside",
+        "aussengerät": "outdoor unit",
+        "austritt": "outlet",
+        "außen": "outside",
+        "außenfühler": "outdoor sensor",
+        "außengerät": "outdoor unit",
+        "beginn": "start",
+        "betrieb": "operation",
+        "betriebs": "operating",
+        "betriebsart": "operating mode",
+        "betriebsstd": "operating hours",
+        "betriebsstunden": "operating hours",
+        "compresso": "compressor",
+        "consuption": "consumption",
+        "ctt": "compressor discharge temperature",
+        "drehzahl": "speed",
+        "druck": "pressure",
+        "druckgas": "discharge gas",
+        "dynamisch": "dynamic",
+        "eintr": "inlet",
+        "eintritt": "inlet",
+        "elektrische": "electrical",
+        "ende": "end",
+        "energie": "energy",
+        "erzeuger": "generator",
+        "estrich": "screed",
+        "expansionsventil": "expansion valve",
+        "freigabe": "enable",
+        "frost": "frost",
+        "frostschutz": "frost protection",
+        "funktion": "function",
+        "gebäude": "building",
+        "gerät": "unit",
+        "gesamt": "total",
+        "heiz": "heating",
+        "heizen": "heating",
+        "heizkennlinie": "heating curve",
+        "heizkreis": "heating circuit",
+        "heizung": "heating",
+        "hochdruck": "high pressure",
+        "ict": "indoor coil temperature",
+        "irt": "indoor return temperature",
+        "ist": "actual",
+        "jahr": "year",
+        "jaz": "SPF",
+        "kennlinie": "curve",
+        "kollektor": "collector",
+        "komfort": "comfort",
+        "kondensation": "condensing",
+        "kältemittel": "refrigerant",
+        "kühl": "cooling",
+        "kühlen": "cooling",
+        "langzeitwert": "long-term value",
+        "laufzeit": "runtime",
+        "leistung": "output",
+        "leistungsanforderung": "power demand",
+        "luftansaug": "air intake",
+        "lwt": "leaving water temperature",
+        "maximal": "maximum",
+        "minimal": "minimum",
+        "mitteldruck": "intermediate pressure",
+        "mittelwert": "average",
+        "monat": "month",
+        "mont": "month",
+        "months": "month",
+        "niederdruck": "low pressure",
+        "normal": "normal",
+        "oat": "outside air temperature",
+        "odu": "outdoor unit",
+        "omt": "outdoor middle temperature",
+        "party": "party",
+        "program": "program",
+        "programm": "program",
+        "pumpe": "pump",
+        "push": "push",
+        "raum": "room",
+        "rücklauf": "return",
+        "sauggas": "suction gas",
+        "schaltdifferenz": "switching differential",
+        "schaltspiele": "switching cycles",
+        "schwimmbad": "pool",
+        "soll": "setpoint",
+        "statistik": "statistics",
+        "stellung": "position",
+        "störmeldung": "fault message",
+        "sättigung": "saturation",
+        "tag": "day",
+        "tauscher": "exchanger",
+        "temp": "temp",
+        "temperatur": "temperature",
+        "umschaltung": "changeover",
+        "umschaltventil": "diverter valve",
+        "urlaub": "holiday",
+        "variante": "variant",
+        "verdampfung": "evaporating",
+        "verdichter": "compressor",
+        "volumenstrom": "flow rate",
+        "vorlauf": "flow",
+        "warmwasser": "hot water",
+        "wasser": "water",
+        "wez": "heat generator",
+        "wärme": "heat",
+        "wärmeerzeuger": "heat generator",
+        "wärmemenge": "heat quantity",
+        "wärmepumpe": "heat pump",
+        "wärmetauscher": "heat exchanger",
+        "zeit": "time",
+        "zuordnung": "assignment",
+        "öffnungsgrad": "opening",
+        "ölsumpf": "oil sump",
+        "überhitzung": "superheat",
     }
+}
 
-    out = value
+# Letters only, so digits, hyphens and dots stay where the portal put them.
+_WORD = re.compile(r"[^\W\d_]+")
+# The German linking element between two parts of a compound.
+_LINKING_S = "s"
 
-    if language in vocab:
-        # Sort replacements by length descending so longer compound words match first
-        replacements = sorted(
-            vocab[language].items(), key=lambda entry: len(entry[0]), reverse=True
-        )
 
-        # Use placeholders to prevent cascading translation bugs
-        placeholders = {}
-        for position, (de_word, en_word) in enumerate(replacements):
-            if de_word in out:
-                placeholder = f"__TOKEN_{position}__"
-                placeholders[placeholder] = f" {en_word} "
-                out = out.replace(de_word, placeholder)
+def _parts(word: str, vocabulary: dict[str, str]) -> list[str] | None:
+    """The vocabulary parts `word` is made of, longest first, or None when
+    any of it is not covered - a half-translated word is worse than none."""
+    if word in vocabulary:
+        return [word]
+    for length in range(len(word) - 1, 1, -1):
+        head = word[:length]
+        if head not in vocabulary:
+            continue
+        rest = word[length:]
+        tail = _parts(rest, vocabulary)
+        if tail is None and rest.startswith(_LINKING_S):
+            tail = _parts(rest[len(_LINKING_S) :], vocabulary)
+        if tail is not None:
+            return [head, *tail]
+    return None
 
-        # Resolve placeholders back to English words
-        for placeholder, en_word in placeholders.items():
-            out = out.replace(placeholder, en_word)
 
-    out = out.replace("_", " ")
-    # Clean up extra spaces caused by multiple replacements
-    out = " ".join(out.split()).title()
-    out = out.replace("1St ", "1st ").replace("2Nd ", "2nd ")
+def _spelled(english: str) -> str:
+    """An English word for a name: capitalised, unless it is spelled with
+    capitals of its own (an abbreviation)."""
+    return english if english != english.lower() else english.capitalize()
 
-    return out
+
+def _translated_word(match: re.Match[str], vocabulary: dict[str, str]) -> str:
+    word = match.group(0)
+    before = match.string[match.start() - 1 : match.start()]
+    after = match.string[match.end() : match.end() + 1]
+    # lower(), not casefold(): casefold spells ß as ss, and "außen" would
+    # never meet its own entry.
+    parts = _parts(word.lower(), vocabulary)
+    if parts is None:
+        # The portal's own spelling: "EVI" stays EVI. Only a word that
+        # arrived lowercased (parameter ids are) gets its capital back - and
+        # not the letters of an ordinal or a counter ("1st", "E2" stay).
+        return word.capitalize() if word.islower() and not before.isdigit() else word
+    english = " ".join(
+        _spelled(piece) for part in parts for piece in vocabulary[part].split()
+    )
+    # Apart from a digit glued to it ("Heizprogramm1"); punctuation stays
+    # where the portal put it ("E-Heizung", "Party/Pause").
+    return f"{' ' if before.isalnum() else ''}{english}{' ' if after.isalnum() else ''}"
+
+
+def translate(language: str, value: str) -> str:
+    """A portal name in the configured language.
+
+    The portal names everything in German. For "en" each word is translated
+    on its own, whole or as a compound of known parts, and a word that is
+    neither stays German - see _VOCABULARY. For any other language the name
+    stays the portal's.
+    """
+    text = value.replace("_", " ")
+    for pattern, replacement in _PHRASES.get(language, []):
+        text = pattern.sub(replacement, text)
+    vocabulary = _VOCABULARY.get(language, {})
+    text = _WORD.sub(lambda match: _translated_word(match, vocabulary), text)
+    return " ".join(text.split())

@@ -40,7 +40,12 @@ from .exceptions import (
     PortalMaintenanceError,
     WemPortalError,
 )
-from .models import account_state, account_unique_id, forget_account_state
+from .models import (
+    WemPortalData,
+    account_state,
+    account_unique_id,
+    forget_account_state,
+)
 from .utils import (
     device_identifier,
     failure_is_new,
@@ -230,9 +235,16 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         # store that had just been deleted, or putting the old api's modules
         # over what the reloaded entry already saved.
         self._store_writes = asyncio.Lock()
+        # The store this coordinator went live in; see _owns_its_entry.
+        self._published_in: WemPortalData | None = None
 
-    def _may_still_write_to_disk(self) -> bool:
-        """Whether a cycle finishing now still owns its entry's stores.
+    def publish_in(self, data: WemPortalData) -> None:
+        """Record the store the entry now carries this coordinator in."""
+        self._published_in = data
+
+    def _owns_its_entry(self) -> bool:
+        """Whether a cycle finishing now still owns its entry - its stores,
+        its repair issues and its account's auth streak.
 
         A cycle runs in an executor thread and cannot be cancelled, so a
         removal or reload landing mid-cycle is followed by the tail of that
@@ -245,21 +257,32 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         first version of this got wrong: during SETUP it has not been
         published yet - and that is the cycle which discovers everything, so
         barring it wrote nothing down at all - while after an unload it has
-        been taken away again. The entry's own state tells the two apart.
+        been taken away again. For a coordinator not live yet the entry's own
+        state tells the two apart; one that went live answers by the store
+        it went live in.
 
         Asked of both save paths rather than of the caller: they are what
         touches the disk, and a third one added later would otherwise have to
-        remember this on its own.
+        remember this on its own. The issue syncs and the auth streak ask it
+        for the same reason: the unload deletes the issues and clears the
+        streak, and a tail arriving after it put both back - an issue on a
+        disabled entry that nothing could withdraw, and a streak one login
+        page short of a reauth for the entry that replaced this one.
         """
-        data = getattr(self.config_entry, "runtime_data", None)
-        if data is not None:
+        if self._published_in is not None:
+            # Once live, owner only through the store it went live in: after
+            # that store's unload the entry may be setting up the next
+            # coordinator, and the setup state below said yes to this one for
+            # that whole window.
+            #
             # `unloading` beside the identity, because the store is still
             # there and still holds THIS coordinator for the whole teardown -
             # identity alone said yes for exactly the window the flag exists
             # to mark, and the save it let through is asynchronous, so it can
             # land after the stores are deleted or after a reload published
             # new ones.
-            return data.coordinator is self and not data.unloading
+            data = getattr(self.config_entry, "runtime_data", None)
+            return data is self._published_in and not data.unloading
         return self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS
 
     async def async_wait_for_store_writes(self) -> None:
@@ -299,7 +322,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         device_id = getattr(self.api, "scraper_device_id", None)
         if not device_id or device_id == self._saved_scraper_device_id:
             return
-        if not self._may_still_write_to_disk():
+        if not self._owns_its_entry():
             return
         try:
             await self._save_under_store_lock(self._scraper_device_store, device_id)
@@ -311,15 +334,14 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         """Persist discovered device/module/parameter metadata to disk.
 
         This is what lets a future Home Assistant restart skip the slow,
-        rate-limited per-module parameter discovery in
-        WemPortalApi.get_parameters() (see get_devices()/fetch_data() in
-        wemportalapi.py). This is purely a "nice to have" cache: any
+        rate-limited per-module parameter discovery (get_devices() and
+        get_parameters() in discovery.py). This is purely a "nice to have" cache: any
         failure to save it is logged and otherwise ignored, since losing
         it only costs a slower next startup, never incorrect data.
         """
         if not self.api.modules:
             return
-        if not self._may_still_write_to_disk():
+        if not self._owns_its_entry():
             return
         try:
             serialized = serialize_modules(self.api.modules)
@@ -348,7 +370,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         """
         if not self.api.modules:
             return
-        if not self._may_still_write_to_disk():
+        if not self._owns_its_entry():
             return
         serialized = serialize_modules(self.api.modules)
         await self._save_under_store_lock(self._modules_store, serialized)
@@ -460,6 +482,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         Idempotent in both directions, so running it on every path costs
         nothing.
         """
+        if not self._owns_its_entry():
+            return
         issue_id = f"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}"
         if self.api.is_rate_limited():
             async_create_issue(
@@ -486,6 +510,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
 
         Idempotent in both directions, like its sibling.
         """
+        if not self._owns_its_entry():
+            return
         issue_id = f"{self.config_entry.entry_id}_{WEB_SCRAPE_ISSUE}"
         if self.api.web_scrape_is_failing(device_filter):
             async_create_issue(
@@ -642,6 +668,10 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed(str(exc)) from exc
             except AuthError as exc:
                 self._note_failed_cycle()
+                if not self._owns_its_entry():
+                    # A reauth started from here lands on the entry that
+                    # replaced this one, or on none at all.
+                    raise UpdateFailed(str(exc)) from exc
                 self.num_auth_failed += 1
                 self._account_state.auth_failures = self.num_auth_failed
                 # Escalate to reauth only after several CONSECUTIVE auth

@@ -13,6 +13,7 @@ from datetime import timedelta
 
 import homeassistant.helpers.config_validation as cv
 import probatio as vol
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -46,7 +47,7 @@ from .coordinator import (
     get_modules_store,
     get_scraper_device_store,
 )
-from .exceptions import ExpertOperationAborted, ValueNotOffered
+from .exceptions import ExpertOperationAborted, ForbiddenError, ValueNotOffered
 from .migration import (
     ENTRY_TITLE,
     migrate_unique_ids,
@@ -58,7 +59,12 @@ from .models import (
     WemPortalData,
     is_still_serving,
 )
-from .utils import clamped_scan_interval, device_identifier, deserialize_modules
+from .utils import (
+    async_translated_message,
+    clamped_scan_interval,
+    device_identifier,
+    deserialize_modules,
+)
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -192,7 +198,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         await coordinator.async_config_entry_first_refresh()
         _LOGGER.info("Migrating entity names for wemportal")
         try:
-            await migrate_unique_ids(hass, entry, coordinator)
+            migrate_unique_ids(hass, entry, coordinator)
         except Exception as exc:  # noqa: BLE001
             # Migration is a best-effort cleanup step (renames old unique_ids
             # to the new format). A failure here should never prevent the
@@ -210,13 +216,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # shutdown and when it takes too long, and CancelledError is not an
         # Exception - so the one ending that leaves the most behind was the
         # one this never ran for. Re-raised immediately, so a cancellation
-        # still cancels. The migration is inside for that reason too: it
-        # awaits a refresh, and a cancellation there passes its best-effort
-        # handler.
+        # still cancels.
         await hass.async_add_executor_job(api.close_transport)
         raise
 
     entry.runtime_data = WemPortalData(api=api, coordinator=coordinator)
+    coordinator.publish_in(entry.runtime_data)
 
     # Everything past this point runs with the store already PUBLISHED, so a
     # failure here cannot be left to async_unload_entry: Home Assistant only
@@ -563,6 +568,18 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
                     "error": str(exc),
                 },
             ) from exc
+        except ForbiddenError as exc:
+            # Already said by the client that met it, at the volume its
+            # refusal streak calls for; the caller gets the reason below.
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="expert_write_failed",
+                translation_placeholders={
+                    "parameter": ev_short,
+                    "value": str(value),
+                    "error": str(exc),
+                },
+            ) from exc
         except Exception as exc:
             _LOGGER.error("Expert write failed for %s: %s", ev_short, exc)
             raise HomeAssistantError(
@@ -589,15 +606,18 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
             state.max_value,
         )
         if target_entry.options.get(CONF_EXPERT_NOTIFY_ON_SUCCESS, False):
-            await hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "WEM Portal expert write",
-                    "message": f"{ev_short} set to {written}.",
-                    "notification_id": f"wemportal_expert_{entityvalue_digest(entityvalue)}",
-                },
-                blocking=False,
+            persistent_notification.async_create(
+                hass,
+                await async_translated_message(
+                    hass,
+                    "expert_write_succeeded",
+                    parameter=ev_short,
+                    value=str(written),
+                ),
+                title=await async_translated_message(
+                    hass, "expert_write_succeeded_title"
+                ),
+                notification_id=f"wemportal_expert_{entityvalue_digest(entityvalue)}",
             )
 
     # Registered as an ADMIN service: it writes real settings on a heating

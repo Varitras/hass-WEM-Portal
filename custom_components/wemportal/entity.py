@@ -2,6 +2,7 @@
 
 import logging
 from functools import partial
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
@@ -77,7 +78,8 @@ def async_add_readings_as_they_appear(
     which is a state a user can read and act on - removing the entity would
     take its history with it for what is often one bad cycle.
     """
-    coordinator = config_entry.runtime_data.coordinator
+    data = config_entry.runtime_data
+    coordinator = data.coordinator
     # What this platform currently HAS an entity for - not what it has ever
     # seen. The difference decides whether a control survives a flicker: a
     # parameter's platform is read from the value of that cycle, so one odd
@@ -85,15 +87,26 @@ def async_add_readings_as_they_appear(
     # migration takes the abandoned registry entry down in between. An
     # add-only memo then never rebuilt it, and the control stayed gone until
     # the entry was reloaded.
-    known: set[tuple[str, str]] = set()
+    known: dict[tuple[str, str], WemPortalEntity] = {}
 
     @callback
     def _add_the_ones_without_an_entity() -> None:
+        # The unload takes every entity down before this listener goes, and
+        # a cycle finishing in between would rebuild them all onto platforms
+        # already gone.
+        if data.unloading:
+            return
         # The memo's one blind spot: a key a merge retired. Its row is absent
         # AND the migration took its entity down this same cycle - unlike a
         # merely absent row, whose entity stays. Forgotten here so that when
         # the merge ends and the key returns with a value, it is rebuilt.
-        known.difference_update(_keys_a_merge_retired(coordinator))
+        retired = set(_keys_a_merge_retired(coordinator))
+        # And one whose entity Home Assistant took down: the migration gives
+        # the entity built under the current id up for the old one that
+        # keeps the history, and that one needs an entity behind it again.
+        taken_down = {key for key, built in known.items() if built.taken_down}
+        for key in retired | taken_down:
+            known.pop(key, None)
         fresh = []
         arriving = []
         for device_id, key, reading in _readings_of(coordinator.data):
@@ -103,7 +116,7 @@ def async_add_readings_as_they_appear(
                 # still registered and showing unknown; a row loses its place
                 # only when the entity is actually taken away - gone to
                 # another platform here, retired by a merge above.
-                known.discard((device_id, key))
+                known.pop((device_id, key), None)
                 continue
             if (device_id, key) in known:
                 continue
@@ -114,7 +127,7 @@ def async_add_readings_as_they_appear(
         # Remembered AFTER the build and the hand-over, not before: a
         # constructor that raised once used to leave its key recorded with
         # no entity behind it, for as long as the entry stayed loaded.
-        known.update(arriving)
+        known.update(zip(arriving, fresh, strict=True))
 
     _add_the_ones_without_an_entity()
     # Removed on unload with everything else: a listener that outlives its
@@ -139,6 +152,11 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
     to carry was never read.
     """
 
+    # Set when Home Assistant takes the entity down after adding it. An add
+    # it aborts - a disabled entity, say - never gets here, so the builder
+    # does not try that one again on every cycle.
+    taken_down = False
+
     def __init__(
         self,
         coordinator,
@@ -152,11 +170,15 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         self._config_entry = config_entry
         self._device_id = device_id
         self._attr_has_entity_name = True
-        self._attr_name = (
+        # What the integration calls the entity in its own lines. Kept apart
+        # from _attr_name, which an entity named by its translation must not
+        # have: Home Assistant takes a set name over the translation.
+        self._label = (
             entity_data.friendly_name
             if entity_data.friendly_name is not None
             else _unique_id
         )
+        self._attr_name = self._label
         self._attr_unique_id = get_wemportal_unique_id(
             self._config_entry.entry_id, str(self._device_id), str(_unique_id)
         )
@@ -170,15 +192,21 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         # Home Assistant derives from the device class.
         if entity_data.icon:
             self._attr_icon = entity_data.icon
-        # Only the writeable platforms use these, but the write path below is
-        # shared, so the address of the parameter is too.
-        self._module_index = entity_data.module_index
-        self._module_type = entity_data.module_type
         # What this entity was built as. The re-discovery can reclassify a
         # parameter, and the listener then builds an entity of the new
         # platform for the same row - so "the row is still there" stopped
         # being the same question as "the row is still mine".
         self._platform = entity_data.platform
+
+    async def async_added_to_hass(self) -> None:
+        # Back, too: renaming an entity id takes the same object down and
+        # adds it again.
+        self.taken_down = False
+        await super().async_added_to_hass()
+
+    async def async_will_remove_from_hass(self) -> None:
+        self.taken_down = True
+        await super().async_will_remove_from_hass()
 
     async def async_write_parameter(self, value, together_with=None) -> None:
         """The one way an entity changes a value on the portal.
@@ -200,7 +228,7 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         became reachable when dropping those readings did, and would have
         been the same silent wrong write either way.
         """
-        what = self._attr_name or str(self._attr_unique_id)
+        what = self._label or str(self._attr_unique_id)
         raise_if_not_writable(self._config_entry, what)
         if self._coordinator_row() is None:
             raise HomeAssistantError(
@@ -214,8 +242,7 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
                     self.coordinator.api.change_value,
                     self._device_id,
                     self._parameter_id,
-                    self._module_index,
-                    self._module_type,
+                    *self._module_address,
                     value,
                     together_with=together_with,
                 )
@@ -247,6 +274,18 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         row = self._coordinator_row()
         if row is not None:
             row.value = None
+
+    @property
+    def _module_address(self) -> tuple[Any, Any]:
+        """Where this parameter lives on the portal: the module of its row as
+        it is NOW. The row key names the module, not its index, so a module
+        back at a new index after the module list was read again kept its
+        key - and an address taken at construction sent the write to
+        whatever module sits at the old one."""
+        row = self._coordinator_row()
+        if row is None:
+            return None, None
+        return row.module_index, row.module_type
 
     def _coordinator_row(self) -> Reading | None:
         """This parameter's row in the coordinator's data, or None.

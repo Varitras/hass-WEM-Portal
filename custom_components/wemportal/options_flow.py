@@ -55,7 +55,8 @@ from .const import (
     MIN_SCAN_INTERVAL_API_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
 )
-from .exceptions import ExpertOperationAborted, ForbiddenError
+from .exceptions import ExpertOperationAborted, ForbiddenError, PausedAfterRefusal
+from .utils import async_translated_message
 from .expert_options import (
     discovery_option_list,
     canonical_entityvalue,
@@ -76,6 +77,22 @@ from .models import account_state
 from .wemportalapi import WemPortalApi
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def blocked_discovery_status(hass: Any, exc: ForbiddenError) -> str:
+    """Why discovery did not run, for the top of the form, in Home
+    Assistant's language. The exception's own text is the log's, and it
+    reached the German form in English."""
+    if isinstance(exc, PausedAfterRefusal):
+        # The keys literal in the call: the catalogue guard reads them there.
+        return await async_translated_message(
+            hass,
+            "discovery_paused_expert"
+            if exc.expert_only
+            else "discovery_paused_network",
+            remaining=exc.remaining,
+        )
+    return await async_translated_message(hass, "discovery_refused")
 
 
 class WemportalOptionsFlow(OptionsFlowWithReload):
@@ -399,7 +416,7 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                 ): cv.boolean,
                 # Post a persistent notification after a SUCCESSFUL expert
                 # write. OFF by default (noisy when setting several
-                # values); failures always notify regardless.
+                # values); failures are raised to the caller instead.
                 vol.Optional(
                     CONF_EXPERT_NOTIFY_ON_SUCCESS,
                     default=prefill(CONF_EXPERT_NOTIFY_ON_SUCCESS, False),
@@ -611,11 +628,10 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                 _LOGGER.debug("Expert discovery: another operation holds the lock.")
                 errors["base"] = "discovery_busy"
                 modules = self._known_modules()
-            except ForbiddenError:
-                _LOGGER.warning(
-                    "Expert discovery: module list not read - portal access is "
-                    "in the 403 cooldown."
-                )
+            except ForbiddenError as exc:
+                # A pause after an earlier refusal and a fresh 403 land
+                # here alike, and the error text covers both.
+                _LOGGER.debug("Expert discovery: module list not read - %s", exc)
                 errors["base"] = "discovery_blocked"
                 modules = self._known_modules()
             except Exception:
@@ -673,12 +689,12 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                 self._discovery_error = "discovery_busy"
             except ForbiddenError as exc:
                 # Either the expert path is backing off from an earlier 403,
-                # or the portal rejected a request just now. The exception
-                # text says which, and names the request - pass it through to
-                # the form instead of making the user read the log.
-                _LOGGER.warning("Expert discovery: not run - %s", exc)
+                # or the portal rejected a request just now. The status line
+                # at the top of the form says which, so the user need not
+                # read the log.
+                _LOGGER.debug("Expert discovery: not run - %s", exc)
                 self._discovery_error = "discovery_blocked"
-                self._discovery_detail = str(exc)
+                self._discovery_detail = await blocked_discovery_status(self.hass, exc)
             except Exception:
                 _LOGGER.exception("Expert discovery: parameter discovery failed")
                 self._discovery_error = "discovery_failed"

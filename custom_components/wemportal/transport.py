@@ -11,6 +11,7 @@ shared with the domain half, so the split is a move of code, not a change of
 object shape.
 """
 
+from contextlib import closing
 from typing import TYPE_CHECKING, Any, Final
 import logging
 
@@ -37,6 +38,7 @@ from .exceptions import (
     AuthError,
     ExpiredSessionError,
     ForbiddenError,
+    PausedAfterRefusal,
     LoginRefused,
     WebLoginRefused,
     PortalMaintenanceError,
@@ -153,6 +155,9 @@ class WemPortalTransport:
         _api_lock: threading.Lock
         session: requests.Session | None
         expert_cookies: Any
+        _relogin_failure: Exception | None
+
+        def remaining_budget(self) -> float | None: ...
 
         def _reset_scraper(self) -> None: ...
 
@@ -242,9 +247,11 @@ class WemPortalTransport:
         self.check_cooldown()
         if self._expert_blocked_until and time.monotonic() < self._expert_blocked_until:
             remaining = time_left(self._expert_blocked_until - time.monotonic())
-            raise ForbiddenError(
+            raise PausedAfterRefusal(
                 f"Expert path is backing off after a previous 403 "
-                f"({remaining} remaining). Sensor polling is unaffected."
+                f"({remaining} remaining). Sensor polling is unaffected.",
+                remaining=remaining,
+                expert_only=True,
             )
 
     def is_rate_limited(self) -> bool:
@@ -271,9 +278,11 @@ class WemPortalTransport:
         """
         if self._blocked_until and time.monotonic() < self._blocked_until:
             remaining = time_left(self._blocked_until - time.monotonic())
-            raise ForbiddenError(
+            raise PausedAfterRefusal(
                 f"Still cooling down after a previous rate-limit response "
-                f"({remaining} remaining). Skipping requests until then."
+                f"({remaining} remaining). Skipping requests until then.",
+                remaining=remaining,
+                expert_only=False,
             )
 
     def reset_transport(self):
@@ -441,6 +450,20 @@ class WemPortalTransport:
             url, headers=headers, json=data, timeout=API_REQUEST_TIMEOUT_SECONDS
         )
 
+    def _log_in_again(self) -> None:
+        """Log in after a session ran out mid-request.
+
+        A failure during a poll is kept for the rest of it (see make_api_call):
+        the call sites' shields swallow anything but an AuthError, so a re-login
+        answered with a 500 or a timeout was tried again by every later one.
+        """
+        try:
+            self.api_login()
+        except Exception as login_failure:
+            if self.remaining_budget() is not None:
+                self._relogin_failure = login_failure
+            raise
+
     def _recover_or_raise(
         self, exc, response, url, *, last_attempt, delay, retry_transport
     ) -> None:
@@ -511,7 +534,7 @@ class WemPortalTransport:
 
         if is_session_error and not last_attempt:
             _LOGGER.info("Session expired for %s. Re-authenticating...", url)
-            self.api_login()
+            self._log_in_again()
             time.sleep(delay)
             return
 
@@ -572,6 +595,8 @@ class WemPortalTransport:
         something at the portal must not be repeated when only its answer was
         lost. Only the two reads that carry values ask for this.
         """
+        if self._relogin_failure is not None:
+            raise self._relogin_failure
         attempts = 2 if (do_retry or retry_transport) else 1
         response = None
 
@@ -684,7 +709,7 @@ class WemPortalTransport:
             # Verify the response is actually valid JSON and successful
             response_data = response.json()
             if not status_is_success(response_data.get("Status")):
-                raise AuthError(f"Login failed: Server returned {response_data}")
+                self._raise_login_failure(response, None)
 
             self.api_version = response_data.get("Version")
             # No username: there is one account per config entry, so naming it adds
@@ -760,7 +785,9 @@ class WemPortalTransport:
             )
             raise PortalMaintenanceError(response_message) from exc
 
-        if response.status_code == 400:
+        # 200 too: api_login sends the refusal by Status here, so that
+        # downtime worded in it is not read as a wrong password.
+        if response.status_code in (200, 400):
             raise AuthError(
                 "Authentication Error: Check if your login credentials are "
                 f"correct. Received response code: {response.status_code}. "
@@ -805,128 +832,132 @@ class WemPortalTransport:
             UnknownAuthError: anything else, including an unreadable answer.
         """
         self.check_cooldown()
-        session = requests.Session()
-        login_url = WEB_LOGIN_URL
+        # Closed however the check ends: the config flow throws this
+        # session away, and its keep-alive connection lived on until GC.
+        with closing(requests.Session()) as session:
+            login_url = WEB_LOGIN_URL
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Accept-Language": "de,en;q=0.9",
-        }
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "Accept-Language": "de,en;q=0.9",
+            }
 
-        # Step 1: Fetch the login page
-        initial_response = None
-        try:
-            initial_response = session.get(
-                login_url,
-                headers=headers,
-                timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-            )
-            initial_response.raise_for_status()
-        except requests.exceptions.RequestException as exc:
-            # A 403 here is the same refusal the POST below already
-            # recognises, and it arrives FIRST - this is the request that
-            # meets a blocked IP. Reported as "could not load the page" it
-            # read like a network problem, invited an immediate retry, and
-            # started no cooldown, so the next cycle walked into it again.
-            if initial_response is not None and initial_response.status_code == 403:
-                log_refusal(redact_url(login_url), initial_response)
-                raise self._refused_web_login(
-                    f"the web login page {redact_url(login_url)}",
-                    "Access forbidden while loading the login page.",
+            # Step 1: Fetch the login page
+            initial_response = None
+            try:
+                initial_response = session.get(
+                    login_url,
+                    headers=headers,
+                    timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+                )
+                initial_response.raise_for_status()
+            except requests.exceptions.RequestException as exc:
+                # A 403 here is the same refusal the POST below already
+                # recognises, and it arrives FIRST - this is the request that
+                # meets a blocked IP. Reported as "could not load the page" it
+                # read like a network problem, invited an immediate retry, and
+                # started no cooldown, so the next cycle walked into it again.
+                if initial_response is not None and initial_response.status_code == 403:
+                    log_refusal(redact_url(login_url), initial_response)
+                    raise self._refused_web_login(
+                        f"the web login page {redact_url(login_url)}",
+                        "Access forbidden while loading the login page.",
+                    ) from exc
+                raise UnknownAuthError(f"Failed to load the login page: {exc}") from exc
+
+            # No maintenance decision on this page. It carries the notice from
+            # the moment a window is ANNOUNCED - hours before it opens - and looks
+            # the same during it, so bailing out here turned every announcement
+            # into an outage. The answer to the POST below tells the two apart:
+            # a logged-in page means the portal is working.
+
+            # Step 2: Parse the login page and extract hidden form fields.
+            #
+            # Read with lxml, which the scraper already uses for the far more
+            # involved expert page - so this is the only thing beautifulsoup4 was
+            # installed for, three lines of it, and the dependency is gone.
+            #
+            # The `string(@name)` half of the selector is not decoration: the old
+            # code tested the name for truthiness, which skips `name=""`, while a
+            # bare `[@name]` would keep it and post a field the portal never sent.
+            try:
+                page = html.fromstring(initial_response.text)
+            except ParserError as exc:
+                # An empty or unparseable body. The old parser returned no fields
+                # here and let the login POST go ahead, which sent the password to
+                # a page that had answered with nothing, collected no ASP.NET
+                # state to echo back, and could only be refused. Same reasoning as
+                # the maintenance bail-out above: do not hand over credentials to
+                # a page that cannot process them.
+                raise UnknownAuthError(
+                    "The WEM Portal login page could not be read; no credentials were sent."
                 ) from exc
-            raise UnknownAuthError(f"Failed to load the login page: {exc}") from exc
+            form_data = {
+                element.get("name"): element.get("value", "")
+                for element in page.xpath('//input[@type="hidden"][string(@name)]')
+            }
+            # A page can parse perfectly and still not be a login page. These two
+            # are the ASP.NET state a login is posted WITH, so without them there
+            # is nothing to log in with - and posting anyway sends the password to
+            # a page that can only refuse it, which then reads as a wrong one. The
+            # scraper and the expert client both check this before posting; this
+            # was the third of the same three lines, and the one still missing.
+            if not {"__VIEWSTATE", "__EVENTVALIDATION"} <= form_data.keys():
+                raise UnknownAuthError(
+                    "The WEM Portal login page came back without its form fields, "
+                    "so no credentials were sent."
+                )
 
-        # No maintenance decision on this page. It carries the notice from
-        # the moment a window is ANNOUNCED - hours before it opens - and looks
-        # the same during it, so bailing out here turned every announcement
-        # into an outage. The answer to the POST below tells the two apart:
-        # a logged-in page means the portal is working.
+            # Add username and password to the form data
+            form_data["ctl00$content$tbxUserName"] = self.username
+            form_data["ctl00$content$tbxPassword"] = self.password
+            form_data["ctl00$content$btnLogin"] = "Anmelden"  # Login button value
 
-        # Step 2: Parse the login page and extract hidden form fields.
-        #
-        # Read with lxml, which the scraper already uses for the far more
-        # involved expert page - so this is the only thing beautifulsoup4 was
-        # installed for, three lines of it, and the dependency is gone.
-        #
-        # The `string(@name)` half of the selector is not decoration: the old
-        # code tested the name for truthiness, which skips `name=""`, while a
-        # bare `[@name]` would keep it and post a field the portal never sent.
-        try:
-            page = html.fromstring(initial_response.text)
-        except ParserError as exc:
-            # An empty or unparseable body. The old parser returned no fields
-            # here and let the login POST go ahead, which sent the password to
-            # a page that had answered with nothing, collected no ASP.NET
-            # state to echo back, and could only be refused. Same reasoning as
-            # the maintenance bail-out above: do not hand over credentials to
-            # a page that cannot process them.
-            raise UnknownAuthError(
-                "The WEM Portal login page could not be read; no credentials were sent."
-            ) from exc
-        form_data = {
-            element.get("name"): element.get("value", "")
-            for element in page.xpath('//input[@type="hidden"][string(@name)]')
-        }
-        # A page can parse perfectly and still not be a login page. These two
-        # are the ASP.NET state a login is posted WITH, so without them there
-        # is nothing to log in with - and posting anyway sends the password to
-        # a page that can only refuse it, which then reads as a wrong one. The
-        # scraper and the expert client both check this before posting; this
-        # was the third of the same three lines, and the one still missing.
-        if not {"__VIEWSTATE", "__EVENTVALIDATION"} <= form_data.keys():
-            raise UnknownAuthError(
-                "The WEM Portal login page came back without its form fields, "
-                "so no credentials were sent."
-            )
+            # Step 3: Submit the login form
+            response = None
+            try:
+                response = session.post(
+                    login_url,
+                    data=form_data,
+                    headers={
+                        **headers,
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
+                )
+                response.raise_for_status()
 
-        # Add username and password to the form data
-        form_data["ctl00$content$tbxUserName"] = self.username
-        form_data["ctl00$content$tbxPassword"] = self.password
-        form_data["ctl00$content$btnLogin"] = "Anmelden"  # Login button value
-
-        # Step 3: Submit the login form
-        response = None
-        try:
-            response = session.post(
-                login_url,
-                data=form_data,
-                headers={
-                    **headers,
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                timeout=SCRAPER_REQUEST_TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-
-            # Step 4: Read the answer. Three outcomes, not two.
-            if WEB_LOGGED_IN_MARKER in response.text:
-                _LOGGER.debug("WEB login successful.")
-                self._account_state.refused_web_logins = 0
-                return
-            # Maintenance is decided here, after the success test above: a
-            # login that got through is not refused by a banner announcing a
-            # window, and one that did not, with the notice on it, is downtime
-            # rather than a wrong password.
-            notice = maintenance_blocking(response.text)
-            if notice:
-                raise PortalMaintenanceError(notice)
-            if WEB_LOGIN_FORM_MARKER in response.text:
-                raise AuthError("Login failed: Invalid username or password.")
-            # Neither logged in, nor the login form back, nor maintenance:
-            # some other page. Saying "wrong password" about it counted a
-            # portal hiccup towards the reauth prompt, and three of those in a
-            # row take the integration down until somebody re-enters
-            # credentials that were correct the whole time.
-            raise UnknownAuthError(
-                "Login failed: the portal answered with a page that is neither "
-                "the logged-in view nor the login form."
-            )
-        except requests.exceptions.RequestException as exc:
-            if response is not None and response.status_code == 403:
-                log_refusal(redact_url(login_url), response)
-                raise self._refused_web_login(
-                    f"the web login form {redact_url(login_url)}",
-                    "Access forbidden during login.",
+                # Step 4: Read the answer. Three outcomes, not two.
+                if WEB_LOGGED_IN_MARKER in response.text:
+                    _LOGGER.debug("WEB login successful.")
+                    self._account_state.refused_web_logins = 0
+                    return
+                # Maintenance is decided here, after the success test above: a
+                # login that got through is not refused by a banner announcing a
+                # window, and one that did not, with the notice on it, is downtime
+                # rather than a wrong password.
+                notice = maintenance_blocking(response.text)
+                if notice:
+                    raise PortalMaintenanceError(notice)
+                if WEB_LOGIN_FORM_MARKER in response.text:
+                    raise AuthError("Login failed: Invalid username or password.")
+                # Neither logged in, nor the login form back, nor maintenance:
+                # some other page. Saying "wrong password" about it counted a
+                # portal hiccup towards the reauth prompt, and three of those in a
+                # row take the integration down until somebody re-enters
+                # credentials that were correct the whole time.
+                raise UnknownAuthError(
+                    "Login failed: the portal answered with a page that is neither "
+                    "the logged-in view nor the login form."
+                )
+            except requests.exceptions.RequestException as exc:
+                if response is not None and response.status_code == 403:
+                    log_refusal(redact_url(login_url), response)
+                    raise self._refused_web_login(
+                        f"the web login form {redact_url(login_url)}",
+                        "Access forbidden during login.",
+                    ) from exc
+                raise UnknownAuthError(
+                    f"Failed to submit the login form: {exc}"
                 ) from exc
-            raise UnknownAuthError(f"Failed to submit the login form: {exc}") from exc

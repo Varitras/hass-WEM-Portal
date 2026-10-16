@@ -75,6 +75,10 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
     entry in place preserves the entity_id, history and restored state.
     Best-effort: a failure only means the entity is re-created under the
     new unique_id instead of migrated.
+
+    The lines below name no entity: this runs before the entities are added,
+    and the name of a slot named by its translation cannot be resolved yet -
+    asking for it took the whole number platform down.
     """
     registry = entity_registry.async_get(hass)
     for entity in expert_entities:
@@ -87,18 +91,13 @@ def _async_migrate_expert_unique_ids(hass, config_entry, expert_entities) -> Non
         if registry.async_get_entity_id("number", DOMAIN, entity.unique_id) is not None:
             # A digest-format entity already exists; leave both untouched
             # rather than colliding (should not happen in practice).
-            _LOGGER.debug(
-                "Skipping expert unique_id migration for %s: target exists.",
-                entity.name,
-            )
+            _LOGGER.debug("Skipping an expert unique_id migration: target exists.")
             continue
         try:
             registry.async_update_entity(entity_id, new_unique_id=entity.unique_id)
-            _LOGGER.info(
-                "Migrated expert entity %s to digest-based unique_id.", entity.name
-            )
+            _LOGGER.info("Migrated an expert entity to a digest-based unique_id.")
         except ValueError as exc:
-            _LOGGER.warning("Could not migrate expert entity %s: %s", entity.name, exc)
+            _LOGGER.warning("Could not migrate an expert entity: %s", exc)
 
 
 def _async_drop_ghost_expert_entities(hass, config_entry, expected_unique_ids) -> None:
@@ -153,7 +152,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         # bookkeeping as a fault. Same rule sensor.py states for its own
         # readings. A value that is present but unusable still warns below.
         if value is None:
-            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
+            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._label)
             return None
 
         # A setpoint without demand; a number has no text state, and a
@@ -166,7 +165,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
             if value == "":
                 _LOGGER.warning(
                     'Invalid number value for "%s": %r -> set to None',
-                    self._attr_name,
+                    self._label,
                     value,
                 )
                 return None
@@ -179,7 +178,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
         except TypeError, ValueError:
             _LOGGER.warning(
                 'Invalid numeric number value for "%s": %r -> set to None',
-                self._attr_name,
+                self._label,
                 value,
             )
             return None
@@ -207,7 +206,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
 
         _LOGGER.debug(
             'Init number: %s: "%s" [%s]',
-            self._attr_name,
+            self._label,
             self._attr_native_value,
             self._attr_native_unit_of_measurement,
         )
@@ -251,7 +250,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
 
         _LOGGER.debug(
             'Update number: %s: "%s" [%s]',
-            self._attr_name,
+            self._label,
             self._attr_native_value,
             self._attr_native_unit_of_measurement,
         )

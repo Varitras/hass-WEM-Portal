@@ -128,8 +128,8 @@
   {
     "label": "net: the IndexError guard must be frozen",
     "path": "custom_components/wemportal/mapper.py",
-    "old": "            scraped_part = scraped_entity_id.split(\"-\")[1]",
-    "new": "            scraped_part = scraped_entity_id.split(\"-\")[-1]",
+    "old": "            scraped_part = scraped_entity_id.split(\"-\", 1)[1]",
+    "new": "            scraped_part = scraped_entity_id.split(\"-\", 1)[-1]",
     "tests": "extra_mapper_output_is_unchanged"
   },
   {
@@ -168,17 +168,17 @@
     "tests": "statistics_output_is_unchanged"
   },
   {
-    "label": "stats: the fallback name map must be frozen",
+    "label": "stats: an unnamed group keeps its number",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            group_name = fallback_names.get(group_id, f\"Energy {group_id}\")",
-    "new": "            group_name = f\"Energy {group_id}\"",
+    "old": "            return f\"{energy} {group_id}\"\n",
+    "new": "            return energy\n",
     "tests": "statistics_output_is_unchanged"
   },
   {
     "label": "stats: the Energy suffix rule must be frozen",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "            if \"energy\" not in translated_group.lower():",
-    "new": "            if False:",
+    "old": "        if energy.lower() in translated_group.lower():\n            return translated_group\n",
+    "new": "        if True:\n            return translated_group\n",
     "tests": "statistics_output_is_unchanged"
   },
   {
@@ -205,8 +205,8 @@
   {
     "label": "poll: an outage must not be counted against individual parameters",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                return",
-    "new": "                _LOGGER.warning(\"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                results = {}",
+    "old": "                _LOGGER.log(level, \"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                return",
+    "new": "                _LOGGER.log(level, \"Expert auto-poll read failed: %s\", exc)\n                self._register_batch_failure()\n                results = {}",
     "tests": "failed_read_does_not_count"
   },
   {
@@ -233,8 +233,8 @@
   {
     "label": "poll: a failed cycle must still arm the next one",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "            self.apply_read(results)\n        finally:\n            # Always reschedule the next run (with fresh jitter), even if this\n            # cycle failed - a transient error must not stop future polls.\n            self._schedule_next()",
-    "new": "            self.apply_read(results)\n            self._schedule_next()\n        finally:\n            pass",
+    "old": "            self.apply_read(results, asked=entityvalues)\n        finally:\n            # Always reschedule the next run (with fresh jitter), even if this\n            # cycle failed - a transient error must not stop future polls.\n            self._schedule_next()",
+    "new": "            self.apply_read(results, asked=entityvalues)\n            self._schedule_next()\n        finally:\n            pass",
     "tests": "failed_poll_still_arms"
   },
   {
@@ -379,13 +379,6 @@
     "tests": "missing_job_id"
   },
   {
-    "label": "recovery: tearing down a connection in use must be noticed",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        if not self._api_lock.acquire(timeout=API_LOCK_TIMEOUT_SECONDS):\n            # Best-effort by design.",
-    "new": "        if False:\n            # Best-effort by design.",
-    "tests": "recovery_leaves_a_busy_connection_alone"
-  },
-  {
     "label": "recovery: the lock must be given back afterwards",
     "path": "custom_components/wemportal/transport.py",
     "old": "        try:\n            self._reset_transport_locked()\n        finally:\n            self._api_lock.release()",
@@ -409,7 +402,7 @@
   {
     "label": "unload gate: the expert entity must ask too",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        raise_if_not_writable(\n            self._config_entry, self._attr_name or str(self._attr_unique_id)\n        )",
+    "old": "        raise_if_not_writable(self._config_entry, self._shown_name())",
     "new": "        pass",
     "tests": "expert_entity_does_not_start_a_write_while_unloading"
   },
@@ -689,15 +682,15 @@
   {
     "label": "expert tally: blaming a failed batch on each id must be noticed",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "        whole_batch_failed = len(results) >= 2 and len(failed) == len(results)",
-    "new": "        whole_batch_failed = False",
+    "old": "        whole_batch_failed = (\n            bool(results) and len(known) >= 2 and len(failed) == len(results)\n        )\n",
+    "new": "        whole_batch_failed = False\n",
     "tests": "one_bad_batch_is_not_blamed_on_every_configured_id"
   },
   {
     "label": "expert tally: silencing a single configured id must be noticed",
     "path": "custom_components/wemportal/expert_controller.py",
-    "old": "        whole_batch_failed = len(results) >= 2 and len(failed) == len(results)",
-    "new": "        whole_batch_failed = len(failed) == len(results)",
+    "old": "        whole_batch_failed = (\n            bool(results) and len(known) >= 2 and len(failed) == len(results)\n        )\n",
+    "new": "        whole_batch_failed = bool(results) and len(failed) == len(results)\n",
     "tests": "a_single_configured_id_is_still_reported"
   },
   {
@@ -744,7 +737,7 @@
   },
   {
     "label": "discovery: a disabled device asked for its parameter definitions",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not self._device_is_enabled(device_id, enabled_devices):\n            return False\n",
     "new": "        if False:\n            return False\n",
     "tests": "a_disabled_device_is_not_asked_for_its_parameter_definitions"
@@ -808,15 +801,15 @@
   {
     "label": "auth: a refused re-login lost inside the schedule read",
     "path": "custom_components/wemportal/schedule.py",
-    "old": "        except AuthError:\n            # A refused login is not one programme failing",
-    "new": "        except ():\n            # A refused login is not one programme failing",
+    "old": "        except AuthError, ForbiddenError:\n            # A refused login or network",
+    "new": "        except ForbiddenError:\n            # A refused login or network",
     "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
   },
   {
     "label": "auth: a refused re-login lost around the schedule loop",
     "path": "custom_components/wemportal/schedule.py",
-    "old": "        except AuthError:\n            # The outer half of the same rule",
-    "new": "        except ():\n            # The outer half of the same rule",
+    "old": "        except AuthError, ForbiddenError:\n            # The outer half",
+    "new": "        except ForbiddenError:\n            # The outer half",
     "tests": "a_refused_relogin_is_not_swallowed_by_the_schedule_fetch"
   },
   {
@@ -878,7 +871,7 @@
   {
     "label": "entities: a control must come back after its platform flickers",
     "path": "custom_components/wemportal/entity.py",
-    "old": "                known.discard((device_id, key))\n                continue",
+    "old": "                known.pop((device_id, key), None)\n                continue",
     "new": "                pass\n                continue",
     "tests": "a_platform_that_flickers_gets_its_control_entity_back"
   },
@@ -962,15 +955,15 @@
   {
     "label": "merge: the memo keeping a key whose entity a merge took down must be noticed",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        known.difference_update(_keys_a_merge_retired(coordinator))",
-    "new": "        pass",
+    "old": "        retired = set(_keys_a_merge_retired(coordinator))\n",
+    "new": "        retired = set()\n",
     "tests": "an_api_sensor_comes_back_when_the_merge_that_retired_it_ends"
   },
   {
     "label": "migration: registering the listener only after a first pass that may raise must be noticed",
     "path": "custom_components/wemportal/migration.py",
-    "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )\n    change = _migrate_the_readings_not_seen_yet()",
-    "new": "    change = _migrate_the_readings_not_seen_yet()\n    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )",
+    "old": "    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )\n    # No refresh after it:",
+    "new": "    _migrate_the_readings_not_seen_yet()\n    config_entry.async_on_unload(\n        coordinator.async_add_listener(_migrate_the_readings_not_seen_yet)\n    )\n    # No refresh after it:",
     "tests": "the_migration_keeps_listening_after_a_failed_first_pass"
   },
   {
@@ -1010,7 +1003,7 @@
   },
   {
     "label": "discovery: a refused network walked into module after module",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "                short_device_id(device_id),\n            )\n            raise exc\n        if status_code == 400:",
     "new": "                short_device_id(device_id),\n            )\n            return\n        if status_code == 400:",
     "tests": "a_refused_discovery_stops_at_the_first_module"
@@ -1025,8 +1018,8 @@
   {
     "label": "stores: a cycle outliving its entry writing them back",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "        return self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS",
-    "new": "        return True",
+    "old": "            return data is self._published_in and not data.unloading",
+    "new": "            return True",
     "tests": "a_poll_that_outlives_the_entry_does_not_rebuild_its_stores"
   },
   {
@@ -1150,35 +1143,35 @@
   },
   {
     "label": "rediscovery: caching the parameter list forever must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:",
     "new": "        if True:",
     "tests": "stale_parameter_list_is_re_read or list_with_no_timestamp_is_re_read_once"
   },
   {
     "label": "rediscovery: re-reading a list that is still fresh must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if age < PARAMETER_REDISCOVERY_INTERVAL_SECONDS:",
     "new": "        if False:",
     "tests": "fresh_parameter_list_is_not_re_read"
   },
   {
     "label": "rediscovery: a failed re-read must not drop what it had",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if values.get(\"parameters\"):",
     "new": "        if False:",
     "tests": "failed_re_read_keeps_the_parameters_it_had"
   },
   {
     "label": "rediscovery: retrying a refused module at once must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "                len(values[\"parameters\"]),\n                PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,\n            )\n            values[\"parameters_fetched_at\"] = time.time() - max(",
     "new": "                len(values[\"parameters\"]),\n                PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,\n            )\n            values[\"parameters_fetched_at\"] = 0 * max(",
     "tests": "failed_re_read_is_not_retried_on_the_very_next_cycle"
   },
   {
     "label": "rediscovery: forgetting the timestamp across a device refresh must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "                module_entry[\"parameters_fetched_at\"] = cached_module.get(\n                    \"parameters_fetched_at\", 0\n                )",
     "new": "                pass",
     "tests": "get_devices_carries_the_parameter_timestamp_too"
@@ -1227,21 +1220,21 @@
   },
   {
     "label": "rediscovery: asking an empty module again every cycle must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if \"parameters\" not in values:\n            return True",
     "new": "        if \"parameters\" not in values or not values[\"parameters\"]:\n            return True",
     "tests": "module_described_as_empty_is_kept_and_not_asked_again"
   },
   {
     "label": "startup: re-reading during the first refresh must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not (missing or (stale and self._first_cycle_done)):\n            return",
     "new": "        if not (missing or stale):\n            return",
     "tests": "stale_definitions_wait_for_the_second_cycle"
   },
   {
     "label": "startup: never re-reading at all must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not (missing or (stale and self._first_cycle_done)):",
     "new": "        if not missing:",
     "tests": "stale_definitions_are_read_on_a_later_cycle"
@@ -1403,8 +1396,8 @@
   {
     "label": "holiday: leaving the end out of the coordinator must be noticed",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "        for data_key in (begin.data_key, end.data_key):\n",
-    "new": "        for data_key in (begin.data_key,):\n",
+    "old": "    written = [device_rows.get(key) for key in (begin.data_key, end.data_key)]\n",
+    "new": "    written = [device_rows.get(key) for key in (begin.data_key,)]\n",
     "tests": "read_back_that_fails_leaves_neither_date_asserted"
   },
   {
@@ -1605,14 +1598,14 @@
   },
   {
     "label": "rediscovery: deleting a module the portal rejects must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        values[\"parameters\"] = {}",
     "new": "        if unsupported:\n            self.modules[device_id] = {\n                k: v for k, v in self.modules[device_id].items() if v is not values\n            }\n            return\n        values[\"parameters\"] = {}",
     "tests": "a_module_the_portal_rejects_is_kept_and_asked_again"
   },
   {
     "label": "rediscovery: retrying a rejected module at once must be noticed",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() - max(",
     "new": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = 0 - max(",
     "tests": "a_rejected_module_is_not_asked_again_on_the_next_cycle"
@@ -1773,7 +1766,7 @@
   },
   {
     "label": "discovery: an unreadable answer skipped without being booked",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            self._note_undescribed_module(\n                device_id,\n                values,\n                \"its description could not be read\",\n                unsupported=True,\n            )",
     "new": "            pass",
     "tests": "an_unreadable_description_is_not_asked_again_every_cycle or an_answer_that_is_not_json_still_books_the_module"
@@ -1788,29 +1781,29 @@
   {
     "label": "login: the web login sends before asking the cooldown",
     "path": "custom_components/wemportal/transport.py",
-    "old": "        self.check_cooldown()\n        session = requests.Session()",
-    "new": "        session = requests.Session()",
+    "old": "        self.check_cooldown()\n        # Closed however",
+    "new": "        # Closed however",
     "tests": "a_login_is_not_attempted_during_a_cooldown"
   },
   {
     "label": "login: a refused login PAGE reported as a network problem",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            if initial_response is not None and initial_response.status_code == 403:\n                log_refusal(redact_url(login_url), initial_response)\n                raise self._refused_web_login(\n                    f\"the web login page {redact_url(login_url)}\",\n                    \"Access forbidden while loading the login page.\",\n                ) from exc\n            raise UnknownAuthError",
-    "new": "            raise UnknownAuthError",
+    "old": "                if initial_response is not None and initial_response.status_code == 403:\n                    log_refusal(redact_url(login_url), initial_response)\n                    raise self._refused_web_login(\n                        f\"the web login page {redact_url(login_url)}\",\n                        \"Access forbidden while loading the login page.\",\n                    ) from exc\n                raise UnknownAuthError",
+    "new": "                raise UnknownAuthError",
     "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
   },
   {
     "label": "login: any answered page taken as a wrong password",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            if WEB_LOGIN_FORM_MARKER in response.text:\n                raise AuthError",
-    "new": "            if True:\n                raise AuthError",
+    "old": "                if WEB_LOGIN_FORM_MARKER in response.text:\n                    raise AuthError",
+    "new": "                if True:\n                    raise AuthError",
     "tests": "a_page_that_is_neither_login_nor_session_is_not_a_wrong_password"
   },
   {
     "label": "login: maintenance checked only before the credentials go out",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            notice = maintenance_blocking(response.text)\n            if notice:\n                raise PortalMaintenanceError(notice)\n            if WEB_LOGIN_FORM_MARKER in response.text:",
-    "new": "            if WEB_LOGIN_FORM_MARKER in response.text:",
+    "old": "                notice = maintenance_blocking(response.text)\n                if notice:\n                    raise PortalMaintenanceError(notice)\n                if WEB_LOGIN_FORM_MARKER in response.text:",
+    "new": "                if WEB_LOGIN_FORM_MARKER in response.text:",
     "tests": "maintenance_starting_between_the_two_requests_is_recognised"
   },
   {
@@ -1872,15 +1865,15 @@
   {
     "label": "select: a missing reading reported as a value outside the options",
     "path": "custom_components/wemportal/select.py",
-    "old": "        if value is None:\n            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._attr_name)\n            return None\n\n        if value in self._options_names:",
+    "old": "        if value is None:\n            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._label)\n            return None\n\n        if value in self._options_names:",
     "new": "        if value in self._options_names:",
     "tests": "a_missing_reading_is_not_reported_as_a_fault"
   },
   {
     "label": "number: a missing reading reported as an invalid value",
     "path": "custom_components/wemportal/number.py",
-    "old": "            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._attr_name)",
-    "new": "            _LOGGER.warning('No value for \"%s\" this cycle -> unknown', self._attr_name)",
+    "old": "            _LOGGER.debug('No value for \"%s\" this cycle -> unknown', self._label)",
+    "new": "            _LOGGER.warning('No value for \"%s\" this cycle -> unknown', self._label)",
     "tests": "a_missing_reading_is_not_reported_as_a_fault"
   },
   {
@@ -1907,7 +1900,7 @@
   {
     "label": "date: the write is not checked against what was stored",
     "path": "custom_components/wemportal/date.py",
-    "old": "        failure = await self.hass.async_add_executor_job(\n            self.coordinator.api.reread_device_values,\n            self._device_id,\n            (self._module_index, self._module_type),\n            (self._parameter_id,),\n        )",
+    "old": "        failure = await self.hass.async_add_executor_job(\n            self.coordinator.api.reread_device_values,\n            self._device_id,\n            self._module_address,\n            (self._parameter_id,),\n        )",
     "new": "        failure = None",
     "tests": "a_day_the_portal_did_not_keep_is_not_displayed"
   },
@@ -2019,8 +2012,8 @@
   {
     "label": "freshness: forgetting a reading takes its unit with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None",
-    "new": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):\n                continue\n            if isinstance(row, Reading) and row.value is not None:\n                row.value = None; row.unit = None",
+    "old": "            row.value = None\n            forgotten.append(key)\n",
+    "new": "            row.value = None\n            row.unit = None\n            forgotten.append(key)\n",
     "tests": "a_device_that_stops_answering_stops_showing_its_last_values"
   },
   {
@@ -2109,14 +2102,14 @@
   },
   {
     "label": "rediscovery: a refused first description left waiting a full day",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() - max(",
     "new": "            values[\"description_refused\"] = True\n            values[\"parameters_fetched_at\"] = time.time() + 0 * max(",
     "tests": "a_refused_description_is_retried_within_the_hour_not_the_day"
   },
   {
     "label": "rediscovery: an empty answer retried as often as a refusal",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            values.pop(\"description_refused\", None)\n            values[\"parameters_fetched_at\"] = time.time()",
     "new": "            values.pop(\"description_refused\", None)\n            values[\"parameters_fetched_at\"] = time.time() - PARAMETER_REDISCOVERY_INTERVAL_SECONDS",
     "tests": "a_module_that_says_it_is_empty_keeps_the_daily_round"
@@ -2130,7 +2123,7 @@
   },
   {
     "label": "rediscovery: a refusal that survives the description fixing it",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        modules[device_id][key].pop(\"description_refused\", None)",
     "new": "        pass",
     "tests": "a_description_that_arrives_clears_the_refusal"
@@ -2208,8 +2201,8 @@
   {
     "label": "deadline: outliving the cycle it belongs to",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        finally:\n            self._deadline = None\n            self._api_lock.release()",
-    "new": "        finally:\n            self._api_lock.release()",
+    "old": "        finally:\n            self._deadline = None\n            self._relogin_failure = None\n",
+    "new": "        finally:\n            self._relogin_failure = None\n",
     "tests": "the_deadline_is_cleared_after_a_failing_poll"
   },
   {
@@ -2390,15 +2383,15 @@
   {
     "label": "expert: an unexpected failure swallowed instead of wrapped",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._attr_name, exc)\n            raise HomeAssistantError(",
-    "new": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._attr_name, exc)\n            return\n            raise HomeAssistantError(",
+    "old": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._label, exc)\n            raise HomeAssistantError(",
+    "new": "            _LOGGER.error(\"Expert write failed for %s: %s\", self._label, exc)\n            return\n            raise HomeAssistantError(",
     "tests": "a_write_that_fails_with_a_plain_error_still_reaches_the_caller"
   },
   {
     "label": "expert: a teardown reported to the caller as a successful write",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._attr_name, exc)\n            raise HomeAssistantError(\n",
-    "new": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._attr_name, exc)\n            return\n            raise HomeAssistantError(\n",
+    "old": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._label, exc)\n            raise HomeAssistantError(\n",
+    "new": "            _LOGGER.debug(\"Expert write for %s stopped: %s\", self._label, exc)\n            return\n            raise HomeAssistantError(\n",
     "tests": "a_write_stopped_by_a_teardown_reaches_the_caller_too"
   },
   {
@@ -2432,14 +2425,14 @@
   {
     "label": "freshness: the rows explaining the silence blanked with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if key in status_rows:\n                continue\n            if self._kept_fresh_by_the_scrape(key):",
-    "new": "            if self._kept_fresh_by_the_scrape(key):",
+    "old": "            if key in status_rows:\n                continue\n",
+    "new": "",
     "tests": "the_rows_that_explain_the_silence_are_not_blanked_with_it"
   },
   {
     "label": "freshness: a device busy forever never ageing its readings",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                self._forget_stale_device_values(device_id)\n                continue",
+    "old": "                self._forget_stale_device_values(device_id, schedule_runs=False)\n                continue",
     "new": "                continue",
     "tests": "a_device_that_is_busy_forever_still_stops_showing_old_values"
   },
@@ -2481,8 +2474,8 @@
   {
     "label": "freshness: a fresh scrape cleared because the API half went quiet",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if self._kept_fresh_by_the_scrape(key):\n                continue",
-    "new": "            if False:\n                continue",
+    "old": "            if self._owned_by_another_fetch(key, row, schedule_runs):\n                continue\n            row.value = None",
+    "new": "            row.value = None",
     "tests": "a_fresh_scrape_is_not_cleared_with_a_silent_api_device"
   },
   {
@@ -2824,8 +2817,8 @@
   {
     "label": "expert: a word that has to be spelled exactly as the portal does",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            if offered.casefold() == word.casefold():",
-    "new": "            if offered == word:",
+    "old": "        if offered.casefold() == word.casefold()\n",
+    "new": "        if offered == word\n",
     "tests": "a_special_value_can_be_written_by_the_word_the_portal_shows"
   },
   {
@@ -2859,8 +2852,8 @@
   {
     "label": "service: a typed comma refused by the write again",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "        value_number = parse_portal_number(value)\n        if value_number is None:",
-    "new": "        try:\n            value_number = float(value)\n        except TypeError, ValueError:\n            value_number = None\n        if value_number is None:",
+    "old": "        value_number = parse_portal_number(value)\n",
+    "new": "        try:\n            value_number = float(value)\n        except TypeError, ValueError:\n            value_number = None\n",
     "tests": "a_german_decimal_reaches_the_write_as_the_number_it_means"
   },
   {
@@ -2879,14 +2872,14 @@
   },
   {
     "label": "boundary: a device list outside the contract exploding raw again",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not isinstance(device_rows, list):",
     "new": "        if device_rows is None and False:",
     "tests": "a_device_list_outside_the_contract_is_a_classified_failure"
   },
   {
     "label": "boundary: a malformed device row taking the account with it",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            except (KeyError, TypeError) as exc:",
     "new": "            except KeyError as exc:",
     "tests": "a_device_row_outside_the_contract_is_skipped_not_fatal"
@@ -2936,15 +2929,15 @@
   {
     "label": "freshness: a programme exempted whether or not anything refreshes it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if is_programme and schedule_runs and schedule_fetch_still_feeds(row):",
-    "new": "            if is_programme:",
+    "old": "        return is_programme and schedule_runs and schedule_fetch_still_feeds(row)\n",
+    "new": "        return is_programme\n",
     "tests": "a_weekly_programme_nobody_refreshes_any_more_ages_with_its_module"
   },
   {
     "label": "freshness: the programme exemption dropped from the module aging",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            is_programme = row.data_type == WemDataType.PROGRAM or looks_like_schedule(\n                row.value\n            )\n            if is_programme and schedule_runs and schedule_fetch_still_feeds(row):\n                continue",
-    "new": "            pass",
+    "old": "            if self._owned_by_another_fetch(row_name, row, schedule_runs):\n                continue\n            yield row_name, row\n",
+    "new": "            if self._kept_fresh_by_the_scrape(row_name):\n                continue\n            yield row_name, row\n",
     "tests": "a_weekly_programme_the_schedule_fetch_still_feeds_survives_the_aging"
   },
   {
@@ -3013,8 +3006,8 @@
   {
     "label": "storage: a save starting after the teardown began",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "            return data.coordinator is self and not data.unloading",
-    "new": "            return data.coordinator is self",
+    "old": "            return data is self._published_in and not data.unloading",
+    "new": "            return data is self._published_in",
     "tests": "poll_finishing_during_the_unload_does_not_write"
   },
   {
@@ -3097,8 +3090,8 @@
   {
     "label": "freshness: ageing a row the scrape still feeds must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            if self._kept_fresh_by_the_scrape(row_name):\n                continue",
-    "new": "            if False:\n                continue",
+    "old": "        if self._kept_fresh_by_the_scrape(row_name):\n            return True\n",
+    "new": "        if False:\n            return True\n",
     "tests": "row_the_scrape_still_feeds_is_not_aged"
   },
   {
@@ -3229,7 +3222,7 @@
   },
   {
     "label": "contract: a device list with no usable row must be reported",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not new_data:",
     "new": "        if False:",
     "tests": "device_list_where_no_row_is_usable_is_reported_not_adopted"
@@ -3292,7 +3285,7 @@
   },
   {
     "label": "device list: a refresh must keep the readings of a device it still names",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            **previously_known_readings.get(device_id_str, {}),\n",
     "new": "",
     "tests": "device_list_refresh_keeps_the_readings_of_a_device_it_still_names"
@@ -3439,7 +3432,7 @@
   },
   {
     "label": "logs: dumping the account's readings from the parameter read",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "                \"Fetching api parameters data for device %s\", short_device_id(device_id)\n            )\n",
     "new": "                \"Fetching api parameters data for device %s\", short_device_id(device_id)\n            )\n            _LOGGER.debug(self.data)\n",
     "tests": "no_log_call_hands_over_a_whole_store or parameter_read_does_not_log_the_whole_account"
@@ -3599,20 +3592,6 @@
     "tests": "write_publishes_every_value_it_sent"
   },
   {
-    "label": "expert lock: released by the awaiter instead of the worker again",
-    "path": "custom_components/wemportal/expert_controller.py",
-    "old": "    if lock is not None and not lock.acquire(blocking=False):",
-    "new": "    if False:",
-    "tests": "expert_lock_belongs_to_the_worker_not_to_its_awaiter"
-  },
-  {
-    "label": "expert service: lock released by the awaiter instead of the worker",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "            if lock is not None and not lock.acquire(blocking=False):",
-    "new": "            if False:",
-    "tests": "a_cancelled_service_write_keeps_the_lock_until_the_worker_ends"
-  },
-  {
     "label": "storage: the save no longer holding the lock the unload waits on",
     "path": "custom_components/wemportal/coordinator.py",
     "old": "        async with self._store_writes:\n            await store.async_save(data)",
@@ -3769,8 +3748,8 @@
   {
     "label": "unit: a word in the cell taking the unit with it again",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit",
-    "new": "        self._attr_native_unit_of_measurement = unit",
+    "old": "        self._attr_native_unit_of_measurement = kept_unit(\n            unit, self._attr_native_unit_of_measurement\n        )\n",
+    "new": "        self._attr_native_unit_of_measurement = unit\n",
     "tests": "a_cell_that_reads_off_keeps_the_unit_its_number_had"
   },
   {
@@ -3929,8 +3908,8 @@
   },
   {
     "label": "reconfigure: the entry keeping its old identity after a move",
-    "old": "            unique_id=account,\n",
-    "new": "",
+    "old": "            unique_id=account if moves_to_another_login else entry.unique_id,\n",
+    "new": "            unique_id=entry.unique_id,\n",
     "tests": "reconfigure_can_move_the_entry_to_a_new_login",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -4377,7 +4356,7 @@
   },
   {
     "label": "heavy turns: the parameter re-read does not take the turn",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n            return\n",
     "new": "",
     "tests": "heavy_fetches_that_fall_due_together_take_turns"
@@ -4405,7 +4384,7 @@
   },
   {
     "label": "heavy turns: missing definitions wait their turn",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "tests": "missing_parameter_definitions_are_never_deferred"
@@ -4426,7 +4405,7 @@
   },
   {
     "label": "discovery: an offline device makes the re-read due again",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        return self.data.get(device_id, {}).get(\"ConnectionStatus\") == 0\n",
     "new": "        return True\n",
     "tests": "unreachable_device_does_not_make_the_parameter_read_due"
@@ -4440,7 +4419,7 @@
   },
   {
     "label": "heavy turns: missing definitions queue up for a turn they do not need",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        if not missing and not self.heavy_fetch_turns.claim(\"parameters\"):\n",
     "new": "        if not self.heavy_fetch_turns.claim(\"parameters\") and not missing:\n",
     "tests": "missing_definitions_do_not_join_the_queue"
@@ -4574,8 +4553,8 @@
   {
     "label": "web login grace: a working setup web login does not end the streak",
     "path": "custom_components/wemportal/transport.py",
-    "old": "                _LOGGER.debug(\"WEB login successful.\")\n                self._account_state.refused_web_logins = 0\n",
-    "new": "                _LOGGER.debug(\"WEB login successful.\")\n",
+    "old": "                    _LOGGER.debug(\"WEB login successful.\")\n                    self._account_state.refused_web_logins = 0\n",
+    "new": "                    _LOGGER.debug(\"WEB login successful.\")\n",
     "tests": "setup_web_login_that_worked_starts_the_count_again"
   },
   {
@@ -4790,23 +4769,23 @@
   },
   {
     "label": "discovery: a failed refresh of a working list fails the cycle again",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
-    "new": "        if True:\n            raise exc\n",
+    "path": "custom_components/wemportal/discovery.py",
+    "old": "        if refused_for_the_account:\n            raise exc\n        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
+    "new": "        raise exc\n        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
     "tests": "re_read_the_portal_fails_keeps_the_cycle_and_the_list"
   },
   {
     "label": "discovery: a refused account shrugged off as one module",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
-    "new": "        if \"parameters\" not in values:\n            raise exc\n",
+    "path": "custom_components/wemportal/discovery.py",
+    "old": "        if refused_for_the_account:\n            raise exc\n",
+    "new": "        if False:\n            raise exc\n",
     "tests": "re_read_refused_for_the_account_still_stops_the_cycle"
   },
   {
     "label": "discovery: a list still missing shrugged off",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
-    "new": "        if refused_for_the_account:\n            raise exc\n",
+    "path": "custom_components/wemportal/discovery.py",
+    "old": "        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
+    "new": "        if \"parameters\" not in values:\n            return\n",
     "tests": "missing_list_the_portal_fails_still_fails_the_cycle"
   },
   {
@@ -4839,21 +4818,21 @@
   },
   {
     "label": "discovery: an empty list's failed refresh fails the cycle again",
-    "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        if refused_for_the_account or \"parameters\" not in values:\n            raise exc\n",
-    "new": "        if refused_for_the_account or not values.get(\"parameters\"):\n            raise exc\n",
+    "path": "custom_components/wemportal/discovery.py",
+    "old": "        if \"parameters\" not in values:\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
+    "new": "        if not values.get(\"parameters\"):\n            self._wait_for_a_first_description(device_id, values, exc)\n            return\n",
     "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
   },
   {
     "label": "discovery: a dead session asked module after module",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        session_gone = status_code == 401 or isinstance(\n",
     "new": "        session_gone = False and isinstance(\n",
     "tests": "session_that_ran_out_stops_the_re_read_at_the_first_module"
   },
   {
     "label": "discovery: a failed refresh rewrites what the portal said",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "            unsupported=values.get(\"description_refused\", False),\n",
     "new": "            unsupported=True,\n",
     "tests": "re_read_of_an_empty_list_the_portal_fails_keeps_the_cycle"
@@ -4888,7 +4867,7 @@
   },
   {
     "label": "discovery: a dropped login read as a dead session",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        session_gone = status_code == 401 or isinstance(\n",
     "new": "        session_gone = not self.valid_login or isinstance(\n",
     "tests": "re_read_the_real_transport_fails_keeps_the_cycle"
@@ -4916,7 +4895,7 @@
   },
   {
     "label": "discovery: a session redirected to the login read as one module's failure",
-    "path": "custom_components/wemportal/wemportalapi.py",
+    "path": "custom_components/wemportal/discovery.py",
     "old": "        session_gone = status_code == 401 or isinstance(\n            exc.__cause__, ExpiredSessionError\n        )\n",
     "new": "        session_gone = status_code == 401\n",
     "tests": "session_redirected_to_the_login_stops_the_re_read"
@@ -4945,8 +4924,8 @@
   {
     "label": "sensor: a number asked of the stored classes only, not Home Assistant's",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "            or self.native_unit_of_measurement is not None\n            or self.state_class is not None\n            or self.device_class is not None\n",
-    "new": "            or self._attr_state_class is not None\n            or self._attr_device_class is not None\n",
+    "old": "            or self.native_unit_of_measurement is not None\n            or self.state_class is not None\n            or self.device_class not in (None, *NON_NUMERIC_DEVICE_CLASSES)\n",
+    "new": "            or self._attr_state_class is not None\n            or self._attr_device_class not in (None, *NON_NUMERIC_DEVICE_CLASSES)\n",
     "tests": "word_after_a_number_on_a_sensor_without_a_unit_is_unknown"
   },
   {
@@ -5148,7 +5127,7 @@
   {
     "label": "expert entity write: an unloading or reloaded entry not asked",
     "path": "custom_components/wemportal/expert_number.py",
-    "old": "        reason = owner.why_not_current(self._config_entry)\n        if reason is not None:\n            raise ExpertOperationAborted(f\"{self._attr_name}: {reason}\")\n",
+    "old": "        reason = owner.why_not_current(self._config_entry)\n        if reason is not None:\n            raise ExpertOperationAborted(f\"{self._label}: {reason}\")\n",
     "new": "",
     "tests": "goes_away_during_the_login"
   },
@@ -5202,13 +5181,6 @@
     "tests": "read_back_is_asked_about_both_written_dates"
   },
   {
-    "label": "setup: the id migration outside the first refresh's cleanup again",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "    try:\n        await coordinator.async_config_entry_first_refresh()\n        _LOGGER.info(\"Migrating entity names for wemportal\")\n        try:\n            await migrate_unique_ids(hass, entry, coordinator)\n        except Exception as exc:  # noqa: BLE001\n            # Migration is a best-effort cleanup step (renames old unique_ids\n            # to the new format). A failure here should never prevent the\n            # integration from loading - worst case, some entities keep their\n            # old unique_id until the next successful migration attempt.\n            _LOGGER.warning(\n                \"Unique_id migration failed, continuing without it: %s\", exc\n            )\n",
-    "new": "    try:\n        await coordinator.async_config_entry_first_refresh()\n    except BaseException:\n        await hass.async_add_executor_job(api.close_transport)\n        raise\n    try:\n        await migrate_unique_ids(hass, entry, coordinator)\n    except Exception as exc:  # noqa: BLE001\n        _LOGGER.warning(\"migration failed: %s\", exc)\n    try:\n        pass\n",
-    "tests": "cancelled_during_the_id_migration_closes_its_sessions"
-  },
-  {
     "label": "harness: a name the type checker alone imports counted as defined again",
     "path": ".github/scripts/mutate.py",
     "old": "        if ast.unparse(node.test) not in (\"TYPE_CHECKING\", \"typing.TYPE_CHECKING\"):\n",
@@ -5246,8 +5218,8 @@
   {
     "label": "holiday read-back: the rows from before the write blanked again",
     "path": "custom_components/wemportal/holiday.py",
-    "old": "            row = device_rows.get(data_key)\n",
-    "new": "            row = begin.row if data_key == begin.data_key else end.row\n",
+    "old": "    written = [device_rows.get(key) for key in (begin.data_key, end.data_key)]\n",
+    "new": "    written = [begin.row, end.row]\n",
     "tests": "read_back_that_carried_one_date_leaves_neither_shown"
   },
   {
@@ -5323,8 +5295,8 @@
   {
     "label": "sensor: the value decided before the unit it comes with is taken",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
-    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        if unit not in (None, \"\"):\n            self._attr_native_unit_of_measurement = unit\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n",
+    "old": "        self._attr_native_unit_of_measurement = kept_unit(\n            unit, self._attr_native_unit_of_measurement\n        )\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n        self._attr_native_value = self._validated_native_value(value, unit)\n",
+    "new": "        self._attr_native_value = self._validated_native_value(value, unit)\n        self._attr_native_unit_of_measurement = kept_unit(\n            unit, self._attr_native_unit_of_measurement\n        )\n        # A new day of a statistics group is a new cycle, whatever the\n        # size of its value - see statistics._start_of_the_day.\n        self._attr_last_reset = row.last_reset\n",
     "tests": "unit_first_arrives_with_a_dash_is_not_reset"
   },
   {
@@ -5428,8 +5400,8 @@
   {
     "label": "entity: a missing reading names its device in full again",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    return f\"{short_device_id(device_id)}:{key}\"\n",
-    "new": "    return f\"{device_id}:{key}\"\n",
+    "old": "    short = short_device_id(device_id)\n",
+    "new": "    short = str(device_id)\n",
     "tests": "missing_reading_names_its_device_only_by_the_tail"
   },
   {
@@ -5578,5 +5550,810 @@
     "old": "    if not previous_keys or not set(keys) - previous_keys:\n",
     "new": "    if not previous_keys:\n",
     "tests": "real_change_of_the_page_is_still_taken"
+  },
+  {
+    "label": "date: a day the portal did not keep reported as set",
+    "path": "custom_components/wemportal/date.py",
+    "old": "        if failure is None and self._attr_native_value != value:\n",
+    "new": "        if False:\n",
+    "tests": "portal_did_not_keep_is_not_displayed"
+  },
+  {
+    "label": "date: a read-back that failed reported as a day not kept",
+    "path": "custom_components/wemportal/date.py",
+    "old": "        if failure is None and self._attr_native_value != value:\n",
+    "new": "        if self._attr_native_value != value:\n",
+    "tests": "failed_read_back_does_not_fail_the_write"
+  },
+  {
+    "label": "holiday: a holiday the portal did not keep reported as set",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if failure is None and kept != [begin_day, end_day]:\n",
+    "new": "    if False:\n",
+    "tests": "service_publishes_what_the_portal_kept"
+  },
+  {
+    "label": "holiday: a read-back that failed reported as a holiday not kept",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if failure is None and kept != [begin_day, end_day]:\n",
+    "new": "    if kept != [begin_day, end_day]:\n",
+    "tests": "read_back_that_fails_leaves_neither_date_asserted"
+  },
+  {
+    "label": "api login: a refusal by Status left outside the classifier again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                self._raise_login_failure(response, None)\n",
+    "new": "                raise AuthError(f\"Login failed: Server returned {response_data}\")\n",
+    "tests": "refused_with_http_200_is_classified_like_any_refusal"
+  },
+  {
+    "label": "api login: an HTTP-200 refusal not read as one",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if response.status_code in (200, 400):\n",
+    "new": "        if response.status_code == 400:\n",
+    "tests": "refused_with_http_200_is_classified_like_any_refusal"
+  },
+  {
+    "label": "web login: the check leaves its session open again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        with closing(requests.Session()) as session:\n",
+    "new": "        for session in (requests.Session(),):\n",
+    "tests": "web_login_check_closes_its_session"
+  },
+  {
+    "label": "relogin: a failure kept past the poll it happened in",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self._relogin_failure = None\n            self._api_lock.release()",
+    "new": "            self._api_lock.release()",
+    "tests": "relogin_that_failed_is_not_repeated_by_every_later_request"
+  },
+  {
+    "label": "relogin: a failed re-login tried again by every later call site",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if self._relogin_failure is not None:\n            raise self._relogin_failure\n",
+    "new": "",
+    "tests": "relogin_that_failed_is_not_repeated_by_every_later_request"
+  },
+  {
+    "label": "relogin: a failure outside a poll kept with nothing to clear it",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            if self.remaining_budget() is not None:\n                self._relogin_failure = login_failure\n",
+    "new": "            self._relogin_failure = login_failure\n",
+    "tests": "relogin_that_failed_outside_a_poll_does_not_block_the_next_request"
+  },
+  {
+    "label": "schedule: a refusal swallowed inside the programme read",
+    "path": "custom_components/wemportal/schedule.py",
+    "old": "        except AuthError, ForbiddenError:\n            # A refused login or network",
+    "new": "        except AuthError:\n            # A refused login or network",
+    "tests": "refusal_is_not_walked_into_by_every_remaining_programme"
+  },
+  {
+    "label": "schedule: a refusal swallowed around the programme loop",
+    "path": "custom_components/wemportal/schedule.py",
+    "old": "        except AuthError, ForbiddenError:\n            # The outer half",
+    "new": "        except AuthError:\n            # The outer half",
+    "tests": "refusal_is_not_walked_into_by_every_remaining_programme"
+  },
+  {
+    "label": "schedule: a failing programme warned on every retry again",
+    "path": "custom_components/wemportal/schedule.py",
+    "old": "                logging.WARNING if new else logging.DEBUG,\n",
+    "new": "                logging.WARNING,\n",
+    "tests": "programme_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "schedule: a programme that reads again not said",
+    "path": "custom_components/wemportal/schedule.py",
+    "old": "            if failure_is_over(self._reported_failures, reported):\n",
+    "new": "            if False:\n",
+    "tests": "programme_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "expert poll: a failing read warned on every poll again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "                    if failure_is_new(self._reported_failures, \"read\", str(exc))\n",
+    "new": "                    if True\n",
+    "tests": "read_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "expert poll: a read that works again not said",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            if failure_is_over(self._reported_failures, \"read\"):\n",
+    "new": "            if False:\n",
+    "tests": "read_that_keeps_failing_is_announced_once"
+  },
+  {
+    "label": "web repair: raised in web mode with its both-mode text",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if self.mode != \"both\":\n",
+    "new": "        if self.mode == \"api\":\n",
+    "tests": "web_report_is_for_both_mode_only"
+  },
+  {
+    "label": "sensor: a unitless number that started as a dash kept as text",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return new if new is not None else old\n",
+    "new": "    return old\n",
+    "tests": "unitless_number_that_started_as_a_dash_still_gets_a_state_class or best_unit_it_was_told"
+  },
+  {
+    "label": "sensor: a level named null shown as the word None",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        text = text.strip() if isinstance(text, str) else \"\"\n",
+    "new": "        text = str(text).strip()\n",
+    "tests": "level_the_portal_named_null_keeps_its_times_too"
+  },
+  {
+    "label": "select: a value outside the options shown as its neighbour",
+    "path": "custom_components/wemportal/select.py",
+    "old": "                if re.findall(r\"\\d+\", name) == digits\n",
+    "new": "                if True\n",
+    "tests": "not_shown_as_its_neighbour"
+  },
+  {
+    "label": "select: one of several close spellings picked",
+    "path": "custom_components/wemportal/select.py",
+    "old": "            if len(matches) == 1:\n                return matches[0]\n",
+    "new": "            if matches:\n                return matches[0]\n",
+    "tests": "not_shown_as_its_neighbour or close_to_two_options_is_not_guessed"
+  },
+  {
+    "label": "discovery: one new module the portal fails takes every device down again",
+    "path": "custom_components/wemportal/discovery.py",
+    "old": "        if not any(\n            \"parameters\" in module\n",
+    "new": "        if True or not any(\n            \"parameters\" in module\n",
+    "tests": "new_module_the_portal_fails_does_not_stop_the_described_ones"
+  },
+  {
+    "label": "device status: a null status read as the device being away",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                raise KeyError(\"ConnectionStatus\")\n",
+    "new": "                pass\n",
+    "tests": "without_a_status_is_a_failed_read"
+  },
+  {
+    "label": "web login: a login let through leaves the refusal streak standing",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        self._account_state.refused_web_logins = 0\n\n        # Wait a moment\n",
+    "new": "\n        # Wait a moment\n",
+    "tests": "login_that_went_through_ends_the_refusal_streak"
+  },
+  {
+    "label": "scrape backoff: the failure starts no step clock",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self.spider_wait_interval = self.spider_retry_count\n        self._backoff_stepped_at = time.monotonic()\n",
+    "new": "        self.spider_wait_interval = self.spider_retry_count\n",
+    "tests": "waits_web_intervals_not_api_ticks"
+  },
+  {
+    "label": "scrape backoff: counted in ticks again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if too_soon:\n            return\n",
+    "new": "",
+    "tests": "waits_web_intervals_not_api_ticks"
+  },
+  {
+    "label": "freshness: a statistics row aged by a value read that does not own it",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if is_statistics_row(device_id, key) and self._statistics_reads(device_id):\n                continue\n",
+    "new": "",
+    "tests": "gone_quiet_leaves_the_statistics_rows_alone"
+  },
+  {
+    "label": "freshness: a busy device's programme kept as if its fetch ran",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                self._forget_stale_device_values(device_id, schedule_runs=False)\n",
+    "new": "                self._forget_stale_device_values(device_id)\n",
+    "tests": "busy_device_ages_its_programme_too"
+  },
+  {
+    "label": "freshness: a fed programme blanked by the device pass",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if self._owned_by_another_fetch(key, row, schedule_runs):\n                continue\n            row.value = None",
+    "new": "            if self._kept_fresh_by_the_scrape(key):\n                continue\n            row.value = None",
+    "tests": "schedule_fetch_feeds_ages_only_where_it_does_not_run"
+  },
+  {
+    "label": "freshness: ageing replaces the row and loses its address",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            row.value = None\n            forgotten.append(key)\n",
+    "new": "            self.data[device_id][key] = Reading(unit=row.unit)\n            forgotten.append(key)\n",
+    "tests": "reading_that_ages_out_keeps_its_address"
+  },
+  {
+    "label": "merge: a label cut at its own hyphen again",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "            scraped_part = scraped_entity_id.split(\"-\", 1)[1]\n",
+    "new": "            scraped_part = scraped_entity_id.split(\"-\")[1]\n",
+    "tests": "hyphen_of_its_own"
+  },
+  {
+    "label": "unit: an answer without its unit replaces the real one",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    if old:\n        return old\n",
+    "new": "",
+    "tests": "best_unit_it_was_told"
+  },
+  {
+    "label": "mapper: api mode drops the empty unit again",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    final_unit = kept_unit(new_unit, old_unit)\n",
+    "new": "    final_unit = new_unit if new_unit not in (None, \"\") else old_unit\n",
+    "tests": "best_unit_it_was_told"
+  },
+  {
+    "label": "mapper: a reading under its own key never takes a later unit",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        if scraped_entity == key:\n            # Its own row",
+    "new": "        if False:\n            # Its own row",
+    "tests": "best_unit_it_was_told"
+  },
+  {
+    "label": "entity: the write not sent to the address its row has now",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        row = self._coordinator_row()\n        if row is None:\n            return None, None\n        return row.module_index, row.module_type\n",
+    "new": "        return None, None\n",
+    "tests": "module_its_row_now_has"
+  },
+  {
+    "label": "setup: a cancelled first refresh leaves its sessions open again",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    except BaseException:\n        # The api is not in hass.data yet",
+    "new": "    except Exception:\n        # The api is not in hass.data yet",
+    "tests": "cancelled_in_its_first_refresh_closes_its_sessions"
+  },
+  {
+    "label": "coordinator: a cycle after its unload raises the rate-limit issue again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if not self._owns_its_entry():\n            return\n        issue_id = f\"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}\"\n",
+    "new": "        issue_id = f\"{self.config_entry.entry_id}_{RATE_LIMIT_ISSUE}\"\n",
+    "tests": "outliving_its_unload_raises_no_repair_issue"
+  },
+  {
+    "label": "coordinator: a cycle after its unload raises the web-scrape issue again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if not self._owns_its_entry():\n            return\n        issue_id = f\"{self.config_entry.entry_id}_{WEB_SCRAPE_ISSUE}\"\n",
+    "new": "        issue_id = f\"{self.config_entry.entry_id}_{WEB_SCRAPE_ISSUE}\"\n",
+    "tests": "outliving_its_unload_raises_no_repair_issue"
+  },
+  {
+    "label": "coordinator: a cycle after its unload writes the auth streak back",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "                if not self._owns_its_entry():\n                    # A reauth started from here lands on the entry that\n",
+    "new": "                if False:\n                    # A reauth started from here lands on the entry that\n",
+    "tests": "outliving_its_unload_keeps_the_auth_streak_cleared"
+  },
+  {
+    "label": "migration: an online device adopts an id an unread one also claims",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "        if _a_device_has_not_answered_yet(everything):\n            due = {}\n",
+    "new": "",
+    "tests": "offline_at_the_upgrade_keeps_its_claim"
+  },
+  {
+    "label": "migration: status rows count as a device having answered",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "            and key not in status_rows\n",
+    "new": "",
+    "tests": "offline_at_the_upgrade_keeps_its_claim"
+  },
+  {
+    "label": "migration: a device not polled at all blocks the migration",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "        if not isinstance(rows.get(status_key), Reading):\n            continue\n",
+    "new": "",
+    "tests": "disabled_device_does_not_hold_the_migration_up"
+  },
+  {
+    "label": "migration: a statistics row counts as a device having answered",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "            and not is_statistics_row(device_id, key)\n",
+    "new": "",
+    "tests": "offline_at_the_upgrade_keeps_its_claim"
+  },
+  {
+    "label": "expert poll: lock released by the awaiter instead of the worker",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            try:\n                results = await self._hass.async_add_executor_job(\n                    read_expert_values,\n                    self._entry,\n                    current_api,\n                    entityvalues,\n                    self._raise_if_stopped,\n                    self.lock,\n                )\n",
+    "new": "            if not self.lock.acquire(blocking=False):\n                return\n            try:\n                try:\n                    results = await self._hass.async_add_executor_job(\n                        read_expert_values,\n                        self._entry,\n                        current_api,\n                        entityvalues,\n                        self._raise_if_stopped,\n                        None,\n                    )\n                finally:\n                    self.lock.release()\n",
+    "tests": "keeps_the_lock_until_the_worker_ends"
+  },
+  {
+    "label": "expert entity write: lock released by the awaiter instead of the worker",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "            lock = self._expert_lock()\n            if lock is not None and not lock.acquire(blocking=False):\n                raise HomeAssistantError(\n                    translation_domain=DOMAIN,\n                    translation_key=\"expert_operation_in_progress\",\n                )\n            try:\n                client = WemPortalExpertClient(\n                    self._config_entry.data.get(CONF_USERNAME),\n                    self._config_entry.data.get(CONF_PASSWORD),\n                    cooldown_check=self._cooldown_check(),\n                    cooldown_activate=self._cooldown_activate(),\n                    cookie_jar=self._cookie_jar(),\n                    abort_check=_raise_if_gone,\n                    **client_options,\n                )\n                return client.write_parameter(self._entityvalue, value)\n            finally:\n                if lock is not None:\n                    lock.release()\n\n        try:\n            state = await self.hass.async_add_executor_job(_do_write)\n",
+    "new": "            lock = None\n            if lock is not None and not lock.acquire(blocking=False):\n                raise HomeAssistantError(\n                    translation_domain=DOMAIN,\n                    translation_key=\"expert_operation_in_progress\",\n                )\n            try:\n                client = WemPortalExpertClient(\n                    self._config_entry.data.get(CONF_USERNAME),\n                    self._config_entry.data.get(CONF_PASSWORD),\n                    cooldown_check=self._cooldown_check(),\n                    cooldown_activate=self._cooldown_activate(),\n                    cookie_jar=self._cookie_jar(),\n                    abort_check=_raise_if_gone,\n                    **client_options,\n                )\n                return client.write_parameter(self._entityvalue, value)\n            finally:\n                if lock is not None:\n                    lock.release()\n\n        awaiter_lock = self._expert_lock()\n        if not awaiter_lock.acquire(blocking=False):\n            raise HomeAssistantError(\"busy\")\n        try:\n            try:\n                state = await self.hass.async_add_executor_job(_do_write)\n            finally:\n                awaiter_lock.release()\n",
+    "tests": "keeps_the_lock_until_the_worker_ends"
+  },
+  {
+    "label": "expert service: lock released by the awaiter instead of the worker",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "            if lock is not None and not lock.acquire(blocking=False):\n                raise ExpertBusy(\n                    \"another expert operation is already in progress for this \"\n                    \"account; try again shortly.\"\n                )\n            try:\n                client = expert_client(\n                    target_entry.data.get(CONF_USERNAME),\n                    target_entry.data.get(CONF_PASSWORD),\n                    cooldown_check=target_api.check_expert_cooldown,\n                    cooldown_activate=target_api.activate_expert_cooldown,\n                    cookie_jar=target_api.expert_cookies,\n                    abort_check=_raise_if_unloaded,\n                    **expert_client_options(target_entry.options),\n                )\n                return client.write_parameter(entityvalue, value)\n            finally:\n                if lock is not None:\n                    lock.release()\n\n        # Run synchronously and RAISE on failure so an automation calling this\n        # action can tell whether the write actually succeeded (HA action-\n        # exception guidance), instead of the old fire-and-forget that always\n        # reported success. An expert write takes ~5-15s (login + Fachmann\n        # navigation + write + verify) - acceptable for an explicit, on-demand\n        # action. Only a SHORTENED entityvalue appears in any user-facing text.\n        try:\n            state = await hass.async_add_executor_job(_do_write)\n",
+    "new": "            if False:\n                raise ExpertBusy(\n                    \"another expert operation is already in progress for this \"\n                    \"account; try again shortly.\"\n                )\n            try:\n                client = expert_client(\n                    target_entry.data.get(CONF_USERNAME),\n                    target_entry.data.get(CONF_PASSWORD),\n                    cooldown_check=target_api.check_expert_cooldown,\n                    cooldown_activate=target_api.activate_expert_cooldown,\n                    cookie_jar=target_api.expert_cookies,\n                    abort_check=_raise_if_unloaded,\n                    **expert_client_options(target_entry.options),\n                )\n                return client.write_parameter(entityvalue, value)\n            finally:\n                pass\n\n        # Run synchronously and RAISE on failure so an automation calling this\n        # action can tell whether the write actually succeeded (HA action-\n        # exception guidance), instead of the old fire-and-forget that always\n        # reported success. An expert write takes ~5-15s (login + Fachmann\n        # navigation + write + verify) - acceptable for an explicit, on-demand\n        # action. Only a SHORTENED entityvalue appears in any user-facing text.\n        if lock is not None and not lock.acquire(blocking=False):\n            raise HomeAssistantError(\"busy\")\n        try:\n            try:\n                state = await hass.async_add_executor_job(_do_write)\n            finally:\n                if lock is not None:\n                    lock.release()\n",
+    "tests": "keeps_the_lock_until_the_worker_ends"
+  },
+  {
+    "label": "expert discovery: lock released by the awaiter instead of the worker",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "        def run_locked():\n            if not lock.acquire(blocking=False):\n                raise ExpertBusy(\"another expert operation is running for this account\")\n            try:\n                return work(*arguments)\n            finally:\n                lock.release()\n\n        try:\n            return await self.hass.async_add_executor_job(run_locked)\n",
+    "new": "        def run_locked():\n            return work(*arguments)\n\n        if not lock.acquire(blocking=False):\n            raise ExpertBusy(\"busy\")\n        try:\n            try:\n                return await self.hass.async_add_executor_job(run_locked)\n            finally:\n                lock.release()\n",
+    "tests": "keeps_the_lock_until_the_worker_ends"
+  },
+  {
+    "label": "recovery: tearing down a connection in use must be noticed",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        if not self._api_lock.acquire(timeout=API_LOCK_TIMEOUT_SECONDS):\n            # Best-effort by design. The recovery must not raise into the\n            # coordinator's error handling, and a connection still in use is\n            # exactly when tearing it down does the damage. The next failed\n            # cycle tries again.\n            _LOGGER.warning(\n                \"Not resetting the connection: it is still in use by another \"\n                \"operation. Trying again on the next failed cycle.\"\n            )\n            return\n        try:\n            self._reset_transport_locked()\n        finally:\n            self._api_lock.release()\n",
+    "new": "        self._reset_transport_locked()\n",
+    "tests": "recovery_leaves_a_busy_connection_alone"
+  },
+  {
+    "label": "expert entity: a second write while the first runs is let through",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        if self._write_in_progress:\n            raise HomeAssistantError(",
+    "new": "        if False:\n            raise HomeAssistantError(",
+    "tests": "second_expert_write_while_the_first_runs_is_refused"
+  },
+  {
+    "label": "expert entity: a poll result applied during a write",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        if self._write_in_progress:\n            _LOGGER.debug(\n",
+    "new": "        if False:\n            _LOGGER.debug(\n",
+    "tests": "poll_result_during_an_expert_write_is_discarded"
+  },
+  {
+    "label": "expert navigation: goes on from the login page",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        self._check_response(response, \"navigation postback\")\n        if is_login_page(response.url):\n",
+    "new": "        self._check_response(response, \"navigation postback\")\n        if False:\n",
+    "tests": "navigation_sent_to_the_login_page_stops_there"
+  },
+  {
+    "label": "expert dialog: a login page by address taken for a loading dialog",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if is_login_page(response.url):\n                raise AuthError(\n                    \"Expert client: redirected to login when fetching the form.\"",
+    "new": "            if False:\n                raise AuthError(\n                    \"Expert client: redirected to login when fetching the form.\"",
+    "tests": "dialog_sent_to_the_login_page_is_one_request_and_an_auth_error"
+  },
+  {
+    "label": "expert dialog: the login form parsed as a broken dialog",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            if \"tbxUserName\" in html_content or \"Login.aspx\" in html_content:",
+    "new": "            if False:",
+    "tests": "dialog_that_is_the_login_form_is_an_auth_error"
+  },
+  {
+    "label": "expert refusal: a confirmed write leaves the streak standing",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "            self._went_through()\n            return verify\n",
+    "new": "            return verify\n",
+    "tests": "confirmed_expert_write_ends_the_refusal_streak"
+  },
+  {
+    "label": "holiday: a range across two accounts let through",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "    if begin.entry.entry_id != end.entry.entry_id:\n",
+    "new": "    if False:\n",
+    "tests": "holiday_across_two_accounts_is_refused"
+  },
+  {
+    "label": "devices: a list refresh drops the scraper's own device again",
+    "path": "custom_components/wemportal/discovery.py",
+    "old": "            new_data.setdefault(str(self.scraper_device_id), scraped)\n",
+    "new": "            pass\n",
+    "tests": "keeps_the_scrapers_own_device"
+  },
+  {
+    "label": "expert entities: one id in two spellings builds two again",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        if canonical_entityvalue(entityvalue) in seen:\n",
+    "new": "        if entityvalue in seen:\n",
+    "tests": "two_spellings_builds_one_entity"
+  },
+  {
+    "label": "statistics: an offline installation asked every fifteen minutes again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "            and self.data[device_id].get(\"ConnectionStatus\") in (None, 0)\n",
+    "new": "",
+    "tests": "offline_installation_are_not_asked_for"
+  },
+  {
+    "label": "expert service: a refusal logged again as an error",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        except ForbiddenError as exc:\n            # Already said by the client",
+    "new": "        except () as exc:\n            # Already said by the client",
+    "tests": "refused_expert_write_is_not_logged_again_as_an_error"
+  },
+  {
+    "label": "expert discovery: a refused module list said again as a warning",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                _LOGGER.debug(\"Expert discovery: module list not read - %s\", exc)\n",
+    "new": "                _LOGGER.warning(\"Expert discovery: module list not read - %s\", exc)\n",
+    "tests": "refused_module_list_is_not_said_again_as_a_cooldown"
+  },
+  {
+    "label": "expert discovery: a refused search said again as a warning",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                _LOGGER.debug(\"Expert discovery: not run - %s\", exc)\n",
+    "new": "                _LOGGER.warning(\"Expert discovery: not run - %s\", exc)\n",
+    "tests": "refused_discovery_is_not_said_a_second_time"
+  },
+  {
+    "label": "expert words: a dropdown of words refuses its own words again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        if not by_label:\n            # On a dropdown of words",
+    "new": "        if False:\n            # On a dropdown of words",
+    "tests": "made_only_of_words_takes_the_word_it_shows"
+  },
+  {
+    "label": "expert poll: a reported id asked again on every cycle",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        return asked_at is None or monotonic() - asked_at >= REPORTED_ID_RETRY_SECONDS\n",
+    "new": "        return True\n",
+    "tests": "reported_as_failing_is_asked_once_a_day"
+  },
+  {
+    "label": "expert poll: a reported id never asked again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        return asked_at is None or monotonic() - asked_at >= REPORTED_ID_RETRY_SECONDS\n",
+    "new": "        return asked_at is None\n",
+    "tests": "reported_as_failing_is_asked_once_a_day"
+  },
+  {
+    "label": "expert poll: an id left out of the cycle counted as unreadable",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            if asked is None or entity.entityvalue in asked\n",
+    "new": "            if True\n",
+    "tests": "left_out_of_a_cycle_is_not_counted_against_it"
+  },
+  {
+    "label": "vocabulary: 'Heizung' is left untranslated again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        \"heizung\": \"heating\",\n",
+    "new": "",
+    "tests": "every_real_name_comes_out_in_english"
+  },
+  {
+    "label": "device class: kelvin classed as an absolute temperature again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE_DELTA,\n",
+    "new": "        UnitOfTemperature.KELVIN: SensorDeviceClass.TEMPERATURE,\n",
+    "tests": "kelvin_reading_is_a_temperature_difference"
+  },
+  {
+    "label": "reconfigure: a legacy duplicate takes the account id already in use",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            unique_id=account if moves_to_another_login else entry.unique_id,\n",
+    "new": "            unique_id=account,\n",
+    "tests": "legacy_duplicate_keeps_its_free_unique_id"
+  },
+  {
+    "label": "translation: a compound's linking s read as a word again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        if tail is None and rest.startswith(_LINKING_S):\n",
+    "new": "        if False:\n",
+    "tests": "every_real_name_comes_out_in_english or real_name_gets_its_technical_term"
+  },
+  {
+    "label": "translation: casefold spells away the sharp s again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "    parts = _parts(word.lower(), vocabulary)\n",
+    "new": "    parts = _parts(word.casefold(), vocabulary)\n",
+    "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "translation: every word capitalised, abbreviations too",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        return word.capitalize() if word.islower() and not before.isdigit() else word\n",
+    "new": "        return word.capitalize()\n",
+    "tests": "german_keeps_the_portals_spelling"
+  },
+  {
+    "label": "translation: a digit glued to a translated word again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "    return f\"{' ' if before.isalnum() else ''}{english}{' ' if after.isalnum() else ''}\"\n",
+    "new": "    return english\n",
+    "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "translation: the second heat generator loses its ordinal",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "            re.compile(r\"(?<![\\w.])2\\s*[._]?\\s*wez\\b\", re.IGNORECASE),\n",
+    "new": "            re.compile(r\"(?!x)x\", re.IGNORECASE),\n",
+    "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "translation: discharge gas read as pressure gas again",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        \"druckgas\": \"discharge gas\",\n",
+    "new": "",
+    "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "stats: a German group name gets the English word added again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "        energy = _ENERGY_WORD.get(self.language, _ENERGY_WORD[\"en\"])\n",
+    "new": "        energy = _ENERGY_WORD[\"en\"]\n",
+    "tests": "statistics_group_is_named_in_the_names_language"
+  },
+  {
+    "label": "translation: a holiday begins again instead of starting",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        \"beginn\": \"start\",\n",
+    "new": "        \"beginn\": \"begin\",\n",
+    "tests": "real_name_gets_its_technical_term"
+  },
+  {
+    "label": "status sensors: a fixed name hides the translation again",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        del self._attr_name\n",
+    "new": "",
+    "tests": "status_sensor_is_named_by_its_translation"
+  },
+  {
+    "label": "status sensors: no translation key",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        self._attr_translation_key, states = status\n",
+    "new": "        _key, states = status\n",
+    "tests": "status_sensor_is_named_by_its_translation"
+  },
+  {
+    "label": "status sensors: states not offered as translated words",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            self._attr_device_class = SensorDeviceClass.ENUM\n",
+    "new": "",
+    "tests": "status_states_its_value_as_one_of_its_translated_words"
+  },
+  {
+    "label": "sensor: an enum value read as a number that failed",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "            or self.device_class not in (None, *NON_NUMERIC_DEVICE_CLASSES)\n",
+    "new": "            or self.device_class is not None\n",
+    "tests": "status_states_its_value_as_one_of_its_translated_words"
+  },
+  {
+    "label": "status: has errors states a capitalised English word again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            has_errors = \"yes\" if errors else \"no\"\n",
+    "new": "            has_errors = \"Yes\" if errors else \"No\"\n",
+    "tests": "has_errors_reads_as_a_stable_word"
+  },
+  {
+    "label": "expert slot: an unnamed slot keeps an English set name again",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        if default_slot is None:\n",
+    "new": "        if True:\n",
+    "tests": "slot_without_a_name_is_named_by_its_translation"
+  },
+  {
+    "label": "expert entity write: success announced in English again",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "            title=await async_translated_message(\n                self.hass, \"expert_write_succeeded_title\"\n            ),\n",
+    "new": "            title=\"WEM Portal expert write\",\n",
+    "tests": "confirmed_write_is_announced_in_home_assistants_language"
+  },
+  {
+    "label": "expert service: success announced in English again",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "                title=await async_translated_message(\n                    hass, \"expert_write_succeeded_title\"\n                ),\n",
+    "new": "                title=\"WEM Portal expert write\",\n",
+    "tests": "confirmed_write_is_announced_in_home_assistants_language"
+  },
+  {
+    "label": "discovery: the form shows the log line of a pause again",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                self._discovery_detail = await blocked_discovery_status(self.hass, exc)\n",
+    "new": "                self._discovery_detail = str(exc)\n",
+    "tests": "discovery_blocked_by_cooldown_is_reported"
+  },
+  {
+    "label": "pause: the expert path's own pause taken for the network's",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "                remaining=remaining,\n                expert_only=True,\n",
+    "new": "                remaining=remaining,\n                expert_only=False,\n",
+    "tests": "pause_says_whose_it_is_and_how_long_it_holds"
+  },
+  {
+    "label": "error messages: no fault stated as an English word again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        return \"none\", []\n",
+    "new": "        return \"None\", []\n",
+    "tests": "no_fault_is_a_stable_word"
+  },
+  {
+    "label": "log: a status key keeps the full device id again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "        key = key.replace(str(device_id), short)\n",
+    "new": "        pass\n",
+    "tests": "status_or_statistics_row_is_logged_without_the_full_device_id"
+  },
+  {
+    "label": "log: the migration names the entity id again",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "        _LOGGER.info(\"Migrating a %s entity to the current unique_id\", platform)\n",
+    "new": "        _LOGGER.info(\"Migrating entity %s to the current unique_id\", old_entity_id)\n",
+    "tests": "migrated_entity_is_logged_without_its_device_id or no_log_call_names_the_installation"
+  },
+  {
+    "label": "expert: an unnamed slot is named in English again in its texts",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        return name if isinstance(name, str) else self._label\n",
+    "new": "        return self._label\n",
+    "tests": "confirmed_write_is_announced_in_home_assistants_language"
+  },
+  {
+    "label": "expert: the raw-id move asks an unadded slot for its name again",
+    "path": "custom_components/wemportal/number.py",
+    "old": "            _LOGGER.info(\"Migrated an expert entity to a digest-based unique_id.\")\n",
+    "new": "            _LOGGER.info(\"Migrated expert entity %s.\", entity.name)\n",
+    "tests": "unnamed_slot_moved_off_its_raw_id_keeps_its_translated_name"
+  },
+  {
+    "label": "expert poll: the day's try is used when the list is built again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        return asked_at is None or monotonic() - asked_at >= REPORTED_ID_RETRY_SECONDS\n",
+    "new": "        due = asked_at is None or monotonic() - asked_at >= REPORTED_ID_RETRY_SECONDS\n        if due and asked_at is not None:\n            self._reported_asked_at[entityvalue] = monotonic()\n        return due\n",
+    "tests": "cycle_that_stops_before_reading_keeps_the_days_try"
+  },
+  {
+    "label": "expert poll: a read no longer uses up the day's try",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            if entity.entityvalue in self._reported_asked_at\n",
+    "new": "            if False\n",
+    "tests": "reported_as_failing_is_asked_once_a_day"
+  },
+  {
+    "label": "expert tally: the ids sitting out are left out of the batch again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        known = {entity.entityvalue for entity in self.live_entities} | set(results)\n",
+    "new": "        known = set(results)\n",
+    "tests": "outage_after_one_id_was_reported_is_not_blamed_on_the_other"
+  },
+  {
+    "label": "expert poll: an id that answered stays on the daily clock",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        self.fail_notified.discard(entityvalue)\n        self._reported_asked_at.pop(entityvalue, None)\n        self._batch_failures = 0\n",
+    "new": "        self.fail_notified.discard(entityvalue)\n        self._batch_failures = 0\n",
+    "tests": "id_that_answered_again_is_asked_every_cycle_again"
+  },
+  {
+    "label": "devices: a list refresh carries the api rows of a device it stopped naming",
+    "path": "custom_components/wemportal/discovery.py",
+    "old": "            if key in (self._previous_scraper_keys or ())\n",
+    "new": "            if True\n",
+    "tests": "device_the_list_stops_naming_keeps_only_its_scraped_rows"
+  },
+  {
+    "label": "freshness: a device the statistics fetch skips keeps its energy as current",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            if is_statistics_row(device_id, key) and self._statistics_reads(device_id):\n",
+    "new": "            if is_statistics_row(device_id, key):\n",
+    "tests": "statistics_of_a_device_their_fetch_skips_age_with_the_rest"
+  },
+  {
+    "label": "expert: a number is looked up as a word again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "        is_a_word = value_number is None\n",
+    "new": "        is_a_word = True\n",
+    "tests": "number_addresses_the_scale_even_where_an_option_has_no_word"
+  },
+  {
+    "label": "expert: a word two options answer to picks the first again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "    if len(folded) > 1:\n",
+    "new": "    if False:\n",
+    "tests": "word_two_options_answer_to_is_refused_rather_than_guessed"
+  },
+  {
+    "label": "expert: the exact spelling no longer goes first",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "    if word in special_values:\n        return special_values[word], word\n",
+    "new": "",
+    "tests": "word_two_options_answer_to_is_refused_rather_than_guessed"
+  },
+  {
+    "label": "translation: a word is translated by the part it starts with",
+    "path": "custom_components/wemportal/translations.py",
+    "old": "        if tail is not None:\n            return [head, *tail]\n",
+    "new": "        return [head, *(tail or [])]\n",
+    "tests": "word_only_partly_in_the_vocabulary_keeps_the_portals_spelling"
+  },
+  {
+    "label": "texts: a notification passes fewer placeholders than its text names",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "                parameter=self._shown_name(),\n                value=str(value),\n",
+    "new": "                parameter=self._shown_name(),\n",
+    "tests": "placeholders_of_a_text_and_its_call_agree"
+  },
+  {
+    "label": "entities: the memo keeps a key whose entity was taken down",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        taken_down = {key for key, built in known.items() if built.taken_down}\n",
+    "new": "        taken_down = set()\n",
+    "tests": "entity_the_waiting_migration_gives_up_comes_back_under_the_old_one"
+  },
+  {
+    "label": "entities: a removal no longer marks the entity taken down",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        self.taken_down = True\n",
+    "new": "        pass\n",
+    "tests": "entity_the_waiting_migration_gives_up_comes_back_under_the_old_one"
+  },
+  {
+    "label": "lifecycle: an unloaded coordinator owns the next setup again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if self._published_in is not None:\n",
+    "new": "        if False:\n",
+    "tests": "coordinator_unloaded_once_does_not_own_the_next_setup"
+  },
+  {
+    "label": "lifecycle: the setup no longer tells the coordinator its store",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    coordinator.publish_in(entry.runtime_data)\n",
+    "new": "",
+    "tests": "coordinator_unloaded_once_does_not_own_the_next_setup"
+  },
+  {
+    "label": "expert poll: a failing read is warned on every cycle again",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                        if failure_is_new(failing, entityvalue, str(exc))\n",
+    "new": "                        if True\n",
+    "tests": "parameter_that_keeps_failing_to_read_is_warned_once"
+  },
+  {
+    "label": "expert poll: a read that works again is not said",
+    "path": "custom_components/wemportal/expert_writer.py",
+    "old": "                    if failure_is_over(failing, entityvalue):\n",
+    "new": "                    if False:\n",
+    "tests": "parameter_that_keeps_failing_to_read_is_warned_once"
+  },
+  {
+    "label": "expert poll: a slot put back keeps its daily ration",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "        self.fail_counts.pop(entityvalue, None)\n        self._reported_asked_at.pop(entityvalue, None)\n        if entityvalue in self.fail_notified:\n",
+    "new": "        self.fail_counts.pop(entityvalue, None)\n        if entityvalue in self.fail_notified:\n",
+    "tests": "parameter_taken_off_and_put_back_is_asked_at_once"
+  },
+  {
+    "label": "options: a paused network is said as an expert pause",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "            else \"discovery_paused_network\",\n",
+    "new": "            else \"discovery_paused_expert\",\n",
+    "tests": "paused_network_and_a_fresh_refusal_are_said_too"
+  },
+  {
+    "label": "options: a fresh refusal is said in the log's English",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "    return await async_translated_message(hass, \"discovery_refused\")\n",
+    "new": "    return str(exc)\n",
+    "tests": "paused_network_and_a_fresh_refusal_are_said_too"
+  },
+  {
+    "label": "ci: the workflow scan finds nothing",
+    "path": "tests/test_ci_matrix.py",
+    "old": ".glob(\"*.y*ml\")",
+    "new": ".glob(\"*.nothing\")",
+    "tests": "workflow_scan_finds_the_workflows"
+  },
+  {
+    "label": "entities: the memo forgets every key on every cycle",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        taken_down = {key for key, built in known.items() if built.taken_down}\n",
+    "new": "        taken_down = set(known)\n",
+    "tests": "disabled_entity_is_not_built_again_on_every_cycle"
+  },
+  {
+    "label": "entities: an unload in progress rebuilds its entities",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        if data.unloading:\n            return\n",
+    "new": "",
+    "tests": "unload_in_progress_builds_nothing_again"
+  },
+  {
+    "label": "entities: a renamed entity stays marked as taken down",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "        self.taken_down = False\n        await super().async_added_to_hass()\n",
+    "new": "        await super().async_added_to_hass()\n",
+    "tests": "entity_renamed_by_the_user_is_not_built_twice"
   }
 ]

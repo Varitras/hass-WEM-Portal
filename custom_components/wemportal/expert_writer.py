@@ -40,7 +40,7 @@ from .exceptions import (
     ValueNotOffered,
 )
 from .models import account_state
-from .utils import parse_portal_number
+from .utils import failure_is_new, failure_is_over, parse_portal_number
 from .web_protocol import (
     log_refusal,
     is_expert_view,
@@ -541,6 +541,29 @@ def _smallest_gap(options):
     return round(min(gaps), PORTAL_DECIMALS) if gaps else None
 
 
+def _option_named(special_values, word):
+    """The (token, word) of the option beside the scale `word` names, or None.
+
+    The exact spelling first, then case-insensitively - and a word two
+    options answer to that way names neither: taking the first wrote a
+    setting nobody chose, and the verify against its label confirmed it.
+    """
+    if word in special_values:
+        return special_values[word], word
+    folded = [
+        (token, offered)
+        for offered, token in special_values.items()
+        if offered.casefold() == word.casefold()
+    ]
+    if len(folded) > 1:
+        raise ValueNotOffered(
+            f"{word!r} names more than one option "
+            f"({', '.join(offered for _token, offered in folded)}); "
+            "write it exactly as the portal shows it."
+        )
+    return folded[0] if folded else None
+
+
 def _option_meant_by(options, value):
     """The offered option `value` names, or None if it names none of them.
 
@@ -787,7 +810,7 @@ class WemPortalExpertClient:
                 "" if first else f" ({self._account_state.expert_refusals} in a row)",
             )
             # Backs off the EXPERT path only (see activate_expert_cooldown in
-            # wemportalapi.py); sensor polling keeps running.
+            # transport.py); sensor polling keeps running.
             if self._cooldown_activate is not None:
                 self._cooldown_activate()
             raise ForbiddenError(
@@ -1466,6 +1489,12 @@ class WemPortalExpertClient:
                 # entity cannot show "Aus", and the attribute below says so.
                 current = value
                 selected_text = label or attribute
+        if not by_label:
+            # On a dropdown of words the number is a posted index nobody sees,
+            # so the word is also how such an option is named.
+            special_values = {
+                label or attribute: attribute for *_, attribute, _s, label in pairs
+            }
 
         if not options:
             # Dropdown present but empty: the session has no active
@@ -1547,8 +1576,14 @@ class WemPortalExpertClient:
             self._login()
             for entityvalue in ids:
                 self._check_gates()
+                failing = self._account_state.expert_reads_failing
                 try:
                     result[entityvalue] = self._fetch_form(entityvalue)
+                    if failure_is_over(failing, entityvalue):
+                        _LOGGER.info(
+                            "Expert auto-poll: %s reads again.",
+                            short_entityvalue(entityvalue),
+                        )
                 # A 403 is about the connection, not this id: it has to reach
                 # the caller so the shared cooldown engages. A dead session
                 # is not this id's either: every further one would go to the
@@ -1557,7 +1592,15 @@ class WemPortalExpertClient:
                 except ForbiddenError, AuthError:
                     raise
                 except Exception as exc:  # noqa: BLE001
-                    _LOGGER.warning(
+                    # Once per id and reason: every cycle builds a new client,
+                    # and a broken dialog otherwise said this hourly per slot.
+                    level = (
+                        logging.WARNING
+                        if failure_is_new(failing, entityvalue, str(exc))
+                        else logging.DEBUG
+                    )
+                    _LOGGER.log(
+                        level,
                         "Expert auto-poll: reading %s failed: %s",
                         short_entityvalue(entityvalue),
                         exc,
@@ -1796,11 +1839,15 @@ class WemPortalExpertClient:
         itself accepts both spellings, and the service used to refuse one.
         """
         word = str(value).strip()
-        for offered, attribute in state.special_values.items():
-            if offered.casefold() == word.casefold():
-                return attribute, offered, None
-
         value_number = parse_portal_number(value)
+        # Only for what is not a number: a number addresses the scale, and
+        # an option without a label is keyed by its token, which can look
+        # like one.
+        is_a_word = value_number is None
+        named = _option_named(state.special_values, word) if is_a_word else None
+        if named is not None:
+            return *named, None
+
         if value_number is None:
             offers = ", ".join(state.special_values) or "no non-numeric option"
             raise ValueNotOffered(

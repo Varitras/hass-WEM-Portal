@@ -63,6 +63,108 @@ def _user_facing_raises(source: str, name: str):
     return found
 
 
+def _translated_reads(source):
+    """The catalogue keys a module reads through async_translated_message -
+    its own texts that are no raise: a notification, a form's status line.
+    Every string literal in the key argument counts, a conditional's both."""
+    keys = set()
+    for node in ast.walk(ast.parse(source)):
+        if not (
+            isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "async_translated_message"
+            and len(node.args) >= 2
+        ):
+            continue
+        keys |= {
+            literal.value
+            for literal in ast.walk(node.args[1])
+            if isinstance(literal, ast.Constant) and isinstance(literal.value, str)
+        }
+    return keys
+
+
+def _all_translated_reads():
+    keys = set()
+    for path in sorted(PACKAGE.glob("*.py")):
+        keys |= _translated_reads(path.read_text(encoding="utf-8"))
+    return keys
+
+
+def test_the_read_scan_sees_both_keys_of_a_conditional():
+    """Proof it can find what it is for."""
+    source = (
+        'async_translated_message(hass, "a" if x else "b", n=1)\n'
+        'async_translated_message(hass, "c")\n'
+    )
+    assert _translated_reads(source) == {"a", "b", "c"}
+
+
+def test_every_text_read_has_a_message_in_every_catalogue():
+    missing = [
+        f"{key} ({language})"
+        for key in sorted(_all_translated_reads())
+        for language in CATALOGUES
+        if not _catalogue(language).get(key, {}).get("message")
+    ]
+    assert _all_translated_reads(), "the scan found no read at all"
+    assert not missing, missing
+
+
+def _translated_read_placeholders(source, name):
+    """(where, keys, keyword names or None) for each async_translated_message
+    call. None marks keywords that cannot be read here (a `**` spread)."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not (
+            isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "async_translated_message"
+            and len(node.args) >= 2
+        ):
+            continue
+        keys = {
+            literal.value
+            for literal in ast.walk(node.args[1])
+            if isinstance(literal, ast.Constant) and isinstance(literal.value, str)
+        }
+        names = {keyword.arg for keyword in node.keywords}
+        found.append((f"{name}:{node.lineno}", keys, None if None in names else names))
+    return found
+
+
+def test_the_placeholder_scan_reads_the_keywords_of_a_text():
+    """Proof it can find what it is for."""
+    source = (
+        'async_translated_message(hass, "a" if x else "b", parameter=p)\n'
+        'async_translated_message(hass, "c", **values)\n'
+    )
+    assert _translated_read_placeholders(source, "m") == [
+        ("m:1", {"a", "b"}, {"parameter"}),
+        ("m:2", {"c"}, None),
+    ]
+
+
+def test_the_placeholders_of_a_text_and_its_call_agree():
+    """The text is formatted with the call's keywords, in Python: a
+    placeholder the message names but the call does not pass raises KeyError
+    - after a confirmed write, for the notification saying it worked. And
+    only in the language whose text names it, so a German test run never
+    meets the English one."""
+    mismatched = []
+    for path in sorted(PACKAGE.glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        for where, keys, passed in _translated_read_placeholders(source, path.name):
+            for key in keys:
+                for language in CATALOGUES:
+                    message = _catalogue(language).get(key, {}).get("message", "")
+                    named = set(PLACEHOLDER.findall(message))
+                    if passed is None or named != passed:
+                        mismatched.append(
+                            f"{where} {key} ({language}): {named} vs {passed}"
+                        )
+
+    assert not mismatched, mismatched
+
+
 def _all_raises():
     raises = []
     for path in sorted(PACKAGE.glob("*.py")):
@@ -150,6 +252,7 @@ def test_placeholders_in_the_code_and_the_messages_agree():
 
 def test_no_catalogue_entry_outlives_its_raise():
     used = {key for _, key, _ in _all_raises() if key is not None}
+    used |= _all_translated_reads()
     for language in CATALOGUES:
         orphaned = set(_catalogue(language)) - used
         assert not orphaned, f"{language}: {sorted(orphaned)} are raised nowhere"

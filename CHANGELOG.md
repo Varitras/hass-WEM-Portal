@@ -8,6 +8,20 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Has Errors now states `yes` / `no`, and Error Messages `none` without a
+  fault - check automations that compare against `"Yes"`, `"No"` or
+  `"None"`.** The three device status sensors (Connection
+  Status, Has Errors, Error Messages) are now named, and their states shown,
+  in Home Assistant's language - they were English for everyone. The
+  states themselves stay fixed words, so an automation works in every
+  language; Has Errors changed from "Yes"/"No" to "yes"/"no" for that.
+  The connection states (`online`, `offline` ...) are unchanged. Entity ids
+  stay as they are.
+- **The integration's own texts follow Home Assistant's language too.** A
+  slot without a name of its own is called "Fachmann-Parameter 3" in a
+  German Home Assistant, the notification after a confirmed expert write
+  is German there, and so is the line at the top of the options that
+  says why a discovery could not run and how long the pause still holds.
 - **Home Assistant 2026.9.0 or newer is required.** Home Assistant validates
   forms and service calls with probatio now, and the integration builds its
   schemas with it directly; 2026.9 is the first release that ships it. On
@@ -15,6 +29,165 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An expert parameter that keeps failing to read is warned about once.**
+  The auto-poll wrote the same warning for it on every cycle; now it says
+  so once per reason, and once more when the parameter reads again.
+- **A setting is written to the module it belongs to now.** A control took
+  its module's address when it was created. A module that came back at a
+  different position after the module list was read again kept its name
+  - and the control wrote to whatever module now sat at the old position.
+  Controls, dates and their read-back use the current address.
+- **Setup, upgrade and unload leave nothing behind.**
+  - Disabling or reloading the integration while it was reading the
+    portal let that read finish afterwards and put back what the unload
+    had cleared: a repair issue on a disabled entry that nothing could
+    withdraw, or a count of failed logins that made the next one ask for
+    credentials again - or even started that prompt for the entry being
+    taken down.
+  - The first start after an upgrade that renamed old entity ids read the
+    whole portal twice. It reads it once.
+  - On an installation with two devices, one of them offline at the first
+    start after the upgrade, the other could take over an old entity that
+    both answer to, with its history. Old ids are now renamed once every
+    device has answered.
+- **Web sensors of an installation that began in `web` mode stay readable
+  after a connection reset.** Their readings sit under a device of their
+  own that the portal's device list does not name. After two failed cycles
+  the list was read again without it: every web sensor went unknown and
+  warned about its missing reading until the next scrape.
+- **A new password for a duplicate entry no longer raises a Home Assistant
+  repair.** Two entries of one account from before account ids are still
+  loaded, and only the first holds the id. Reconfiguring the second gave it
+  the same id, which Home Assistant logs as an integration bug and reports
+  under Repairs.
+- **Readings in K are temperature differences.** Every K value the portal
+  shows - a switching hysteresis, a superheat - is a difference, but was
+  classed as a temperature: choosing °C as display unit turned 4.5 K into
+  -268.65 °C, and the reading was offered as a room temperature. The unit
+  stays K, so the recorded history carries on.
+- **The settings, messages and actions speak one language each.**
+  - German: the expert level is called "Fachmann" throughout, as on the
+    portal - the options said "Experten-" while the menu, errors and repairs
+    said "Fachmann-". Slot, service and login are "Platz", "Aktion" and
+    "Anmeldung" everywhere, one repair no longer switches to the formal
+    "Sie", and the action's ID field is no longer called "Entity-Value".
+  - English: the holiday action's fields say "Start" rather than "Begin",
+    the actions are called actions, and "Enable module select" reads
+    "Enable module selection".
+  - Both: a failed discovery said the portal itself was rate-limited; it is
+    this network the portal is refusing.
+- **Statistics groups without a name of their own are numbered.** The
+  portal sends a name for each group; where it leaves one blank, the group
+  was given a fixed name by its number ("Cooling Energy Yield", "Power
+  Consumption Heating" ...) - but installations number their groups
+  differently, and on a real heat pump group 3 is the total, not cooling.
+  Such a group is now called "Energy 3" ("Energie 3" with language `de`).
+  A German group name also no longer gets the English word "Energy" added -
+  it is "Energie".
+- **English names are English, and German ones keep the portal's
+  spelling.**
+  - With language `en`, names were translated by replacing parts of words,
+    which left the rest of a word standing: "Heizung" became "Heating Ung",
+    "Hochdruck" "Hoch Pressure", "Heizkennlinie" "Heating Kennlinie" - and
+    "Absenkmodus" "Reduced M Outdoor Unit S", because the abbreviation for
+    the outdoor unit matched inside it. Words are now translated whole, a
+    word the integration does not know stays as the portal wrote it, and
+    the names of the expert page and the statistics read in English
+    throughout: "High Pressure", "Heating Curve", "Discharge Gas
+    Temperature", "Superheat Compressor", "Thermal Energy Heating Day". A
+    holiday has a "Start" now, not a "Begin", and the lowered temperatures
+    share one word, "Setback".
+  - With language `de`, every word was capitalised, so "Version WWP-SG"
+    showed as "Version Wwp-Sg" and "EVI" as "Evi". The portal's spelling
+    stays now.
+  - The names of existing entities change; their entity ids keep the
+    spelling they were created with.
+- **An expert parameter reported as failing is read once a day.** With the
+  periodic read-back on, a parameter that keeps failing was still asked on
+  every cycle after the repair had said so - and one whose dialog never
+  fills costs seven requests each time, against one for a working
+  parameter. It is now asked once a day until it answers again; a write
+  that works brings it back at once.
+- **An expert parameter made only of words takes the word.** A dropdown
+  with no number in it - an operating mode, say - shows as the position of
+  the option, a number the portal never displays, and
+  `set_expert_parameter` refused the word the portal does show. It now
+  takes the word, in any case, as it already did for "Aus" beside a scale.
+- **A refused expert request is logged once.** The `set_expert_parameter`
+  action logged a refused write a second time as an error, and the
+  parameter search in the options logged a refusal again as a warning that
+  blamed a pause - also when the refusal had just happened. The refusal is
+  now said once, and the action and the form still give the reason.
+- **An offline installation is no longer asked for its statistics.** The
+  portal answers it with "offline", which counted as a failed read: with
+  every device offline, the statistics were asked for again every 15
+  minutes instead of hourly, for an installation that could not answer.
+- **An expert parameter configured twice in different capitals gets one
+  entity.** The options form has treated `3A7F...` and `3a7f...` as one id
+  since 1.12, but options saved before that still built two entities, and
+  the hourly read asked the portal for the same parameter twice.
+- **Units and merges follow one rule in every mode.**
+  - A unitless number kept its empty unit in `both` mode but lost it in
+    `api` mode, so it had long-term statistics in one and not the other -
+    switching modes removed them.
+  - In `both` mode an API reading without a web row whose first answer
+    came without a unit stayed without one for the whole run, a power or
+    energy sensor included.
+  - A web row label with a hyphen of its own ("Version WWP-SG") was cut
+    there when matching API readings, so a reading meant for one row
+    matched its neighbour too.
+- **A device whose readings stopped no longer blanks rows other reads keep.**
+  After half an hour without values the device's readings go unknown; that
+  took the energy statistics with them, which their hourly read keeps
+  regardless, and a weekly programme the schedule read still updates.
+- **One part of the portal failing no longer stops the rest.**
+  - A module the portal had not described yet - on a new installation, or
+    one just added - whose description kept failing stopped every reading
+    of the account. It is now asked again next cycle while the described
+    modules are read.
+  - A device status sent with the status as null stopped the readings of
+    that device and its discovery; it is treated as unreadable, like a
+    missing one, and the readings go ahead.
+  - In `both` mode a failing scrape was retried about twice as often as a
+    working one runs; it now waits whole web intervals.
+  - A web login the portal let through now ends a streak of refused ones,
+    even when the page after it fails - so a single refusal hours later no
+    longer pauses every request for 15 minutes.
+- **Values shown as they are, or as unknown - not as a neighbour.**
+  - A select whose current setting is not in its option list yet showed
+    the nearest spelling - "Party 4 h" as "Party 3 h". A different number
+    is a different setting now, and a value close to two options is not
+    guessed: both show as unknown.
+  - A unitless number that read `--` on the first update after a start
+    stayed text for the whole session, without long-term statistics.
+  - A programme level the portal sends without a name no longer shows as
+    the word "None".
+  - The repair for an expert parameter that keeps failing no longer claims
+    that other parameters were read, which with one configured parameter
+    is not true.
+- **No "web access is not working" repair in pure `web` mode.** Its text
+  says the API half keeps delivering, which `web` mode does not have; there
+  a failed read already shows as unavailable entities.
+- **A lasting failure of a weekly programme or of the expert read is logged
+  once.** A programme the portal kept failing on was retried every 15
+  minutes with a warning each time - about 190 a day for two programmes -
+  and an expert login that stayed broken warned on every hourly poll. Both
+  now say it once, and once when it reads again. A refused network (403)
+  during the programme reads is no longer walked into by every remaining
+  programme.
+- **Fewer logins, and no reauth prompt, when the portal is down.** The API
+  refuses a login in two ways, and only one of them looked for a
+  maintenance notice: the other counted downtime as a wrong password, and
+  three such cycles asked for credentials that were correct. When a login
+  in the middle of a cycle failed for another reason - a server error, a
+  timeout - every later request of that cycle logged in again; the cycle
+  now stops trying until the next one. The web login checked during setup
+  also closes its connection now.
+- **A date or holiday the portal did not keep is reported, not taken as
+  set.** The portal accepts some dates and stores something else. The
+  entities already showed the day it kept, but the action and the
+  `set_holiday` service still succeeded - an automation went on as if the
+  holiday was set. Both now fail with a message naming the day kept.
 - **A broken expert page no longer leaves a set of dead sensors behind.**
   The portal now and then sends the expert page with every panel headed
   "Info" instead of its module, and the next page is normal again. That one

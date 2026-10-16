@@ -19,10 +19,16 @@ from typing import TYPE_CHECKING, Any, Final
 import requests
 
 from .const import WemDataType
-from .exceptions import AuthError
+from .exceptions import AuthError, ForbiddenError
 from .models import HeavyFetchTurns, ModuleRef, Reading
 from .translations import friendly_name_mapper, translate
-from .utils import looks_like_schedule, portal_list, week_carries_a_programme
+from .utils import (
+    failure_is_new,
+    failure_is_over,
+    looks_like_schedule,
+    portal_list,
+    week_carries_a_programme,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,6 +85,7 @@ class WemPortalSchedule:
         scraping_mapper: dict[Any, Any]
         _last_circuit_times_fetch: dict[tuple[Any, ...], float]
         heavy_fetch_turns: HeavyFetchTurns
+        _reported_failures: dict[str, str]
 
         # The host's transport half; the full signature so the three mixins
         # agree on it when merged into the one WemPortalApi.
@@ -295,19 +302,27 @@ class WemPortalSchedule:
         """
         attempted_at = time.monotonic()
         fetched = False
+        reported = f"schedule:{_schedule_throttle_key(device_id, module, parameter_id)}"
         try:
             fetched = self._read_one_schedule(device_id, module, parameter_id)
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
-        except AuthError:
-            # A refused login is not one programme failing, and the rest
-            # would each spend another one; see AuthError.
+        except AuthError, ForbiddenError:
+            # A refused login or network is not one programme failing, and
+            # the rest would each meet it again; the coordinator handles both.
             raise
         except Exception as exc:  # noqa: BLE001
             # Broad: one heating program failing is not a reason to skip the
-            # rest.
-            _LOGGER.warning(
-                "Failed to fetch CircuitTimes for %s: %s", parameter_id, exc
+            # rest. Said once per outage: it is retried every 15 minutes.
+            new = failure_is_new(self._reported_failures, reported, str(exc))
+            _LOGGER.log(
+                logging.WARNING if new else logging.DEBUG,
+                "Failed to fetch CircuitTimes for %s: %s",
+                parameter_id,
+                exc,
             )
+        else:
+            if failure_is_over(self._reported_failures, reported):
+                _LOGGER.info("CircuitTimes for %s read again.", parameter_id)
         finally:
             self._record_schedule_attempt(
                 device_id, module, parameter_id, attempted_at, fetched
@@ -339,9 +354,9 @@ class WemPortalSchedule:
                     return
                 self._read_and_record_one_schedule(device_id, module, parameter_id)
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
-        except AuthError:
+        except AuthError, ForbiddenError:
             # The outer half of the same rule: extra detail may be lost, a
-            # login that is being refused may not be hidden. See AuthError.
+            # refused login or network may not be hidden. See AuthError.
             raise
         except Exception as exc:  # noqa: BLE001
             # Broad: heating programs are extra detail on top of the

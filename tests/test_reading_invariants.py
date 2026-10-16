@@ -163,12 +163,27 @@ def test_the_address_survives_a_second_cycle():
 
 def test_a_reading_that_ages_out_keeps_its_address():
     """Ageing blanks the value and keeps the identity - including the
-    address, or the row could never be found again on the next pass."""
-    rows = _mapped([_parameter("Outside")], [_value("Outside")])
-    row = rows["Heat pump-Outside"]
-    row.value = None  # what both ageing passes do
+    address, or the row could never be found again on the next pass.
 
-    assert (row.module_index, row.module_type) == MODULE
+    Through the real device pass: the test used to set the value to None
+    itself, which no change to the ageing could ever fail."""
+    from custom_components.wemportal.wemportalapi import (
+        DEVICE_VALUES_STALE_AFTER_SECONDS,
+        WemPortalApi,
+    )
+
+    rows = _mapped([_parameter("Outside")], [_value("Outside")])
+    api = WemPortalApi("user@example.org", "secret")
+    api.data = {DEVICE: rows}
+    api._last_device_read[DEVICE] = (
+        time.monotonic() - DEVICE_VALUES_STALE_AFTER_SECONDS - 1
+    )
+
+    api._forget_stale_device_values(DEVICE)
+
+    aged = api.data[DEVICE]["Heat pump-Outside"]
+    assert aged.value is None, "the setup did not age the reading"
+    assert (aged.module_index, aged.module_type) == MODULE
 
 
 def test_freshness_stamps_are_not_readings():

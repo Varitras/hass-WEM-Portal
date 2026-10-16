@@ -71,6 +71,22 @@ def _statistics_group_key(device_id: str, group_id: Any) -> str:
     return f"statistics:{device_id}:group:{group_id}"
 
 
+def statistics_row_key(device_id: str, group_id: Any) -> str:
+    """Where one statistics group of a device lives in its data."""
+    return f"{device_id}-Energy_{group_id}"
+
+
+# What a group name ends in when it does not say energy yet - in German too,
+# where "energy" never appeared and every name got the English word added.
+_ENERGY_WORD: Final = {"en": "Energy", "de": "Energie"}
+
+
+def is_statistics_row(device_id: str, key: str) -> bool:
+    """Whether a row is one this fetch owns - see the device-level ageing,
+    which must leave it to the hourly read that keeps it."""
+    return key.startswith(statistics_row_key(device_id, ""))
+
+
 def _start_of_the_day(entry: dict[str, Any]) -> datetime | None:
     """Midnight of the day a statistics entry reports, in Home Assistant's
     time zone - the portal dates its days without one.
@@ -191,36 +207,38 @@ class WemPortalStatistics:
         # by str, callers may pass ints. Scraper-only devices (e.g. the "0000"
         # placeholder) have no API statistics; they are skipped so
         # int("0000")=0 isn't sent to the portal.
+        # A device the status read found offline is not asked either: the
+        # portal answers it with 5001, which counted as a failed cycle and
+        # brought the read back every fifteen minutes instead of hourly.
         return [
             str(device_id)
             for device_id in target_devices
-            if str(device_id) in self.data and str(device_id) in (self.modules or {})
+            if self._statistics_reads(str(device_id))
         ]
+
+    def _statistics_reads(self, device_id: str) -> bool:
+        """Whether the statistics fetch asks the portal about this device -
+        and so whether anything keeps its statistics rows current."""
+        return (
+            device_id in self.data
+            and device_id in (self.modules or {})
+            and self.data[device_id].get("ConnectionStatus") in (None, 0)
+        )
 
     def _statistics_group_name(self, group: dict[str, Any]) -> str:
         """The display name for one statistics group: the portal's own
-        description where it has one, a fixed fallback where it is blank."""
+        description where it has one, its number where it is blank."""
         group_id = group.get("GroupType")
         group_name = group.get("Description")
+        energy = _ENERGY_WORD.get(self.language, _ENERGY_WORD["en"])
+        # Numbered, not named: what each number means differs between
+        # installations, and the fixed names once given here were a guess.
         if not group_name or group_name.strip() == "":
-            fallback_names = {
-                1: "Heating Energy Yield",
-                2: "Hot Water Energy Yield",
-                3: "Cooling Energy Yield",
-                4: "Total Energy Yield",
-                5: "Power Consumption Heating",
-                6: "Power Consumption Hot Water",
-                7: "Power Consumption Cooling",
-                8: "Total Power Consumption",
-            }
-            group_name = fallback_names.get(group_id, f"Energy {group_id}")  # type: ignore[arg-type]
-        else:
-            translated_group = translate(self.language, group_name)
-            if "energy" not in translated_group.lower():
-                group_name = f"{translated_group} Energy"
-            else:
-                group_name = translated_group
-        return group_name
+            return f"{energy} {group_id}"
+        translated_group = translate(self.language, group_name)
+        if energy.lower() in translated_group.lower():
+            return translated_group
+        return f"{translated_group} {energy}"
 
     def _store_statistics_group(
         self, device_id, group_id, group_name, stats_resp
@@ -255,7 +273,9 @@ class WemPortalStatistics:
             # value instead of falling back to 0.0, which would
             # otherwise show up as a false drop/spike on the
             # Energy Dashboard.
-            old_sensor = self.data.get(device_id, {}).get(f"{device_id}-{sensor_name}")
+            old_sensor = self.data.get(device_id, {}).get(
+                statistics_row_key(device_id, group_id)
+            )
             if isinstance(old_sensor, Reading) and old_sensor.value is not None:
                 current_value = old_sensor.value
                 day_started = old_sensor.last_reset
@@ -276,7 +296,7 @@ class WemPortalStatistics:
         # No data_type/module fields on purpose: the -1 placeholders they
         # used to carry existed only to fill the dict shape, and nothing
         # reads a module address off a statistics sensor.
-        self.data[device_id][f"{device_id}-{sensor_name}"] = Reading(
+        self.data[device_id][statistics_row_key(device_id, group_id)] = Reading(
             friendly_name=group_name,
             parameter_id=sensor_name,
             unit=unit,

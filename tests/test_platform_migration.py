@@ -303,6 +303,13 @@ def test_a_value_without_a_platform_counts_as_a_sensor():
     assert registry.removed == []
 
 
+class _Built(tuple):
+    """What a build hands over, as far as the builder's memo asks: an entity
+    Home Assistant has not taken down."""
+
+    taken_down = False
+
+
 class FakeCoordinator:
     """Enough of the coordinator to hand out an update and be asked for one."""
 
@@ -349,7 +356,7 @@ async def test_a_reading_that_appears_later_is_migrated_too(monkeypatch):
     )
     coordinator = FakeCoordinator(data={})
 
-    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
     coordinator.publish(
         {
             DEVICE: {
@@ -360,6 +367,100 @@ async def test_a_reading_that_appears_later_is_migrated_too(monkeypatch):
 
     assert registry.renamed == [("sensor.old_outside", _uid("Outside"))], (
         "a reading that arrived after setup kept none of its entity's history"
+    )
+
+
+async def test_a_migration_that_renames_starts_no_second_portal_cycle(monkeypatch):
+    """The refresh it awaited was not debounced - the coordinator's runs at
+    once - so every setup that renamed anything polled the portal twice. The
+    platforms that show the renamed entities are forwarded afterwards and read
+    the first refresh's data anyway."""
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry({("sensor", "Outside"): "sensor.old_outside"})
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
+    coordinator = FakeCoordinator(
+        data={
+            DEVICE: {
+                "Outside": Reading(value=1.0, platform="sensor", parameter_id="Outside")
+            }
+        }
+    )
+
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+
+    assert registry.renamed, "the setup had nothing to rename"
+    assert coordinator.refreshes == 0, "the migration asked for another cycle"
+
+
+async def test_a_device_offline_at_the_upgrade_keeps_its_claim_on_an_old_id(
+    monkeypatch,
+):
+    """The old id shapes carry no device, so two devices with a parameter of
+    the same name claim the same one - and the migration leaves such an id
+    alone. A device offline at the upgrade has no readings yet, so its claim
+    was invisible and the online one adopted the entity and its history."""
+    import custom_components.wemportal as wemportal
+
+    offline = "5678"
+    registry = FakeRegistry({("switch", "Pump"): "switch.legacy_pump"})
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
+    # What an offline device holds after its status read: the raw status and
+    # its status rows, no parameter readings - and a statistics row from
+    # before it went away, which is not one either.
+    coordinator = FakeCoordinator(
+        data={
+            DEVICE: {"Pump": Reading(value=1.0, platform="switch")},
+            offline: {
+                "ConnectionStatus": 50,
+                f"{offline}-ConnectionStatus": Reading(
+                    value="offline", platform="sensor"
+                ),
+                f"{offline}-Energy_1": Reading(value=3.0, platform="sensor"),
+            },
+        }
+    )
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+
+    coordinator.publish(
+        {
+            DEVICE: {"Pump": Reading(value=1.0, platform="switch")},
+            offline: {"Pump": Reading(value=1.0, platform="switch")},
+        }
+    )
+
+    assert registry.renamed == [], (
+        f"an id another device also claims was adopted: {registry.renamed}"
+    )
+
+
+async def test_a_disabled_device_does_not_hold_the_migration_up(monkeypatch):
+    """A device disabled in Home Assistant is not polled, so it never answers -
+    and waiting for it would leave every legacy entity unmigrated for good.
+    Only a device the poll reports on is waited for."""
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry({("sensor", "Outside"): "sensor.old_outside"})
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
+    coordinator = FakeCoordinator(
+        data={
+            DEVICE: {
+                "Outside": Reading(value=1.0, platform="sensor", parameter_id="Outside")
+            },
+            "5678": {"ConnectionStatus": 0},
+        }
+    )
+
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+
+    assert registry.renamed == [("sensor.old_outside", _uid("Outside"))], (
+        "a device nobody polls kept the migration waiting"
     )
 
 
@@ -379,7 +480,7 @@ async def test_a_reading_already_migrated_is_not_walked_again(monkeypatch):
     }
     coordinator = FakeCoordinator(data=rows)
 
-    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
     coordinator.publish(rows)
     coordinator.publish(rows)
 
@@ -409,7 +510,7 @@ async def test_a_reclassification_after_setup_takes_the_old_entity_down(monkeypa
         data={DEVICE: {"Heat pump-U_Beginn": Reading(platform="switch")}}
     )
 
-    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
     assert registry.removed == [], "the entity that was still correct was removed"
 
     coordinator.publish({DEVICE: {"Heat pump-U_Beginn": Reading(platform="date")}})
@@ -453,7 +554,7 @@ async def test_the_migration_keeps_listening_after_a_failed_first_pass(monkeypat
     )
 
     with pytest.raises(RuntimeError):
-        await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+        wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
 
     assert len(coordinator.listeners) == 1, (
         "the first pass raised and the migration was never registered for the "
@@ -468,7 +569,7 @@ async def test_the_migration_keeps_listening_after_a_failed_first_pass(monkeypat
 def _entry_with_a_coordinator(coordinator):
     """A config entry the entity builder accepts, sharing `coordinator`."""
     entry = FakeConfigEntry()
-    entry.runtime_data = types.SimpleNamespace(coordinator=coordinator)
+    entry.runtime_data = types.SimpleNamespace(coordinator=coordinator, unloading=False)
     return entry
 
 
@@ -510,10 +611,10 @@ async def test_a_platform_that_flickers_gets_its_control_entity_back(monkeypatch
 
     # The migration listener is registered before the platforms are forwarded,
     # so it runs first on every cycle - as it does in async_setup_entry.
-    await wemportal.migrate_unique_ids(None, entry, coordinator)
+    wemportal.migrate_unique_ids(None, entry, coordinator)
     built = []
     async_add_readings_as_they_appear(
-        entry, built.extend, "date", lambda *arguments: arguments
+        entry, built.extend, "date", lambda *arguments: _Built(arguments)
     )
     assert len(built) == 1, "the control case never built the date entity"
 
@@ -556,10 +657,10 @@ async def test_an_api_sensor_comes_back_when_the_merge_that_retired_it_ends(
     coordinator.api.modules = MODULES
     entry = _entry_with_a_coordinator(coordinator)
 
-    await wemportal.migrate_unique_ids(None, entry, coordinator)
+    wemportal.migrate_unique_ids(None, entry, coordinator)
     built = []
     async_add_readings_as_they_appear(
-        entry, built.extend, "sensor", lambda *arguments: arguments
+        entry, built.extend, "sensor", lambda *arguments: _Built(arguments)
     )
     assert [call[3] for call in built] == [OWN_KEY], "the control case built nothing"
 
@@ -618,7 +719,7 @@ async def test_an_old_id_two_devices_both_answer_to_is_left_alone(monkeypatch):
         }
     )
 
-    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
 
     assert registry.removed == [], (
         f"one device deleted an entity the other one may own: {registry.removed}"
@@ -653,7 +754,7 @@ async def test_a_device_that_changes_later_still_sees_the_other_ones_claim(monke
 
     # First cycle: both are switches, both get handled, nothing is contested
     # into existence yet.
-    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
     registry.removed.clear()
     registry.renamed.clear()
 
@@ -683,7 +784,7 @@ async def test_an_old_id_only_one_device_answers_to_is_still_migrated(monkeypatc
         }
     )
 
-    await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
 
     assert registry.renamed == [("sensor.old_outside", _uid("Outside"))]
 
@@ -706,7 +807,7 @@ def test_the_migration_leaves_another_accounts_entity_alone():
         owners={"sensor.other_account_outside": other_account},
     )
 
-    changed = _migrate_device_unique_ids(
+    _migrate_device_unique_ids(
         registry,
         FakeConfigEntry(),
         DEVICE,
@@ -717,7 +818,6 @@ def test_the_migration_leaves_another_accounts_entity_alone():
         f"an entity of another WEM account was migrated: {registry.renamed}"
     )
     assert registry.removed == []
-    assert changed is False
 
 
 async def test_a_registry_hiccup_does_not_consume_the_migration(monkeypatch):
@@ -753,7 +853,7 @@ async def test_a_registry_hiccup_does_not_consume_the_migration(monkeypatch):
     coordinator = FakeCoordinator(data=unchanged)
 
     with pytest.raises(RuntimeError):
-        await wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
+        wemportal.migrate_unique_ids(None, FakeConfigEntry(), coordinator)
 
     coordinator.publish(unchanged)
     assert registry.removed == ["switch.holiday_begin"], (

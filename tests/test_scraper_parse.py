@@ -1064,6 +1064,29 @@ def test_a_fresh_login_that_lands_on_the_user_view_fails(monkeypatch, answer, re
         scraper.scrape()
 
 
+def test_a_login_that_went_through_ends_the_refusal_streak(monkeypatch):
+    """The streak of refused web logins ended only with a whole scrape that
+    worked. A login answered with the logged-in page proves the gateway let
+    it through, but a page after it that failed kept the streak at one - and
+    a single bare 403 hours later counted as the second in a row and paused
+    every request, the API's included, for 15 minutes."""
+    from custom_components.wemportal.exceptions import ServerError
+
+    monkeypatch.setattr(
+        "custom_components.wemportal.scraper.time.sleep", lambda _seconds: None
+    )
+    scraper = WemPortalScraper("user@example.org", "secret")
+    scraper.session = _FreshLoginPortal(_user_view_page())
+    scraper._account_state.refused_web_logins = 1
+
+    with pytest.raises(ServerError):
+        scraper.scrape()
+
+    assert scraper._account_state.refused_web_logins == 0, (
+        "a login the portal let through left the refusal streak standing"
+    )
+
+
 def test_a_reused_session_that_worked_does_not_log_in(scraper):
     """The whole point of the fast path: two requests saved when it holds."""
     _with_cached_session(scraper, _expert_page())

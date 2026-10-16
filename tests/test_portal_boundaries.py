@@ -206,9 +206,8 @@ def test_a_value_read_answered_with_null_fails_the_cycle_cleanly():
 JSON_ANSWER_BOUNDARIES = {
     "statistics.py": {"_fetch_device_statistics"},
     "transport.py": {"api_login", "get_response_details"},
+    "discovery.py": {"get_devices", "_store_module_description"},
     "wemportalapi.py": {
-        "get_devices",
-        "_store_module_description",
         "_change_value",
         "_fetch_device_status",
         "_fetch_parameter_values",

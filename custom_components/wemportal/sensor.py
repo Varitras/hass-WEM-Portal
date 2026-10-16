@@ -8,7 +8,12 @@ import json
 import re
 from typing import Any
 
-from homeassistant.components.sensor import RestoreSensor, SensorStateClass
+from homeassistant.components.sensor import (
+    RestoreSensor,
+    SensorDeviceClass,
+    SensorStateClass,
+)
+from homeassistant.components.sensor.const import NON_NUMERIC_DEVICE_CLASSES
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_USERNAME,
@@ -23,13 +28,21 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import GITHUB_PROJECT_URL
 from .entity import async_add_readings_as_they_appear, WemPortalEntity
 from .models import Reading, account_state
-from .wemportalapi import DEVICE_STATUS_ROWS
+from .wemportalapi import (
+    CONNECTION_STATES,
+    DEVICE_STATUS_CONNECTION,
+    DEVICE_STATUS_ERROR_MESSAGES,
+    DEVICE_STATUS_HAS_ERRORS,
+    DEVICE_STATUS_ROWS,
+    HAS_ERRORS_STATES,
+)
 from .utils import (
     build_device_info,
     device_is_reachable,
     device_model,
     fix_value_and_unit,
     is_nothing_active,
+    kept_unit,
     unit_to_device_class,
     unit_to_state_class,
 )
@@ -201,7 +214,9 @@ def _level_names(possible_values) -> dict[Any, str]:
     for entry in possible_values or []:
         if not isinstance(entry, dict):
             continue
-        text = str(entry.get("Text", "")).strip()
+        text = entry.get("Text")
+        # Not str() of it: a null became the word "None" and passed as a name.
+        text = text.strip() if isinstance(text, str) else ""
         if text:
             names[entry.get("Value")] = text
     return names
@@ -346,6 +361,15 @@ def _whole_number_shown_whole(value: Any) -> Any:
     return value
 
 
+# The same three sensors on every installation, unlike the parameters, so
+# Home Assistant names them - and states two of them - in its own language.
+_STATUS_TRANSLATIONS: dict[str, tuple[str, tuple[str, ...] | None]] = {
+    DEVICE_STATUS_CONNECTION: ("connection_status", CONNECTION_STATES),
+    DEVICE_STATUS_HAS_ERRORS: ("has_errors", HAS_ERRORS_STATES),
+    DEVICE_STATUS_ERROR_MESSAGES: ("error_messages", None),
+}
+
+
 class WemPortalSensor(WemPortalEntity, RestoreSensor):
     """Representation of a WEM Portal Sensor."""
 
@@ -361,7 +385,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             unit not in (None, "")
             or self.native_unit_of_measurement is not None
             or self.state_class is not None
-            or self.device_class is not None
+            or self.device_class not in (None, *NON_NUMERIC_DEVICE_CLASSES)
         )
 
         # A MISSING reading is expected, not invalid: an empty value, or a
@@ -378,7 +402,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # "unavailable" here sent a reader looking for a fault in the wrong
         # half of the integration.
         if value is None:
-            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
+            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._label)
             return None
 
         if is_nothing_active(value):
@@ -387,9 +411,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         if isinstance(value, str):
             value = value.strip()
             if value == "":
-                _LOGGER.debug(
-                    'Empty value for "%s" this cycle -> unknown', self._attr_name
-                )
+                _LOGGER.debug('Empty value for "%s" this cycle -> unknown', self._label)
                 return None
             if value.startswith("{"):
                 # The whole row, not just this value: the schedule fetch adds
@@ -410,7 +432,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 float(value)
             except TypeError, ValueError:
                 _report_unreadable_value(
-                    self._attr_name,
+                    self._label,
                     value,
                     account_state(
                         self._config_entry.data.get(CONF_USERNAME)
@@ -456,11 +478,12 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         self._attr_device_class = entity_data.device_class
         self._attr_state_class = entity_data.state_class
         self._attr_last_reset = entity_data.last_reset
+        self._name_by_translation()
         self._attr_native_value = self._validated_native_value(value, unit)
 
         _LOGGER.debug(
             'Init sensor: %s: "%s" [%s]',
-            self._attr_name,
+            self._label,
             self._attr_native_value,
             self._attr_native_unit_of_measurement,
         )
@@ -494,7 +517,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                 _LOGGER.debug(
                     "Restored unit %s for %s from previous session",
                     self._attr_native_unit_of_measurement,
-                    self._attr_name,
+                    self._label,
                 )
 
     @property
@@ -549,8 +572,11 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # The unit before the value, as in __init__: a "--" is decided by the
         # state class the unit gives, and taken afterwards the first one of a
         # counter whose unit had not arrived yet read as 0 - a reset.
-        if unit not in (None, ""):
-            self._attr_native_unit_of_measurement = unit
+        # A cell that started as "--" was built as text; its first number
+        # brings the empty unit, which kept_unit takes where none is known.
+        self._attr_native_unit_of_measurement = kept_unit(
+            unit, self._attr_native_unit_of_measurement
+        )
         # A new day of a statistics group is a new cycle, whatever the
         # size of its value - see statistics._start_of_the_day.
         self._attr_last_reset = row.last_reset
@@ -558,7 +584,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
 
         _LOGGER.debug(
             'Update sensor: %s: "%s" [%s]',
-            self._attr_name,
+            self._label,
             self._attr_native_value,
             self._attr_native_unit_of_measurement,
         )
@@ -577,6 +603,20 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         if self._parameter_id in DEVICE_STATUS_ROWS:
             return EntityCategory.DIAGNOSTIC
         return None
+
+    def _name_by_translation(self) -> None:
+        """A status sensor takes name and states from the translations.
+
+        Without the name set here: Home Assistant takes a set name over the
+        translation, and the value read gives these rows an English one."""
+        status = _STATUS_TRANSLATIONS.get(self._parameter_id)
+        if status is None:
+            return
+        del self._attr_name
+        self._attr_translation_key, states = status
+        if states is not None:
+            self._attr_device_class = SensorDeviceClass.ENUM
+            self._attr_options = list(states)
 
     @property
     def device_class(self):

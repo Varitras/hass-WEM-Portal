@@ -5,6 +5,7 @@ Select platform for wemportal component
 import logging
 
 import difflib
+import re
 from typing import Any
 
 from homeassistant.components.select import SelectEntity
@@ -92,7 +93,7 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
         # option names attached to say "no value". Same rule sensor.py states
         # for its own readings. Genuinely unusable values still raise below.
         if value is None:
-            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._attr_name)
+            _LOGGER.debug('No value for "%s" this cycle -> unknown', self._label)
             return None
 
         if value in self._options_names:
@@ -119,8 +120,18 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
                 for option_name in self._options_names
                 if isinstance(option_name, str)
             ]
-            matches = difflib.get_close_matches(str(value), str_names, n=1, cutoff=0.75)
-            if matches:
+            # Spelling variants of one setting only: a different number is a
+            # different setting, and "Party 4 h" shown as "Party 3 h" was a
+            # definite wrong state where unknown is the honest one.
+            digits = re.findall(r"\d+", str(value))
+            matches = [
+                name
+                for name in difflib.get_close_matches(
+                    str(value), str_names, n=len(str_names), cutoff=0.75
+                )
+                if re.findall(r"\d+", name) == digits
+            ]
+            if len(matches) == 1:
                 return matches[0]
         raise ValueError
 
@@ -141,11 +152,9 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
                 entity_data.value,
                 self._options,
                 self._options_names,
-                self._attr_name,
+                self._label,
             )
-        _LOGGER.debug(
-            'Init select: %s: "%s"', self._attr_name, self._attr_current_option
-        )
+        _LOGGER.debug('Init select: %s: "%s"', self._label, self._attr_current_option)
 
     def _portal_value_for(self, option: str) -> Any:
         """The portal value the chosen name stands for.
@@ -177,7 +186,7 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
                 translation_domain=DOMAIN,
                 translation_key="option_ambiguous",
                 translation_placeholders={
-                    "parameter": str(self._attr_name),
+                    "parameter": str(self._label),
                     "option": option,
                     "count": str(len(candidates)),
                 },
@@ -226,7 +235,7 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
                 value,
                 self._options,
                 self._options_names,
-                self._attr_name,
+                self._label,
             )
 
         self.async_write_ha_state()

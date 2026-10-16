@@ -86,7 +86,21 @@ LINE_BUDGETS = {
     # logger method under a name the log-call scan cannot see. And by 2 for
     # refusing a page with folded panels inside the scrape's try, where the
     # failure is counted - the check itself lives in scraper.py.
-    "wemportalapi.py": 2782,
+    # And by 3 for the poll's re-login failure, cleared with its deadline.
+    # And by 1 for keeping the web repair to `both` mode. And by 57 for the
+    # cycle class: a null status read as missing, a new module the portal
+    # fails skipped while the described ones are read, and the scrape
+    # backoff counted in web intervals.
+    # And by 16 for one answer to "which rows does the value read own",
+    # shared by both ageing passes.
+    # And by 7 for carrying the scraper's own device across a refresh of the
+    # device list, which is where that list is rebuilt.
+    # And by 5 for the two status rows' words, fixed so that automations keep
+    # comparing against them whatever language the user reads.
+    # Down to 2279: the discovery half moved to discovery.py.
+    # And up by 4: the device pass leaves the statistics rows alone only
+    # while their own fetch still asks the device.
+    "wemportalapi.py": 2283,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
@@ -96,13 +110,24 @@ LINE_BUDGETS = {
     # And by 11 for saying who answered each of its four 403s, gateway or
     # portal - five of them the import that no longer fits one line, three
     # the login's, said before a maintenance wording can raise past it.
-    "transport.py": 932,
+    # And by 2 for sending the HTTP-200 refusal through the same classifier,
+    # and by 5 for closing the web check's session: the body moved under a
+    # `with`, and the formatter wrapped what no longer fit. And by 19 for
+    # keeping a failed mid-poll re-login for the rest of the poll, in its
+    # own method so _recover_or_raise keeps its complexity.
+    # And by 5 for saying which pause holds and for how long, so a form
+    # can put it in the user's language.
+    "transport.py": 963,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     # And by 12 for keeping a reused session only once it reached the
     # Fachmann level, which the portal can quietly answer with the user one.
     # And by 3 for asking the gates before the login a dead reuse falls to.
-    "expert_writer.py": 1927,
+    # And by 2 for naming the options of a dropdown of words by their word.
+    # And by 27 for refusing a word two options answer to, and for keeping
+    # a number off the word lookup.
+    # And by 14 for saying a failing expert read once per id and reason.
+    "expert_writer.py": 1970,
 }
 
 # SonarSource's own default. Above it, a function is one somebody has to
@@ -117,8 +142,12 @@ COMPLEXITY_BUDGETS = {
     # One over the default for the question an empty API value has to ask
     # before it may leave a merged row alone: does the scrape still feed it.
     # And one more for the portal's "--" counting as empty there too.
-    "mapper.py::_merge_into_scraped": 17,
-    "expert_writer.py::WemPortalExpertClient.parse_parameter_form": 29,
+    # 19: a reading under its own key takes the API's unit like a plain
+    # sensor does - its first unitless answer had kept it unitless all run.
+    "mapper.py::_merge_into_scraped": 19,
+    # 31: a dropdown of words is named by its words as well, since its
+    # number is a posted index the portal never shows.
+    "expert_writer.py::WemPortalExpertClient.parse_parameter_form": 31,
     # The per-parameter ageing decision, split out of _clear_unanswered once
     # the merge map carried a device-scoped key of its own - the split the old
     # 27-budget comment foresaw. _clear_unanswered itself dropped to 9; this is
@@ -132,7 +161,9 @@ COMPLEXITY_BUDGETS = {
     # the three sibling expert paths already do - added the acquire/release
     # guard and a busy handler. Extracting it would be the pass-through helper
     # this file's header warns against.
-    "__init__.py::_async_register_expert_service": 28,
+    # And by 2 for a refusal the client already said: raised to the caller
+    # without a second, ERROR-level line.
+    "__init__.py::_async_register_expert_service": 30,
     # Back to 22: whether a page is the expert view is now answered once, by
     # _load_expert_page, for the reused session and the fresh login alike.
     "scraper.py::WemPortalScraper.scrape": 22,

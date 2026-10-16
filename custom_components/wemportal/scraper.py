@@ -591,6 +591,10 @@ class WemPortalScraper:
                 f"portal did not accept our cookies. URL: {redact_url(login_response.url)}"
             )
 
+        # The gateway let this login through: that ends a refusal streak,
+        # whatever the pages after it do (see WebLoginRefused).
+        self._account_state.refused_web_logins = 0
+
         # Wait a moment
         time.sleep(2)
 

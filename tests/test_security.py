@@ -83,7 +83,7 @@ def test_login_error_message_excludes_response_body(monkeypatch, caplog):
     body = b"<html>SECRET-SERVER-PAGE</html>"
     response = FakeResponse(400, {"Status": 5, "Message": "bad credentials"}, body)
     api = WemPortalApi("user@example.org", "secret")
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: FakeSession(response))
+    monkeypatch.setattr(real_requests, "Session", lambda: FakeSession(response))
 
     with (
         caplog.at_level(logging.WARNING),
@@ -155,7 +155,7 @@ def test_a_successful_login_does_not_log_the_username(monkeypatch, caplog):
     """
     response = FakeResponse(200, {"Status": 0, "Version": "3.1.3.0"})
     api = WemPortalApi("user@example.org", "secret")
-    monkeypatch.setattr(wemportalapi.requests, "Session", lambda: FakeSession(response))
+    monkeypatch.setattr(real_requests, "Session", lambda: FakeSession(response))
 
     with caplog.at_level(logging.DEBUG):
         api.api_login()
@@ -667,6 +667,7 @@ def _stored_log_methods(source: str) -> list[int]:
         ('_LOGGER.debug("x %r", title)', False),
         ('_LOGGER.debug("x %s", device_name)', False),
         ('_LOGGER.info("x %s", registry_entry.entity_id)', True),
+        ('_LOGGER.info("x %s", old_entity_id)', True),
         ('_LOGGER.debug("x %s", self.entityvalue)', True),
         ('_LOGGER.debug("x %s", entry.data["username"])', True),
         ('_LOGGER.debug("x %s", short_entityvalue(entityvalue))', False),
@@ -721,6 +722,23 @@ def test_a_device_list_is_logged_by_the_tails():
     assert short_device_ids(["1234", "5678"]) == ["…34", "…78"]
     assert short_device_ids([]) == []
     assert short_device_ids(None) is None
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["{device}-ConnectionStatus", "{device}-Energy_3", "Outside temperature"],
+)
+def test_a_status_or_statistics_row_is_logged_without_the_full_device_id(key):
+    """The status and statistics rows are keyed by the device id itself, so a
+    label that shortened only its own prefix still said "Can't find
+    …67:1234567-ConnectionStatus" at warning level."""
+    from custom_components.wemportal.utils import reading_label
+
+    device_id = "1234567"
+    label = reading_label(device_id, key.format(device=device_id))
+
+    assert device_id not in label
+    assert label.endswith(key.format(device="…67"))
 
 
 def test_no_log_call_names_the_installation():
@@ -1027,7 +1045,7 @@ _REFUSALS_SAID_ELSEWHERE = {
     ("transport.py", "make_api_call"),
     # Reads the status off an exception; the answer was described where it
     # arrived.
-    ("wemportalapi.py", "_survive_a_failed_description"),
+    ("discovery.py", "_survive_a_failed_description"),
 }
 
 

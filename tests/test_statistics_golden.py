@@ -136,8 +136,8 @@ def build_snapshot():
     snapshot = {}
 
     # A described group and an unnamed one, so both name paths are recorded:
-    # the translation with its "Energy" suffix rule, and the numeric fallback
-    # map for a group the portal did not name.
+    # the translation with its "Energy" suffix rule, and the number for a
+    # group the portal did not name.
     snapshot["named_and_unnamed_groups"] = _run(
         {
             API_STATISTICS_REFRESH_URL: [
@@ -153,7 +153,7 @@ def build_snapshot():
         }
     )
 
-    # A group type outside the fallback map falls back to "Energy <id>".
+    # Any number, not only the ones a portal is known to use.
     snapshot["unknown_group_id"] = _run(
         {
             API_STATISTICS_REFRESH_URL: [

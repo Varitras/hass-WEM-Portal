@@ -133,6 +133,25 @@ def _entity_that_can_actually_write(cls, **overrides):
     return entity, reached_the_portal
 
 
+def test_a_control_writes_to_the_module_its_row_now_has():
+    """The row key is "<module name>-<parameter>" and carries no address, so a
+    module that comes back at a new index after the module list was read
+    again keeps its key - and the entity went on writing to the index it was
+    built with. Whatever module sits there now got the value. The address is
+    the current row's, as the holiday service already reads it."""
+    entity, reached_the_portal = _entity_that_can_actually_write(WemPortalNumber)
+    entity.coordinator.data["1234"]["Pump"] = replace(
+        entity.coordinator.data["1234"]["Pump"], module_index=2, module_type=1
+    )
+
+    _run(entity.async_write_parameter, 21.0)
+
+    sent = reached_the_portal[0]
+    assert (sent.args[2], sent.args[3]) == (2, 1), (
+        f"the write went to the module the entity was built with: {sent.args}"
+    )
+
+
 def test_a_control_writes_while_its_reading_is_there():
     """The control case for the test below - without it, a refusal proves
     nothing about the reason for the refusal."""
@@ -462,6 +481,43 @@ def test_a_select_value_outside_its_options_still_warns(caplog):
         _entity(WemPortalSelect, value="nothing like an option")
 
     assert caplog.records, "an unresolvable option passed silently"
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        ("Party 4 h", None),
+        ("Party 3h", "Party 3 h"),
+    ],
+    ids=["another number", "the same setting spelled apart"],
+)
+def test_a_value_missing_from_the_options_is_not_shown_as_its_neighbour(value, shown):
+    """A device already on an option the cached list does not have yet - the
+    case rediscovery exists for - was shown as the nearest spelling: "Party
+    4 h" as "Party 3 h". A definite wrong setting, for an automation to act
+    on and a user to write back. A different number is a different setting;
+    a spelling variant of the same one still matches."""
+    entity = _entity(
+        WemPortalSelect,
+        value=value,
+        options=["3", "6"],
+        options_names=["Party 3 h", "Party 6 h"],
+    )
+
+    assert entity.current_option == shown
+
+
+def test_a_value_close_to_two_options_is_not_guessed():
+    """Two options spelled as close to the value, the same number in both:
+    which one is meant is not known, and the first was shown as a fact."""
+    entity = _entity(
+        WemPortalSelect,
+        value="Absenk 3",
+        options=["1", "2"],
+        options_names=["Absenkung 3", "Absenken 3"],
+    )
+
+    assert entity.current_option is None
 
 
 def _warnings(caplog):

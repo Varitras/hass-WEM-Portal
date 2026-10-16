@@ -437,7 +437,11 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             options = _without_the_installation(options)
         return self.async_update_reload_and_abort(
             entry,
-            unique_id=account,
+            # Only a move takes the new account id - that one is reserved. On
+            # the same login a legacy duplicate keeps the none it has: the
+            # other entry of the account holds the id, and a second holder is
+            # what Home Assistant reports as a bug and means to refuse.
+            unique_id=account if moves_to_another_login else entry.unique_id,
             # Its own title, not the new login: the title is not the login
             # any more, and one still carrying the old login gets renamed.
             title=entry_title_for(self.hass, entry),
