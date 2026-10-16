@@ -433,7 +433,10 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # By value: a reading may state its class as the plain text Home
         # Assistant also accepts - the statistics rows do - and that text is
         # never the same object as the enum member.
-        if self.state_class == SensorStateClass.TOTAL_INCREASING:
+        if self.state_class in (
+            SensorStateClass.TOTAL_INCREASING,
+            SensorStateClass.TOTAL,
+        ):
             return None
         return 0
 
@@ -452,6 +455,7 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # be in place the first time it runs, not just on later updates.
         self._attr_device_class = entity_data.device_class
         self._attr_state_class = entity_data.state_class
+        self._attr_last_reset = entity_data.last_reset
         self._attr_native_value = self._validated_native_value(value, unit)
 
         _LOGGER.debug(
@@ -547,6 +551,9 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         # counter whose unit had not arrived yet read as 0 - a reset.
         if unit not in (None, ""):
             self._attr_native_unit_of_measurement = unit
+        # A new day of a statistics group is a new cycle, whatever the
+        # size of its value - see statistics._start_of_the_day.
+        self._attr_last_reset = row.last_reset
         self._attr_native_value = self._validated_native_value(value, unit)
 
         _LOGGER.debug(

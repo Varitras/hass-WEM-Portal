@@ -12,9 +12,12 @@ freezes the exact traffic.
 import logging
 
 import time
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
 
 import requests
+from homeassistant.components.sensor import SensorStateClass
+from homeassistant.util import dt as dt_util
 
 from .exceptions import AuthError, ForbiddenError, WemPortalError
 from .models import HeavyFetchTurns, Reading
@@ -66,6 +69,31 @@ def _statistics_key(device_id: str) -> str:
 def _statistics_group_key(device_id: str, group_id: Any) -> str:
     """The bookkeeping key for one statistics group's failures."""
     return f"statistics:{device_id}:group:{group_id}"
+
+
+def _start_of_the_day(entry: dict[str, Any]) -> datetime | None:
+    """Midnight of the day a statistics entry reports, in Home Assistant's
+    time zone - the portal dates its days without one.
+
+    Each entry is one day's energy, not a meter reading. Home Assistant would
+    read a `total_increasing` sensor as a meter and start a new cycle only on
+    a drop below 90 % - and the portal does not drop at midnight: it ships
+    the new day as null until it has a value, so two similar days in a row
+    booked only their difference. The day itself is the cycle."""
+    try:
+        day = datetime.fromisoformat(str(entry.get("Date")))
+    except ValueError:
+        return None
+    return day.replace(tzinfo=dt_util.get_default_time_zone())
+
+
+def _state_class_for(day_started: datetime | None) -> str:
+    """`total` where the day is known; without it there is no cycle to name,
+    and a meter is the reading of last resort. The plain value, as a Reading
+    carries its state class - the sensor compares it by value."""
+    if day_started is None:
+        return SensorStateClass.TOTAL_INCREASING.value
+    return SensorStateClass.TOTAL.value
 
 
 class WemPortalStatistics:
@@ -212,6 +240,7 @@ class WemPortalStatistics:
         if latest_stat is None:
             return
         current_value = latest_stat.get("Value")
+        day_started = _start_of_the_day(latest_stat)
         _LOGGER.debug(
             "Statistics group %s: using entry dated %s of %d",
             group_id,
@@ -229,6 +258,7 @@ class WemPortalStatistics:
             old_sensor = self.data.get(device_id, {}).get(f"{device_id}-{sensor_name}")
             if isinstance(old_sensor, Reading) and old_sensor.value is not None:
                 current_value = old_sensor.value
+                day_started = old_sensor.last_reset
             else:
                 # No previous value either: skip rather than
                 # invent a 0.0, which the Energy Dashboard
@@ -253,7 +283,8 @@ class WemPortalStatistics:
             value=current_value,
             platform="sensor",
             device_class="energy",
-            state_class="total_increasing",
+            state_class=_state_class_for(day_started),
+            last_reset=day_started,
         )
 
     def _fetch_device_statistics(self, device_id: str) -> None:

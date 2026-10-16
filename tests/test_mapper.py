@@ -545,9 +545,11 @@ def test_a_scraper_arriving_later_takes_the_programme_week_with_the_row():
 
 
 def test_the_programme_week_goes_only_to_the_row_its_fetch_maintains():
-    """A reading may merge into two scraped rows, but the schedule fetch
-    refreshes and drops the week on the first alone: handed to both, the
-    second kept the old week for the session over the plan its value showed."""
+    """The schedule fetch refreshes and drops the week on the row the
+    reading merged into. When a reading could still merge into two rows,
+    the week was handed to both, and the second kept the old week for the
+    session; a reading now goes into the row under its own module only, and
+    the week with it."""
     modules = _modules(_parameter("Heizprogramm1", DataType=WemDataType.PROGRAM))
     answer = _values(_value("Heizprogramm1", string='{"MO-1": "06:00-22:00"}'))
     api_only = _process(modules, answer, mode="both")
@@ -566,9 +568,9 @@ def test_the_programme_week_goes_only_to_the_row_its_fetch_maintains():
         scraping_mapper=scraping_mapper,
     )
 
-    (owner, other) = next(iter(scraping_mapper.values()))
-    assert merged[owner].circuit_times_day == A_FED_WEEK
-    assert merged[other].circuit_times_day is None, (
+    assert next(iter(scraping_mapper.values())) == ["heat_pump-heizprogramm1"]
+    assert merged["heat_pump-heizprogramm1"].circuit_times_day == A_FED_WEEK
+    assert merged["circuit-heizprogramm1"].circuit_times_day is None, (
         "a row no schedule fetch maintains was handed the week"
     )
 
@@ -945,6 +947,47 @@ def test_only_one_module_may_claim_the_same_scraped_row():
     assert {21.0, 45.0} == {
         row.value for row in data.values() if isinstance(row, Reading)
     }, f"a circuit's value was overwritten by the other's: {data}"
+
+
+def test_one_api_reading_is_not_merged_into_two_scraped_rows():
+    """The expert page shows a flow temperature under the circuit and another
+    under the heat pump - two readings, 25.5 and 26.0. The API's heat
+    generator sends one, and its name covers both labels, so it was written
+    into both rows and the circuit showed the generator's value under its own
+    name. Neither heading is the API module's, so neither row is meant: the
+    reading keeps its own entity, the rows keep theirs."""
+    data = _process(
+        _modules(_parameter("Flow")),
+        _values(_value("Flow", numeric=24.0, unit="°C")),
+        mode="both",
+        existing={
+            **_scraped("heating_circuit_1-flow", "Heating circuit 1 - Flow", 25.5),
+            **_scraped("compressor-flow", "Compressor - Flow", 26.0),
+        },
+    )
+
+    assert data["heating_circuit_1-flow"].value == 25.5
+    assert data["compressor-flow"].value == 26.0
+    assert data["Heat pump-Flow"].value == 24.0
+
+
+def test_of_two_matching_rows_the_one_under_the_api_modules_heading_is_merged():
+    """The heading says which module a row belongs to; where exactly one of
+    the matching rows sits under the API reading's own module, that row is
+    the reading and the other is not."""
+    data = _process(
+        _modules(_parameter("Flow")),
+        _values(_value("Flow", numeric=24.0, unit="°C")),
+        mode="both",
+        existing={
+            **_scraped("heating_circuit_1-flow", "Heating circuit 1 - Flow", 25.5),
+            **_scraped("heat_pump-flow", "Heat pump - Flow", 26.0),
+        },
+    )
+
+    assert data["heat_pump-flow"].value == 24.0
+    assert data["heating_circuit_1-flow"].value == 25.5
+    assert "Heat pump-Flow" not in data
 
 
 def test_both_mode_keeps_an_unmatched_api_value_under_its_own_key():

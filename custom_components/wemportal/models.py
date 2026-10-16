@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field, fields
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from homeassistant.config_entries import ConfigEntry
@@ -261,6 +262,9 @@ class Reading:
     possible_values: list[Any] | None = None
     device_class: str | None = None
     state_class: str | None = None
+    # Where the cycle of a `total` reading began: the statistics groups
+    # report one day's energy each.
+    last_reset: datetime | None = None
     # The full fault list of the error-messages status sensor - the state is
     # capped by Home Assistant, this attribute is not.
     errors: list[Any] | None = None
