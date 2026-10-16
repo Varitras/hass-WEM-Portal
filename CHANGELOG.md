@@ -6,6 +6,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.15.0b1] – 2026-10-16
+
+A first beta of 1.15.0. Home Assistant 2026.9.0 or newer is required. The
+status sensors and the integration's own texts follow Home Assistant's
+language - **Has Errors now states `yes` / `no`, check automations that
+compare against "Yes" or "No"** - portal names are translated word by word,
+and many fixes for values shown as current when nothing refreshes them, for
+expert parameters and for what the log says.
+
 ### Changed
 
 - **Has Errors now states `yes` / `no`, and Error Messages `none` without a
