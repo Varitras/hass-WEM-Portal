@@ -277,7 +277,8 @@ connection, they share the same budget.
 
 ## Options reference
 
-`Settings > Devices & Services > WEM Portal > CONFIGURE`
+`Settings > Devices & Services > WEM Portal > CONFIGURE`, then
+`Configure settings and expert slots`.
 
 ### Polling
 
@@ -353,7 +354,9 @@ holiday were set.
 ### `wemportal.set_expert_parameter`
 
 Writes one expert parameter. Requires the expert feature to be enabled and the
-parameter to sit in one of the slots — see below.
+parameter to sit in one of the slots — see below. It refuses while more than one
+WEM Portal entry has expert write access on: one action cannot say which account
+is meant.
 
 ```yaml
 action: wemportal.set_expert_parameter
@@ -562,7 +565,8 @@ Two consequences:
 
 - **The number entity cannot offer it**, and neither can Home Assistant's own
   range check. Set it through the action instead, naming the word the portal
-  shows — case does not matter:
+  shows — case does not matter, unless two options differ only in case; then
+  write it exactly as the portal does:
 
   ```yaml
   action: wemportal.set_expert_parameter

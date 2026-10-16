@@ -109,10 +109,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
   parameter. It is now asked once a day until it answers again; a write
   that works brings it back at once.
 - **An expert parameter made only of words takes the word.** A dropdown
-  with no number in it - an operating mode, say - shows as the position of
-  the option, a number the portal never displays, and
-  `set_expert_parameter` refused the word the portal does show. It now
-  takes the word, in any case, as it already did for "Aus" beside a scale.
+  with no number in it - an operating mode, say - shows the value the
+  portal sends for the option, a number it never displays and which can
+  start at 0, and `set_expert_parameter` refused the word the portal does
+  show. It now takes the word, as it already did for "Aus" beside a scale;
+  case does not matter unless two options differ only in case.
 - **A refused expert request is logged once.** The `set_expert_parameter`
   action logged a refused write a second time as an error, and the
   parameter search in the options logged a refusal again as a warning that
