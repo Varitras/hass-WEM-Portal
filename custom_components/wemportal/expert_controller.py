@@ -464,8 +464,8 @@ class ExpertController:
             # of it. A web login that stays broken used to say this daily,
             # twenty-four times.
             first_of_the_outage = self._batch_failures == 1
-            log = _LOGGER.info if first_of_the_outage else _LOGGER.debug
-            log(
+            _LOGGER.log(
+                logging.INFO if first_of_the_outage else logging.DEBUG,
                 "Expert auto-poll: all %d configured parameter(s) failed to "
                 "read this cycle. Treating that as one failed batch rather "
                 "than %d bad ids; not counting it against them.",

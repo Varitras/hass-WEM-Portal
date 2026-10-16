@@ -2,7 +2,10 @@
 text, and auth-error message hygiene.
 """
 
+import ast
 import logging
+import pathlib
+import re
 
 import pytest
 import requests as real_requests
@@ -530,8 +533,219 @@ def test_the_parameter_read_does_not_log_the_whole_account(caplog):
     with caplog.at_level(logging.DEBUG):
         api.get_parameters()
 
-    assert "1234" in caplog.text, "a log that names nothing is not worth writing"
+    assert "…34" in caplog.text, "a log that names nothing is not worth writing"
     assert "23.5" not in caplog.text, "the account's readings went into the log"
+
+
+# Names that carry who the log is about: a device id (alone, in a list, or
+# inside a unique id or an entity id, which Home Assistant builds from the
+# device name), an expert entityvalue id, or the login. A page's own title is
+# a local name and not the entry's title, which is why `title` counts only as
+# an attribute.
+# shortcut: matched by name, so an id under a neutral one (the migration's
+# `old_id`) passes; name it after what it is before logging it.
+_IDENTIFYING_NAME = re.compile(
+    r"(?:^|_)(?:device_ids?|devices|unique_id|entity_id|entityvalues?)$|username",
+    re.IGNORECASE,
+)
+_IDENTIFYING_ATTRIBUTE = {"title"}
+# Read out of a mapping by a literal key rather than by a named constant.
+_IDENTIFYING_KEYS = {"username", "password"}
+# What makes such a name safe to hand over: shortened, digested, redacted, or
+# only counted.
+_MASKS = {
+    "short_device_id",
+    "short_device_ids",
+    "short_entityvalue",
+    "entityvalue_digest",
+    "redact_url",
+    "reading_label",
+    "len",
+}
+
+
+def _is_a_mask(node) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in _MASKS
+    )
+
+
+def _identifying_name(node) -> str | None:
+    if isinstance(node, ast.Name) and _IDENTIFYING_NAME.search(node.id):
+        return node.id
+    if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant):
+        key = str(node.slice.value).lower()
+        return key if key in _IDENTIFYING_KEYS else None
+    if not isinstance(node, ast.Attribute):
+        return None
+    if _IDENTIFYING_NAME.search(node.attr) or node.attr in _IDENTIFYING_ATTRIBUTE:
+        return node.attr
+    return None
+
+
+def _unmasked_identifiers(node) -> list[str]:
+    """The identifying names under `node` that no mask call wraps.
+
+    A comparison hands over only True or False, whatever it compares."""
+    if _is_a_mask(node) or isinstance(node, ast.Compare):
+        return []
+    found = [name for name in [_identifying_name(node)] if name]
+    for child in ast.iter_child_nodes(node):
+        found.extend(_unmasked_identifiers(child))
+    return found
+
+
+def _is_a_log_call(node) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "_LOGGER"
+    )
+
+
+def _message_of_a_raise(node) -> list:
+    """The positional arguments an exception is built with - its text, which
+    reaches the log through `%s, exc` and Home Assistant's own failure lines.
+    Translation placeholders are keywords and go to the user who acted."""
+    raised = node.exc if isinstance(node, ast.Raise) else None
+    if not isinstance(raised, ast.Call):
+        return []
+    return list(raised.args)
+
+
+def _log_calls_naming_an_installation(source: str) -> list[tuple[int, list[str]]]:
+    offenders = []
+    for node in ast.walk(ast.parse(source)):
+        handed_over = _message_of_a_raise(node)
+        if _is_a_log_call(node):
+            handed_over = [*node.args, *(keyword.value for keyword in node.keywords)]
+        names = [name for arg in handed_over for name in _unmasked_identifiers(arg)]
+        if names:
+            offenders.append((node.lineno, names))
+    return offenders
+
+
+def _stored_log_methods(source: str) -> list[int]:
+    """Lines where a logger method is taken without being called.
+
+    A method bound to a name - `log = _LOGGER.debug if ... else
+    _LOGGER.warning` - is called through that name, which no scan of
+    `_LOGGER.<method>(...)` sees. `_LOGGER.log(level, ...)` says the same and
+    stays visible."""
+    tree = ast.parse(source)
+    called = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "_LOGGER"
+        and id(node) not in called
+    ]
+
+
+@pytest.mark.parametrize(
+    ("source", "caught"),
+    [
+        ('_LOGGER.debug("x %s", device_id)', True),
+        ('_LOGGER.warning("x %s", self._device_id)', True),
+        ('_LOGGER.debug("x %s", enabled_devices)', True),
+        ('_LOGGER.debug("x %s", [d for d in target_devices])', True),
+        ('_LOGGER.warning("x %s", self._attr_unique_id)', True),
+        ('_LOGGER.info("x %s", entry.title)', True),
+        ('_LOGGER.info("x %s", entry.data[CONF_USERNAME])', True),
+        ('_LOGGER.log(level, "x %s", device_id)', True),
+        ('_LOGGER.debug(f"x {device_id}")', True),
+        ('_LOGGER.debug("x %s", device_id == other or device_id)', True),
+        ('_LOGGER.debug("x %s", short_device_id(device_id))', False),
+        ('_LOGGER.debug("x %s", short_device_ids(enabled_devices))', False),
+        ('_LOGGER.debug("x %s", device_id in self.data)', False),
+        ('_LOGGER.info("x %d", len(devices))', False),
+        ('_LOGGER.debug("x %r", title)', False),
+        ('_LOGGER.debug("x %s", device_name)', False),
+        ('_LOGGER.info("x %s", registry_entry.entity_id)', True),
+        ('_LOGGER.debug("x %s", self.entityvalue)', True),
+        ('_LOGGER.debug("x %s", entry.data["username"])', True),
+        ('_LOGGER.debug("x %s", short_entityvalue(entityvalue))', False),
+        ('raise WemPortalError(f"device {device_id} failed")', True),
+        ('raise WemPortalError("device %s failed" % device_id)', True),
+        ('raise WemPortalError(f"device {short_device_id(device_id)} failed")', False),
+        (
+            "raise HomeAssistantError(translation_placeholders={'entity': entity_id})",
+            False,
+        ),
+    ],
+)
+def test_the_identifier_scan_sees_these_shapes(source, caught):
+    assert bool(_log_calls_naming_an_installation(source)) is caught
+
+
+@pytest.mark.parametrize(
+    ("source", "caught"),
+    [
+        ("log = _LOGGER.debug if same else _LOGGER.warning", True),
+        ("handler = _LOGGER.info", True),
+        ('_LOGGER.log(level, "x")', False),
+        ("_LOGGER.isEnabledFor(logging.DEBUG)", False),
+    ],
+)
+def test_the_stored_method_scan_sees_these_shapes(source, caught):
+    assert bool(_stored_log_methods(source)) is caught
+
+
+def test_no_log_method_is_stored_under_another_name():
+    """A logger method called through a name of its own slipped past the scan
+    below with a full device id in it - at warning level, on every status
+    change of an offline device."""
+    package = pathlib.Path(__file__).resolve().parents[1] / "custom_components"
+    offenders = [
+        f"{path.name}:{line}"
+        for path in sorted((package / "wemportal").glob("*.py"))
+        for line in _stored_log_methods(path.read_text(encoding="utf-8"))
+    ]
+
+    assert not offenders, (
+        f"logger method(s) taken without a call: {offenders}. Call "
+        "_LOGGER.log(level, ...) with the level chosen instead."
+    )
+
+
+def test_a_device_list_is_logged_by_the_tails():
+    """None stays None: to the device filter it means "no filter", which is
+    what the debug line is there to tell apart from an empty list."""
+    from custom_components.wemportal.utils import short_device_ids
+
+    assert short_device_ids(["1234", "5678"]) == ["…34", "…78"]
+    assert short_device_ids([]) == []
+    assert short_device_ids(None) is None
+
+
+def test_no_log_call_names_the_installation():
+    """A Home Assistant log is what gets attached to an issue, and the device
+    ids in it belong to one installation. The login was in it too: the hub
+    device is named after it, and the startup line listed devices by name.
+
+    Behaviour tests catch the one line being written; this asks every log
+    call in the package, which is the only way the next one is caught too.
+    """
+    package = pathlib.Path(__file__).resolve().parents[1] / "custom_components"
+    offenders = [
+        f"{path.name}:{line} {names}"
+        for path in sorted((package / "wemportal").glob("*.py"))
+        for line, names in _log_calls_naming_an_installation(
+            path.read_text(encoding="utf-8")
+        )
+    ]
+
+    assert not offenders, (
+        "log call(s) or exception text handing over a device id, a unique or "
+        f"entity id, an entityvalue or the login: {offenders}. Pass device ids "
+        "through short_device_id() and entityvalues through short_entityvalue(), "
+        "log a count instead of a list, and leave the login out."
+    )
 
 
 _STRING_TESTS = {"startswith", "endswith", "find", "rfind", "index"}

@@ -41,6 +41,7 @@ from .const import (
 from .date import date_to_epoch
 from .exceptions import WemPortalError
 from .models import Reading, WemPortalData, is_still_serving, raise_if_not_writable
+from .utils import short_device_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -236,7 +237,10 @@ async def _write_holiday(hass: HomeAssistant, call: ServiceCall) -> None:
     begin.data.coordinator.async_update_listeners()
 
     _LOGGER.info(
-        "Holiday set from %s to %s on device %s.", begin_day, end_day, begin.device_id
+        "Holiday set from %s to %s on device %s.",
+        begin_day,
+        end_day,
+        short_device_id(begin.device_id),
     )
 
 

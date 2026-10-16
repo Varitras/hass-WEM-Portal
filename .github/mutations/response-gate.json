@@ -1011,8 +1011,8 @@
   {
     "label": "discovery: a refused network walked into module after module",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                device_id,\n            )\n            raise exc\n        if status_code == 400:",
-    "new": "                device_id,\n            )\n            return\n        if status_code == 400:",
+    "old": "                short_device_id(device_id),\n            )\n            raise exc\n        if status_code == 400:",
+    "new": "                short_device_id(device_id),\n            )\n            return\n        if status_code == 400:",
     "tests": "a_refused_discovery_stops_at_the_first_module"
   },
   {
@@ -1144,8 +1144,8 @@
   {
     "label": "empty read: counting a skipped device as refreshed must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                device_id,\n            )\n            return \"it has modules but no known parameters yet\"",
-    "new": "                device_id,\n            )\n            return None",
+    "old": "                short_device_id(device_id),\n            )\n            return \"it has modules but no known parameters yet\"",
+    "new": "                short_device_id(device_id),\n            )\n            return None",
     "tests": "device_with_no_parameters_is_not_asked_for_values"
   },
   {
@@ -1886,7 +1886,7 @@
   {
     "label": "statistics: a device whose every group failed counts as read",
     "path": "custom_components/wemportal/statistics.py",
-    "old": "        if failed and not read:\n            raise WemPortalError(\n                f\"Every statistics group of device {device_id} failed to read \"\n                f\"({failed} of {len(group_types)}).\"\n            )",
+    "old": "        if failed and not read:\n            raise WemPortalError(\n                f\"Every statistics group of device {short_device_id(device_id)} \"\n                \"failed to read \"\n                f\"({failed} of {len(group_types)}).\"\n            )",
     "new": "        pass",
     "tests": "a_device_whose_every_group_failed_is_not_counted_as_a_success"
   },
@@ -3440,8 +3440,8 @@
   {
     "label": "logs: dumping the account's readings from the parameter read",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            _LOGGER.debug(\"Fetching api parameters data for device %s\", device_id)\n",
-    "new": "            _LOGGER.debug(\"Fetching api parameters data for device %s\", device_id)\n            _LOGGER.debug(self.data)\n",
+    "old": "                \"Fetching api parameters data for device %s\", short_device_id(device_id)\n            )\n",
+    "new": "                \"Fetching api parameters data for device %s\", short_device_id(device_id)\n            )\n            _LOGGER.debug(self.data)\n",
     "tests": "no_log_call_hands_over_a_whole_store or parameter_read_does_not_log_the_whole_account"
   },
   {
@@ -3461,7 +3461,7 @@
   {
     "label": "entity: a reading that really went away passing in silence",
     "path": "custom_components/wemportal/entity.py",
-    "old": "        _LOGGER.warning(\"Can't find %s\", self._attr_unique_id)",
+    "old": "        _LOGGER.warning(\"Can't find %s\", self._log_label())",
     "new": "        pass",
     "tests": "row_that_is_really_gone_is_still_reported"
   },
@@ -4000,7 +4000,7 @@
   {
     "label": "reconfigure: the old installation's expert slots kept after a move",
     "old": "            options = _without_the_installation(options)\n",
-    "new": "",
+    "new": "            pass\n",
     "tests": "drops_the_old_installations_expert_slots",
     "path": "custom_components/wemportal/config_flow.py"
   },
@@ -5416,7 +5416,7 @@
     "path": "custom_components/wemportal/__init__.py",
     "old": "        _LOGGER.info(\"Found %d devices for %s\", len(devices), DOMAIN)\n",
     "new": "        _LOGGER.info(\"Found devices for %s: %s\", DOMAIN, [device.name for device in devices])\n",
-    "tests": "a_restart_does_not_log_the_login"
+    "tests": "a_restart_does_not_log_the_login or no_log_call_names_the_installation"
   },
   {
     "label": "entity: a row a merge retired reported missing again",
@@ -5424,5 +5424,82 @@
     "old": "        if (self._device_id, self._data_key) in set(\n",
     "new": "        if (self._device_id, self._data_key) not in set(\n",
     "tests": "merge_retired_is_not_reported_missing or a_row_that_is_really_gone_is_still_reported"
+  },
+  {
+    "label": "logs: a device id handed to a log call in full again",
+    "path": "custom_components/wemportal/holiday.py",
+    "old": "        short_device_id(begin.device_id),\n",
+    "new": "        begin.device_id,\n",
+    "tests": "no_log_call_names_the_installation"
+  },
+  {
+    "label": "logs: a device list logged with the full ids",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return [short_device_id(device_id) for device_id in device_ids]\n",
+    "new": "    return list(device_ids)\n",
+    "tests": "device_list_is_logged_by_the_tails"
+  },
+  {
+    "label": "entity: a missing reading names its device in full again",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return f\"{short_device_id(device_id)}:{key}\"\n",
+    "new": "    return f\"{device_id}:{key}\"\n",
+    "tests": "missing_reading_names_its_device_only_by_the_tail"
+  },
+  {
+    "label": "entry title: the second account counted from 1, not 2",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "    number = 2\n",
+    "new": "    number = 1\n",
+    "tests": "numbered_not_named_after_its_login"
+  },
+  {
+    "label": "entry title: a title the user chose replaced as well",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "    if not login or entry.title.strip().casefold() != login:\n",
+    "new": "    if not login:\n",
+    "tests": "entry_named_after_its_login_is_renamed"
+  },
+  {
+    "label": "entry title: an entry named after its login left as it is at setup",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    retitle_an_entry_named_after_its_login(hass, entry)\n",
+    "new": "",
+    "tests": "setup_retry_does_not_log_the_login or entry_named_after_its_login_is_renamed"
+  },
+  {
+    "label": "entry title: a new entry named after the login again",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "                    title=free_entry_title(self.hass),\n",
+    "new": "                    title=user_input[CONF_USERNAME],\n",
+    "tests": "config_flow_creates_entry"
+  },
+  {
+    "label": "entry title: a move keeps the old login as the title",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "            title=entry_title_for(self.hass, entry),\n",
+    "new": "            title=entry.title,\n",
+    "tests": "move_renames_an_entry_still_named_after_its_old_login"
+  },
+  {
+    "label": "logs: a logger method chosen and stored under a name again",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "            _LOGGER.log(\n                logging.INFO if first_of_the_outage else logging.DEBUG,\n",
+    "new": "            (_LOGGER.info if first_of_the_outage else _LOGGER.debug)(\n",
+    "tests": "no_log_method_is_stored_under_another_name"
+  },
+  {
+    "label": "logs: an exception text carrying the full device id again",
+    "path": "custom_components/wemportal/statistics.py",
+    "old": "                f\"Every statistics group of device {short_device_id(device_id)} \"\n",
+    "new": "                f\"Every statistics group of device {device_id} \"\n",
+    "tests": "no_log_call_names_the_installation"
+  },
+  {
+    "label": "logs: a removed expert entity named by its entity id again",
+    "path": "custom_components/wemportal/number.py",
+    "old": "                registry_entry.original_name,\n",
+    "new": "                registry_entry.entity_id,\n",
+    "tests": "no_log_call_names_the_installation"
   }
 ]

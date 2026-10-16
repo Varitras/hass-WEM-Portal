@@ -347,9 +347,8 @@ def short_entityvalue(entityvalue: str) -> str:
     """Shortened entityvalue for user-visible log/notification text.
 
     entityvalues are installation-specific and shouldn't end up verbatim in
-    text people copy into issues/forums. Debug-level logs keep the full id
-    (needed for troubleshooting); info/warning/error and notifications use
-    this shortened form.
+    text people copy into issues/forums - a debug log is exactly that text,
+    so every level and every notification uses this shortened form.
     """
     text = entityvalue or ""
     return f"{text[:6]}…" if len(text) > 6 else text

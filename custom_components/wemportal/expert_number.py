@@ -34,6 +34,7 @@ from .exceptions import (
     WemPortalError,
 )
 from .expert_options import entityvalue_digest
+from .migration import ENTRY_TITLE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -627,6 +628,6 @@ class WemPortalExpertNumber(RestoreNumber):
     def device_info(self) -> DeviceInfo:
         return {
             "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._config_entry.title or "WEM Portal",
+            "name": self._config_entry.title or ENTRY_TITLE,
             "manufacturer": "Weishaupt",
         }

@@ -111,6 +111,21 @@ def short_device_id(device_id: str | None) -> str:
     return f"…{text[-2:]}" if len(text) > 2 else text
 
 
+def reading_label(device_id: str | None, key: str) -> str:
+    """A reading as a log names it: its key under the shortened device id,
+    in place of the unique or entity id, both of which carry the full one.
+    """
+    return f"{short_device_id(device_id)}:{key}"
+
+
+def short_device_ids(device_ids: Iterable[str] | None) -> list[str] | None:
+    """short_device_id for each id of a list. None stays None: to the
+    device filter it means "no filter", which an empty list does not."""
+    if device_ids is None:
+        return None
+    return [short_device_id(device_id) for device_id in device_ids]
+
+
 def build_device_info(
     entry_id: str,
     device_id: str,

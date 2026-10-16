@@ -15,6 +15,7 @@ from .utils import (
     portal_list,
     sanitize_value,
     schedule_fetch_still_feeds,
+    short_device_id,
     unit_to_icon,
 )
 
@@ -776,7 +777,7 @@ def _clear_unanswered(
             _LOGGER.debug(
                 "Device %s module %s/%s: the portal sent no value for %s; "
                 "their last reading is not current any more.",
-                device_id,
+                short_device_id(device_id),
                 module_key.module_index,
                 module_key.module_type,
                 ", ".join(sorted(cleared)),

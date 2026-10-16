@@ -85,7 +85,8 @@ def test_several_devices_are_reported_once_when_the_scraper_picks_one(caplog):
 
     assert resolved == "1234"
     assert "2 devices" in caplog.text
-    assert "1234" in caplog.text
+    # The tail tells the account's devices apart; the full id stays out.
+    assert "…34" in caplog.text
 
 
 def test_a_single_device_says_nothing(caplog):

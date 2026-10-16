@@ -15,10 +15,20 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- **The login no longer appears in the log.** Every start after the first
-  listed the integration's devices by name at info level, and the hub device
-  is named after the login - an email address - so a log pasted into an
-  issue published it. The line now gives only the number of devices.
+- **The login no longer appears in the log, and the integration is called
+  "WEM Portal".** Its entry was named after the login - an email address -
+  and Home Assistant names an entry by its title in its own log lines, among
+  them the retry after a first login the portal turned away. The hub device
+  took the same name, and the startup line listed the devices by it. Entries
+  are now called "WEM Portal" ("WEM Portal 2" and so on for further
+  accounts); one still named after its login is renamed once, a name you
+  gave it yourself stays. Entity ids already created keep their names.
+- **The integration's own log lines show device ids only shortened.** The
+  id of your installation stood in full in many of them - in the "Can't
+  find" warning, the holiday confirmation and most debug lines. They now
+  show its last two digits, as the error messages meant for sharing already
+  did. Entity ids still contain the full id, because the devices are named
+  after it, and Home Assistant's own log lines name entities by those ids.
 - **No more "Can't find" warnings for entities a merge takes down.** In
   `both` mode, when the first web login after a restart is refused, the
   readings the web page also shows get entities of their own from the API

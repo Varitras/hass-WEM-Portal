@@ -1,4 +1,5 @@
-"""Migrating entities from older unique_id shapes to the current one.
+"""Migrating entities from older unique_id shapes to the current one - and
+entries from the title they used to get.
 
 Lifted wholesale out of __init__.py: these are free functions (no self), so
 the move is a real relocation rather than a mixin trick. The lifecycle in
@@ -12,16 +13,59 @@ once - each is explained at the function it belongs to.
 import logging
 
 from collections.abc import Collection, Mapping
-from typing import Any
+from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry
 
 from .const import DOMAIN, PLATFORMS
 from .models import Reading
+from .utils import reading_label
 
 _LOGGER = logging.getLogger(__name__)
+
+# An entry's title is not the login: Home Assistant names the entry by its
+# title in its own log lines - a setup retry among them, ordinary when the
+# portal turns the first login after a restart away - and the hub device
+# is named after it, which put the address into entity ids as well.
+ENTRY_TITLE: Final = "WEM Portal"
+
+
+def free_entry_title(hass: HomeAssistant, entry_id: str | None = None) -> str:
+    """The title for an entry: "WEM Portal", numbered from 2 when an entry
+    already has it. `entry_id` is the entry being titled, whose own title
+    does not count as taken."""
+    taken = {
+        other.title
+        for other in hass.config_entries.async_entries(DOMAIN)
+        if other.entry_id != entry_id
+    }
+    title = ENTRY_TITLE
+    number = 2
+    while title in taken:
+        title = f"{ENTRY_TITLE} {number}"
+        number += 1
+    return title
+
+
+def entry_title_for(hass: HomeAssistant, entry: ConfigEntry) -> str:
+    """The title `entry` should carry: its own, unless that is still the
+    login it used to get. A title the user chose is theirs and stays."""
+    login = str(entry.data.get(CONF_USERNAME, "")).strip().casefold()
+    if not login or entry.title.strip().casefold() != login:
+        return entry.title
+    return free_entry_title(hass, entry.entry_id)
+
+
+@callback
+def retitle_an_entry_named_after_its_login(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Give an entry that still carries the login as its title the current
+    one."""
+    hass.config_entries.async_update_entry(entry, title=entry_title_for(hass, entry))
 
 
 def get_wemportal_unique_id(config_entry_id: str, device_id: str, name: str) -> str:
@@ -165,10 +209,8 @@ def _adopt_entity_under_its_old_id(
         if old_id == new_id:
             return False
         _LOGGER.info(
-            "Migrating entity %s from old id %s to new unique_id %s",
+            "Migrating entity %s to the current unique_id",
             name_id,
-            old_id,
-            new_id,
         )
         registry.async_update_entity(name_id, new_unique_id=new_id)
         return True
@@ -254,7 +296,7 @@ def _remove_entities_from_a_previous_platform(
         ):
             _LOGGER.info(
                 "%s is a %s now - removing the entity it left behind.",
-                stale,
+                reading_label(device_id, unique_id),
                 current,
             )
             registry.async_remove(stale)
@@ -315,7 +357,7 @@ def _remove_orphaned_by_a_merge(
             _LOGGER.info(
                 "%s was merged into another row and left showing unknown - "
                 "removing the entity it left behind.",
-                entity_id,
+                reading_label(device_id, own_key),
             )
             registry.async_remove(entity_id)
 

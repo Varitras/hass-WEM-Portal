@@ -67,6 +67,7 @@ from .utils import (
     portal_list,
     schedule_fetch_still_feeds,
     short_device_id,
+    short_device_ids,
 )
 
 if TYPE_CHECKING:
@@ -237,7 +238,7 @@ def _report_missing_job_id(device_id: str, reported: set[str]) -> None:
         "read then returns whichever job the portal considers newest, which "
         "may be the previous measurement. Please report this together with "
         "your portal model - see %s",
-        device_id,
+        short_device_id(device_id),
         GITHUB_PROJECT_URL,
     )
 
@@ -545,7 +546,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             "Device %s has not answered for %d minutes. Its %d reading(s) are "
             "no longer current and are now shown as unknown rather than as "
             "the values they had then.",
-            device_id,
+            short_device_id(device_id),
             int(stale_for // 60),
             len(forgotten),
         )
@@ -735,7 +736,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                     "like they belong to another device, use `api` mode for "
                     "this account.",
                     len(self.modules),
-                    self.scraper_device_id,
+                    short_device_id(self.scraper_device_id),
                 )
         else:
             self.scraper_device_id = SCRAPER_FALLBACK_DEVICE_ID
@@ -1578,7 +1579,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             _LOGGER.warning(
                 "Could not re-read the parameters of device %s module %s/%s (%s). "
                 "Keeping the %d already known; trying again in about %d h.",
-                device_id,
+                short_device_id(device_id),
                 values["Index"],
                 values["Type"],
                 why,
@@ -1618,7 +1619,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 "Device %s module %s/%s (%s) would not describe itself (%s). "
                 "Keeping it and asking again in about %d h - a module dropped "
                 "here is one Home Assistant cannot get back until a reload.",
-                device_id,
+                short_device_id(device_id),
                 values["Index"],
                 values["Type"],
                 values.get("Name", "?"),
@@ -1635,7 +1636,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             _LOGGER.debug(
                 "Device %s module %s/%s (%s) describes no parameters; nothing "
                 "to poll from it. Asking again in about %d h.",
-                device_id,
+                short_device_id(device_id),
                 values["Index"],
                 values["Type"],
                 values.get("Name", "?"),
@@ -1697,7 +1698,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             _LOGGER.debug(
                 "Parameters for device %s, index %s, and type %s are "
                 "cached and %.1f h old.",
-                device_id,
+                short_device_id(device_id),
                 values["Index"],
                 values["Type"],
                 age / 3600,
@@ -1706,7 +1707,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         _LOGGER.debug(
             "Re-reading parameters for device %s, index %s, type %s "
             "(cached list is %.1f h old).",
-            device_id,
+            short_device_id(device_id),
             values["Index"],
             values["Type"],
             age / 3600,
@@ -1825,7 +1826,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 "Rate limited (403) while reading parameters for "
                 "device %s. Discovery stops here: the portal is "
                 "refusing this network, not this request.",
-                device_id,
+                short_device_id(device_id),
             )
             raise exc
         if status_code == 400:
@@ -1881,7 +1882,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         for device_id in self.data:
             if not self._parameters_can_be_read(device_id, enabled_devices):
                 continue
-            _LOGGER.debug("Fetching api parameters data for device %s", device_id)
+            _LOGGER.debug(
+                "Fetching api parameters data for device %s", short_device_id(device_id)
+            )
             self._discover_device_parameters(device_id)
 
     def _publish_accepted_values(
@@ -2167,9 +2170,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         former inline blocks are unchanged.
         """
         _LOGGER.debug(
-            "Fetching fresh api data. enabled_devices=%s, self.data.keys()=%s",
-            enabled_devices,
-            list(self.data.keys()),
+            "Fetching fresh api data. enabled_devices=%s, known devices=%s",
+            short_device_ids(enabled_devices),
+            short_device_ids(self.data),
         )
         # `is not None`, NOT truthiness: an EMPTY list means "every device is
         # disabled", and treating that as "no filter given" polled all of them -
@@ -2177,7 +2180,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         target_devices = (
             enabled_devices if enabled_devices is not None else list(self.data.keys())
         )
-        _LOGGER.debug("Computed target_devices=%s", target_devices)
+        _LOGGER.debug("Computed target_devices=%s", short_device_ids(target_devices))
         # Here, with the reads, not with the session: in `both` mode the
         # session is checked on web-only ticks too, and a re-read due there
         # was the only heavy kind asking - the queue took that for a cycle in
@@ -2194,7 +2197,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             device_id = str(device_id)
             _LOGGER.debug(
                 "Processing device_id=%s. Is in self.data? %s",
-                device_id,
+                short_device_id(device_id),
                 device_id in self.data,
             )
             if device_id not in self.data:
@@ -2206,7 +2209,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # Their scraped sensors are handled entirely by the scraper path.
             if device_id not in (self.modules or {}):
                 _LOGGER.debug(
-                    "Skipping device %s: no API modules (scraper-only).", device_id
+                    "Skipping device %s: no API modules (scraper-only).",
+                    short_device_id(device_id),
                 )
                 continue
             if not self._fetch_device_status(device_id):
@@ -2330,7 +2334,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             )
 
             if failure_is_over(self._reported_failures, f"device-status:{device_id}"):
-                _LOGGER.info("The status of device %s is readable again.", device_id)
+                _LOGGER.info(
+                    "The status of device %s is readable again.",
+                    short_device_id(device_id),
+                )
 
             previous = self._last_connection_status.get(device_id)
             self._last_connection_status[device_id] = conn_status
@@ -2341,11 +2348,16 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 # commentary there is - but repeating it every few minutes
                 # for as long as the device stays away would bury everything
                 # else in the log. Say it once per change, then stay quiet.
-                log = _LOGGER.debug if previous == conn_status else _LOGGER.warning
-                log("Device %s is %s. Skipping data polling.", device_id, conn_status)
+                level = logging.DEBUG if previous == conn_status else logging.WARNING
+                _LOGGER.log(
+                    level,
+                    "Device %s is %s. Skipping data polling.",
+                    short_device_id(device_id),
+                    conn_status,
+                )
                 return False
             if previous is not None and previous != "online":
-                _LOGGER.info("Device %s is back online.", device_id)
+                _LOGGER.info("Device %s is back online.", short_device_id(device_id))
 
         # skipcq: PYL-W0706 - shields the catch-all, not redundant
         except AuthError:
@@ -2357,10 +2369,16 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # side - see device_is_reachable.
             key = f"device-status:{device_id}"
             if failure_is_new(self._reported_failures, key, str(exc)):
-                _LOGGER.info("Cannot read the status of device %s: %s", device_id, exc)
+                _LOGGER.info(
+                    "Cannot read the status of device %s: %s",
+                    short_device_id(device_id),
+                    exc,
+                )
             else:
                 _LOGGER.debug(
-                    "Still cannot read the status of device %s: %s", device_id, exc
+                    "Still cannot read the status of device %s: %s",
+                    short_device_id(device_id),
+                    exc,
                 )
             self._forget_device_status(device_id)
         return True
@@ -2436,7 +2454,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
             # one missing, the log call itself would raise a second KeyError
             # and escape this handler unhandled.
             _LOGGER.debug(
-                "%s: missing module data for device %s", DATA_GATHERING_ERROR, device_id
+                "%s: missing module data for device %s",
+                DATA_GATHERING_ERROR,
+                short_device_id(device_id),
             )
             raise WemPortalError(DATA_GATHERING_ERROR) from exc
 
@@ -2477,7 +2497,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 ]
                 if not device_modules:
                     _LOGGER.debug(
-                        "Device %s has nothing to read: it has no modules.", device_id
+                        "Device %s has nothing to read: it has no modules.",
+                        short_device_id(device_id),
                     )
                 elif refused:
                     # Still not a failed cycle - the device may genuinely have
@@ -2494,7 +2515,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                         "Assistant therefore shows no entities for it. Retrying "
                         "those descriptions in about %d h; if this persists, the "
                         "modules may not be supported by your installation.",
-                        device_id,
+                        short_device_id(device_id),
                         len(refused),
                         len(device_modules),
                         PARAMETER_REDISCOVERY_RETRY_SECONDS // 3600,
@@ -2503,7 +2524,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                     _LOGGER.debug(
                         "Device %s has nothing to read: every module describes "
                         "no parameters.",
-                        device_id,
+                        short_device_id(device_id),
                     )
                 return NoRead.NOTHING_TO_READ
 
@@ -2517,7 +2538,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 "nothing to read. Parameter discovery has not produced any "
                 "yet and runs again next cycle. Not sending the refresh - "
                 "the portal rejects a read with an empty module list.",
-                device_id,
+                short_device_id(device_id),
             )
             return "it has modules but no known parameters yet"
 
@@ -2551,14 +2572,14 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                     "Device %s answered the refresh with something that is not "
                     "JSON; skipping the read rather than serving the previous "
                     "measurement as current.",
-                    device_id,
+                    short_device_id(device_id),
                 )
                 return "the refresh answered with something that is not JSON"
             ticket = read_refresh_ticket(refresh_payload)
             if not ticket.accepted:
                 _LOGGER.warning(
                     "Device %s %s; not reading the previous job's values as current.",
-                    device_id,
+                    short_device_id(device_id),
                     ticket.reason,
                 )
                 return ticket.reason
@@ -2614,7 +2635,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                     "Device %s answered the value read without any modules; "
                     "treating the cycle as failed rather than keeping stale "
                     "readings.",
-                    device_id,
+                    short_device_id(device_id),
                 )
                 return "the value read came back without any modules"
             WemPortalDataMapper.process_api_values(

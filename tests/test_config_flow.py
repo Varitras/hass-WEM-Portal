@@ -84,7 +84,9 @@ async def test_config_flow_creates_entry(hass):
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == USER
+    # Not the login: Home Assistant names the entry by its title in its own
+    # log lines, a setup retry among them.
+    assert result["title"] == "WEM Portal"
     assert result["data"][CONF_USERNAME] == USER
 
 
@@ -1312,7 +1314,8 @@ async def test_reconfigure_takes_a_new_password_and_reloads(hass):
 
 async def test_reconfigure_can_move_the_entry_to_a_new_login(hass):
     """The one thing reauth will not do: the e-mail of the portal account
-    changed, and the entry follows it - identity, title and all."""
+    changed, and the entry follows it - its identity, not its title, which
+    is not the login any more."""
     entry = await _setup(hass, _entry(hass))
 
     result = await entry.start_reconfigure_flow(hass)
@@ -1324,7 +1327,24 @@ async def test_reconfigure_can_move_the_entry_to_a_new_login(hass):
     assert result["reason"] == "reconfigure_successful"
     assert entry.data[CONF_USERNAME] == "New@Example.org"
     assert entry.unique_id == "new@example.org"
-    assert entry.title == "New@Example.org"
+    assert entry.title == "WEM Portal"
+
+
+async def test_a_move_renames_an_entry_still_named_after_its_old_login(hass):
+    """An entry that was never set up since the update still carries the old
+    login as its title. Moved to another login, the setup's own rename no
+    longer recognises that title - the old address would stay for good."""
+    entry = _entry(hass)
+    assert entry.title == USER
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "New@Example.org", CONF_PASSWORD: "pw"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.title == "WEM Portal"
 
 
 async def test_reconfigure_will_not_merge_two_entries_into_one_account(hass):
