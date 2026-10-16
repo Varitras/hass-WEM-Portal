@@ -71,7 +71,9 @@ other models are welcome - especially if something is missing or looks wrong.
   period can be set from a presence or calendar automation.
 
 Controls, weekly programmes and energy statistics come from the mobile API,
-so they exist in `api` and `both` mode; `web` mode has sensors only.
+so they exist in `api` and `both` mode; in `web` mode the portal's own
+entities are sensors only. The expert numbers (see below) exist in every
+mode.
 
 | Entity type | What it is |
 |---|---|
@@ -84,8 +86,9 @@ so they exist in `api` and `both` mode; `web` mode has sensors only.
 ### Diagnostic entities
 
 Three per device, and they stay available when a device is offline or
-unreachable — they are what explains why. Like every entity they do go
-unavailable once two update cycles in a row have failed. They come from the mobile API's device status, so
+unreachable — they are what explains why. Like every entity built from the
+portal's readings, they do go unavailable once two update cycles in a row
+have failed. They come from the mobile API's device status, so
 they exist in `api` and `both` mode; the web page has no such read, and in
 `web` mode there are none:
 
@@ -108,7 +111,7 @@ states as listed (`online`, `offline`, `busy`, `wrong_secret`, `unknown`;
 ### Weekly programmes
 
 Heating and hot-water programmes become a sensor whose state is the readable
-week, collapsing days that are alike:
+week, collapsing consecutive days that are alike:
 
 ```
 MO 00:00-06:00 Komfort, 06:00-10:10 Normal, 10:10-13:30 Absenk,
@@ -259,10 +262,11 @@ A single failed cycle does not take the entities with it. The portal answers a
 poll with an error now and then and the next one succeeds; at a 30-minute
 interval, going unavailable for that would cost half an hour of every graph.
 The second consecutive failure does show as unavailable. A device that stops
-answering while others still respond is handled separately: its readings are
-shown as unknown after half an hour, or after two API intervals if those are
-longer, so nothing old is presented as current and a single missed cycle is
-still survivable at any interval.
+answering while others still respond is handled separately: its parameter
+readings are shown as unknown after half an hour, or after two API intervals
+if those are longer, so nothing old is presented as current and a single
+missed cycle is still survivable at any interval. Its status sensors stay,
+since they say why.
 
 **What this means for your settings:** the intervals below are floors, not
 recommendations. Halving an interval doubles the requests. If you run several
@@ -362,7 +366,7 @@ data:
 | Field | Required | Meaning |
 |---|---|---|
 | `entityvalue` | yes | The parameter's hex ID from your own installation - see [Step 1](#step-1-find-the-parameter). |
-| `value` | yes | The new value: a number, or the word the portal shows for an option beside the scale (for example `Aus`). |
+| `value` | yes | The new value: a number, or the word the portal shows for an option that is not a number - beside the scale (for example `Aus`) or on a dropdown of words. |
 
 Administrator only. Runs synchronously and **raises on failure**, so an
 automation can tell whether the write succeeded. It takes a few seconds for the
@@ -496,7 +500,8 @@ straight from the request URL in the developer tools **Network** tab.
 
 ### Step 2: enable it
 
-1. `Settings > Devices & Services > WEM Portal > CONFIGURE`
+1. `Settings > Devices & Services > WEM Portal > CONFIGURE`, then
+   `Configure settings and expert slots`.
 2. Enable `Expert write access via web`.
 3. Fill in one or more of the ten slots. Each has a *name* (free text, becomes
    the entity's name after the device name, in title case) and an
@@ -504,8 +509,8 @@ straight from the request URL in the developer tools **Network** tab.
    a slot with an ID but no name gets a default one.
 4. Save — the integration reloads.
 
-Each filled slot becomes a writable `number` entity. Entities start **without a
-value** unless periodic read-back is enabled — otherwise the value is only read
+Each filled slot becomes a writable `number` entity. A new one starts **without
+a value** unless periodic read-back is enabled — otherwise the value is only read
 as part of a write. After a successful write (or the first periodic read), the
 entity shows the verified value and its min/max tighten to the device's real
 range.
@@ -519,10 +524,12 @@ posts internally. Those differ on many parameters: a heating curve shown as
 you see on the portal page; the translation happens underneath.
 
 A parameter whose options are all words - an operating mode, say - has no
-number to show. There the entity's number is the option's position in the
-portal's list, not anything the portal displays, and `portal_value` says
-which word it is. Set such a parameter by its word through the action, as
-below for *Aus*; writing a number to it chooses by position.
+number to show. There the entity's number is the value the portal sends
+for the option, not anything it displays, and it need not be the option's
+place in the list - it can start at 0, so the first option may be 0,
+not 1. `portal_value` says which word is set. Set such
+a parameter by its word through the action, as below for *Aus*; a number
+written to it chooses by that internal value.
 
 Two attributes come with each entity, both read from the same dialog:
 
@@ -684,7 +691,9 @@ every model.
   the old ones keep their history.
 - **Entity names follow the `language` option, not Home Assistant's.** They
   are built at runtime from what the portal reports, in English or German;
-  Home Assistant's own language setting does not translate them. The
+  Home Assistant's own language setting does not translate them. With `en`,
+  a word the built-in vocabulary does not know keeps the portal's German
+  spelling. The
   exceptions are the integration's own names: the three diagnostic sensors
   and an expert slot without a name of its own follow Home Assistant's
   language.
@@ -702,7 +711,7 @@ Portal, click the three dots on the card, choose `Enable debug logging`.
 | A sensor shows *unknown* for a cycle | The portal answered without that parameter. Deliberate: a stale reading is not shown as current. |
 | Web-only sensors go *unknown* together | Three scrapes in a row failed. They come back on the next successful one. |
 | A setpoint shows 0 while the heat pump is idle | The portal shows `--` there: no setpoint without demand. Read as 0, like a pump's `Aus`; a counter showing `--` stays *unknown*, since Home Assistant would take a 0 as a reset. |
-| Asked to re-authenticate although the password is right | The portal served something other than a login form or a session. Only a re-rendered login form counts as wrong credentials, but a portal in an odd state can still get there. |
+| Asked to re-authenticate although the password is right | On the web login (`web` and `both` mode), only a re-rendered login form counts as wrong credentials, but a portal in an odd state can still get there. The mobile API login counts any refusal that does not announce maintenance as wrong credentials. |
 | A new parameter does not appear | Parameter lists are cached for 24 hours. Use `Search the portal for new API parameters`. |
 | Expert discovery says another operation is running | The auto-poll or a write holds the per-account lock. Try again in a moment. |
 
@@ -717,6 +726,9 @@ themselves once the cause is gone:
 | WEM Portal web access is not working | In `both` mode, the web half keeps failing while the API half still delivers. |
 | Expert parameter … cannot be requested | A slot holds an ID that is not a readable parameter ID. Fix or clear it in the options. |
 | Expert parameter … keeps failing to read | One parameter failed three reads in a row; usually a wrong ID, sometimes the portal refusing it. |
+
+The two expert repairs come from the periodic read-back only, which is off
+by default.
 
 ### Diagnostics
 
