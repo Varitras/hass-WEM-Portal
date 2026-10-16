@@ -4846,8 +4846,13 @@ def test_the_relabel_warning_does_not_promise_entities_that_appear_now(caplog):
     looking for entities that could not exist yet. Then it said "the next
     restart" - true when entities were built once at setup, and stale since
     the builder started making them as readings appear. This test pinned the
-    second wording, which kept it alive. What holds: the existing sensors go
-    unknown now, and the new ones come on a later cycle, not at a restart.
+    second wording, which kept it alive. Then "on a later cycle", which this
+    test pinned too - but the builder runs on the very update that brings the
+    new rows (test_a_reading_that_appears_on_a_later_cycle_gets_an_entity), so
+    the new entities exist as the warning is read. A portal fault that
+    relabelled everything for one cycle left a set of them behind, and
+    nobody could tell where they came from. What holds: the existing sensors
+    go unknown now, and the new ones are there already.
     """
     import logging
 
@@ -4858,7 +4863,8 @@ def test_the_relabel_warning_does_not_promise_entities_that_appear_now(caplog):
         api._merge_webscraping_data("0000", _scraped("pump-vorlauf"))
 
     assert "unknown" in caplog.text
-    assert "later cycle" in caplog.text
+    assert "right away" in caplog.text
+    assert "later cycle" not in caplog.text, "the new entities are promised for later"
     assert "restart" not in caplog.text, "the pre-builder timing is back"
 
 

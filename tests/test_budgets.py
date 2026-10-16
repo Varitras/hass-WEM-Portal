@@ -83,8 +83,10 @@ LINE_BUDGETS = {
     # And by 16 for its log calls naming devices by the shortened id only -
     # every one of them is a call the wrapping no longer fits on one line -
     # and by 5 for the offline line choosing its level instead of storing a
-    # logger method under a name the log-call scan cannot see.
-    "wemportalapi.py": 2780,
+    # logger method under a name the log-call scan cannot see. And by 2 for
+    # refusing a page with folded panels inside the scrape's try, where the
+    # failure is counted - the check itself lives in scraper.py.
+    "wemportalapi.py": 2782,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
@@ -131,9 +133,9 @@ COMPLEXITY_BUDGETS = {
     # guard and a busy handler. Extracting it would be the pass-through helper
     # this file's header warns against.
     "__init__.py::_async_register_expert_service": 28,
-    # 23 since a reused page must also be the expert view, not the user
-    # view with its own panels.
-    "scraper.py::WemPortalScraper.scrape": 23,
+    # Back to 22: whether a page is the expert view is now answered once, by
+    # _load_expert_page, for the reused session and the fresh login alike.
+    "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,
     # 19 before the AuthError shield in front of its catch-all, which is
     # exactly the one branch.

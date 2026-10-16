@@ -81,6 +81,15 @@ class ForbiddenError(WemPortalError):
     """Exception to indicate a forbidden error (403)."""
 
 
+class ExpertLevelNotReached(WemPortalError):
+    """The Fachmann postback was answered with the user level.
+
+    Neither a ServerError nor an AuthError, on purpose: a reused session
+    answers it with a fresh login, which a ServerError would stop, and after
+    a fresh login the credentials have just been proven.
+    """
+
+
 def time_left(seconds: float) -> str:
     """How long a 403 backoff still holds, as its ForbiddenError says it:
     minutes above one, seconds below."""

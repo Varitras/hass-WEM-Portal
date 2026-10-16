@@ -28,6 +28,7 @@ from .exceptions import (
     PortalMaintenanceError,
     ServerError,
     WebLoginRefused,
+    WemPortalError,
 )
 from .models import Reading, account_state
 from .utils import (
@@ -94,6 +95,40 @@ def _panel_key(heading: str) -> str:
         .replace("/*+/*", "_")
         .replace(" ", "_")
         .casefold()
+    )
+
+
+def refuse_folded_panels(previous_keys: set[str] | None, page: dict[str, Any]) -> None:
+    """Refuse the expert page when its panel headings are broken.
+
+    The portal now and then sends every panel headed "Info": the same rows
+    under one heading, normal again a cycle later. Taken as a page, it
+    relabelled every row and left a full set of sensors behind for good.
+
+    Recognised by its shape rather than by how long it lasts: every label is
+    one the page already had, a key is new, and the rows sit under fewer
+    headings than before. A language switch changes the labels, a renamed
+    module keeps the number of headings, a module that goes away adds no key.
+
+    shortcut: the first scrape of a session has nothing to compare with, and
+    a broken page that keeps the number of headings passes; a log of one
+    would show the next shape.
+    """
+    keys = [key for key, row in page.items() if isinstance(row, Reading)]
+    if not previous_keys or not set(keys) - previous_keys:
+        return
+    labels_before = {key.partition("-")[2] for key in previous_keys}
+    if any(key.partition("-")[2] not in labels_before for key in keys):
+        return
+    headings = sorted({key.partition("-")[0] for key in keys})
+    headings_before = sorted({key.partition("-")[0] for key in previous_keys})
+    if len(headings) >= len(headings_before):
+        return
+    raise WemPortalError(
+        "The WEM Portal sent the expert page with its rows under fewer headings "
+        f"({', '.join(headings)} instead of {', '.join(headings_before)}), a "
+        "fault on the portal's side. This page is not used; the next one is "
+        "usually normal again."
     )
 
 
@@ -309,7 +344,8 @@ class WemPortalScraper:
             The HTML of the Expert page on success, or None if the current
             session is not (or no longer) authenticated - e.g. because we
             got redirected back to the login page, or the expected
-            ASP.NET form fields are missing from the response. None is
+            ASP.NET form fields are missing from the response - or if the
+            answer is not the Fachmann level at all. None is
             used (instead of raising) here because "session no longer
             valid" is an expected, recoverable condition for the fast
             path's caller, not necessarily a hard error.
@@ -381,6 +417,12 @@ class WemPortalScraper:
         # password and fed the re-authentication counter, where three outages
         # in a row could ask the user to re-enter working credentials. It also
         # stops the reuse path from answering a 500 with two more requests.
+        #
+        # A postback the portal does not honour lands on the user view: HTTP
+        # 200, panels and a third of the rows. Only the reuse path checked
+        # for it, and the fresh login published that third as the page.
+        if not is_expert_view(r_expert.text):
+            return None
         return r_expert.text
 
     def scrape(self) -> list[dict[str, Any]]:
@@ -440,9 +482,7 @@ class WemPortalScraper:
                     panels = self.parse_expert_page(
                         reused_html, source="the reused session", required=False
                     )
-                    # The user view has panels too, a third of the readings:
-                    # taken for the expert view, the rest went to unknown.
-                    if panels is not None and is_expert_view(reused_html):
+                    if panels is not None:
                         _LOGGER.debug(
                             "Reused existing WEM Portal web session (skipped full login)."
                         )
@@ -557,13 +597,14 @@ class WemPortalScraper:
         # 3+4. GET Default.aspx and select the "Expert" tab
         expert_html = self._load_expert_page()
         if expert_html is None:
-            # NOT an AuthError, whichever of its two meanings this is. The
+            # NOT an AuthError, whichever of its three meanings this is. The
             # login succeeded a few lines up, so the credentials are the one
             # thing that has just been proven. _load_expert_page answers None
-            # both for "the session is no longer valid" and for "the page
-            # came back without its form state"; before a login that
-            # ambiguity is harmless, because the caller's answer to both is
-            # to log in fresh, and here there is no fresher login to try.
+            # for "the session is no longer valid", for "the page came back
+            # without its form state" and for "the page is the user view";
+            # before a login that ambiguity is harmless, because the caller's
+            # answer to all three is to log in fresh, and here there is no
+            # fresher login to try.
             raise ServerError(
                 "Logged in, but the WEM Portal main page did not come back "
                 "with the expert view on it. This is a portal-side problem, "

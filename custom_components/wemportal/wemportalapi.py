@@ -1115,10 +1115,10 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
 
         What happens NEXT is deliberately split in two, because the two are
         not the same and the message used to claim only the second. The
-        existing sensors lose their row and go unknown; the builder then makes
-        entities from the new keys on a later cycle, and that is when the
-        history stays behind with the old ones. It used to say "the next
-        restart" here, from before entities were built as readings appear.
+        existing sensors lose their row and go unknown; the builder makes
+        entities from the new keys on this same update. It said "the next
+        restart", then "a later cycle" - both wrong, and the second hid where
+        the dead sensors of a one-cycle portal fault came from.
 
         Returns the keys that are no longer scraped, which the caller needs
         for a second reason: whatever they were showing is not current any
@@ -1146,9 +1146,9 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
                 "settings, which relabels every row at once; a reworded row is "
                 "the other. Scraped sensors are keyed by those labels, so the "
                 "affected sensors have no reading this cycle and show as "
-                "unknown. They come back if the labels do. If the new labels "
-                "stay, NEW entities are created from them on a later cycle "
-                "and the history stays with the old ones.",
+                "unknown; they come back if the labels do. NEW entities are "
+                "made from the new labels right away and keep the history from "
+                "then on; if the old labels return, remove the new ones.",
                 ", ".join(sorted(gone)),
                 ", ".join(sorted(added)),
             )
@@ -1274,7 +1274,7 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         """
         # Function-local on purpose: the scraper pulls curl_cffi and lxml
         # (~140 ms, measured), and `api` mode never gets here.
-        from .scraper import WemPortalScraper
+        from .scraper import WemPortalScraper, refuse_folded_panels
 
         # Respect an active rate-limit cooldown for the scraping path too,
         # not just the API path - a 403 from either frontend means the
@@ -1306,6 +1306,8 @@ class WemPortalApi(WemPortalTransport, WemPortalStatistics, WemPortalSchedule):
         try:
             # Attempt to run the scraping job and extract the first result
             data = self._scrape_with(scraper)
+            # In the try: a broken page counts as a failed scrape, never as rows.
+            refuse_folded_panels(self._previous_scraper_keys, data)
 
         except IndexError as exc:
             # Handle the case where the job result is not found

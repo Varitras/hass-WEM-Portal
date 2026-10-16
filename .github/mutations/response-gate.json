@@ -1200,7 +1200,7 @@
   {
     "label": "reuse: logging in although the reused page worked must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                    if panels is not None and is_expert_view(reused_html):",
+    "old": "                    if panels is not None:",
     "new": "                    if False:",
     "tests": "reused_session_that_worked_does_not_log_in"
   },
@@ -1865,8 +1865,8 @@
   {
     "label": "relabel: the message promising a restart again",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, NEW entities are created from them on a later cycle \"\n                \"and the history stays with the old ones.\",",
-    "new": "                \"unknown. They come back if the labels do. If the new labels \"\n                \"stay, the next Home Assistant restart creates NEW entities \"\n                \"from them and the history stays with the old ones.\",",
+    "old": "                \"unknown; they come back if the labels do. NEW entities are \"\n                \"made from the new labels right away and keep the history from \"\n                \"then on; if the old labels return, remove the new ones.\",",
+    "new": "                \"unknown; they come back if the labels do. NEW entities are \"\n                \"made from the new labels at the next Home Assistant restart \"\n                \"and keep the history from then on.\",",
     "tests": "the_relabel_warning_does_not_promise_entities_that_appear_now"
   },
   {
@@ -5111,25 +5111,18 @@
     "tests": "maintenance_message_still_says_who_answered"
   },
   {
-    "label": "expert session: a reuse on the user level kept",
+    "label": "expert session: the user level taken for the Fachmann level",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "            if not is_expert_view(self._expert_level_html or \"\"):\n",
-    "new": "            if False:\n",
-    "tests": "kept_only_on_the_fachmann_level"
+    "old": "        if not is_expert_view(current_html):\n",
+    "new": "        if False:\n",
+    "tests": "kept_only_on_the_fachmann_level or fresh_expert_login_left_on_the_user_level_fails"
   },
   {
-    "label": "expert session: the page the Fachmann postback got not kept for the check",
-    "path": "custom_components/wemportal/expert_writer.py",
-    "old": "        self._expert_level_html = current_html\n",
-    "new": "",
-    "tests": "kept_only_on_the_fachmann_level"
-  },
-  {
-    "label": "reuse: the user view taken for the expert view",
+    "label": "expert page: the user view taken for the expert view",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                    if panels is not None and is_expert_view(reused_html):",
-    "new": "                    if panels is not None:",
-    "tests": "on_the_user_view_logs_in_fresh"
+    "old": "        if not is_expert_view(r_expert.text):\n            return None\n",
+    "new": "",
+    "tests": "user_view_is_not_handed_back_as_the_expert_page or fresh_login_that_lands_on_the_user_view_fails"
   },
   {
     "label": "expert view: the user view's key taken for the Fachmann level",
@@ -5557,5 +5550,33 @@
     "old": "            SensorStateClass.TOTAL,\n        ):\n",
     "new": "        ):\n",
     "tests": "statistics_energy_counter_with_a_dash_is_not_reset"
+  },
+  {
+    "label": "scrape: a page with its panels folded together taken as the expert page",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            refuse_folded_panels(self._previous_scraper_keys, data)\n",
+    "new": "",
+    "tests": "every_panel_headed_info"
+  },
+  {
+    "label": "scrape: a renamed module taken for folded panels",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    if len(headings) >= len(headings_before):\n",
+    "new": "    if len(headings) > len(headings_before):\n",
+    "tests": "real_change_of_the_page_is_still_taken"
+  },
+  {
+    "label": "scrape: new labels taken for folded panels",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    if any(key.partition(\"-\")[2] not in labels_before for key in keys):\n        return\n",
+    "new": "",
+    "tests": "real_change_of_the_page_is_still_taken"
+  },
+  {
+    "label": "scrape: a module gone taken for folded panels",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    if not previous_keys or not set(keys) - previous_keys:\n",
+    "new": "    if not previous_keys:\n",
+    "tests": "real_change_of_the_page_is_still_taken"
   }
 ]
