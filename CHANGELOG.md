@@ -6,6 +6,28 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.15.0] – 2026-10-21
+
+The stable release of the 1.15.0 line: everything from the prerelease
+1.15.0b1, with no changes since. Home Assistant 2026.9.0 or newer is
+required.
+
+**Check automations before updating:** Has Errors now states `yes` / `no`
+instead of "Yes" / "No", and Error Messages states `none` instead of "None"
+without a fault. Statistics groups the portal leaves unnamed are now called
+"Energy N" ("Energie N" with language `de`).
+
+The theme of the line is names in your language and values that are only
+shown while something keeps them current: the status sensors and the
+integration's own texts follow Home Assistant's language, portal names are
+translated word by word, rows nothing refreshes any more show as unknown,
+expert parameters take their words and are read and warned about with
+less noise, and the integration's own log lines show device ids only
+shortened.
+
+The 1.15.0b1 section below carries the full, itemised list of every change
+since 1.14.0.
+
 ## [1.15.0b1] – 2026-10-16
 
 A first beta of 1.15.0. Home Assistant 2026.9.0 or newer is required. The
