@@ -368,6 +368,77 @@ def test_no_platform_redefines_a_shared_rule(name):
         assert not redefined, f"{name} redefines {redefined} instead of using the base"
 
 
+# Home Assistant's list (helpers/entity.py, _ADD_REMOVE_METHODS): a class of a
+# custom integration that defines one of these is renamed in place only if it,
+# or a subclass, also defines async_entity_id_changed. One in a base class does
+# not cover a subclass's own override.
+LIFECYCLE_METHODS = (
+    "async_prepare_to_add_to_hass",
+    "async_added_to_hass",
+    "async_will_remove_from_hass",
+)
+
+
+def _classes_missing_the_rename_hook(source: str) -> list[str]:
+    import ast
+
+    missing = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        methods = {
+            item.name
+            for item in node.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        if (
+            methods & set(LIFECYCLE_METHODS)
+            and "async_entity_id_changed" not in methods
+        ):
+            missing.append(node.name)
+    return missing
+
+
+def test_every_lifecycle_override_takes_a_rename_in_place():
+    """Without the hook Home Assistant takes the entity down and adds it again
+    on every entity id rename - a restore and an expert re-attach each time -
+    and from 2027.11 it stops doing even that. Nothing here is keyed on the
+    entity id, so the hook only has to exist; a new override without it is
+    the regression."""
+    import pathlib
+    import sys
+
+    package = pathlib.Path(sys.modules[WemPortalEntity.__module__].__file__).parent
+    offenders = [
+        f"{source_file.name}:{name}"
+        for source_file in sorted(package.rglob("*.py"))
+        for name in _classes_missing_the_rename_hook(
+            source_file.read_text(encoding="utf-8")
+        )
+    ]
+
+    assert not offenders, (
+        f"lifecycle overridden without async_entity_id_changed: {offenders}"
+    )
+
+
+@pytest.mark.parametrize("method", LIFECYCLE_METHODS)
+def test_the_rename_guard_sees_a_missing_hook(method):
+    source = f"class Entity:\n    async def {method}(self):\n        pass\n"
+
+    assert _classes_missing_the_rename_hook(source) == ["Entity"]
+
+
+def test_the_rename_guard_accepts_a_class_with_the_hook():
+    source = (
+        "class Entity:\n"
+        "    async def async_added_to_hass(self):\n        pass\n"
+        "    def async_entity_id_changed(self, old_entity_id):\n        pass\n"
+    )
+
+    assert _classes_missing_the_rename_hook(source) == []
+
+
 def test_a_device_named_like_a_status_row_is_not_diagnostic():
     """The category is decided on the parameter id alone.
 

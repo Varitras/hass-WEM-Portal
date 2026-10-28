@@ -6894,5 +6894,26 @@
     "old": "    if not pin or not _EXACT_PIN.search(pin.strip()):\n",
     "new": "    if not pin:\n",
     "tests": "a_prerelease_pin_is_recognised or todays_scheme"
+  },
+  {
+    "label": "entities: the base entity does not opt in to an in-place rename",
+    "path": "custom_components/wemportal/entity.py",
+    "old": "    def async_entity_id_changed(self, old_entity_id: str) -> None:",
+    "new": "    def _no_rename_hook(self, old_entity_id: str) -> None:",
+    "tests": "lifecycle_override_takes_a_rename_in_place"
+  },
+  {
+    "label": "entities: the sensor does not opt in to an in-place rename",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "    def async_entity_id_changed(self, old_entity_id: str) -> None:",
+    "new": "    def _no_rename_hook(self, old_entity_id: str) -> None:",
+    "tests": "lifecycle_override_takes_a_rename_in_place"
+  },
+  {
+    "label": "entities: the expert number does not opt in to an in-place rename",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "    def async_entity_id_changed(self, old_entity_id: str) -> None:",
+    "new": "    def _no_rename_hook(self, old_entity_id: str) -> None:",
+    "tests": "lifecycle_override_takes_a_rename_in_place"
   }
 ]

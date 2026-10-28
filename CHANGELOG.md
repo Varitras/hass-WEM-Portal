@@ -6,6 +6,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Renaming an entity id on Home Assistant 2026.11 or newer keeps the entity
+  running instead of removing and adding it again, so an expert parameter
+  keeps its read-failure count and repair issue. Home Assistant ends the old
+  remove-and-add way in 2027.11.
+
 ## [1.16.0b2] – 2026-11-23
 
 A second beta of 1.16.0. The room setpoints of a heating circuit share one
