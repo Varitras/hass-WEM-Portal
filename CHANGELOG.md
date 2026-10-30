@@ -16,6 +16,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - A scraped status word such as "Nein" in a row whose name mentions a
   temperature showed as unknown: it was given a guessed °C unit. Words now
   keep their text; numbers and the idle "--" still get the unit.
+- A reading of NaN, infinity or a number too large to represent made Home
+  Assistant reject the sensor's state with an error; it now shows as
+  unknown.
 
 ## [1.15.0] – 2026-10-21
 

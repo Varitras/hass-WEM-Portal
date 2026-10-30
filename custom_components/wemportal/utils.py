@@ -3,6 +3,7 @@
 from collections.abc import Iterable, Mapping
 from typing import Any, Final
 import logging
+import math
 import re
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
@@ -275,9 +276,12 @@ def parse_portal_number(value: object) -> float | None:
     if value is None:
         return None
     try:
-        return float(str(value).strip().replace(",", "."))
+        number = float(str(value).strip().replace(",", "."))
     except ValueError:
         return None
+    # float() also reads "NaN", "Infinity" and an overflow like "1e309"; Home
+    # Assistant refuses those as a state, and the heating system as a value.
+    return number if math.isfinite(number) else None
 
 
 def sanitize_value(value_str: Any) -> Any:

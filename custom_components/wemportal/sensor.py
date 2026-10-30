@@ -5,6 +5,7 @@ Sensor platform for wemportal component
 import logging
 
 import json
+import math
 import re
 from typing import Any
 
@@ -90,6 +91,19 @@ _UNUSED_WINDOW = "00:00-00:00"
 # means no weekday table lives here and nothing has to know which language the
 # portal speaks.
 _DAY_ORDER = (1, 2, 3, 4, 5, 6, 0)
+
+
+def _is_a_finite_number(value) -> bool:
+    """Whether Home Assistant can take `value` as a numeric state.
+
+    Not finite counts as unreadable: the API hands over numbers that never
+    pass parse_portal_number, and Home Assistant raises on a NaN or infinite
+    state.
+    """
+    try:
+        return math.isfinite(float(value))
+    except TypeError, ValueError:
+        return False
 
 
 def _report_unreadable_value(name, value, reported) -> None:
@@ -427,18 +441,15 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                     return summary
                 return "Programmed"
 
-        if is_numeric_sensor:
-            try:
-                float(value)
-            except TypeError, ValueError:
-                _report_unreadable_value(
-                    self._label,
-                    value,
-                    account_state(
-                        self._config_entry.data.get(CONF_USERNAME)
-                    ).unreadable_values_reported,
-                )
-                return None
+        if is_numeric_sensor and not _is_a_finite_number(value):
+            _report_unreadable_value(
+                self._label,
+                value,
+                account_state(
+                    self._config_entry.data.get(CONF_USERNAME)
+                ).unreadable_values_reported,
+            )
+            return None
 
         return _whole_number_shown_whole(value)
 

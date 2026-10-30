@@ -2838,8 +2838,8 @@
   {
     "label": "values: the comma dropped from the one shared parser",
     "path": "custom_components/wemportal/utils.py",
-    "old": "        return float(str(value).strip().replace(\",\", \".\"))",
-    "new": "        return float(str(value).strip())",
+    "old": "        number = float(str(value).strip().replace(\",\", \".\"))",
+    "new": "        number = float(str(value).strip())",
     "tests": "a_portal_number_reads_the_same_in_both_spellings or a_german_decimal_reaches_the_write_as_the_number_it_means"
   },
   {
@@ -6390,5 +6390,19 @@
     "old": "    return not isinstance(value, str) or is_nothing_active(value)",
     "new": "    return not isinstance(value, str)",
     "tests": "boolean_and_idle_values_are_sanitized"
+  },
+  {
+    "label": "values: a number that is not finite passes the shared parser",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return number if math.isfinite(number) else None",
+    "new": "    return number",
+    "tests": "number_that_is_not_finite_is_no_number"
+  },
+  {
+    "label": "sensor: a number that is not finite is published",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        return math.isfinite(float(value))",
+    "new": "        return True",
+    "tests": "sensor_does_not_publish_a_number_that_is_not_finite"
   }
 ]
