@@ -3755,8 +3755,8 @@
   {
     "label": "unit: a restart into the off state forgetting the unit again",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if self._attr_native_unit_of_measurement in (None, \"\"):\n            last_sensor_data = await self.async_get_last_sensor_data()",
-    "new": "        if False:\n            last_sensor_data = await self.async_get_last_sensor_data()",
+    "old": "        if last_sensor_data is None or not last_sensor_data.native_unit_of_measurement:\n            return",
+    "new": "        if True:\n            return",
     "tests": "the_unit_survives_a_restart_that_begins_with_the_pump_off"
   },
   {
@@ -4938,7 +4938,7 @@
   {
     "label": "sensor: a word after a restart left beside the restored unit",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "                self._attr_native_value = self._validated_native_value(raw, None)\n",
+    "old": "        self._attr_native_value = self._validated_native_value(raw, None)\n",
     "new": "",
     "tests": "checked_against_the_restored_unit"
   },
@@ -5267,8 +5267,8 @@
   {
     "label": "sensor restore: the dash re-checked from the value already decided",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "                raw = row.value if row is not None else self._attr_native_value\n",
-    "new": "                raw = self._attr_native_value\n",
+    "old": "        raw = row.value if row is not None else self._attr_native_value\n",
+    "new": "        raw = self._attr_native_value\n",
     "tests": "first_reading_after_a_restart_is_dash_is_not_reset"
   },
   {
@@ -6372,21 +6372,21 @@
   },
   {
     "label": "scraper: a word under a temperature name gets a guessed unit",
-    "path": "custom_components/wemportal/scraper.py",
+    "path": "custom_components/wemportal/utils.py",
     "old": "    return not isinstance(value, str) or is_nothing_active(value)",
     "new": "    return True",
     "tests": "text_under_a_temperature_name_gets_no_guessed_unit"
   },
   {
     "label": "scraper: an off word loses the unit its name gives it",
-    "path": "custom_components/wemportal/scraper.py",
+    "path": "custom_components/wemportal/utils.py",
     "old": "    return not isinstance(value, str) or is_nothing_active(value)",
     "new": "    return isinstance(value, str) and is_nothing_active(value)",
     "tests": "off_word_under_a_temperature_name_keeps_the_guessed_unit"
   },
   {
     "label": "scraper: the idle dash loses the unit its name gives it",
-    "path": "custom_components/wemportal/scraper.py",
+    "path": "custom_components/wemportal/utils.py",
     "old": "    return not isinstance(value, str) or is_nothing_active(value)",
     "new": "    return not isinstance(value, str)",
     "tests": "boolean_and_idle_values_are_sanitized"
@@ -6404,5 +6404,33 @@
     "old": "        return math.isfinite(float(value))",
     "new": "        return True",
     "tests": "sensor_does_not_publish_a_number_that_is_not_finite"
+  },
+  {
+    "label": "scraper: a cell naming its unit but holding no number loses the unit",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    if unit and unit_to_state_class(unit) is not None:\n        return None, unit\n",
+    "new": "",
+    "tests": "new_scraped_row_shows_its_reading_with_the_right_unit"
+  },
+  {
+    "label": "sensor: a unit once guessed onto a word comes back with the restart",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if _a_unit_guessed_onto_a_word(raw, row, last_sensor_data):\n            return\n",
+    "new": "",
+    "tests": "restart_brings_back_a_unit_only_where_the_reading_has_one"
+  },
+  {
+    "label": "sensor: a word on a row that had a number loses its restored unit",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        and stored.native_value is None\n",
+    "new": "",
+    "tests": "restart_brings_back_a_unit_only_where_the_reading_has_one"
+  },
+  {
+    "label": "sensor: a word loses a restored unit of its own",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        and stored.native_unit_of_measurement == unit_from_name(row.parameter_id or \"\")\n",
+    "new": "",
+    "tests": "restart_brings_back_a_unit_only_where_the_reading_has_one"
   }
 ]

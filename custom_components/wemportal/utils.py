@@ -29,6 +29,15 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+PERCENTAGE_KEYWORDS: Final = [
+    "leistungsanforderung",
+    "drehzahl",
+    "power_requirement",
+    "speed",
+]
+
+TEMPERATURE_KEYWORDS: Final = ["temperatur", "temperature", "temp"]
+
 DEFAULT_DEVICE_MODEL: Final = "WEM Portal"
 
 # DeviceType as reported by Device/Read. Only used for the device model
@@ -355,6 +364,31 @@ def sanitize_value(value_str: Any) -> Any:
 def is_nothing_active(value: Any) -> bool:
     """Whether `value` is the portal's "--" (see NOTHING_ACTIVE)."""
     return isinstance(value, str) and value.strip() == NOTHING_ACTIVE
+
+
+def unit_from_name(name: str) -> str:
+    """The unit the portal left off a scraped row, from what the row is called.
+
+    The keys of scraped rows are their names, so a reading's parameter_id
+    answers the same question later.
+    """
+    lowered = name.lower()
+    if any(word in lowered for word in TEMPERATURE_KEYWORDS):
+        return "°C"
+    if any(word in lowered for word in PERCENTAGE_KEYWORDS):
+        return "%"
+    return ""
+
+
+def takes_a_unit(value: Any) -> bool:
+    """Whether a reading's value can carry a unit at all.
+
+    A word such as "Nein" cannot: given one - guessed from the row's name, or
+    brought back from the last session - Home Assistant can only show the
+    status as unknown. The idle "--" can, because the entity reads it as 0 in
+    that unit (see NOTHING_ACTIVE), and so can a missing value.
+    """
+    return not isinstance(value, str) or is_nothing_active(value)
 
 
 def serialize_modules(modules: dict[str, Any]) -> dict[str, Any]:

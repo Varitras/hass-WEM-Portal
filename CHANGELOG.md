@@ -14,8 +14,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - After a module was renamed while loaded, changing one holiday date and then
   the other could send the first date back at its old value.
 - A scraped status word such as "Nein" in a row whose name mentions a
-  temperature showed as unknown: it was given a guessed °C unit. Words now
-  keep their text; numbers and the idle "--" still get the unit.
+  temperature showed as unknown: it was given a guessed °C unit, and kept it
+  across restarts. It now shows its text, also on an existing entity.
+  Numbers, the idle "--" and a cell that names its unit (a disconnected probe's
+  "--- °C") keep the unit.
 - A reading of NaN, infinity or a number too large to represent made Home
   Assistant reject the sensor's state with an error; it now shows as
   unknown.
