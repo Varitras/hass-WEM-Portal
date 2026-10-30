@@ -6369,5 +6369,26 @@
     "old": "{**(together_with or {}), parameter_id: numeric_value}",
     "new": "{parameter_id: numeric_value, **(together_with or {})}",
     "tests": "companion_repeating_the_written_date_does_not_undo_it"
+  },
+  {
+    "label": "scraper: a word under a temperature name gets a guessed unit",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    return not isinstance(value, str) or is_nothing_active(value)",
+    "new": "    return True",
+    "tests": "text_under_a_temperature_name_gets_no_guessed_unit"
+  },
+  {
+    "label": "scraper: an off word loses the unit its name gives it",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    return not isinstance(value, str) or is_nothing_active(value)",
+    "new": "    return isinstance(value, str) and is_nothing_active(value)",
+    "tests": "off_word_under_a_temperature_name_keeps_the_guessed_unit"
+  },
+  {
+    "label": "scraper: the idle dash loses the unit its name gives it",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    return not isinstance(value, str) or is_nothing_active(value)",
+    "new": "    return not isinstance(value, str)",
+    "tests": "boolean_and_idle_values_are_sanitized"
   }
 ]

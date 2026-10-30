@@ -32,6 +32,7 @@ from .exceptions import (
 )
 from .models import Reading, account_state
 from .utils import (
+    is_nothing_active,
     parse_portal_number,
     sanitize_value,
     unit_to_icon,
@@ -145,6 +146,16 @@ def _reading_and_unit(raw_value: str) -> tuple[float | str, str | None]:
     if number is None:
         return raw_value, None
     return number, unit
+
+
+def _takes_a_unit(value: Any) -> bool:
+    """Whether a value is a reading of the kind its row's name suggests.
+
+    A word such as "Nein" is not: with a temperature unit guessed onto it,
+    Home Assistant can only show the status as unknown. The idle "--" is,
+    because the entity reads it as 0 in that unit (see NOTHING_ACTIVE).
+    """
+    return not isinstance(value, str) or is_nothing_active(value)
 
 
 def _unit_from_name(name: str) -> str:
@@ -691,12 +702,12 @@ class WemPortalScraper:
         raw_name = names[0].strip()
         name = panel_key + "-" + names[0].replace("  ", "").replace(" ", "_").casefold()
         value, unit = _reading_and_unit(values[0].strip())
-        if not unit:
-            unit = _unit_from_name(name) or unit
         # Handle missing or boolean values (shared, language-independent
         # logic - see utils.sanitize_value for details/rationale).
         if isinstance(value, str):
             value = sanitize_value(value)
+        if not unit and _takes_a_unit(value):
+            unit = _unit_from_name(name) or unit
 
         return (
             name,

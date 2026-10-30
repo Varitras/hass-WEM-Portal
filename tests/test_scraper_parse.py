@@ -138,6 +138,31 @@ def test_non_numeric_value_keeps_the_full_string_and_no_unit(scraper):
     assert sensor.unit is None
 
 
+@pytest.mark.parametrize("text", ["Nein", "Ja"])
+def test_a_text_under_a_temperature_name_gets_no_guessed_unit(scraper, text):
+    """The unit a name suggests was guessed for words too, so a status like
+    "Temperatur erreicht: Nein" became a temperature sensor that Home
+    Assistant could only show as unknown."""
+    from tests.test_idle_dash import _sensor
+
+    data = _parse(scraper, _page(_panel("Heat pump", [("Temperatur erreicht", text)])))
+    reading = data["heat_pump-temperatur_erreicht"]
+
+    assert (reading.value, reading.unit) == (text, None)
+    assert _sensor(data, "heat_pump-temperatur_erreicht").native_value == text
+
+
+def test_an_off_word_under_a_temperature_name_keeps_the_guessed_unit(scraper):
+    """The counterpart: a word the shared rules turn into a number is a
+    reading of that row's kind and keeps the unit its name gives it."""
+    data = _parse(
+        scraper, _page(_panel("Heat pump", [("Vorlaufsolltemperatur", "Aus")]))
+    )
+
+    reading = data["heat_pump-vorlaufsolltemperatur"]
+    assert (reading.value, reading.unit) == (0.0, "°C")
+
+
 def test_boolean_and_idle_values_are_sanitized(scraper):
     """Shared sanitize_value(): on/off become numbers; the "--" the page
     shows for a setpoint without demand is left for the entity, with the

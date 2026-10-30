@@ -13,6 +13,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
   reloaded.
 - After a module was renamed while loaded, changing one holiday date and then
   the other could send the first date back at its old value.
+- A scraped status word such as "Nein" in a row whose name mentions a
+  temperature showed as unknown: it was given a guessed °C unit. Words now
+  keep their text; numbers and the idle "--" still get the unit.
 
 ## [1.15.0] – 2026-10-21
 
