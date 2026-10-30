@@ -132,8 +132,8 @@ def _reading_and_unit(raw_value: str) -> tuple[float | str | None, str | None]:
     Anything that does not parse as a number keeps its FULL original string
     and gets no unit: the portal writes words in these cells too, and half of
     one ("Ein" out of "Ein Betrieb") would be worse than the whole. Except a
-    cell that names a unit it knows ("--- °C" with the probe disconnected,
-    "NaN °C"): that is a reading that is not there, in that unit.
+    cell that names a unit it knows ("--- °C", "NaN °C"): that is a reading
+    that is not there, in that unit.
     """
     parts = raw_value.split(" ", 1)
     unit = parts[1] if len(parts) >= 2 else ""

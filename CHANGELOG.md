@@ -15,9 +15,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
   the other could send the first date back at its old value.
 - A scraped status word such as "Nein" in a row whose name mentions a
   temperature showed as unknown: it was given a guessed °C unit, and kept it
-  across restarts. It now shows its text, also on an existing entity.
-  Numbers, the idle "--" and a cell that names its unit (a disconnected probe's
-  "--- °C") keep the unit.
+  across restarts. It now shows its text; an existing entity does so from the
+  first restart while the word is shown. Numbers, the idle "--" and a cell
+  that names its unit (such as "--- °C") keep the unit.
 - A reading of NaN, infinity or a number too large to represent made Home
   Assistant reject a sensor's state with an error, showed as a number
   entity's state, or - as a parameter's bounds - let any value through to the

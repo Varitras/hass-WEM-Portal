@@ -1,11 +1,12 @@
 """Which unit a scraped reading ends up with, from the cell to the entity.
 
-The unit of a scraped row is decided in three places: the cell itself ("34 °C"),
-the row's name when the cell has none ("Vorlauftemperatur" -> °C), and the
-entity, which keeps the unit of the last session through a restart. A word
-under a temperature name was given a guessed °C at the first and kept it at
-the last, so it showed as unknown even after the guess was fixed; a cell that
-carries its unit but no number lost the unit instead.
+The unit of a scraped row comes from the cell itself ("34 °C"), from the row's
+name when the cell has none ("Vorlauftemperatur" -> °C), from the merge and the
+entity, which both keep the previous unit when an answer brings none, and from
+the last session through a restart. A word under a temperature name was given
+a guessed °C by the name and kept it through the restart, so it showed as
+unknown even after the guess was fixed; a cell that carries its unit but no
+number lost the unit instead.
 
 So these run the real parser, the real merge and the real sensor, and the
 restart through the sensor's own restore.
@@ -96,3 +97,32 @@ async def test_a_restart_brings_back_a_unit_only_where_the_reading_has_one(
     sensor._handle_coordinator_update()
 
     assert (sensor.native_value, sensor.native_unit_of_measurement) == (shown, unit)
+
+
+async def test_a_reading_with_no_value_yet_gets_its_unit_back(monkeypatch):
+    """Only a word is kept off the unit: a temperature that has no value in
+    the first cycle after a restart is still a temperature."""
+    from homeassistant.components.sensor import SensorExtraStoredData
+    from homeassistant.helpers.restore_state import RestoreEntity
+
+    from custom_components.wemportal.models import Reading
+
+    data = {
+        "heat_pump-vorlauftemperatur": Reading(
+            value=None, parameter_id="heat_pump-vorlauftemperatur"
+        )
+    }
+    sensor = _sensor(data, "heat_pump-vorlauftemperatur")
+    sensor.hass = None
+
+    async def last_sensor_data():
+        return SensorExtraStoredData(native_value=None, native_unit_of_measurement="°C")
+
+    async def no_home_assistant(_self):
+        return None
+
+    sensor.async_get_last_sensor_data = last_sensor_data
+    monkeypatch.setattr(RestoreEntity, "async_added_to_hass", no_home_assistant)
+    await sensor.async_added_to_hass()
+
+    assert sensor.native_unit_of_measurement == "°C"

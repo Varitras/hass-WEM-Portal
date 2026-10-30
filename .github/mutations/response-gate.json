@@ -6453,5 +6453,12 @@
     "old": "        try:\n            float(raw)\n        except TypeError, ValueError:\n            return False\n    return True\n",
     "new": "        if parse_portal_number(raw) is None:\n            return False\n    return True\n",
     "tests": "bounds_that_are_not_finite_still_say_a_parameter_has_bounds"
+  },
+  {
+    "label": "sensor: a reading with no value yet loses its restored unit",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        not takes_a_unit(raw)\n        and stored.native_value is None\n",
+    "new": "        stored.native_value is None\n",
+    "tests": "no_value_yet_gets_its_unit_back"
   }
 ]

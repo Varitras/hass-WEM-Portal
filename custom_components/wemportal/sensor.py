@@ -114,9 +114,10 @@ def _a_unit_guessed_onto_a_word(raw, row, stored) -> bool:
     Releases up to 1.15.0 gave a scraped word such as "Nein" the unit its
     row's name suggests, and stored it with the entity. Brought back, it made
     the word unreadable for good: every later answer keeps the unit the
-    entity has. Narrow on purpose - a word on a sensor that had a number
-    before ("Stop" on a power reading) or a unit of its own keeps the unit,
-    or its long-term statistics would see the unit flip.
+    entity has. Narrow on purpose - a word whose last stored state was a
+    number, or whose stored unit is not the one the name suggests ("Stop" on
+    a kW reading), keeps the unit. A numeric row that shows a word across the
+    restart cannot be told apart and shows it as text until its next number.
     """
     return (
         not takes_a_unit(raw)
