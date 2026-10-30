@@ -13,6 +13,7 @@ from .utils import (
     is_nothing_active,
     kept_unit,
     looks_like_schedule,
+    parse_portal_number,
     portal_list,
     sanitize_value,
     schedule_fetch_still_feeds,
@@ -38,11 +39,11 @@ def get_min_max(
     device's read down with it. Nothing to guess from is not an error, it is
     what the widest default is for.
     """
-    try:
-        if min_value is not None and max_value is not None:
-            return float(min_value), float(max_value)  # type: ignore[arg-type]
-    except ValueError, TypeError:
-        pass
+    # The shared parser, which takes no NaN or infinity: Home Assistant checks
+    # a value against the bounds by comparing, and with NaN nothing fails.
+    minimum, maximum = parse_portal_number(min_value), parse_portal_number(max_value)
+    if minimum is not None and maximum is not None:
+        return minimum, maximum
 
     if data_type == WemDataType.SWITCH:
         return 0.0, 1.0

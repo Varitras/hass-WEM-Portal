@@ -1368,7 +1368,7 @@
   {
     "label": "write-back: leaving the coordinator's copy stale must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            self._publish_accepted_values(\n                device_id,\n                module_index,\n                module_type,\n                {parameter_id: numeric_value, **(together_with or {})},\n            )",
+    "old": "            self._publish_accepted_values(\n                device_id,\n                module_index,\n                module_type,\n                {**(together_with or {}), parameter_id: numeric_value},\n            )",
     "new": "            pass",
     "tests": "a_write_resolves_and_publishes_its_companions_under_the_lock or write_publishes_every_value_it_sent"
   },
@@ -2838,8 +2838,8 @@
   {
     "label": "values: the comma dropped from the one shared parser",
     "path": "custom_components/wemportal/utils.py",
-    "old": "        return float(str(value).strip().replace(\",\", \".\"))",
-    "new": "        return float(str(value).strip())",
+    "old": "        number = float(str(value).strip().replace(\",\", \".\"))",
+    "new": "        number = float(str(value).strip())",
     "tests": "a_portal_number_reads_the_same_in_both_spellings or a_german_decimal_reaches_the_write_as_the_number_it_means"
   },
   {
@@ -3524,7 +3524,7 @@
   {
     "label": "pair: only the value asked for, not what travelled with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                {parameter_id: numeric_value, **(together_with or {})},",
+    "old": "                {**(together_with or {}), parameter_id: numeric_value},",
     "new": "                {parameter_id: numeric_value},",
     "tests": "write_publishes_every_value_it_sent"
   },
@@ -3755,8 +3755,8 @@
   {
     "label": "unit: a restart into the off state forgetting the unit again",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "        if self._attr_native_unit_of_measurement in (None, \"\"):\n            last_sensor_data = await self.async_get_last_sensor_data()",
-    "new": "        if False:\n            last_sensor_data = await self.async_get_last_sensor_data()",
+    "old": "        if last_sensor_data is None or not last_sensor_data.native_unit_of_measurement:\n            return",
+    "new": "        if True:\n            return",
     "tests": "the_unit_survives_a_restart_that_begins_with_the_pump_off"
   },
   {
@@ -4938,7 +4938,7 @@
   {
     "label": "sensor: a word after a restart left beside the restored unit",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "                self._attr_native_value = self._validated_native_value(raw, None)\n",
+    "old": "        self._attr_native_value = self._validated_native_value(raw, None)\n",
     "new": "",
     "tests": "checked_against_the_restored_unit"
   },
@@ -5267,8 +5267,8 @@
   {
     "label": "sensor restore: the dash re-checked from the value already decided",
     "path": "custom_components/wemportal/sensor.py",
-    "old": "                raw = row.value if row is not None else self._attr_native_value\n",
-    "new": "                raw = self._attr_native_value\n",
+    "old": "        raw = row.value if row is not None else self._attr_native_value\n",
+    "new": "        raw = self._attr_native_value\n",
     "tests": "first_reading_after_a_restart_is_dash_is_not_reset"
   },
   {
@@ -5799,8 +5799,8 @@
   {
     "label": "setup: a cancelled first refresh leaves its sessions open again",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "    except BaseException:\n        # The api is not in hass.data yet",
-    "new": "    except Exception:\n        # The api is not in hass.data yet",
+    "old": "    except BaseException:\n        # The api is not in entry.runtime_data yet",
+    "new": "    except Exception:\n        # The api is not in entry.runtime_data yet",
     "tests": "cancelled_in_its_first_refresh_closes_its_sessions"
   },
   {
@@ -6355,5 +6355,110 @@
     "old": "        self.taken_down = False\n        await super().async_added_to_hass()\n",
     "new": "        await super().async_added_to_hass()\n",
     "tests": "entity_renamed_by_the_user_is_not_built_twice"
+  },
+  {
+    "label": "expert write: a renamed expert number stays stopped",
+    "path": "custom_components/wemportal/expert_number.py",
+    "old": "        self._removed = False\n        await super().async_added_to_hass()\n",
+    "new": "        await super().async_added_to_hass()\n",
+    "tests": "expert_number_renamed_by_the_user_still_writes"
+  },
+  {
+    "label": "date write: a companion repeating the written date wins in the rows",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "{**(together_with or {}), parameter_id: numeric_value}",
+    "new": "{parameter_id: numeric_value, **(together_with or {})}",
+    "tests": "companion_repeating_the_written_date_does_not_undo_it"
+  },
+  {
+    "label": "scraper: a word under a temperature name gets a guessed unit",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return not isinstance(value, str) or is_nothing_active(value)",
+    "new": "    return True",
+    "tests": "text_under_a_temperature_name_gets_no_guessed_unit"
+  },
+  {
+    "label": "scraper: an off word loses the unit its name gives it",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return not isinstance(value, str) or is_nothing_active(value)",
+    "new": "    return isinstance(value, str) and is_nothing_active(value)",
+    "tests": "off_word_under_a_temperature_name_keeps_the_guessed_unit"
+  },
+  {
+    "label": "scraper: the idle dash loses the unit its name gives it",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return not isinstance(value, str) or is_nothing_active(value)",
+    "new": "    return not isinstance(value, str)",
+    "tests": "boolean_and_idle_values_are_sanitized"
+  },
+  {
+    "label": "values: a number that is not finite passes the shared parser",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return number if math.isfinite(number) else None",
+    "new": "    return number",
+    "tests": "number_that_is_not_finite_is_no_number"
+  },
+  {
+    "label": "sensor: a number that is not finite is published",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        return math.isfinite(float(value))",
+    "new": "        return True",
+    "tests": "sensor_does_not_publish_a_number_that_is_not_finite"
+  },
+  {
+    "label": "scraper: a cell naming its unit but holding no number loses the unit",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "    if unit and unit_to_state_class(unit) is not None:\n        return None, unit\n",
+    "new": "",
+    "tests": "new_scraped_row_shows_its_reading_with_the_right_unit"
+  },
+  {
+    "label": "sensor: a unit once guessed onto a word comes back with the restart",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        if _a_unit_guessed_onto_a_word(raw, row, last_sensor_data):\n            return\n",
+    "new": "",
+    "tests": "restart_brings_back_a_unit_only_where_the_reading_has_one"
+  },
+  {
+    "label": "sensor: a word on a row that had a number loses its restored unit",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        and stored.native_value is None\n",
+    "new": "",
+    "tests": "restart_brings_back_a_unit_only_where_the_reading_has_one"
+  },
+  {
+    "label": "sensor: a word loses a restored unit of its own",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        and stored.native_unit_of_measurement == unit_from_name(row.parameter_id or \"\")\n",
+    "new": "",
+    "tests": "restart_brings_back_a_unit_only_where_the_reading_has_one"
+  },
+  {
+    "label": "number: a value that is not finite is published",
+    "path": "custom_components/wemportal/number.py",
+    "old": "        if math.isfinite(number):\n            return number\n",
+    "new": "        if True:\n            return number\n",
+    "tests": "number_entity_does_not_publish_a_value_that_is_not_finite"
+  },
+  {
+    "label": "mapper: bounds that are not finite are taken as bounds",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    minimum, maximum = parse_portal_number(min_value), parse_portal_number(max_value)\n",
+    "new": "    minimum, maximum = (None if min_value is None else float(min_value)), (None if max_value is None else float(max_value))\n",
+    "tests": "bounds_that_are_not_finite_are_no_bounds or number_whose_bounds_are_not_finite"
+  },
+  {
+    "label": "mapper: a NaN bound no longer counts as a given bound",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        try:\n            float(raw)\n        except TypeError, ValueError:\n            return False\n    return True\n",
+    "new": "        if parse_portal_number(raw) is None:\n            return False\n    return True\n",
+    "tests": "bounds_that_are_not_finite_still_say_a_parameter_has_bounds"
+  },
+  {
+    "label": "sensor: a reading with no value yet loses its restored unit",
+    "path": "custom_components/wemportal/sensor.py",
+    "old": "        not takes_a_unit(raw)\n        and stored.native_value is None\n",
+    "new": "        stored.native_value is None\n",
+    "tests": "no_value_yet_gets_its_unit_back"
   }
 ]

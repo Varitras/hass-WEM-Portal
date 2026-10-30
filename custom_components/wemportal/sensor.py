@@ -5,6 +5,7 @@ Sensor platform for wemportal component
 import logging
 
 import json
+import math
 import re
 from typing import Any
 
@@ -43,6 +44,8 @@ from .utils import (
     fix_value_and_unit,
     is_nothing_active,
     kept_unit,
+    takes_a_unit,
+    unit_from_name,
     unit_to_device_class,
     unit_to_state_class,
 )
@@ -90,6 +93,38 @@ _UNUSED_WINDOW = "00:00-00:00"
 # means no weekday table lives here and nothing has to know which language the
 # portal speaks.
 _DAY_ORDER = (1, 2, 3, 4, 5, 6, 0)
+
+
+def _is_a_finite_number(value) -> bool:
+    """Whether Home Assistant can take `value` as a numeric state.
+
+    Not finite counts as unreadable: the API hands over numbers that never
+    pass parse_portal_number, and Home Assistant raises on a NaN or infinite
+    state.
+    """
+    try:
+        return math.isfinite(float(value))
+    except TypeError, ValueError:
+        return False
+
+
+def _a_unit_guessed_onto_a_word(raw, row, stored) -> bool:
+    """Whether the stored unit is one an older release guessed onto a word.
+
+    Releases up to 1.15.0 gave a scraped word such as "Nein" the unit its
+    row's name suggests, and stored it with the entity. Brought back, it made
+    the word unreadable for good: every later answer keeps the unit the
+    entity has. Narrow on purpose - a word whose last stored state was a
+    number, or whose stored unit is not the one the name suggests ("Stop" on
+    a kW reading), keeps the unit. A numeric row that shows a word across the
+    restart cannot be told apart and shows it as text until its next number.
+    """
+    return (
+        not takes_a_unit(raw)
+        and stored.native_value is None
+        and row is not None
+        and stored.native_unit_of_measurement == unit_from_name(row.parameter_id or "")
+    )
 
 
 def _report_unreadable_value(name, value, reported) -> None:
@@ -427,18 +462,15 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
                     return summary
                 return "Programmed"
 
-        if is_numeric_sensor:
-            try:
-                float(value)
-            except TypeError, ValueError:
-                _report_unreadable_value(
-                    self._label,
-                    value,
-                    account_state(
-                        self._config_entry.data.get(CONF_USERNAME)
-                    ).unreadable_values_reported,
-                )
-                return None
+        if is_numeric_sensor and not _is_a_finite_number(value):
+            _report_unreadable_value(
+                self._label,
+                value,
+                account_state(
+                    self._config_entry.data.get(CONF_USERNAME)
+                ).unreadable_values_reported,
+            )
+            return None
 
         return _whole_number_shown_whole(value)
 
@@ -498,27 +530,27 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
         whatever unit was last recorded, avoiding that.
         """
         await super().async_added_to_hass()
-        if self._attr_native_unit_of_measurement in (None, ""):
-            last_sensor_data = await self.async_get_last_sensor_data()
-            if (
-                last_sensor_data is not None
-                and last_sensor_data.native_unit_of_measurement
-            ):
-                self._attr_native_unit_of_measurement = (
-                    last_sensor_data.native_unit_of_measurement
-                )
-                # Checked again: the value was checked without this unit, and
-                # a word that passed as text must not stand beside it. From
-                # the row, not the value already decided: a "--" became 0
-                # before the unit said it belongs to a counter.
-                row = self._coordinator_row()
-                raw = row.value if row is not None else self._attr_native_value
-                self._attr_native_value = self._validated_native_value(raw, None)
-                _LOGGER.debug(
-                    "Restored unit %s for %s from previous session",
-                    self._attr_native_unit_of_measurement,
-                    self._label,
-                )
+        if self._attr_native_unit_of_measurement not in (None, ""):
+            return
+        # From the row, not the value already decided: a "--" became 0
+        # before the unit said it belongs to a counter.
+        row = self._coordinator_row()
+        raw = row.value if row is not None else self._attr_native_value
+        last_sensor_data = await self.async_get_last_sensor_data()
+        if last_sensor_data is None or not last_sensor_data.native_unit_of_measurement:
+            return
+        if _a_unit_guessed_onto_a_word(raw, row, last_sensor_data):
+            return
+        self._attr_native_unit_of_measurement = (
+            last_sensor_data.native_unit_of_measurement
+        )
+        # Checked again: the value was checked without this unit.
+        self._attr_native_value = self._validated_native_value(raw, None)
+        _LOGGER.debug(
+            "Restored unit %s for %s from previous session",
+            self._attr_native_unit_of_measurement,
+            self._label,
+        )
 
     @property
     def device_info(self) -> DeviceInfo:

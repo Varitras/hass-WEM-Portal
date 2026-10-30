@@ -3,6 +3,7 @@ Number platform for wemportal component
 """
 
 import logging
+import math
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
@@ -174,14 +175,18 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
             # Return the CONVERTED float: NumberEntity.native_value must be
             # numeric, and a numeric string like "42.5" should not leak
             # through as a str just because it parses.
-            return float(value)
+            number = float(value)
         except TypeError, ValueError:
-            _LOGGER.warning(
-                'Invalid numeric number value for "%s": %r -> set to None',
-                self._label,
-                value,
-            )
-            return None
+            # Warned below like NaN and infinity, which float() does read.
+            number = math.nan
+        if math.isfinite(number):
+            return number
+        _LOGGER.warning(
+            'Invalid numeric number value for "%s": %r -> set to None',
+            self._label,
+            value,
+        )
+        return None
 
     def __init__(
         self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data

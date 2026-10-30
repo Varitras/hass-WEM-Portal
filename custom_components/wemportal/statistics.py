@@ -424,7 +424,7 @@ class WemPortalStatistics:
         failed for every device shortens the wait to
         STATISTICS_RETRY_INTERVAL_SECONDS instead (see the end of this method).
 
-        Monotonic, not wall clock: the stamp lives in AccountState, which
+        Monotonic, not wall clock: the stamp lives on the api instance, which
         dies with the process, and a wall clock corrected forward - NTP
         right after a boot - would read every stamp as an hour old and
         release the guard for free.

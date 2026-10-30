@@ -1,7 +1,7 @@
 """Web scraping scraper for WEM Portal using curl_cffi."""
 
 from collections.abc import Callable
-from typing import Any, Final
+from typing import Any
 import logging
 import time
 
@@ -34,7 +34,10 @@ from .models import Reading, account_state
 from .utils import (
     parse_portal_number,
     sanitize_value,
+    takes_a_unit,
+    unit_from_name,
     unit_to_icon,
+    unit_to_state_class,
 )
 from .web_protocol import (
     log_refusal,
@@ -47,15 +50,6 @@ from .web_protocol import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-PERCENTAGE_KEYWORDS: Final = [
-    "leistungsanforderung",
-    "drehzahl",
-    "power_requirement",
-    "speed",
-]
-
-TEMPERATURE_KEYWORDS: Final = ["temperatur", "temperature", "temp"]
 
 # Unit -> icon mapping for scraped sensors. Defined once at module level
 # instead of being re-created for every single table row during parsing
@@ -132,29 +126,23 @@ def refuse_folded_panels(previous_keys: set[str] | None, page: dict[str, Any]) -
     )
 
 
-def _reading_and_unit(raw_value: str) -> tuple[float | str, str | None]:
+def _reading_and_unit(raw_value: str) -> tuple[float | str | None, str | None]:
     """Split a cell like "21,5 °C" into a number and its unit.
 
     Anything that does not parse as a number keeps its FULL original string
     and gets no unit: the portal writes words in these cells too, and half of
-    one ("Ein" out of "Ein Betrieb") would be worse than the whole.
+    one ("Ein" out of "Ein Betrieb") would be worse than the whole. Except a
+    cell that names a unit it knows ("--- °C", "NaN °C"): that is a reading
+    that is not there, in that unit.
     """
     parts = raw_value.split(" ", 1)
     unit = parts[1] if len(parts) >= 2 else ""
     number = parse_portal_number(parts[0])
-    if number is None:
-        return raw_value, None
-    return number, unit
-
-
-def _unit_from_name(name: str) -> str:
-    """The unit the portal left off, from what the row is called."""
-    lowered = name.lower()
-    if any(word in lowered for word in TEMPERATURE_KEYWORDS):
-        return "°C"
-    if any(word in lowered for word in PERCENTAGE_KEYWORDS):
-        return "%"
-    return ""
+    if number is not None:
+        return number, unit
+    if unit and unit_to_state_class(unit) is not None:
+        return None, unit
+    return raw_value, None
 
 
 def _report_duplicate_row(
@@ -691,12 +679,12 @@ class WemPortalScraper:
         raw_name = names[0].strip()
         name = panel_key + "-" + names[0].replace("  ", "").replace(" ", "_").casefold()
         value, unit = _reading_and_unit(values[0].strip())
-        if not unit:
-            unit = _unit_from_name(name) or unit
         # Handle missing or boolean values (shared, language-independent
         # logic - see utils.sanitize_value for details/rationale).
         if isinstance(value, str):
             value = sanitize_value(value)
+        if not unit and takes_a_unit(value):
+            unit = unit_from_name(name) or unit
 
         return (
             name,

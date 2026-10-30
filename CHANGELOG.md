@@ -6,6 +6,24 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- On Home Assistant before 2026.11, an expert parameter whose entity id
+  was renamed refused every write afterwards, until the integration was
+  reloaded.
+- After a module was renamed while loaded, changing one holiday date and then
+  the other could send the first date back at its old value.
+- A scraped status word such as "Nein" in a row whose name mentions a
+  temperature showed as unknown: it was given a guessed °C unit, and kept it
+  across restarts. It now shows its text; an existing entity does so from the
+  first restart while the word is shown. Numbers, the idle "--" and a cell
+  that names its unit (such as "--- °C") keep the unit.
+- A reading of NaN, infinity or a number too large to represent made Home
+  Assistant reject a sensor's state with an error, showed as a number
+  entity's state, or - as a parameter's bounds - let any value through to the
+  portal. A sensor with a unit and a number now show such a value as unknown,
+  and such bounds fall back to the defaults.
+
 ## [1.15.0] – 2026-10-21
 
 The stable release of the 1.15.0 line: everything from the prerelease

@@ -135,6 +135,74 @@ def test_unparsable_bounds_fall_back_instead_of_raising():
     assert get_min_max("x", WemDataType.NUMBER_STEP_ONE, "n/a", "n/a") == (0.0, 100.0)
 
 
+@pytest.mark.parametrize(
+    ("minimum", "maximum"),
+    [("NaN", "NaN"), (float("nan"), 40), (5, float("inf")), ("-Infinity", "1e309")],
+)
+def test_bounds_that_are_not_finite_are_no_bounds(minimum, maximum):
+    """Home Assistant checks a value against the bounds by comparing, and
+    every comparison with NaN is false: with NaN bounds any value passed the
+    check and went into the write request."""
+    assert get_min_max("x", WemDataType.NUMBER_STEP_ONE, minimum, maximum) == (
+        0.0,
+        100.0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("minimum", "maximum", "platform"),
+    [
+        (0, 1, "switch"),
+        ("0", "1", "switch"),
+        ("NaN", "NaN", "switch"),
+        (None, None, "date"),
+    ],
+)
+def test_bounds_that_are_not_finite_still_say_a_parameter_has_bounds(
+    minimum, maximum, platform
+):
+    """Whether bounds are given decides what an on/off parameter is - a switch
+    or a holiday date - and a NaN bound is still a given one. Read through the
+    finite-only parser, it turned such a switch into a writable date, which
+    would send a date's seconds to an on/off parameter."""
+    data = _process(
+        _modules(
+            _parameter(
+                "Pumpe",
+                IsWriteable=True,
+                DataType=WemDataType.SWITCH,
+                MinValue=minimum,
+                MaxValue=maximum,
+            )
+        ),
+        _values(_value("Pumpe", numeric=1.0)),
+    )
+
+    assert data["Heat pump-Pumpe"].platform == platform
+
+
+def test_a_number_whose_bounds_are_not_finite_is_sized_like_one_without():
+    data = _process(
+        _modules(
+            _parameter(
+                "Komfort",
+                IsWriteable=True,
+                DataType=WemDataType.NUMBER_STEP_ONE,
+                MinValue="NaN",
+                MaxValue="NaN",
+            )
+        ),
+        _values(_value("Komfort", numeric=21.0, unit="°C")),
+    )
+
+    number = data["Heat pump-Komfort"]
+    assert (number.platform, number.min_value, number.max_value) == (
+        "number",
+        5.0,
+        35.0,
+    )
+
+
 def test_a_parameter_with_no_id_falls_back_instead_of_raising():
     """The name is what the guess is made from - and there may not be one.
 

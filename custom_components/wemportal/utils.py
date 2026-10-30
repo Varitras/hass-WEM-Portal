@@ -3,6 +3,7 @@
 from collections.abc import Iterable, Mapping
 from typing import Any, Final
 import logging
+import math
 import re
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
@@ -27,6 +28,15 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+PERCENTAGE_KEYWORDS: Final = [
+    "leistungsanforderung",
+    "drehzahl",
+    "power_requirement",
+    "speed",
+]
+
+TEMPERATURE_KEYWORDS: Final = ["temperatur", "temperature", "temp"]
 
 DEFAULT_DEVICE_MODEL: Final = "WEM Portal"
 
@@ -275,9 +285,12 @@ def parse_portal_number(value: object) -> float | None:
     if value is None:
         return None
     try:
-        return float(str(value).strip().replace(",", "."))
+        number = float(str(value).strip().replace(",", "."))
     except ValueError:
         return None
+    # float() also reads "NaN", "Infinity" and an overflow like "1e309": no
+    # reading, no bound and no value to write.
+    return number if math.isfinite(number) else None
 
 
 def sanitize_value(value_str: Any) -> Any:
@@ -293,7 +306,7 @@ def sanitize_value(value_str: Any) -> Any:
 
     Returns:
         A number for numeric/boolean values; None for empty or "missing
-        data" values (the sensor then shows as unavailable rather than
+        data" values (the sensor then shows as unknown rather than
         reporting a fabricated 0); or the original string if it can't be
         interpreted as a number or known boolean/placeholder - the portal's
         "--" among them, see NOTHING_ACTIVE.
@@ -321,7 +334,7 @@ def sanitize_value(value_str: Any) -> Any:
     # didn't serialize, or a momentarily absent reading). Left as-is it
     # reaches a numeric sensor and crashes entity setup with
     # "could not convert string to float: ''". Return None (HA shows the
-    # sensor as "unavailable") rather than a fabricated 0.0 - a room sensor
+    # sensor as unknown) rather than a fabricated 0.0 - a room sensor
     # briefly without a reading should not report 0 degrees. This is the
     # same honesty the energy/power branch below already applies.
     if value_lower == "":
@@ -329,7 +342,7 @@ def sanitize_value(value_str: Any) -> Any:
 
     if value_lower in [missing.strip() for missing in MISSING_DATA_STRINGS]:
         # Missing data is missing for EVERY sensor, not just energy/power:
-        # return None (HA shows the sensor "unavailable") instead of a
+        # return None (HA shows the sensor as unknown) instead of a
         # fabricated 0.0. Previously non-energy/power sensors fell through to
         # 0.0, so a momentarily missing temperature read as 0 C and could
         # fire automations. This matches the empty-string branch above and
@@ -351,6 +364,31 @@ def sanitize_value(value_str: Any) -> Any:
 def is_nothing_active(value: Any) -> bool:
     """Whether `value` is the portal's "--" (see NOTHING_ACTIVE)."""
     return isinstance(value, str) and value.strip() == NOTHING_ACTIVE
+
+
+def unit_from_name(name: str) -> str:
+    """The unit the portal left off a scraped row, from what the row is called.
+
+    The keys of scraped rows are their names, so a reading's parameter_id
+    answers the same question later.
+    """
+    lowered = name.lower()
+    if any(word in lowered for word in TEMPERATURE_KEYWORDS):
+        return "°C"
+    if any(word in lowered for word in PERCENTAGE_KEYWORDS):
+        return "%"
+    return ""
+
+
+def takes_a_unit(value: Any) -> bool:
+    """Whether a reading's value can carry a unit at all.
+
+    A word such as "Nein" cannot: given one - guessed from the row's name, or
+    brought back from the last session - Home Assistant can only show the
+    status as unknown. The idle "--" can, because the entity reads it as 0 in
+    that unit (see NOTHING_ACTIVE), and so can a missing value.
+    """
+    return not isinstance(value, str) or is_nothing_active(value)
 
 
 def serialize_modules(modules: dict[str, Any]) -> dict[str, Any]:
