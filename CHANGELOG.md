@@ -11,6 +11,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - On Home Assistant before 2026.11, an expert parameter whose entity id
   was renamed refused every write afterwards, until the integration was
   reloaded.
+- After a module was renamed while loaded, changing one holiday date and then
+  the other could send the first date back at its old value.
 
 ## [1.15.0] – 2026-10-21
 

@@ -8289,6 +8289,63 @@ def test_a_write_publishes_every_value_it_sent():
     )
 
 
+def test_a_companion_repeating_the_written_date_does_not_undo_it():
+    """A module renamed while loaded keeps its old rows beside the new ones,
+    so the companions of a date write can carry the written parameter itself,
+    at its old value. The request let the new value win and the published
+    rows did not: they kept the old date, and the next write of the other
+    date carried it back to the portal."""
+    from custom_components.wemportal.models import date_companions
+
+    api = _api_after_a_poll()
+
+    def date_row(parameter_id, value):
+        return Reading(
+            value=value,
+            parameter_id=parameter_id,
+            module_index=0,
+            module_type=1,
+            platform="date",
+        )
+
+    rows = {
+        "Before-U_Beginn": date_row("U_Beginn", 10.0),
+        "Before-U_Ende": date_row("U_Ende", 20.0),
+        "After-U_Beginn": date_row("U_Beginn", 10.0),
+        "After-U_Ende": date_row("U_Ende", 20.0),
+    }
+    api.data = {"1234": rows}
+    sent = []
+    api._change_value = lambda *_args, **kwargs: sent.append(kwargs["together_with"])
+
+    api.change_value(
+        "1234",
+        "U_Beginn",
+        0,
+        1,
+        11.0,
+        together_with=lambda: date_companions(rows, 0, 1, "After-U_Beginn"),
+    )
+    api.change_value(
+        "1234",
+        "U_Ende",
+        0,
+        1,
+        21.0,
+        together_with=lambda: date_companions(rows, 0, 1, "After-U_Ende"),
+    )
+
+    assert {key: row.value for key, row in rows.items()} == {
+        "Before-U_Beginn": 11.0,
+        "Before-U_Ende": 21.0,
+        "After-U_Beginn": 11.0,
+        "After-U_Ende": 21.0,
+    }, "the published rows kept a date the portal had just been told to change"
+    assert sent[1]["U_Beginn"] == 11.0, (
+        "the second write carried the first one's old date back to the portal"
+    )
+
+
 def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
     """A holiday write carries the module's other dates: resolved from a
     callable and published into the rows, both UNDER the lock, so a writer

@@ -1368,7 +1368,7 @@
   {
     "label": "write-back: leaving the coordinator's copy stale must be noticed",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "            self._publish_accepted_values(\n                device_id,\n                module_index,\n                module_type,\n                {parameter_id: numeric_value, **(together_with or {})},\n            )",
+    "old": "            self._publish_accepted_values(\n                device_id,\n                module_index,\n                module_type,\n                {**(together_with or {}), parameter_id: numeric_value},\n            )",
     "new": "            pass",
     "tests": "a_write_resolves_and_publishes_its_companions_under_the_lock or write_publishes_every_value_it_sent"
   },
@@ -3524,7 +3524,7 @@
   {
     "label": "pair: only the value asked for, not what travelled with it",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                {parameter_id: numeric_value, **(together_with or {})},",
+    "old": "                {**(together_with or {}), parameter_id: numeric_value},",
     "new": "                {parameter_id: numeric_value},",
     "tests": "write_publishes_every_value_it_sent"
   },
@@ -6362,5 +6362,12 @@
     "old": "        self._removed = False\n        await super().async_added_to_hass()\n",
     "new": "        await super().async_added_to_hass()\n",
     "tests": "expert_number_renamed_by_the_user_still_writes"
+  },
+  {
+    "label": "date write: a companion repeating the written date wins in the rows",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "{**(together_with or {}), parameter_id: numeric_value}",
+    "new": "{parameter_id: numeric_value, **(together_with or {})}",
+    "tests": "companion_repeating_the_written_date_does_not_undo_it"
   }
 ]

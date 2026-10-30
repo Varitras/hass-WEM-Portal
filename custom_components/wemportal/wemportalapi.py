@@ -1466,13 +1466,13 @@ class WemPortalApi(
                 numeric_value,
                 together_with=together_with,
             )
-            # Still under the lock, and only after the portal accepted: the
-            # next writer reads these rows the moment it gets in.
+            # Under the lock, after the portal accepted: the next writer reads
+            # these rows at once. Written value last - a companion repeats it.
             self._publish_accepted_values(
                 device_id,
                 module_index,
                 module_type,
-                {parameter_id: numeric_value, **(together_with or {})},
+                {**(together_with or {}), parameter_id: numeric_value},
             )
         finally:
             self._api_lock.release()
