@@ -135,11 +135,13 @@ rules:
   async-dependency:
     status: exempt
     comment: >-
-      The portal enforces TLS fingerprinting, which is what curl_cffi is here
-      for; lxml parses the scraped pages. Both are blocking and have no async
-      equivalent that would still get past the fingerprint check. Every call
-      runs in an executor job, which satisfies no-blocking-calls but not this
-      rule.
+      The mobile API is read with requests, the web pages - which enforce TLS
+      fingerprinting - with curl_cffi's blocking client, and lxml parses
+      them. Every call runs in an executor job, which satisfies
+      no-blocking-calls but not this rule. curl_cffi also has an async
+      session that would cover both HTTP paths; moving to it is a separate
+      decision not taken yet. lxml parsing is CPU work and stays in the
+      executor either way.
   inject-websession:
     status: exempt
     comment: >-

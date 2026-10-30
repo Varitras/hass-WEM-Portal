@@ -297,7 +297,7 @@ def sanitize_value(value_str: Any) -> Any:
 
     Returns:
         A number for numeric/boolean values; None for empty or "missing
-        data" values (the sensor then shows as unavailable rather than
+        data" values (the sensor then shows as unknown rather than
         reporting a fabricated 0); or the original string if it can't be
         interpreted as a number or known boolean/placeholder - the portal's
         "--" among them, see NOTHING_ACTIVE.
@@ -325,7 +325,7 @@ def sanitize_value(value_str: Any) -> Any:
     # didn't serialize, or a momentarily absent reading). Left as-is it
     # reaches a numeric sensor and crashes entity setup with
     # "could not convert string to float: ''". Return None (HA shows the
-    # sensor as "unavailable") rather than a fabricated 0.0 - a room sensor
+    # sensor as unknown) rather than a fabricated 0.0 - a room sensor
     # briefly without a reading should not report 0 degrees. This is the
     # same honesty the energy/power branch below already applies.
     if value_lower == "":
@@ -333,7 +333,7 @@ def sanitize_value(value_str: Any) -> Any:
 
     if value_lower in [missing.strip() for missing in MISSING_DATA_STRINGS]:
         # Missing data is missing for EVERY sensor, not just energy/power:
-        # return None (HA shows the sensor "unavailable") instead of a
+        # return None (HA shows the sensor as unknown) instead of a
         # fabricated 0.0. Previously non-energy/power sensors fell through to
         # 0.0, so a momentarily missing temperature read as 0 C and could
         # fire automations. This matches the empty-string branch above and

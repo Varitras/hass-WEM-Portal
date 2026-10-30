@@ -52,7 +52,7 @@ class AccountState:
     repeat after every options change.
 
     NOT here on purpose: the API-wide 403 backoff
-    (wemportalapi._BLOCKED_UNTIL). The portal rate-limits per IP, not per
+    (transport._BLOCKED_UNTIL). The portal rate-limits per IP, not per
     account, so that one is shared by every account of the installation.
     """
 

@@ -5799,8 +5799,8 @@
   {
     "label": "setup: a cancelled first refresh leaves its sessions open again",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "    except BaseException:\n        # The api is not in hass.data yet",
-    "new": "    except Exception:\n        # The api is not in hass.data yet",
+    "old": "    except BaseException:\n        # The api is not in entry.runtime_data yet",
+    "new": "    except Exception:\n        # The api is not in entry.runtime_data yet",
     "tests": "cancelled_in_its_first_refresh_closes_its_sessions"
   },
   {

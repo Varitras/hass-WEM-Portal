@@ -105,8 +105,8 @@ EXPERT_UNKNOWN_STEP = 0.01
 class WemPortalExpertNumber(RestoreNumber):
     """Writable expert parameter as a number entity.
 
-    Value updates only on writes (the verified post-write state) or
-    restore after restart - by design no periodic polling.
+    Value updates on writes (the verified post-write state), on restore
+    after a restart and, when the user enabled it, on the expert auto-poll.
     """
 
     _attr_should_poll = False
@@ -655,7 +655,7 @@ class WemPortalExpertNumber(RestoreNumber):
         return api.expert_cookies if api is not None else None
 
     def _expert_lock(self):
-        """Shared per-entry lock (only one expert portal op at a time)."""
+        """Shared per-account lock (only one expert portal op at a time)."""
         data = getattr(self._config_entry, "runtime_data", None)
         return data.expert.lock if data is not None else None
 

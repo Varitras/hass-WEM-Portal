@@ -208,7 +208,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
                 "Unique_id migration failed, continuing without it: %s", exc
             )
     except BaseException:
-        # The api is not in hass.data yet, so async_unload_entry cannot close
+        # The api is not in entry.runtime_data yet, so async_unload_entry cannot close
         # it: a failed first refresh (portal down, 403, auth) would leak its
         # HTTP sessions, once more per setup retry.
         #
@@ -265,11 +265,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         # expert block, which is the part of this setup that can still fail -
         # so whatever fails below leaves a service registered that the
         # failure path has to take back, and the test for that covers both.
-        #
-        # Function-local like every other import of a sibling module here:
-        # this file is where those modules get get_wemportal_unique_id from,
-        # so importing them at the top would close the circle before that
-        # name exists.
         from .holiday import async_register_holiday_service
 
         async_register_holiday_service(hass)
@@ -544,9 +539,11 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
                 translation_key="expert_operation_in_progress",
             ) from exc
         except ExpertOperationAborted as exc:
-            # The configuration went away mid-write. Nothing reached the
-            # portal - and the caller is still waiting on this call, so it
-            # has to be told, in the kind of error Home Assistant surfaces.
+            # The configuration went away mid-write. Usually nothing reached
+            # the portal; stopped during the confirming read, the value was
+            # already accepted, and the message says so. Either way the
+            # caller is still waiting on this call, so it has to be told, in
+            # the kind of error Home Assistant surfaces.
             # It used to arrive here as an ordinary Exception and be wrapped
             # by the handler below; now that it travels as a control-flow
             # signal it needs saying explicitly, which is clearer anyway.

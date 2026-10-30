@@ -85,8 +85,8 @@ async def validate_input(hass: HomeAssistant, data):
 
     try:
         # Validate exactly what the mode will require at runtime. `api` and
-        # `both` both call api_login() on every cycle (see
-        # WemPortalApi._fetch_data), so falling back to a web login here
+        # `both` need an API login (WemPortalApi._ensure_api_session logs in
+        # whenever the session is not valid), so falling back to a web login here
         # accepted a configuration that could never poll: setup succeeded,
         # then every update failed with the API login the user was never
         # told about. Only `web` may be validated with a web login.

@@ -4,8 +4,8 @@ Standalone module, deliberately separate from scraper.py/wemportalapi.py:
 it covers parameters that exist ONLY in the web Fachmann view and are not
 exposed by the mobile API at all (e.g. the heat pump's "Leistungsbegrenzung").
 
-Read and write happen on demand only (a few requests per invocation on a
-short-lived session) - never periodically. Writing validates the new value
+Read and write happen on demand or on the optional expert auto-poll, a few
+requests each on a short-lived session. Writing validates the new value
 against the live option list from the freshly fetched edit form and
 verifies the result by re-reading the form afterwards.
 """
@@ -680,11 +680,11 @@ class WemPortalExpertClient:
         # WRITES - Python cannot cancel the executor thread this runs in, so
         # the only way to stop a write is to look before making it.
         self._abort_check = abort_check
-        # Optional callable that ENGAGES the shared 403 cooldown. On a 403
-        # here the whole integration should back off, not just this expert
-        # operation; without this the API/scraper paths kept hitting a portal
-        # that had just rate-limited us (the check-only callback could never
-        # trip because nothing set the cooldown from the expert path).
+        # Optional callable that ENGAGES the expert 403 cooldown, so the next
+        # expert operations wait instead of asking a portal that just
+        # refused; the check-only callback could never trip without it.
+        # Expert-only on purpose (transport.activate_expert_cooldown): an
+        # expert 403 is often one refused request, not an IP-wide limit.
         self._cooldown_activate = cooldown_activate
         # Icon-menu argument selecting the target module; defaults to the
         # heat pump index of the reference installation but is overridable
@@ -1520,7 +1520,7 @@ class WemPortalExpertClient:
         delivered = tree.xpath("//*[contains(@id, 'ltDeliveryStatusData')]")
         factory_default = delivered[0].text_content().strip() if delivered else None
 
-        # Hidden ASP.NET fields, needed later for the (not yet built) write POST.
+        # Hidden ASP.NET fields, posted back by write_parameter.
         hidden_fields = {}
         for hidden_input in tree.xpath("//input[@type='hidden']"):
             name = hidden_input.get("name")
