@@ -198,6 +198,10 @@ class WemPortalExpertNumber(RestoreNumber):
         the portal blocks after 10,000 requests - and could raise a
         repair issue about a parameter nobody is looking at.
         """
+        # Back again: before Home Assistant 2026.11 an entity id rename takes
+        # this same object down and adds it again, and a stop left set here
+        # refused every later write until the entry was reloaded.
+        self._removed = False
         await super().async_added_to_hass()
         self._config_entry.runtime_data.expert.attach_entity(self)
         last = await self.async_get_last_number_data()

@@ -1500,6 +1500,38 @@ async def test_a_service_write_reaches_the_entity_that_shows_the_parameter(
     )
 
 
+async def test_an_expert_number_renamed_by_the_user_still_writes(hass, monkeypatch):
+    """Home Assistant before 2026.11 takes a renamed entity down and adds the
+    same object back. Taking it down stops its writes for good, and nothing
+    took that back when it was added again - every write after the rename was
+    refused as stopped until the entry was reloaded."""
+    from homeassistant.helpers import entity_registry
+
+    writes = []
+
+    def written(self, entityvalue, value, **_kwargs):
+        writes.append(value)
+        return expert_writer.ExpertParameterState(value, [10.0, 20.0, 30.0], {})
+
+    monkeypatch.setattr(expert_writer.WemPortalExpertClient, "write_parameter", written)
+    entry = await _setup(hass, _entry(hass, _expert_options()))
+    entity = entry.runtime_data.expert.entities[0]
+    entity_registry.async_get(hass).async_update_entity(
+        entity.entity_id, new_entity_id="number.renamed_expert"
+    )
+    await hass.async_block_till_done()
+    assert entry.runtime_data.expert.entities == [entity]
+
+    refused = None
+    try:
+        await entity.async_set_native_value(30)
+    except HomeAssistantError as exc:
+        refused = exc
+
+    assert refused is None, f"the write after the rename was refused: {refused}"
+    assert writes == [30], "the write after the rename never reached the portal"
+
+
 async def test_a_verified_write_finds_its_entity_in_any_spelling(hass):
     """The write-back has to find the entity whatever case it is handed.
 

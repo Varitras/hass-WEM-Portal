@@ -6,6 +6,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- On Home Assistant before 2026.11, an expert parameter whose entity id
+  was renamed refused every write afterwards, until the integration was
+  reloaded.
+
 ## [1.15.0] – 2026-10-21
 
 The stable release of the 1.15.0 line: everything from the prerelease
