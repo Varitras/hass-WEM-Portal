@@ -288,8 +288,8 @@ def parse_portal_number(value: object) -> float | None:
         number = float(str(value).strip().replace(",", "."))
     except ValueError:
         return None
-    # float() also reads "NaN", "Infinity" and an overflow like "1e309"; Home
-    # Assistant refuses those as a state, and the heating system as a value.
+    # float() also reads "NaN", "Infinity" and an overflow like "1e309": no
+    # reading, no bound and no value to write.
     return number if math.isfinite(number) else None
 
 

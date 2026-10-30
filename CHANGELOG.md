@@ -19,8 +19,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
   Numbers, the idle "--" and a cell that names its unit (a disconnected probe's
   "--- °C") keep the unit.
 - A reading of NaN, infinity or a number too large to represent made Home
-  Assistant reject the sensor's state with an error; it now shows as
-  unknown.
+  Assistant reject a sensor's state with an error, showed as a number
+  entity's state, or - as a parameter's bounds - let any value through to the
+  portal. A sensor with a unit and a number now show such a value as unknown,
+  and such bounds fall back to the defaults.
 
 ## [1.15.0] – 2026-10-21
 

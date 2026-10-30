@@ -6432,5 +6432,26 @@
     "old": "        and stored.native_unit_of_measurement == unit_from_name(row.parameter_id or \"\")\n",
     "new": "",
     "tests": "restart_brings_back_a_unit_only_where_the_reading_has_one"
+  },
+  {
+    "label": "number: a value that is not finite is published",
+    "path": "custom_components/wemportal/number.py",
+    "old": "        if math.isfinite(number):\n            return number\n",
+    "new": "        if True:\n            return number\n",
+    "tests": "number_entity_does_not_publish_a_value_that_is_not_finite"
+  },
+  {
+    "label": "mapper: bounds that are not finite are taken as bounds",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "    minimum, maximum = parse_portal_number(min_value), parse_portal_number(max_value)\n",
+    "new": "    minimum, maximum = (None if min_value is None else float(min_value)), (None if max_value is None else float(max_value))\n",
+    "tests": "bounds_that_are_not_finite_are_no_bounds or number_whose_bounds_are_not_finite"
+  },
+  {
+    "label": "mapper: a NaN bound no longer counts as a given bound",
+    "path": "custom_components/wemportal/mapper.py",
+    "old": "        try:\n            float(raw)\n        except TypeError, ValueError:\n            return False\n    return True\n",
+    "new": "        if parse_portal_number(raw) is None:\n            return False\n    return True\n",
+    "tests": "bounds_that_are_not_finite_still_say_a_parameter_has_bounds"
   }
 ]

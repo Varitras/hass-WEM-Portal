@@ -45,8 +45,8 @@ def test_what_carries_no_number_says_so(text):
 
 @pytest.mark.parametrize("text", ["NaN", "Infinity", "-inf", "1e309"])
 def test_a_number_that_is_not_finite_is_no_number(text):
-    """float() takes all of these, Home Assistant refuses them as a state,
-    and as a typed expert value one would go to the heating system."""
+    """float() takes all of these. As a state Home Assistant raises on them,
+    and as a bound every comparison with NaN passes."""
     assert utils.parse_portal_number(text) is None
 
 
@@ -63,6 +63,15 @@ def test_a_sensor_does_not_publish_a_number_that_is_not_finite(value):
     data = {"Outside": Reading(value=value, unit="°C", friendly_name="Outside")}
 
     assert _sensor(data, "Outside").native_value is None
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), "NaN", "-Infinity"])
+def test_a_number_entity_does_not_publish_a_value_that_is_not_finite(value):
+    """The sensor's sibling: a writable parameter showed nan as its state."""
+    from custom_components.wemportal.number import WemPortalNumber
+    from tests.test_entity_base import _entity
+
+    assert _entity(WemPortalNumber, value=value).native_value is None
 
 
 def test_a_comma_decimal_from_the_api_reads_as_its_number():
