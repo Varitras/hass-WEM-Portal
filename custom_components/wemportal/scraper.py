@@ -51,11 +51,6 @@ from .web_protocol import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Unit -> icon mapping for scraped sensors. Defined once at module level
-# instead of being re-created for every single table row during parsing
-# (it never changes, so per-row construction was pure waste).
-
-
 # The panel container the expert page is built from. Named once because two
 # things ask about it: the parser, and the report that explains an empty page.
 PANEL_XPATH = '//div[contains(@class, "RadPanelBar RadPanelBar_Default rpbSimpleData")]'
@@ -257,7 +252,7 @@ class WemPortalScraper:
         """Release the underlying HTTP session/connection.
 
         Called when the owning WemPortalApi discards this scraper (e.g.
-        on credential change or API re-instantiation), so the connection
+        on credential change or a transport reset), so the connection
         doesn't linger open on Weishaupt's side after we stop using it.
         """
         try:
@@ -273,8 +268,15 @@ class WemPortalScraper:
 
         Same reasoning as in expert_writer: deciding per request site what to
         validate means a per-site chance to forget, and that is exactly how a
-        500 kept being parsed as a real page - once per audit round, at the
-        next unguarded request.
+        500 kept being parsed as a real page, each time at the next
+        unguarded request.
+
+        A non-200 body raises rather than returning None. None means "this
+        session is no longer valid", which the full login turns into an
+        AuthError - so a plain server error was reported as a wrong password
+        and fed the re-authentication counter, where three outages in a row
+        could ask the user to re-enter working credentials. Raising also
+        stops the reuse path from answering a 500 with two more requests.
 
         403 first, because it is a rate-limit signal and must reach the
         caller's cooldown handling as its own type. `check_maintenance` raises
@@ -395,17 +397,6 @@ class WemPortalScraper:
         if on_login_page:
             return None
 
-        # A non-200 body is an error page, not the expert view. Returned
-        # unchecked it was parsed like a real page: the scrape counted as
-        # successful and the sensors took on whatever fell out of a 500.
-        #
-        # Raised rather than returned as None, and for both callers. None
-        # means "this session is no longer valid", which the full login turns
-        # into an AuthError - so a plain server error was reported as a wrong
-        # password and fed the re-authentication counter, where three outages
-        # in a row could ask the user to re-enter working credentials. It also
-        # stops the reuse path from answering a 500 with two more requests.
-        #
         # A postback the portal does not honour lands on the user view: HTTP
         # 200, panels and a third of the rows. Only the reuse path checked
         # for it, and the fresh login published that third as the page.
@@ -459,14 +450,11 @@ class WemPortalScraper:
 
                 if reused_html is not None:
                     # required=False: for the fast path an empty page is not a
-                    # broken portal. The postback that selects the Expert tab
-                    # carries state from the reused session, and when the
-                    # portal no longer honours it the answer is still HTTP
-                    # 200 - the main page instead of the expert view, with no
-                    # login redirect and no error status for the checks above
-                    # to catch. Raising there lost the whole scrape for a
-                    # cycle while a fresh login, which the lines below already
-                    # perform, would have worked.
+                    # broken portal but a reason to log in fresh, which the
+                    # lines below already do. Raising there lost the whole
+                    # scrape for a cycle. (A postback that lands on the main
+                    # page never gets here: _load_expert_page answers it with
+                    # None.)
                     panels = self.parse_expert_page(
                         reused_html, source="the reused session", required=False
                     )

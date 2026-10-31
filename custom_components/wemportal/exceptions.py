@@ -41,11 +41,11 @@ class AuthError(WemPortalError):
       * the coordinator counts CONSECUTIVE auth failures before it offers
         the reauth dialog, and a cycle that ends any other way resets that
         count instead of raising it, so the dialog stays out of reach;
-      * only `_ensure_api_session` looks at `valid_login`, once per cycle,
-        and it has already run - so every request after this one goes out on
-        the dead session, collects its own 401 and triggers another refused
-        login. One per device and path, against a portal that counts
-        requests per IP.
+      * within a poll only `_ensure_api_session` looks at `valid_login`,
+        once per cycle, and it has already run - so every request after this
+        one goes out on the dead session, collects its own 401 and triggers
+        another refused login. One per device and path, against a portal
+        that counts requests per IP.
 
     NOT a BaseException, unlike PollDeadlineExceeded, which solves the same
     problem by being uncatchable: the `both` mode deliberately swallows the
@@ -174,11 +174,10 @@ class ApiBusyError(WemPortalError):
     """A previous poll is still running and holds the shared API lock.
 
     Deliberately its own type: the coordinator treats a WemPortalError as
-    "the session may be corrupted" and re-instantiates the api after two of
+    "the session may be corrupted" and resets the transport after two of
     them - which would close the HTTP sessions the still-running thread is
-    using, and hand the next poll a FRESH lock, removing the very
-    serialization this error reports. The condition is the opposite of a
-    broken session: everything works, it is just still busy.
+    using. The condition is the opposite of a broken session: everything
+    works, it is just still busy.
     """
 
 
@@ -204,7 +203,7 @@ class PollDeadlineExceeded(BaseException):
 
     NOT an Exception subclass, and that is the point rather than a detail.
     This is a control-flow signal that has to travel out through code whose
-    entire job is to keep a poll going: wemportalapi has twelve
+    entire job is to keep a poll going: wemportalapi has several
     `except Exception` handlers, each right on its own terms - one device
     failing must not take the others down, one heating programme failing must
     not skip the rest - and every one of them swallowed this. The cycle then

@@ -126,8 +126,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
             "No devices found for %s. Starting first time initialization.", DOMAIN
         )
     else:
-        # A count, not the names: the hub is named after the entry's title,
-        # which is the login, and this line lands in logs people share.
+        # A count, not the names: this line lands in logs people share, and
+        # a device's name is whatever its owner called it in the portal.
         _LOGGER.info("Found %d devices for %s", len(devices), DOMAIN)
 
     # Load any previously persisted device/module/parameter metadata, so we
@@ -196,7 +196,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
 
     try:
         await coordinator.async_config_entry_first_refresh()
-        _LOGGER.info("Migrating entity names for wemportal")
+        _LOGGER.info("Migrating entity unique ids for wemportal")
         try:
             migrate_unique_ids(hass, entry, coordinator)
         except Exception as exc:  # noqa: BLE001
@@ -541,7 +541,7 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
         except ExpertOperationAborted as exc:
             # The configuration went away mid-write. Usually nothing reached
             # the portal; stopped during the confirming read, the value was
-            # already accepted, and the message says so. Either way the
+            # already posted, and the message says so. Either way the
             # caller is still waiting on this call, so it has to be told, in
             # the kind of error Home Assistant surfaces.
             # It used to arrive here as an ordinary Exception and be wrapped

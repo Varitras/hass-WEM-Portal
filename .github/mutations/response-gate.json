@@ -2334,7 +2334,7 @@
   {
     "label": "expert: an abort after the postback reported as a write that never left",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "                raise ExpertOperationAborted(\n                    f\"{aborted}. The value was posted and the portal accepted \"\n                    \"it; only the confirming read did not run.\"\n                ) from aborted",
+    "old": "                raise ExpertOperationAborted(\n                    f\"{aborted}. The value was posted and the portal answered; \"\n                    \"only the confirming read did not run.\"\n                ) from aborted",
     "new": "                raise aborted",
     "tests": "an_abort_during_the_verify_does_not_deny_a_write_that_happened"
   },
@@ -2719,7 +2719,7 @@
   {
     "label": "privacy: the full device id back in a message written to be shared",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    return f\"\u2026{text[-2:]}\" if len(text) > 2 else text",
+    "old": "    return f\"…{text[-2:]}\" if len(text) > 2 else text",
     "new": "    return text",
     "tests": "a_failed_cycle_says_why_it_failed"
   },

@@ -183,7 +183,8 @@ CACHED_MODULES = {
 
 def test_get_devices_failure_keeps_cache():
     """A failing device-list call must not wipe the discovery cache."""
-    api = _api(cached_modules=CACHED_MODULES, existing_data={"1234": {"k": "v"}})
+    api = _api(cached_modules=CACHED_MODULES)
+    api.data = {"1234": {"k": "v"}}
 
     def boom(*_args, **_kwargs):
         raise exceptions.WemPortalError("403 etc.")
@@ -316,7 +317,8 @@ def test_a_device_list_where_no_row_is_usable_is_reported_not_adopted():
     one-device installation that is everything gone, no setup error, and no
     way back until a reload: get_devices runs once per session.
     """
-    api = _api(cached_modules=CACHED_MODULES, existing_data={"1234": {"k": "v"}})
+    api = _api(cached_modules=CACHED_MODULES)
+    api.data = {"1234": {"k": "v"}}
     # Shaped like the contract at the top level, unreadable in every row.
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"Devices": [{"no": "id"}, {"also": "no id"}]}
@@ -413,16 +415,12 @@ def test_expert_cooldown_is_never_shortened():
 
 
 def test_expert_cooldown_survives_api_reinstantiation():
-    """The coordinator swaps the api object on repeated errors; a fresh
-    instance must not silently clear an active expert backoff."""
+    """Setup builds a new api object on every reload; it must not silently
+    clear an active expert backoff of the same account."""
     api = _api()
     api.activate_expert_cooldown()
 
-    replacement = WemPortalApi(
-        "user@example.org",
-        "secret",
-        expert_blocked_until=api._expert_blocked_until,
-    )
+    replacement = WemPortalApi("user@example.org", "secret")
 
     with pytest.raises(exceptions.ForbiddenError):
         replacement.check_expert_cooldown()
@@ -1887,7 +1885,7 @@ def test_an_abort_during_the_verify_does_not_deny_a_write_that_happened(monkeypa
         "the write never went out, so this test proves nothing about what "
         "happens after it"
     )
-    assert "posted and the portal accepted" in str(aborted.value), (
+    assert "posted and the portal answered" in str(aborted.value), (
         f"a write the portal took was reported as if it had not gone out: "
         f"{aborted.value}"
     )
@@ -2591,9 +2589,10 @@ def test_the_constructor_restores_the_state_that_was_persisted():
     Recovery stopped rebuilding the api object - it resets the transport in
     place (see the classification tests at the end of this file). These
     arguments survive a different boundary: Home Assistant restarts, where
-    setup rebuilds the api from what the coordinator persisted. An active
-    backoff, the cached modules and the stable scraper device id all have to
-    come back, or the first cycle after a restart hits the portal as if
+    setup rebuilds the api from what the coordinator persisted. The cached
+    modules and the stable scraper device id come back through them; an
+    active backoff comes back through the account state without one. All
+    three have to, or the first cycle after a reload hits the portal as if
     nothing had happened.
 
     Note what this does NOT show: it builds the second object itself, so it
@@ -2609,8 +2608,6 @@ def test_the_constructor_restores_the_state_that_was_persisted():
         "user@example.org",
         "secret",
         cached_modules=old.modules,
-        blocked_until=old._blocked_until,
-        expert_blocked_until=old._expert_blocked_until,
         scraper_device_id=old.scraper_device_id,
     )
     new.expert_cookies = old.expert_cookies
@@ -5907,7 +5904,11 @@ def test_a_fresh_api_without_carried_state_starts_clean():
     """A normal first start must not inherit anything."""
     api = _api()
 
-    assert api.scraper_backoff == (0, 0, None)
+    assert (
+        api.spider_wait_interval,
+        api.spider_retry_count,
+        api.last_scraping_update,
+    ) == (0, 0, None)
 
 
 class _RecordingSession:
@@ -7258,13 +7259,15 @@ def test_an_expert_backoff_does_not_spread_to_another_account():
 
 
 def test_a_replacement_cannot_shorten_a_running_cooldown():
-    """Callers still pass the old value; passing a smaller one - or none -
-    must never pull the backoff in."""
+    """A new api object of the same account finds the running backoff, and
+    neither it nor anything else can pull it in: the backoff only ever moves
+    further out."""
     api = _api()
     api._activate_cooldown("a test 403")
     active = api._blocked_until
 
-    replacement = WemPortalApi("user@example.org", "secret", blocked_until=0.0)
+    replacement = WemPortalApi("user@example.org", "secret")
+    replacement._blocked_until = 0.0
 
     assert replacement._blocked_until == active
     with pytest.raises(exceptions.ForbiddenError):
@@ -9556,7 +9559,7 @@ def test_a_reload_fetches_statistics_again_because_the_data_did_not_survive():
 
     Every options save is a reload, and a reload builds a new api with no
     readings at all: async_setup_entry passes the module cache and the
-    scraper id, never `existing_data`. A gate that outlived that reload
+    scraper id, never any readings. A gate that outlived that reload
     therefore held back the one fetch that could have refilled the
     statistics sensors - they sat on unknown for up to an hour, with
     nothing in the log to say why.

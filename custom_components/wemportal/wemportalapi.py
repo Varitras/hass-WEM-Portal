@@ -228,12 +228,8 @@ class WemPortalApi(
         username: str,
         password: str,
         config: Mapping[str, Any] | None = None,
-        existing_data: dict[str, dict[str, Any]] | None = None,
         cached_modules: dict[str, Any] | None = None,
-        blocked_until: float = 0.0,
         scraper_device_id: str | None = None,
-        expert_blocked_until: float = 0.0,
-        scraper_backoff: tuple[int, int, datetime | None] | None = None,
     ) -> None:
         """Assemble the api object from three sources, kept apart because
         they have different lifetimes: the user's options, the state the
@@ -247,14 +243,7 @@ class WemPortalApi(
         # once-per-subject warnings. See models.AccountState.
         self._account_state = account_state(username)
         self._init_from_config(config)
-        self._init_from_storage(
-            existing_data,
-            cached_modules,
-            scraper_device_id,
-            blocked_until,
-            expert_blocked_until,
-            scraper_backoff,
-        )
+        self._init_from_storage(cached_modules, scraper_device_id)
         self._init_runtime_state()
 
     def _init_from_config(self, config: Mapping[str, Any] | None) -> None:
@@ -285,20 +274,16 @@ class WemPortalApi(
 
     def _init_from_storage(
         self,
-        existing_data: dict[str, dict[str, Any]] | None,
         cached_modules: dict[str, Any] | None,
         scraper_device_id: str | None,
-        blocked_until: float,
-        expert_blocked_until: float,
-        scraper_backoff: tuple[int, int, datetime | None] | None,
     ) -> None:
         """State the coordinator persisted, handed back after a restart.
 
-        Every argument here exists because starting from zero was wrong:
-        a fresh object would poll a portal that had just asked us to back
-        off, rediscover modules it already knew, and give the scraped
-        sensors a new device id - and with it a new history."""
-        self.data = copy.deepcopy(existing_data) if existing_data else {}
+        Both arguments exist because starting from zero was wrong: a fresh
+        object would rediscover modules it already knew and give the scraped
+        sensors a new device id - and with it a new history. The portal
+        backoffs need no argument: they live in the account state."""
+        self.data: dict[str, dict[str, Any]] = {}
         # Stable device id under which scraped (web) sensors are stored, so
         # their entity unique_ids ("<entry>:<device_id>:<name>") - and thus
         # their history - stay constant across mode switches. Decided once
@@ -325,38 +310,13 @@ class WemPortalApi(
         # The last values answer per device, for the read-back after a write:
         # a read that worked says nothing about a parameter it did not carry.
         self._last_values_answer: dict[str, Mapping[str, Any]] = {}
-        # Monotonic timestamp until which ALL outbound requests are
-        # paused, activated after receiving a 403 (rate limit/forbidden)
-        # from the server anywhere in a cycle. This is a strictly
-        # additive safety measure: it only ever makes the integration
-        # quieter after the server has already signaled distress, never
-        # more aggressive. See check_cooldown()/_activate_cooldown().
-        # Accepted as a constructor argument so an active cooldown survives
-        # the coordinator re-instantiating this object on repeated errors -
-        # otherwise a fresh instance would reset it to 0.0 and resume
-        # hitting a server that just told us to back off.
-        # Seeded, not stored: both backoffs live at module level so that no
-        # construction site can drop them (see _BLOCKED_UNTIL). The arguments
-        # remain because callers that DO hold a previous value still pass it,
-        # and extending is harmless - a caller can only ever push the backoff
-        # further out, never pull it in.
-        self._blocked_until = blocked_until
-        self._expert_blocked_until = expert_blocked_until
-
-        # Scrape backoff, carried across a coordinator swap when given.
-        #
-        # The coordinator builds a fresh WemPortalApi to recover from repeated
-        # errors, and a fresh instance started at zero - so the backoff the
-        # scraper had just earned was discarded by the very recovery those
-        # failures triggered, and the next cycle scraped immediately.
-        # `last_scraping_update` belongs to the same state: without it the
-        # interval check has no reference point and scrapes at once.
-        wait_interval, retry_count, last_update = scraper_backoff or (0, 0, None)
+        # Scrape backoff. A transport reset keeps this object, and with it
+        # the backoff the failures behind the reset had just earned.
         # Used to keep track of how many update intervals to wait before retrying spider
-        self.spider_wait_interval = wait_interval
+        self.spider_wait_interval = 0
         # Used to keep track of the number of times the spider consecutively fails
-        self.spider_retry_count = retry_count
-        self.last_scraping_update = last_update
+        self.spider_retry_count = 0
+        self.last_scraping_update: datetime | None = None
         # When the backoff last moved a step; see _count_down_scrape_backoff.
         self._backoff_stepped_at: float | None = None
 
@@ -682,19 +642,6 @@ class WemPortalApi(
                 self.last_scraping_update or "at the last successful scrape",
             )
 
-    @property
-    def scraper_backoff(self) -> tuple[int, int, datetime | None]:
-        """The scrape backoff as the constructor takes it back.
-
-        Exposed as one value so a caller carrying state across an instance
-        swap cannot pick up two of the three and silently lose the third.
-        """
-        return (
-            self.spider_wait_interval,
-            self.spider_retry_count,
-            self.last_scraping_update,
-        )
-
     def resolve_scraper_device_id(self) -> str:
         """Return the stable device id to store scraped sensors under.
 
@@ -881,8 +828,8 @@ class WemPortalApi(
         when it mattered. The backoff is asked at the TOP level for the same
         reason - it used to sit inside that branch, and `last_scraping_update
         is None` is true on every fresh WemPortalApi, which the coordinator
-        builds whenever it recovers from repeated errors. The scrape backoff
-        was therefore skipped right after the failures that set it.
+        used to build whenever it recovered from repeated errors. The scrape
+        backoff was therefore skipped right after the failures that set it.
         """
         if not self._scraper_enabled(enabled_devices):
             return False
@@ -1663,11 +1610,11 @@ class WemPortalApi(
     def get_data(self, enabled_devices: list[str] | None = None) -> None:
         """Refresh all data for the target devices.
 
-        Thin per-device orchestration; the actual work is split into the
-        three focused steps below (status, parameter values, heating
-        schedules) plus the rate-limited statistics fetch. Purely a
-        readability refactor - order, error handling and behaviour of the
-        former inline blocks are unchanged.
+        A parameter re-discovery when one is due, then per device: status,
+        parameter values and heating schedules, with the readings of a
+        device that could not be read aged; then the rate-limited statistics
+        fetch. Raises one WemPortalError naming every device when no device
+        could be read at all - a partial success counts as success.
         """
         _LOGGER.debug(
             "Fetching fresh api data. enabled_devices=%s, known devices=%s",
@@ -1768,8 +1715,7 @@ class WemPortalApi(
         Returns False only when the status was read successfully and the
         device is not online (polling it further is pointless this cycle).
         A FAILED status fetch returns True: the device may well be fine,
-        so the parameter fetch still gets its chance - same behaviour as
-        the former inline block.
+        so the parameter fetch still gets its chance.
         """
         try:
             status_response = self.make_api_call(

@@ -30,11 +30,11 @@ PACKAGE = (
 )
 
 # No module may pass this without an entry below. The number is not sacred:
-# it sits in today's gap between the ordinary modules (the largest is under
-# 800 lines) and the three that carry the history.
+# it sits above the ordinary modules and below the three that carry the
+# history.
 LINE_LIMIT = 900
 
-# The two that are over, frozen at what they weigh today. wemportalapi
+# The three that are over, frozen at what they weigh today. wemportalapi
 # and expert_writer are the remaining god modules - wemportalapi lost the
 # transport and the statistics path in the rebuild and should keep
 # shrinking; expert_writer is a Telerik form protocol written out longhand,
@@ -100,7 +100,9 @@ LINE_BUDGETS = {
     # Down to 2279: the discovery half moved to discovery.py.
     # And up by 4: the device pass leaves the statistics rows alone only
     # while their own fetch still asks the device.
-    "wemportalapi.py": 2283,
+    # Down to 2229: the constructor arguments that only the old instance
+    # swap needed are gone.
+    "wemportalapi.py": 2229,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.

@@ -191,7 +191,7 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
     def __init__(
         self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data
     ) -> None:
-        """Initialize the sensor."""
+        """Initialize the number."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
         value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)
@@ -263,5 +263,5 @@ class WemPortalNumber(WemPortalEntity, NumberEntity):
 
     @property
     def device_class(self):
-        """Return the device class of the sensor."""
+        """Return the device class of the number."""
         return unit_to_device_class(self._attr_native_unit_of_measurement)

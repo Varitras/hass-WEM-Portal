@@ -95,7 +95,7 @@ RATE_LIMIT_ISSUE = "rate_limited"
 # refusing this network.
 WEB_SCRAPE_ISSUE = "web_scrape_failing"
 
-# Consecutive auth failures per config entry, kept OUTSIDE the coordinator.
+# Consecutive auth failures per account, kept OUTSIDE the coordinator.
 #
 # A failed first refresh makes Home Assistant retry the whole setup, and
 # every retry builds a fresh coordinator - so a counter living on the
@@ -103,7 +103,8 @@ WEB_SCRAPE_ISSUE = "web_scrape_failing"
 # was unreachable during startup. A wrong password (changed while Home
 # Assistant was off) then left the entry retrying forever instead of asking
 # for new credentials. The account state outlives those retries on purpose;
-# see models.AccountState. Cleared on success and on unload.
+# see models.AccountState. Cleared by every cycle that ends another way, by a
+# new login from the reauth or reconfigure dialog, and on unload.
 
 
 def forget_auth_failures(username: str | None) -> None:
@@ -212,7 +213,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         self._reported_failures: dict[str, str] = {}
         # Consecutive AuthError counter, separate from num_failed: only
         # after AUTH_ERROR_ESCALATION_THRESHOLD auth failures IN A ROW do we
-        # escalate to ConfigEntryAuthFailed (reauth). Reset on any success.
+        # escalate to ConfigEntryAuthFailed (reauth). Reset by any cycle
+        # that does not end in one.
         # Seeded from the account state: a failed setup triggers the very
         # reload that would otherwise reset a counter living here.
         self._account_state = account_state(config_entry.data.get(CONF_USERNAME))
@@ -582,8 +584,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         shows, and telling every listener about each of them would write the
         same state again on every cycle of an outage.
 
-        One method for all six raising paths, because each of them is a
-        failed cycle and a seventh added later would otherwise quietly skip
+        One method for every raising path, because each of them is a
+        failed cycle and one added later would otherwise quietly skip
         the notification - which is how this asymmetry got here in the first
         place.
         """
@@ -631,8 +633,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         around it without moving the error handling one level in."""
         async with asyncio.timeout(DEFAULT_TIMEOUT):
             try:
-                # In `finally` below rather than per branch: every one of the
-                # seven exits is a moment where the backoff either holds or
+                # In `finally` below rather than per branch: every exit is a
+                # moment where the backoff either holds or
                 # does not, and a branch added later would otherwise silently
                 # skip the report.
                 fetched = await self._fetch(device_filter)

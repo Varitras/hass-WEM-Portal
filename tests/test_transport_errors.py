@@ -7,7 +7,8 @@ them from. That reads like the portal answered and said nothing, and it failed
 the whole cycle on the first try.
 
 These tests pin both halves of the fix: the wording, and the single retry that
-the three value-carrying requests are allowed and the other twelve are not.
+the value-path reads are allowed (VALUE_PATH_URLS) and every other request is
+not.
 """
 
 import ast

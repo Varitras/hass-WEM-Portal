@@ -12,10 +12,10 @@ and a "redacted" claim is verified against the real TO_REDACT so the register
 cannot become a second, drifting blocklist. A new CONF_ is a RED test the
 moment it is added, not four audits later.
 
-The API row keys (DeviceID, ConnectionStatus, ...) are deliberately NOT covered
-here: they come from the portal, not our code, so there is no source of truth
-to introspect. They stay covered by the row-key aliasing and the DeviceID
-redaction, checked in the e2e diagnostics test.
+The API row keys (ConnectionStatus, ...) are deliberately NOT covered here:
+they come from the portal, not our code, so there is no source of truth to
+introspect. They stay covered by the row-key aliasing, checked in the e2e
+diagnostics test, and the DeviceID redaction stays as a safety net.
 """
 
 from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME

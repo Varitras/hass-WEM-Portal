@@ -296,7 +296,7 @@ class WemPortalTransport:
         had to survive was carried across by hand, and each new field was a
         new chance to forget one. Two were forgotten in practice.
 
-        Three things it silently reset are worth naming, because they were
+        Two things it silently reset are worth naming, because they were
         never intended and no test would have caught them:
 
           * the statistics and circuit-times timestamps, which are portal
@@ -887,9 +887,8 @@ class WemPortalTransport:
                 # An empty or unparseable body. The old parser returned no fields
                 # here and let the login POST go ahead, which sent the password to
                 # a page that had answered with nothing, collected no ASP.NET
-                # state to echo back, and could only be refused. Same reasoning as
-                # the maintenance bail-out above: do not hand over credentials to
-                # a page that cannot process them.
+                # state to echo back, and could only be refused. Do not hand
+                # over credentials to a page that cannot process them.
                 raise UnknownAuthError(
                     "The WEM Portal login page could not be read; no credentials were sent."
                 ) from exc

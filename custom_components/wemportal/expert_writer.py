@@ -642,10 +642,10 @@ class ExpertParameterState:
 
 
 class WemPortalExpertClient:
-    """On-demand web client for reading expert parameters.
+    """On-demand web client that reads and writes expert parameters.
 
-    Uses its own HTTP session, created per operation and closed afterwards -
-    fully independent of the polling scraper/API paths.
+    Its own HTTP session per operation, but not independent of the polling
+    paths: it shares the api's cookies, the account state and the gates.
     """
 
     def __init__(
@@ -1789,13 +1789,13 @@ class WemPortalExpertClient:
                 verify = self._fetch_form(entityvalue, max_attempts=2)
             except ExpertOperationAborted as aborted:
                 # The gates are asked before every request, this read
-                # included - and by here the postback is through, so the
-                # heating system already has the value. Said plainly, because
+                # included - and by here the postback is through and answered;
+                # only the read would have shown it kept. Said plainly, because
                 # an abort that reads like every other one sends whoever
                 # asked for the write to repeat a change that has happened.
                 raise ExpertOperationAborted(
-                    f"{aborted}. The value was posted and the portal accepted "
-                    "it; only the confirming read did not run."
+                    f"{aborted}. The value was posted and the portal answered; "
+                    "only the confirming read did not run."
                 ) from aborted
             # A word is confirmed by the word the dialog shows, because a
             # value beside the scale leaves `current` empty by design - that
