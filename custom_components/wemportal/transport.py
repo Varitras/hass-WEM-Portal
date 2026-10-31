@@ -156,6 +156,7 @@ class WemPortalTransport:
         session: requests.Session | None
         expert_cookies: Any
         _relogin_failure: Exception | None
+        _logged_in_again_in_this_call: bool
 
         def remaining_budget(self) -> float | None: ...
 
@@ -463,6 +464,14 @@ class WemPortalTransport:
             if self.remaining_budget() is not None:
                 self._relogin_failure = login_failure
             raise
+        self._logged_in_again_in_this_call = True
+
+    def _keep_a_session_refused_after_its_login(self, refused: bool, error) -> None:
+        """The same for a login that worked and a session still turned away:
+        logging in again is what this request just did, and it did not help."""
+        in_a_poll = self.remaining_budget() is not None
+        if refused and self._logged_in_again_in_this_call and in_a_poll:
+            self._relogin_failure = error
 
     def _recover_or_raise(
         self, exc, response, url, *, last_attempt, delay, retry_transport
@@ -565,6 +574,7 @@ class WemPortalTransport:
         # ones (e.g. Statistics skips an invalid group) without parsing the
         # message string.
         wem_error.server_status = server_status
+        self._keep_a_session_refused_after_its_login(is_session_error, wem_error)
         raise wem_error from exc
 
     def make_api_call(
@@ -597,6 +607,7 @@ class WemPortalTransport:
         """
         if self._relogin_failure is not None:
             raise self._relogin_failure
+        self._logged_in_again_in_this_call = False
         attempts = 2 if (do_retry or retry_transport) else 1
         response = None
 
@@ -707,7 +718,9 @@ class WemPortalTransport:
             response.raise_for_status()
 
             # Verify the response is actually valid JSON and successful
-            response_data = response.json()
+            response_data = as_answer_dict(response.json())
+            if response_data is None:
+                raise WemPortalError("API login failed: the answer was no object")
             if not status_is_success(response_data.get("Status")):
                 self._raise_login_failure(response, None)
 

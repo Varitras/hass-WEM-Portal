@@ -13,12 +13,14 @@ once - each is explained at the function it belongs to.
 import logging
 
 from collections.abc import Collection, Mapping
+from datetime import datetime
 from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, PLATFORMS
 from .models import Reading
@@ -81,10 +83,13 @@ def _migrate_device_unique_ids(
     device_id: str,
     data: dict[str, Any],
     contested: Collection[str] = (),
+    *,
+    made_before: datetime,
 ) -> None:
     """Migrate one device's entities from old unique_id formats to the current
     one. Factored out so migration can run for EVERY device, not just the
-    first."""
+    first. `made_before` is when this setup began; see
+    _give_up_an_entity_made_meanwhile."""
     for unique_id, values in data.items():
         if not isinstance(values, Reading):
             continue
@@ -98,7 +103,7 @@ def _migrate_device_unique_ids(
             if old_id not in contested
         ]
         _adopt_entity_under_its_old_id(
-            registry, config_entry, values.platform, old_ids, new_id
+            registry, config_entry, values.platform, old_ids, new_id, made_before
         )
 
 
@@ -201,6 +206,7 @@ def _adopt_entity_under_its_old_id(
     platform: str,
     old_ids: list[str],
     new_id: str,
+    made_before: datetime,
 ) -> None:
     """Give the first entity of THIS account found under an old id the
     current one.
@@ -225,18 +231,49 @@ def _adopt_entity_under_its_old_id(
         if found is None or found.config_entry_id != config_entry.entry_id:
             continue
 
-        new_entity_id = registry.async_get_entity_id(platform, DOMAIN, new_id)
-        if new_entity_id is not None and new_entity_id != old_entity_id:
-            _LOGGER.info(
-                "Found entity with old id and an entity with a new unique_id. Preserving old entity..."
-            )
-            registry.async_remove(new_entity_id)
-
+        if not _give_up_an_entity_made_meanwhile(
+            registry, platform, new_id, old_entity_id, made_before
+        ):
+            return
         if old_id == new_id:
             return
         _LOGGER.info("Migrating a %s entity to the current unique_id", platform)
         registry.async_update_entity(old_entity_id, new_unique_id=new_id)
         return
+
+
+def _give_up_an_entity_made_meanwhile(
+    registry: entity_registry.EntityRegistry,
+    platform: str,
+    new_id: str,
+    old_entity_id: str,
+    made_before: datetime,
+) -> bool:
+    """Clear the current unique_id for the old entity, or say it cannot be.
+
+    An entity the builder made during this setup, while the migration waited
+    for a device, has no history yet and is given up for the old one. One
+    registered before this setup has a history of its own: a legacy id two
+    devices answered to held the migration back for as long as both did, and
+    when one went away the next setup removed the entity in use for a frozen
+    one. Nothing in the registry says which of two histories matters, so
+    both stay, and the log says so.
+    """
+    new_entity_id = registry.async_get_entity_id(platform, DOMAIN, new_id)
+    if new_entity_id is None or new_entity_id == old_entity_id:
+        return True
+    current = registry.async_get(new_entity_id)
+    if current is not None and current.created_at < made_before:
+        _LOGGER.warning(
+            "Two %s entities are the same parameter under an old and the "
+            "current id, and both have a history. Both are kept; the one no "
+            "longer updated can be removed under Settings > Entities.",
+            platform,
+        )
+        return False
+    _LOGGER.info("Giving up an entity made this setup for its older one")
+    registry.async_remove(new_entity_id)
+    return True
 
 
 def _entities_of_this_entry_on_other_platforms(
@@ -429,6 +466,7 @@ def migrate_unique_ids(
 ) -> None:
     registry = entity_registry.async_get(hass)
     migrated: dict[tuple[str, str], str] = {}
+    setup_began = dt_util.utcnow()
 
     @callback
     def _migrate_the_readings_not_seen_yet() -> None:
@@ -450,7 +488,7 @@ def migrate_unique_ids(
         Nothing is renamed or removed while a device has not answered yet;
         the pass after it does is the one that runs. An entity the builder
         made in between is given up for the old one by
-        _adopt_entity_under_its_old_id, so the history still wins - and the
+        _give_up_an_entity_made_meanwhile, so the history still wins - and the
         builder, seeing its entity taken down, builds one for the old entry.
         """
         # Migrate EVERY device, not just the first: with multiple devices the
@@ -477,7 +515,12 @@ def migrate_unique_ids(
             if not fresh:
                 continue
             _migrate_device_unique_ids(
-                registry, config_entry, device_id, fresh, contested
+                registry,
+                config_entry,
+                device_id,
+                fresh,
+                contested,
+                made_before=setup_began,
             )
             # After the id migration, not before: that step may still move an
             # old entry onto the current unique_id, and removing it first

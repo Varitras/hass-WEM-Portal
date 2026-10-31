@@ -45,7 +45,8 @@
       "invalid_auth": "Invalid authentication",
       "unknown": "Unexpected error",
       "wrong_account": "The username does not match this account. Re-authentication keeps the same account; only the password can be changed.",
-      "rate_limited": "The WEM Portal is refusing requests from this network right now, which it does after too many in a short time. Waiting is the only fix: it clears by itself, and every retry makes it last longer. Your username and password are not the problem."
+      "rate_limited": "The WEM Portal is refusing requests from this network right now, which it does after too many in a short time. Waiting is the only fix: it clears by itself, and every retry makes it last longer. Your username and password are not the problem.",
+      "portal_maintenance": "The WEM Portal is down for maintenance right now. Try again later; your username and password are not the problem."
     },
     "abort": {
       "already_configured": "Account is already configured",
@@ -159,7 +160,8 @@
       "discovery_busy": "Another expert operation is running for this account right now - a scheduled read, or a value being written. Only one at a time is allowed, so this search was not started. Try again in a moment.",
       "invalid_auth": "Your stored credentials do not work for the connection this mode uses. The mobile API and the web portal are separate logins, so one of them working says nothing about the other. The mode was not changed.",
       "cannot_connect": "The connection this mode uses could not be reached, so the mode was not changed. Try again later.",
-      "rate_limited": "The WEM Portal is refusing requests from this network right now, which it does after too many in a short time. The mode was not changed. Waiting is the only fix: it clears by itself, and every retry makes it last longer."
+      "rate_limited": "The WEM Portal is refusing requests from this network right now, which it does after too many in a short time. The mode was not changed. Waiting is the only fix: it clears by itself, and every retry makes it last longer.",
+      "portal_maintenance": "The WEM Portal is down for maintenance right now, so the mode was not changed. Try again later."
     },
     "abort": {
       "no_changes": "No changes to save - the integration was not reloaded.",

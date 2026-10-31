@@ -780,8 +780,8 @@
   {
     "label": "auth: a refused re-login raised past the post-write read-back",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        except AuthError as exc:\n            return str(exc)",
-    "new": "        except () as exc:\n            return str(exc)",
+    "old": "        except WemPortalError as exc:\n            return str(exc)\n        finally:",
+    "new": "        except () as exc:\n            return str(exc)\n        finally:",
     "tests": "a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise"
   },
   {
@@ -1732,8 +1732,8 @@
   {
     "label": "blocked ip: swallowing every failure as a refusal must be noticed",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "        raise RateLimited from exc\n    except Exception as exc:",
-    "new": "        raise RateLimited from exc\n    except BaseException as exc:\n        raise RateLimited from exc\n    except Exception as exc:",
+    "old": "        raise RateLimited from exc\n    except PortalMaintenanceError as exc:",
+    "new": "        raise RateLimited from exc\n    except BaseException as exc:\n        raise RateLimited from exc\n    except PortalMaintenanceError as exc:",
     "tests": "an_ordinary_failure_is_still_a_connection_problem"
   },
   {
@@ -6460,5 +6460,117 @@
     "old": "        not takes_a_unit(raw)\n        and stored.native_value is None\n",
     "new": "        stored.native_value is None\n",
     "tests": "no_value_yet_gets_its_unit_back"
+  },
+  {
+    "label": "fault sensor: a single long fault claims others that are not there",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    marker = _MORE.format(others) if others else \"\"\n",
+    "new": "    marker = _MORE.format(others)\n",
+    "tests": "claims_no_others"
+  },
+  {
+    "label": "options: the module menu index cannot be cleared",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                    description={\n                        \"suggested_value\": prefill(CONF_EXPERT_MODULE_ARG, \"\")\n                    },\n",
+    "new": "                    default=prefill(CONF_EXPERT_MODULE_ARG, \"\"),\n",
+    "tests": "cleared_module_menu_index"
+  },
+  {
+    "label": "read-back: a device the discovery left out raised past the write",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        except WemPortalError as exc:\n            return str(exc)\n        finally:",
+    "new": "        except AuthError as exc:\n            return str(exc)\n        finally:",
+    "tests": "device_without_modules_is_a_reason_not_a_raise"
+  },
+  {
+    "label": "read-back: a held lock raised past the write",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        except ApiBusyError as exc:\n            return str(exc)\n        try:",
+    "new": "        except ApiBusyError:\n            raise\n        try:",
+    "tests": "held_lock_is_a_reason_not_a_raise"
+  },
+  {
+    "label": "migration: an entity with a history of its own is given up",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "    if current is not None and current.created_at < made_before:\n",
+    "new": "    if False:\n",
+    "tests": "history_of_its_own_is_not_given_up"
+  },
+  {
+    "label": "migration: an entity made during this setup is kept beside the old one",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "    if current is not None and current.created_at < made_before:\n",
+    "new": "    if current is not None:\n",
+    "tests": "made_during_this_setup_is_still_given_up"
+  },
+  {
+    "label": "setup: a corrupt scraper device id read as a fresh install",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        glob.glob, f\"{glob.escape(store.path)}.corrupt.*\"\n",
+    "new": "        glob.glob, f\"{glob.escape(store.path)}.never.*\"\n",
+    "tests": "corrupt_scraper_device_id"
+  },
+  {
+    "label": "write: companions sent as the last poll saw them",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                together_with = self._companions_read_again(device_id, together_with)\n",
+    "new": "                together_with = together_with()\n",
+    "tests": "companion_changed_in_the_app"
+  },
+  {
+    "label": "write: companions that could not be read again sent anyway",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        outcome = self._fetch_parameter_values(str(device_id))\n        if outcome is not None:\n",
+    "new": "        outcome = self._fetch_parameter_values(str(device_id))\n        if False:\n",
+    "tests": "cannot_be_read_again_stops_the_write"
+  },
+  {
+    "label": "intervals: a stored interval too large for a timer",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return min(value, MAX_INTERVAL_SECONDS)\n",
+    "new": "    return value\n",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "intervals: an expert poll interval too large for a timer",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "    return min(interval_min, MAX_INTERVAL_SECONDS // 60)\n",
+    "new": "    return interval_min\n",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "setup flow: maintenance reported as a connection problem",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "    except PortalMaintenanceError as exc:\n        raise PortalMaintenance from exc\n",
+    "new": "",
+    "tests": "maintenance_as_such"
+  },
+  {
+    "label": "transport: a session refused after its login retried by every request",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        self._keep_a_session_refused_after_its_login(is_session_error, wem_error)\n",
+    "new": "",
+    "tests": "costs_one_login_per_poll"
+  },
+  {
+    "label": "transport: one request's login carried over to the next",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        self._logged_in_again_in_this_call = False\n        attempts =",
+    "new": "        attempts =",
+    "tests": "does_not_condemn_a_later_one"
+  },
+  {
+    "label": "transport: a refused session outside a poll stops the next request",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        in_a_poll = self.remaining_budget() is not None\n",
+    "new": "        in_a_poll = True\n",
+    "tests": "tried_again_outside_a_poll"
+  },
+  {
+    "label": "login: an answer that is no object crashes",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            if response_data is None:\n",
+    "new": "            if False:\n",
+    "tests": "json_that_is_no_object"
   }
 ]

@@ -43,6 +43,7 @@ from custom_components.wemportal.const import (
 from custom_components.wemportal.exceptions import (
     AuthError,
     ForbiddenError,
+    PortalMaintenanceError,
 )
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
@@ -227,6 +228,58 @@ async def test_web_setup_does_not_call_one_turned_away_login_a_block(hass, monke
 
     assert result["errors"] == {"base": "cannot_connect"}
     assert not WemPortalApi(USER, "secret").is_rate_limited()
+
+
+def _in_maintenance(monkeypatch):
+    """A portal down for maintenance, on whichever login is tried."""
+
+    def down(self, *_args, **_kwargs):
+        raise PortalMaintenanceError("The portal is down for maintenance")
+
+    monkeypatch.setattr(WemPortalApi, "api_login", down)
+    monkeypatch.setattr(WemPortalApi, "web_login", down)
+
+
+async def test_setup_names_maintenance_as_such(hass, monkeypatch):
+    """Reported as "failed to connect" and logged nowhere, maintenance read
+    like a network fault - the one cause nothing on this side can fix."""
+    _in_maintenance(monkeypatch)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_USERNAME: USER,
+            CONF_PASSWORD: "secret",
+            CONF_LANGUAGE: "en",
+            CONF_MODE: "api",
+        },
+    )
+
+    assert result["errors"] == {"base": "portal_maintenance"}
+
+
+async def test_reauthentication_names_maintenance_as_such(hass, monkeypatch):
+    entry = await _setup(hass, _entry(hass))
+    _in_maintenance(monkeypatch)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "secret"}
+    )
+
+    assert result["errors"] == {"base": "portal_maintenance"}
+
+
+async def test_a_mode_change_names_maintenance_as_such(hass, monkeypatch):
+    entry = await _setup(hass, _entry(hass))
+    _in_maintenance(monkeypatch)
+
+    result = await _submit_options(hass, entry, {CONF_MODE: "web"})
+
+    assert result["errors"] == {"base": "portal_maintenance"}
 
 
 async def test_reauthentication_names_a_blocked_ip_as_one(hass, monkeypatch):

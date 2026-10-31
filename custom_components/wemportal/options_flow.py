@@ -69,6 +69,7 @@ from .config_flow import (
     CannotConnect,
     ExpertBusy,
     InvalidAuth,
+    PortalMaintenance,
     RateLimited,
     login_commit_lock,
     validate_input,
@@ -264,6 +265,8 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
             return {"base": "rate_limited"}
         except InvalidAuth:
             return {CONF_MODE: "invalid_auth"}
+        except PortalMaintenance:
+            return {"base": "portal_maintenance"}
         except CannotConnect:
             return {"base": "cannot_connect"}
         return {}
@@ -451,10 +454,13 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                 ): cv.boolean,
                 # Module menu index used ONLY when module select is
                 # enabled above. Empty default; "6" = heat pump on the
-                # reference install.
+                # reference install. A suggested value, not a default, so
+                # that emptying the field clears it - see _expert_slot_schema.
                 vol.Optional(
                     CONF_EXPERT_MODULE_ARG,
-                    default=prefill(CONF_EXPERT_MODULE_ARG, ""),
+                    description={
+                        "suggested_value": prefill(CONF_EXPERT_MODULE_ARG, "")
+                    },
                 ): cv.string,
                 vol.Optional(
                     CONF_EXPERT_ENABLE_SECURITY_CODE,

@@ -37,6 +37,7 @@ from .const import (
     CONF_EXPERT_POLL_INTERVAL,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     DOMAIN,
+    MAX_INTERVAL_SECONDS,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
 )
 from .exceptions import ExpertOperationAborted, ForbiddenError
@@ -85,9 +86,10 @@ def poll_interval_minutes(entry: ConfigEntry) -> int:
         CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
     )
     try:
-        return max(int(interval_min), MIN_EXPERT_POLL_INTERVAL_MINUTES)
+        interval_min = max(int(interval_min), MIN_EXPERT_POLL_INTERVAL_MINUTES)
     except TypeError, ValueError:
         return DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+    return min(interval_min, MAX_INTERVAL_SECONDS // 60)
 
 
 class ExpertBusy(Exception):

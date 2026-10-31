@@ -25,6 +25,7 @@ from .const import (
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
     DOMAIN,
+    MAX_INTERVAL_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -95,7 +96,7 @@ def clamped_scan_interval(
             minimum,
         )
         return minimum
-    return value
+    return min(value, MAX_INTERVAL_SECONDS)
 
 
 def device_identifier(entry_id: str, device_id: str) -> tuple[str, str]:
@@ -708,7 +709,8 @@ def error_state_and_detail(errors: Iterable[Any] | None) -> tuple[str, list[str]
     if kept:
         return ", ".join(kept) + _MORE.format(len(messages) - len(kept)), messages
 
-    marker = _MORE.format(len(messages) - 1)
+    others = len(messages) - 1
+    marker = _MORE.format(others) if others else ""
     room = MAX_LENGTH_STATE_STATE - len(marker) - len("...")
     return messages[0][:room] + "..." + marker, messages
 

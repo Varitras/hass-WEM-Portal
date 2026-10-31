@@ -7,6 +7,7 @@ https://github.com/erikkastelec/hass-WEM-Portal
 """
 
 from typing import Any, Final
+import glob
 import logging
 
 from datetime import timedelta
@@ -158,28 +159,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
             len(cached_modules),
         )
 
-    # Load the stable scraper device id (decided once, then persisted) so
-    # scraped sensors keep a constant device id - and history - across mode
-    # switches. None on a fresh install / first run after upgrade: the api
-    # then decides it deterministically on the first scrape (preferring the
-    # real API device id, else the placeholder) and the coordinator persists
-    # it. Existing installs therefore lock in whatever id they already use,
-    # so nobody loses history at upgrade.
-    try:
-        scraper_device_id = await get_scraper_device_store(
-            hass, entry.entry_id
-        ).async_load()
-    except Exception as exc:  # noqa: BLE001
-        # Not swallowed. Carrying on with None does not mean "no id yet" - it
-        # means the api decides one again, and where that decision lands
-        # somewhere else, every scraped sensor gets a new unique_id and its
-        # history is orphaned. Refusing to set up is recoverable and Home
-        # Assistant retries on its own; losing the history is not.
-        raise ConfigEntryNotReady(
-            "The stored scraper device id could not be read. Setting up "
-            "without it would re-decide the id and move every scraped "
-            f"sensor to a new one, so this account is not loaded: {exc}"
-        ) from exc
+    scraper_device_id = await _load_scraper_device_id(hass, entry.entry_id)
 
     # Creating API object
     api = WemPortalApi(
@@ -321,6 +301,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         raise
 
     return True
+
+
+async def _load_scraper_device_id(hass: HomeAssistant, entry_id: str) -> str | None:
+    """The stable scraper device id, decided once and then persisted, so
+    scraped sensors keep a constant device id - and history - across mode
+    switches.
+
+    None on a fresh install / first run after upgrade: the api then decides
+    it deterministically on the first scrape (preferring the real API device
+    id, else the placeholder) and the coordinator persists it. Existing
+    installs therefore lock in whatever id they already use.
+
+    Every other None is refused. Carrying on with None does not mean "no id
+    yet" - it means the api decides one again, and where that decision lands
+    somewhere else, every scraped sensor gets a new unique_id and its history
+    is orphaned. Refusing to set up is recoverable and Home Assistant retries
+    on its own; losing the history is not. A file Home Assistant could not
+    decode is one of these: it is moved aside as `.corrupt.<time>` and
+    loads as None, with a repair issue that says to restore a backup.
+    """
+    store = get_scraper_device_store(hass, entry_id)
+    try:
+        scraper_device_id: str | None = await store.async_load()
+    except Exception as exc:  # noqa: BLE001
+        raise ConfigEntryNotReady(
+            "The stored scraper device id could not be read. Setting up "
+            "without it would re-decide the id and move every scraped "
+            f"sensor to a new one, so this account is not loaded: {exc}"
+        ) from exc
+    if scraper_device_id is not None:
+        return scraper_device_id
+    if await hass.async_add_executor_job(
+        glob.glob, f"{glob.escape(store.path)}.corrupt.*"
+    ):
+        raise ConfigEntryNotReady(
+            "The stored scraper device id was corrupt and has been moved aside. "
+            "Restore a backup, or delete the .corrupt file to let the id be "
+            "decided again, which moves every scraped sensor to a new one."
+        )
+    return None
 
 
 def _async_release_expert_service(

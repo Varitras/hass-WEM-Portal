@@ -100,9 +100,12 @@ LINE_BUDGETS = {
     # Down to 2279: the discovery half moved to discovery.py.
     # And up by 4: the device pass leaves the statistics rows alone only
     # while their own fetch still asks the device.
-    # Down to 2229: the constructor arguments that only the old instance
-    # swap needed are gone.
-    "wemportalapi.py": 2229,
+    # Down to 2257: the constructor arguments that only the old instance
+    # swap needed are gone, less 7 for a read-back that reports every portal
+    # error instead of raising it past the write, 18 for reading a write's
+    # companions again before sending them, and 3 for the per-request
+    # re-login flag.
+    "wemportalapi.py": 2257,
     # Over the default by six: a login a firewall turns away once is let
     # pass, and deciding that belongs where the login's answer is read - five
     # of the lines are the import that grew one name too long for one line.
@@ -119,7 +122,10 @@ LINE_BUDGETS = {
     # own method so _recover_or_raise keeps its complexity.
     # And by 5 for saying which pause holds and for how long, so a form
     # can put it in the user's language.
-    "transport.py": 963,
+    # And by 10 for keeping a session the portal refuses right after a
+    # working login for the rest of the poll, like a login that raised, and
+    # by 2 for a login answer that is valid JSON but no object.
+    "transport.py": 975,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     # And by 12 for keeping a reused session only once it reached the
@@ -173,7 +179,8 @@ COMPLEXITY_BUDGETS = {
     # 19 before the AuthError shield in front of its catch-all, which is
     # exactly the one branch.
     "wemportalapi.py::WemPortalApi._fetch_parameter_values": 20,
-    "__init__.py::async_setup_entry": 18,
+    # 18 until reading the scraper device id moved into a helper of its own.
+    "__init__.py::async_setup_entry": 17,
     "options_flow.py::WemportalOptionsFlow._validate_configure_input": 17,
     "mapper.py::_writeable_entity": 17,
 }

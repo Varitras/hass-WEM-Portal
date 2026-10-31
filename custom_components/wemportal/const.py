@@ -79,6 +79,10 @@ MIN_SCAN_INTERVAL_SECONDS: Final = 60  # web scraping interval floor
 # (matching the web floor) - the actual recommendation lives in the
 # options form, so a deliberate choice is not overridden.
 MIN_SCAN_INTERVAL_API_SECONDS: Final = 60  # mobile-API interval floor
+# And a ceiling for all three intervals. Far above any useful one, and far
+# below what Home Assistant's timer can schedule: a fifteen-digit number
+# passed the form and failed the setup it triggered.
+MAX_INTERVAL_SECONDS: Final = 7 * 24 * 3600
 DEFAULT_CONF_LANGUAGE_VALUE: Final = "en"
 
 

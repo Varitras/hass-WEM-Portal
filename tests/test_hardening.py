@@ -1325,6 +1325,43 @@ def test_a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise():
     )
 
 
+def test_a_read_back_of_a_device_without_modules_is_a_reason_not_a_raise():
+    """The same contract for the other way the read can fail.
+
+    A re-discovery that left the written device out of the module list makes
+    the value read raise its data-gathering error. Past the read-back that
+    is the refused login's story again: the caller's failure branch never
+    runs, and the written value stands as verified.
+    """
+    api = _api()
+    api.modules = {}
+
+    failure = api.reread_device_values("1234", ModuleRef(0, 1), ("U_Beginn",))
+
+    assert isinstance(failure, str) and failure, (
+        "the read-back raised instead of reporting, so the caller's failure "
+        "branch never ran"
+    )
+
+
+def test_a_read_back_behind_a_held_lock_is_a_reason_not_a_raise():
+    """A poll that holds the lock past the wait makes the read-back give up
+    before it reads - which is nothing verified, and has to be said as such."""
+    api = _api()
+
+    def busy(_what):
+        raise exceptions.ApiBusyError("a poll is still running")
+
+    api._acquire_api_lock = busy
+
+    failure = api.reread_device_values("1234", ModuleRef(0, 1), ("U_Beginn",))
+
+    assert isinstance(failure, str) and failure, (
+        "the read-back raised instead of reporting, so the caller's failure "
+        "branch never ran"
+    )
+
+
 def _two_entries_being_unloaded(both_unloading=True, expert=True):
     """Two loaded accounts, both in the middle of their teardown.
 
@@ -4748,6 +4785,23 @@ def test_one_fault_too_long_on_its_own_is_cut_and_says_so():
     assert detail == faults
 
 
+def test_a_single_fault_too_long_on_its_own_claims_no_others():
+    """With nothing dropped there is nothing to count: "(+0 more)" reads as
+    if the portal had reported a second fault."""
+    from homeassistant.const import MAX_LENGTH_STATE_STATE
+
+    from custom_components.wemportal.utils import error_state_and_detail
+
+    faults = ["E01 " + "x" * 400]
+
+    state, detail = error_state_and_detail(faults)
+
+    assert len(state) <= MAX_LENGTH_STATE_STATE
+    assert state.endswith("..."), state
+    assert "more)" not in state
+    assert detail == faults
+
+
 def test_the_full_fault_list_reaches_the_attribute():
     api = _api_with_a_read_status()
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
@@ -5376,6 +5430,22 @@ def test_a_usable_stored_interval_survives(stored, expected):
 
     options = {} if stored is None else {"k": stored}
     assert clamped_scan_interval(options, "k", 300, 60) == expected
+
+
+def test_a_stored_interval_too_large_for_a_timer_is_held_to_the_ceiling():
+    """The form clamps what is typed now; a value stored before it did is
+    read back as it was saved, and setup fails on a timer that large."""
+    from custom_components.wemportal.const import (
+        CONF_EXPERT_POLL_INTERVAL,
+        MAX_INTERVAL_SECONDS,
+    )
+    from custom_components.wemportal.expert_controller import poll_interval_minutes
+    from custom_components.wemportal.utils import clamped_scan_interval
+
+    stored = types.SimpleNamespace(options={CONF_EXPERT_POLL_INTERVAL: 10**15})
+
+    assert clamped_scan_interval({"k": 10**15}, "k", 300, 60) == MAX_INTERVAL_SECONDS
+    assert poll_interval_minutes(stored) == MAX_INTERVAL_SECONDS // 60
 
 
 def test_the_api_applies_the_floor_to_a_stored_interval():
@@ -6935,6 +7005,8 @@ PRESERVED_FIELDS = frozenset(
         "_first_cycle_done",
         "_deadline",
         "_relogin_failure",
+        # Scratch of the request in flight, which sets it afresh.
+        "_logged_in_again_in_this_call",
         # Like _deadline, it belongs to the poll cycle in progress: which
         # burst that cycle has spent. A new connection does not un-spend it.
         "heavy_fetch_turns",
@@ -8318,6 +8390,7 @@ def test_a_companion_repeating_the_written_date_does_not_undo_it():
         "After-U_Ende": date_row("U_Ende", 20.0),
     }
     api.data = {"1234": rows}
+    api._fetch_parameter_values = lambda _device_id: None
     sent = []
     api._change_value = lambda *_args, **kwargs: sent.append(kwargs["together_with"])
 
@@ -8349,6 +8422,70 @@ def test_a_companion_repeating_the_written_date_does_not_undo_it():
     )
 
 
+def _dates_changed_elsewhere(api, end):
+    """A fresh read finding the end date someone set in the app meanwhile."""
+    asked = []
+
+    def fresh_read(device_id):
+        asked.append(device_id)
+        api.data[device_id]["Heat pump-HolidayEnd"].value = end
+        return None
+
+    api._fetch_parameter_values = fresh_read
+    return asked
+
+
+def _a_holiday_module(api):
+    api.data = {
+        "1234": {
+            "Heat pump-HolidayEnd": Reading(
+                value=1.0, parameter_id="HolidayEnd", module_index=0, module_type=1
+            )
+        }
+    }
+    sent = []
+    api._change_value = lambda *_a, **kwargs: sent.append(kwargs["together_with"])
+    return sent
+
+
+def _companions_from_rows(api):
+    return lambda: {"HolidayEnd": api.data["1234"]["Heat pump-HolidayEnd"].value}
+
+
+def test_a_companion_changed_in_the_app_is_not_sent_back_stale():
+    """The other holiday date travels with a write unchanged - as the rows
+    last showed it. Set in the app or the web portal since the last poll,
+    the write took that change back, and the read-back, which looks at the
+    written date only, did not notice. The rows are read again first."""
+    api = _api_after_a_poll()
+    sent = _a_holiday_module(api)
+    asked = _dates_changed_elsewhere(api, end=5.0)
+
+    api.change_value(
+        "1234", "HolidayBegin", 0, 1, 2.0, together_with=_companions_from_rows(api)
+    )
+
+    assert asked == ["1234"], "the companions were not read again before the write"
+    assert sent == [{"HolidayEnd": 5.0}], (
+        f"the write sent the other date back as the rows last showed it: {sent}"
+    )
+
+
+def test_a_companion_that_cannot_be_read_again_stops_the_write():
+    """Sending the cached companion instead is the stale write the fresh read
+    exists to prevent; nothing goes out, and the reason does."""
+    api = _api_after_a_poll()
+    sent = _a_holiday_module(api)
+    api._fetch_parameter_values = lambda _device_id: "the portal did not answer"
+
+    with pytest.raises(exceptions.WemPortalError, match="did not answer"):
+        api.change_value(
+            "1234", "HolidayBegin", 0, 1, 2.0, together_with=_companions_from_rows(api)
+        )
+
+    assert sent == [], f"a write went out with an unconfirmed companion: {sent}"
+
+
 def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
     """A holiday write carries the module's other dates: resolved from a
     callable and published into the rows, both UNDER the lock, so a writer
@@ -8369,6 +8506,7 @@ def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
             )
         }
     }
+    api._fetch_parameter_values = lambda _device_id: None
     seen = {}
     api._change_value = lambda *_a, **kwargs: seen.__setitem__(
         "sent", kwargs.get("together_with")

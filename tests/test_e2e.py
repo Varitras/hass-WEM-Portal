@@ -31,6 +31,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.wemportal import expert_number, expert_options, expert_writer
 from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.const import (
+    CONF_EXPERT_AUTO_POLL,
+    CONF_EXPERT_MODULE_ARG,
+    CONF_EXPERT_POLL_INTERVAL,
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
     CONF_EXPERT_WRITE,
@@ -2769,6 +2772,38 @@ async def test_a_cleared_slot_name_is_actually_cleared(hass):
     )
 
 
+async def test_a_cleared_module_menu_index_is_actually_cleared(hass):
+    """The form promises that an empty index means the default menu entry.
+
+    With the stored value as the field's `default`, the emptied field came
+    back as that value, so a wrong index kept steering the expert navigation
+    and could only be replaced by another number, never removed.
+    """
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_MODULE_ARG: "7"}))
+
+    await _submit_options(hass, entry, {}, omit=[CONF_EXPERT_MODULE_ARG])
+
+    assert entry.options[CONF_EXPERT_MODULE_ARG] == "", (
+        "the cleared module menu index kept its stored value"
+    )
+
+
+@pytest.mark.parametrize(
+    "key", [CONF_SCAN_INTERVAL, CONF_SCAN_INTERVAL_API, CONF_EXPERT_POLL_INTERVAL]
+)
+async def test_an_interval_too_large_for_a_timer_still_loads(hass, key):
+    """The intervals had a floor and no ceiling. A number with fifteen digits
+    passed the form, and the reload that saving it starts failed on a timer
+    that large, leaving the entry in a setup error."""
+    entry = await _setup(
+        hass, _entry(hass, {CONF_EXPERT_WRITE: True, CONF_EXPERT_AUTO_POLL: True})
+    )
+
+    await _submit_options(hass, entry, {key: 10**15})
+
+    assert entry.state is ConfigEntryState.LOADED, entry.state
+
+
 async def test_a_slot_name_is_stored_stripped(hass):
     """Whitespace around a name would travel into the entity name."""
     entry = await _setup(
@@ -4446,6 +4481,46 @@ async def test_an_unreadable_scraper_device_id_stops_setup_instead_of_re_decidin
 
     assert entry.state is ConfigEntryState.SETUP_RETRY, (
         "setup carried on without the stored id, which re-decides it"
+    )
+
+
+async def test_a_corrupt_scraper_device_id_stops_setup_instead_of_re_deciding(
+    hass, monkeypatch, tmp_path
+):
+    """The same loss by another road: Home Assistant does not raise on a
+    corrupt store file. It moves the file aside as `.corrupt.<time>`, raises
+    a repair issue and loads None - which reads exactly like a fresh install,
+    so the api decided the id again.
+
+    The store is a stand-in doing exactly that, because the test harness
+    replaces Home Assistant's file storage with a dict and never decodes.
+    """
+    import custom_components.wemportal as integration
+
+    path = tmp_path / "wemportal_entry_scraper_device"
+    (tmp_path / f"{path.name}.corrupt.2026-10-31T00:00:00+00:00").write_text(
+        '{"version": 1, "data": "12', encoding="utf-8"
+    )
+
+    class _MovedAsideStore:
+        def __init__(self):
+            self.path = str(path)
+
+        async def async_load(self):
+            return None
+
+    monkeypatch.setattr(
+        integration,
+        "get_scraper_device_store",
+        lambda *_args, **_kwargs: _MovedAsideStore(),
+    )
+
+    entry = _entry(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY, (
+        "setup read a corrupt id as no id at all, which re-decides it"
     )
 
 
