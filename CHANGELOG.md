@@ -23,6 +23,25 @@ versioning follows [Semantic Versioning](https://semver.org/).
   entity's state, or - as a parameter's bounds - let any value through to the
   portal. A sensor with a unit and a number now show such a value as unknown,
   and such bounds fall back to the defaults.
+- Changing one holiday date sent the other one back as the last update saw
+  it, undoing a change made in the app or web portal meanwhile. It is now
+  read from the portal right before the write.
+- When a second device that had held the entity migration back was disabled
+  or removed, the entity in use was removed in favour of an older one for the
+  same parameter. Both are now kept, with a warning.
+- A scraped-device id file Home Assistant found corrupt was read as a fresh
+  install, which could move every scraped sensor to a new entity. Setup now
+  stops until a backup is restored or the corrupt file is deleted.
+- A failed read-back after writing a date could report the write as failed
+  while showing the value as confirmed.
+- A very large interval saved in the options left the entry in a setup
+  error; intervals are now held to one week.
+- Setup, re-authentication and a mode change say when the portal is down for
+  maintenance instead of "Failed to connect".
+- When the portal refused a session right after a working login, every
+  further request of the update logged in again.
+- The fault sensor no longer shows "(+0 more)" for a single long fault, and
+  the module menu index in the expert options can be cleared again.
 
 ## [1.15.0] – 2026-10-21
 
