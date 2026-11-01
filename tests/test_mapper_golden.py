@@ -3,8 +3,8 @@
 process_api_values and its helpers decide which Home Assistant entity every
 portal value becomes and what it carries. A mistake in them is SILENT: the
 integration still starts, it just exposes the wrong entity type, the wrong
-unit, or a value that quietly stops updating. One of this project's audit
-findings lived in exactly that code for that reason.
+unit, or a value that quietly stops updating. One of this project's defects
+lived in exactly that code for that reason.
 
 The branch tests next door say "these cases still behave"; they cannot say
 "nothing else changed", which is the question a refactor asks. So this walks a

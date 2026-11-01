@@ -2,7 +2,7 @@
 
 The diagnostics download is written to be attached to a public issue, so it
 redacts installation-specific values (diagnostics.TO_REDACT). TO_REDACT is a
-hand-kept blocklist, and the recurring audit class is a blocklist that leaks
+hand-kept blocklist, and the recurring defect is a blocklist that leaks
 each NEW field exactly once: a config option added later, stored in the entry,
 carried into the dump, and forgotten in TO_REDACT.
 
@@ -10,7 +10,7 @@ This register forces the decision when the surface grows. Every config key the
 integration can store carries an explicit "redacted" or "readable: <reason>",
 and a "redacted" claim is verified against the real TO_REDACT so the register
 cannot become a second, drifting blocklist. A new CONF_ is a RED test the
-moment it is added, not four audits later.
+moment it is added, not four reviews later.
 
 The API row keys (ConnectionStatus, ...) are deliberately NOT covered here:
 they come from the portal, not our code, so there is no source of truth to

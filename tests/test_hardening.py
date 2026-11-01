@@ -8644,7 +8644,7 @@ def test_the_filter_survives_the_handover_to_the_reads():
     The filter travels fetch_data -> get_data -> discovery. Both ends were
     covered and the handover was not: dropping the argument here left every
     test green while a device the user switched off was asked for its
-    definitions again. Found by an audit of THIS repair, not of the code it
+    definitions again. Found by a review of THIS repair, not of the code it
     repaired - the test sat one step behind the line that can regress.
     """
     api, asked = _two_device_discovery_api()

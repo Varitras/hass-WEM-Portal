@@ -753,8 +753,8 @@ class WemPortalExpertClient:
         This exists because the alternative kept failing. Each request site
         used to decide for itself what to validate, and the result was ten
         sites checking for a 403 while three checked the status code - so an
-        error page was parsed as a portal answer, and three separate audit
-        rounds each found the next unguarded request. A per-site decision is
+        error page was parsed as a portal answer, and three separate reviews
+        each found the next unguarded request. A per-site decision is
         a per-site chance to forget; one gate cannot be forgotten.
 
         `check_maintenance` raises only where the notice explains a page that

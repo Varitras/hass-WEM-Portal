@@ -3,7 +3,7 @@
 This is an architecture test, not a behaviour test, and it exists because
 behaviour tests kept arriving one request too late. Each request site used to
 decide for itself what to validate, so ten sites checked for a 403 while three
-checked the status code - and three separate audit rounds each found the NEXT
+checked the status code - and three separate reviews each found the NEXT
 unguarded request, one at a time:
 
   * the expert-page POST parsed a 500 as a real page,
@@ -524,7 +524,7 @@ def test_the_scan_notices_a_second_request_that_is_not_checked():
 
 
 def test_the_scan_notices_a_gate_that_guards_the_other_branch():
-    """Named by the audit: a gate in a different branch masked an unguarded
+    """Named by a review: a gate in a different branch masked an unguarded
     request that happens to sit near it."""
     assert [guarded for _line, guarded in sites_in(GATE_IN_ANOTHER_BRANCH)] == [
         True,

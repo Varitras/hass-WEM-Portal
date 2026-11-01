@@ -3158,7 +3158,7 @@ async def test_a_busy_api_counts_neither_for_nor_against_the_credentials(
     the credentials are fine; a cycle that sent no request is not.
 
     Written down as a test because the code says only why this clause comes
-    before the WemPortalError one, and an audit read the two silences as
+    before the WemPortalError one, and a review read the two silences as
     oversights.
     """
     from homeassistant.helpers.update_coordinator import UpdateFailed
