@@ -40,8 +40,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
   or removed, the entity in use was removed in favour of an older one for the
   same parameter. Both are now kept, with a warning.
 - A scraped-device id file Home Assistant found corrupt was read as a fresh
-  install, which could move every scraped sensor to a new entity. Setup now
-  stops until a backup is restored or the corrupt file is deleted.
+  install, which could move every scraped sensor to a new entity. In the
+  `web` and `both` modes setup now stops until a backup is restored or the
+  corrupt file is deleted; `api` mode does not use the id and is let through.
 - A failed read-back after writing a date could report the write as failed
   while showing the value as confirmed.
 - A very large interval saved in the options left the entry in a setup
