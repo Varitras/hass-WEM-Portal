@@ -104,14 +104,14 @@
           "expert_notify_on_success": "Notify on successful expert write"
         },
         "data_description": {
-          "scan_interval": "In seconds; used in web and both modes. Default 1800, below 900 is not recommended. Every request counts against the portal's limit per IP address.",
-          "api_scan_interval": "In seconds; used in api and both modes. Default 300, below 180 is not recommended. Every request counts against the portal's limit per IP address.",
+          "scan_interval": "In seconds; used in web and both modes. Default 1800, maximum 604800 (one week), below 900 is not recommended. Every request counts against the portal's limit per IP address.",
+          "api_scan_interval": "In seconds; used in api and both modes. Default 300, maximum 604800 (one week), below 180 is not recommended. Every request counts against the portal's limit per IP address.",
           "language": "English (en) or German (de) for the names built from what the portal reports; Home Assistant's own language does not change them. The names the integration gives itself - the status sensors, an expert slot left unnamed - follow Home Assistant's language. Default: en.",
           "mode": "Where readings come from: api (the mobile app's interface, covers every device - right for most people), web (the expert web page) or both. Checked against the portal before it is saved. Default: api.",
           "expert_write_enabled": "Makes each filled parameter slot below a writable number entity and enables the set_expert_parameter action. Changes real settings on your heating system. Default: off.",
           "expert_module_arg": "Only used when module selection is enabled. Empty means 6, the heat pump on the reference installation.",
           "expert_auto_poll_enabled": "Reads the slot parameters on a timer, so their entities show current values without a write. Each read is a full web navigation; polling too often can trigger a temporary block (403). Default: off.",
-          "expert_poll_interval_minutes": "In minutes. Default 60, minimum 15.",
+          "expert_poll_interval_minutes": "In minutes. Default 60, minimum 15, maximum 10080 (one week).",
           "expert_slot_1_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",
           "expert_slot_1_id": "The parameter's entityvalue - pick one found by the discovery, or type the hex ID from the portal. Specific to your installation; do not share it. Leave empty for an unused slot.",
           "expert_slot_2_name": "Optional. Becomes the entity's name; a slot with an ID but no name gets a default one.",

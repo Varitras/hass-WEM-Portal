@@ -80,8 +80,8 @@ REPORTED_ID_RETRY_SECONDS = 24 * 3600
 
 
 def poll_interval_minutes(entry: ConfigEntry) -> int:
-    """The configured poll interval, never below the floor and never a value
-    the options flow let through in a shape int() chokes on."""
+    """The configured poll interval, between the floor and the ceiling, and
+    never a value the options flow let through in a shape int() chokes on."""
     interval_min = entry.options.get(
         CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
     )

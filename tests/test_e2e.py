@@ -41,6 +41,7 @@ from custom_components.wemportal.const import (
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
     DOMAIN,
+    MAX_INTERVAL_SECONDS,
     PLATFORMS,
 )
 from custom_components.wemportal.exceptions import (
@@ -2789,9 +2790,14 @@ async def test_a_cleared_module_menu_index_is_actually_cleared(hass):
 
 
 @pytest.mark.parametrize(
-    "key", [CONF_SCAN_INTERVAL, CONF_SCAN_INTERVAL_API, CONF_EXPERT_POLL_INTERVAL]
+    ("key", "kept"),
+    [
+        (CONF_SCAN_INTERVAL, MAX_INTERVAL_SECONDS),
+        (CONF_SCAN_INTERVAL_API, MAX_INTERVAL_SECONDS),
+        (CONF_EXPERT_POLL_INTERVAL, MAX_INTERVAL_SECONDS // 60),
+    ],
 )
-async def test_an_interval_too_large_for_a_timer_still_loads(hass, key):
+async def test_an_interval_too_large_for_a_timer_still_loads(hass, key, kept):
     """The intervals had a floor and no ceiling. A number with fifteen digits
     passed the form, and the reload that saving it starts failed on a timer
     that large, leaving the entry in a setup error."""
@@ -2802,6 +2808,7 @@ async def test_an_interval_too_large_for_a_timer_still_loads(hass, key):
     await _submit_options(hass, entry, {key: 10**15})
 
     assert entry.state is ConfigEntryState.LOADED, entry.state
+    assert entry.options[key] == kept, "the form kept a value that is not used"
 
 
 async def test_a_slot_name_is_stored_stripped(hass):

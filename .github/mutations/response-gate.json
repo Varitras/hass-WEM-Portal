@@ -6670,5 +6670,47 @@
     "old": "    def _async_stop_heavy_follow_ups(self) -> None:\n        self._heavy_follow_ups_left = 0\n",
     "new": "    def _async_stop_heavy_follow_ups(self) -> None:\n",
     "tests": "a_stopped_follow_up_is_not_planned_again"
+  },
+  {
+    "label": "form: the web interval keeps a value above the ceiling",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS, max=MAX_INTERVAL_SECONDS)",
+    "new": "vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS)",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "form: the api interval keeps a value above the ceiling",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                        max=MAX_INTERVAL_SECONDS,\n",
+    "new": "",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "form: the expert interval keeps a value above the ceiling",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                        max=MAX_INTERVAL_SECONDS // 60,\n",
+    "new": "",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "login: a field of the form dropped from the post",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            \"__EVENTVALIDATION\": eventval,\n",
+    "new": "",
+    "tests": "logs_in_the_way_the_scrape_does"
+  },
+  {
+    "label": "login: credentials posted to a page with no form",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        if not viewstate_elem or not eventval_elem:\n",
+    "new": "        if False:\n",
+    "tests": "page_without_a_login_form_gets_no_credentials"
+  },
+  {
+    "label": "web login: a refusal behind the login page starts no pause",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            self._activate_cooldown(f\"the web login: {exc}\")\n            raise\n",
+    "new": "            raise\n",
+    "tests": "a_refusal_behind_the_login_page_starts_the_pause_at_once"
   }
 ]

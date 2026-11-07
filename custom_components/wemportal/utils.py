@@ -63,7 +63,8 @@ NOTHING_ACTIVE: Final = "--"
 def clamped_scan_interval(
     options: Mapping[str, Any], key: str, default: int, minimum: int
 ) -> int:
-    """Read a stored scan interval and hold it to its floor.
+    """Read a stored scan interval and hold it between its floor and the
+    ceiling all intervals share.
 
     The floors were only ever enforced by the options-flow schema, which
     validates what the user types NOW. Options stored by an older release -

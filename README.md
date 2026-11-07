@@ -282,7 +282,7 @@ connection, they share the same budget.
 
 ### Polling
 
-Both intervals are entered in seconds.
+Both intervals are entered in seconds, and held to one week at most.
 
 | Option | Default | Notes |
 |---|---|---|

@@ -51,6 +51,7 @@ from .const import (
     DEFAULT_MODE,
     EXPERT_SLOT_COUNT,
     MIN_EXPERT_ENTITYVALUE_LENGTH,
+    MAX_INTERVAL_SECONDS,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_API_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
@@ -390,7 +391,7 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                     ),
                 ): vol.All(
                     cv.positive_int,
-                    vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
+                    vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS, max=MAX_INTERVAL_SECONDS),
                 ),
                 vol.Optional(
                     CONF_SCAN_INTERVAL_API,
@@ -399,7 +400,10 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                     ),
                 ): vol.All(
                     cv.positive_int,
-                    vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
+                    vol.Clamp(
+                        min=MIN_SCAN_INTERVAL_API_SECONDS,
+                        max=MAX_INTERVAL_SECONDS,
+                    ),
                 ),
                 # Same closed choice as the initial setup form -
                 # previously a free string here allowed saving an
@@ -440,7 +444,10 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                     ),
                 ): vol.All(
                     cv.positive_int,
-                    vol.Clamp(min=MIN_EXPERT_POLL_INTERVAL_MINUTES),
+                    vol.Clamp(
+                        min=MIN_EXPERT_POLL_INTERVAL_MINUTES,
+                        max=MAX_INTERVAL_SECONDS // 60,
+                    ),
                 ),
                 # --- Advanced expert options (only if you know what you
                 # are doing) --------------------------------------------

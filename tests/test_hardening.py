@@ -4277,8 +4277,9 @@ def test_the_web_login_check_logs_in_the_way_the_scrape_does(monkeypatch):
     from custom_components.wemportal import scraper
 
     opened = []
+    posted = []
 
-    class _Session:
+    class _Plain:
         cookies = {}
 
         def close(self):
@@ -4292,15 +4293,64 @@ def test_the_web_login_check_logs_in_the_way_the_scrape_does(monkeypatch):
                 f"<html><body><div id='{WEB_LOGGED_IN_MARKER}'></div></body></html>"
             )
 
+    class _Impersonated(_Plain):
+        def post(self, url, data=None, **kwargs):
+            posted.append(data)
+            return super().post(url, **kwargs)
+
     def session(**kwargs):
         opened.append(kwargs)
-        return _Session()
+        return _Impersonated()
 
     monkeypatch.setattr(scraper.requests, "Session", session)
+    monkeypatch.setattr(real_requests, "Session", lambda: _Plain())
 
     _api().web_login()
 
     assert [options.get("impersonate") for options in opened] == ["chrome110"]
+    assert len(posted) == 1, "the login went out on another client"
+    # All there is to the login: nothing else pins these, and a field lost
+    # here reaches the user as a wrong password.
+    assert set(posted[0]) == {
+        "__VIEWSTATE",
+        "__EVENTVALIDATION",
+        "ctl00$content$tbxUserName",
+        "ctl00$content$tbxPassword",
+        "ctl00$content$btnLogin",
+    }
+    assert posted[0]["ctl00$content$tbxUserName"] == "user@example.org"
+    assert posted[0]["ctl00$content$tbxPassword"] == "secret"
+
+
+def test_a_refusal_behind_the_login_page_starts_the_pause_at_once(monkeypatch):
+    """A 403 from anywhere but the login page is no firewall turning a login
+    away, so no first-one-is-free applies. The check treats it as the scrape
+    does."""
+
+    class _Refused(FakeResponse_html):
+        def __init__(self):
+            super().__init__("forbidden", status_code=403)
+            self.url = "https://www.wemportal.com/Web/Default.aspx"
+
+    class _Session:
+        cookies = {}
+
+        def close(self):
+            pass
+
+        def get(self, *_args, **_kwargs):
+            return FakeResponse_html(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return _Refused()
+
+    _web_session(monkeypatch, _Session)
+    api = _api()
+
+    with pytest.raises(exceptions.ForbiddenError):
+        api.web_login()
+
+    assert api.is_rate_limited()
 
 
 def test_maintenance_is_not_an_auth_error():
@@ -5418,8 +5468,8 @@ def test_a_usable_stored_interval_survives(stored, expected):
 
 
 def test_a_stored_interval_too_large_for_a_timer_is_held_to_the_ceiling():
-    """The form clamps what is typed now; a value stored before it did is
-    read back as it was saved, and setup fails on a timer that large."""
+    """The form holds what is typed now; a value stored before it did is read
+    back as it was saved, and setup fails on a timer that large."""
     from custom_components.wemportal.const import (
         CONF_EXPERT_POLL_INTERVAL,
         MAX_INTERVAL_SECONDS,
