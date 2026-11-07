@@ -82,7 +82,6 @@ class WemPortalDiscovery:
         scraping_mapper: dict[Any, Any]
         heavy_fetch_turns: HeavyFetchTurns
         _reported_failures: dict[str, str]
-        _first_cycle_done: bool
 
         def make_api_call(
             self,
@@ -111,12 +110,11 @@ class WemPortalDiscovery:
         MISSING definitions have to be fetched now: without them there is
         nothing to read and nothing to show.
 
-        STALE ones are the daily re-read, and it deliberately waits for the
-        second cycle. The first refresh runs INSIDE Home Assistant's setup,
-        and this discovery sleeps five seconds per module - a re-read there
-        would make every restart with an expired cache a slow startup, which
-        Home Assistant then complains about. Nothing is lost by waiting one
-        interval for something that is a day old already.
+        STALE ones are the daily re-read, and it takes a turn like the other
+        bursts - which the first cycle hands to nobody. That refresh runs
+        INSIDE Home Assistant's setup, and this discovery sleeps five seconds
+        per module: a re-read there would make every restart with an expired
+        cache a slow startup, which Home Assistant then complains about.
         """
         due = [
             module
@@ -126,7 +124,7 @@ class WemPortalDiscovery:
         ]
         missing = any("parameters" not in module for module in due)
         stale = any(self._parameters_are_stale(module) for module in due)
-        if not (missing or (stale and self._first_cycle_done)):
+        if not (missing or stale):
             return
         # A MISSING definition runs without asking for the turn: without it
         # there is nothing to read at all, and a claim it did not need would

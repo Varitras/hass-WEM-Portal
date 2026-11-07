@@ -1219,17 +1219,10 @@
     "tests": "module_described_as_empty_is_kept_and_not_asked_again"
   },
   {
-    "label": "startup: re-reading during the first refresh must be noticed",
-    "path": "custom_components/wemportal/discovery.py",
-    "old": "        if not (missing or (stale and self._first_cycle_done)):\n            return",
-    "new": "        if not (missing or stale):\n            return",
-    "tests": "stale_definitions_wait_for_the_second_cycle"
-  },
-  {
     "label": "startup: never re-reading at all must be noticed",
     "path": "custom_components/wemportal/discovery.py",
-    "old": "        if not (missing or (stale and self._first_cycle_done)):",
-    "new": "        if not missing:",
+    "old": "        if not (missing or stale):\n            return",
+    "new": "        if not missing:\n            return",
     "tests": "stale_definitions_are_read_on_a_later_cycle"
   },
   {
@@ -6530,5 +6523,75 @@
     "old": "        except ParserError as exc:\n",
     "new": "        except ZeroDivisionError as exc:\n",
     "tests": "an_unreadable_login_page_costs_no_credentials"
+  },
+  {
+    "label": "start: the first cycle spends a burst inside the setup again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self.heavy_fetch_turns.hold_for_setup()\n",
+    "new": "            pass\n",
+    "tests": "only_the_first_cycle_of_an_api_is_held or stale_definitions_wait_for_the_second_cycle"
+  },
+  {
+    "label": "start: every cycle is held like the first",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not self._first_cycle_done:\n            # Awaited by Home Assistant's setup",
+    "new": "        if True:\n            # Awaited by Home Assistant's setup",
+    "tests": "only_the_first_cycle_of_an_api_is_held"
+  },
+  {
+    "label": "start: no follow-up is ever started",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        coordinator.async_start_heavy_follow_ups()\n",
+    "new": "",
+    "tests": "one_kind_waiting_needs_one_follow_up"
+  },
+  {
+    "label": "start: a follow-up runs with nothing waiting",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        if self._heavy_follow_ups_left and self.api.heavy_fetch_turns.waiting:\n",
+    "new": "        if self._heavy_follow_ups_left:\n",
+    "tests": "nothing_waiting_costs_no_follow_up"
+  },
+  {
+    "label": "start: follow-ups run for as long as a kind waits",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            self._heavy_follow_ups_left -= 1\n",
+    "new": "",
+    "tests": "keeps_waiting"
+  },
+  {
+    "label": "start: a follow-up inside the interval reads nothing",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        self.api.read_api_on_the_next_tick()\n",
+    "new": "",
+    "tests": "reads_the_api_inside_the_interval"
+  },
+  {
+    "label": "start: only one follow-up runs",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        await self.async_refresh()\n        self._async_plan_heavy_follow_up()\n",
+    "new": "        await self.async_refresh()\n",
+    "tests": "two_kinds_waiting"
+  },
+  {
+    "label": "start: an unload leaves the follow-up running",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        self.config_entry.async_on_unload(self._async_stop_heavy_follow_ups)\n",
+    "new": "",
+    "tests": "unload_takes_the_follow_up"
+  },
+  {
+    "label": "start: asking for the read does not lift the interval",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self._last_api_read = None\n\n    def _count_down_scrape_backoff",
+    "new": "        pass\n\n    def _count_down_scrape_backoff",
+    "tests": "api_read_is_due_after_being_asked_for"
+  },
+  {
+    "label": "start: a held cycle hands out its turn",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        self._claimed = _TURN_HELD_FOR_SETUP\n",
+    "new": "        pass\n",
+    "tests": "held_for_the_setup"
   }
 ]

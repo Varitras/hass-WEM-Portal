@@ -252,6 +252,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         if entry.options.get(CONF_EXPERT_WRITE, False):
             await _async_register_expert_service(hass)
             entry.runtime_data.expert.setup_auto_poll(hass, entry)
+        coordinator.async_start_heavy_follow_ups()
     except BaseException:
         # BaseException for the same reason as the block above: a setup task
         # cancelled on shutdown or on the setup timeout ends without an

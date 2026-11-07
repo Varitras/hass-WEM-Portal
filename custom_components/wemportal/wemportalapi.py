@@ -324,11 +324,9 @@ class WemPortalApi(
         """State that always starts empty: the HTTP transport, the
         per-session caches and the timestamps a cycle fills in.
         """
-        # Whether a full cycle has completed in this session. The daily
-        # parameter re-read waits for it: the FIRST refresh runs inside Home
-        # Assistant's setup, and a discovery there (five seconds of sleep per
-        # module) turns every restart with an expired cache into a slow
-        # startup.
+        # Whether a full cycle has completed in this session. The FIRST
+        # refresh runs inside Home Assistant's setup, so it spends no burst;
+        # see _fetch_data.
         self._first_cycle_done = False
         # A `both`-mode tick can end with neither source read, which is no
         # sign of recovery.
@@ -878,6 +876,10 @@ class WemPortalApi(
         waited: float = time.monotonic() - self._last_api_read
         return waited + TICK_TOLERANCE_SECONDS >= self.scan_interval_api.total_seconds()
 
+    def read_api_on_the_next_tick(self) -> None:
+        """Make the next `both`-mode tick read the API, interval or not."""
+        self._last_api_read = None
+
     def _count_down_scrape_backoff(self) -> None:
         """One web interval closer to the next scrape attempt.
 
@@ -991,6 +993,10 @@ class WemPortalApi(
         # etc.) that we already know will be aborted immediately.
         self.check_cooldown()
         self.heavy_fetch_turns.new_cycle()
+        if not self._first_cycle_done:
+            # Awaited by Home Assistant's setup, on every restart and every
+            # saved option. The coordinator follows up on what this turns away.
+            self.heavy_fetch_turns.hold_for_setup()
         self.last_cycle_read_nothing = False
         try:
             if self.mode != "web":

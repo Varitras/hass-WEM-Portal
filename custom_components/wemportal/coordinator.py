@@ -5,15 +5,17 @@ from __future__ import annotations
 import logging
 
 import asyncio
+from collections.abc import Callable
 from datetime import timedelta
 from time import monotonic
-from typing import Any
+from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_USERNAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
@@ -177,12 +179,52 @@ def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store[Any]:
     )
 
 
+# The first cycle runs inside Home Assistant's setup and spends no burst, so
+# what it turned away follows this long after, one kind per follow-up. Two
+# cover programmes and statistics; a daily parameter re-read landing on the
+# same start takes the next regular cycle.
+HEAVY_FOLLOW_UP_DELAY_SECONDS: Final = 60
+HEAVY_FOLLOW_UPS: Final = 2
+
+
 class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
     """DataUpdateCoordinator for wemportal component"""
 
     # Always set (passed in __init__); narrows the base's Optional so the
     # entry_id/state accesses below do not each need a None check.
     config_entry: ConfigEntry
+    _heavy_follow_ups_left = 0
+    _cancel_heavy_follow_up: Callable[[], None] | None = None
+
+    @callback
+    def async_start_heavy_follow_ups(self) -> None:
+        """Fetch what the first cycle turned away, once the setup is done."""
+        self._heavy_follow_ups_left = HEAVY_FOLLOW_UPS
+        self.config_entry.async_on_unload(self._async_stop_heavy_follow_ups)
+        self._async_plan_heavy_follow_up()
+
+    @callback
+    def _async_stop_heavy_follow_ups(self) -> None:
+        self._heavy_follow_ups_left = 0
+        if self._cancel_heavy_follow_up is not None:
+            self._cancel_heavy_follow_up()
+            self._cancel_heavy_follow_up = None
+
+    @callback
+    def _async_plan_heavy_follow_up(self) -> None:
+        """Only while something is owed: a follow-up is a request of its own,
+        and the regular cycles take over from a kind that keeps failing."""
+        if self._heavy_follow_ups_left and self.api.heavy_fetch_turns.waiting:
+            self._heavy_follow_ups_left -= 1
+            self._cancel_heavy_follow_up = async_call_later(
+                self.hass, HEAVY_FOLLOW_UP_DELAY_SECONDS, self._async_heavy_follow_up
+            )
+
+    async def _async_heavy_follow_up(self, _now: Any) -> None:
+        self._cancel_heavy_follow_up = None
+        self.api.read_api_on_the_next_tick()
+        await self.async_refresh()
+        self._async_plan_heavy_follow_up()
 
     def __init__(
         self,

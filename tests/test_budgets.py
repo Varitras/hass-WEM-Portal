@@ -106,7 +106,9 @@ LINE_BUDGETS = {
     # companions again before sending them, and 3 for the per-request
     # re-login flag. And by 5 for building the scraper in one place, for the
     # scrape and for the login check that moved out of transport.py.
-    "wemportalapi.py": 2262,
+    # And by 6 for keeping the bursts out of the setup's cycle and letting a
+    # follow-up read inside the interval.
+    "wemportalapi.py": 2268,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     # And by 12 for keeping a reused session only once it reached the
