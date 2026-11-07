@@ -6541,8 +6541,8 @@
   {
     "label": "start: a follow-up runs with nothing waiting",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "        if self._heavy_follow_ups_left and self.api.heavy_fetch_turns.waiting:\n",
-    "new": "        if self._heavy_follow_ups_left:\n",
+    "old": "            self.api.heavy_fetch_turns.waiting\n            and self.last_update_success\n",
+    "new": "            self.last_update_success\n",
     "tests": "nothing_waiting_costs_no_follow_up"
   },
   {
@@ -6635,5 +6635,40 @@
     "old": "        await async_remove_scraper_device_store(self.hass, entry.entry_id)\n",
     "new": "",
     "tests": "reconfigure_to_a_new_login_takes_the_corrupt_copy_with_it"
+  },
+  {
+    "label": "start: a failed follow-up plans the next",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            and self.last_update_success\n",
+    "new": "",
+    "tests": "a_failed_follow_up_plans_no_other"
+  },
+  {
+    "label": "start: a pause does not stop the follow-ups",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            and not self.api.is_rate_limited()\n",
+    "new": "",
+    "tests": "a_pause_stops_the_follow_ups"
+  },
+  {
+    "label": "start: a follow-up nobody owes any more still runs",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        self._cancel_heavy_follow_up = None\n        if self._a_heavy_follow_up_is_worthwhile():\n",
+    "new": "        self._cancel_heavy_follow_up = None\n        if True:\n",
+    "tests": "a_regular_cycle_that_served_the_kinds_cancels_the_follow_up"
+  },
+  {
+    "label": "start: the follow-up timer outlives Home Assistant's stop",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "HassJob(self._async_launch_heavy_follow_up, cancel_on_shutdown=True)",
+    "new": "HassJob(self._async_launch_heavy_follow_up)",
+    "tests": "a_follow_up_runs_like_the_regular_tick"
+  },
+  {
+    "label": "start: a stopped follow-up is planned again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "    def _async_stop_heavy_follow_ups(self) -> None:\n        self._heavy_follow_ups_left = 0\n",
+    "new": "    def _async_stop_heavy_follow_ups(self) -> None:\n",
+    "tests": "a_stopped_follow_up_is_not_planned_again"
   }
 ]

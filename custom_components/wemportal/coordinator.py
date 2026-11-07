@@ -14,7 +14,7 @@ from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_USERNAME
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HassJob, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry
 from homeassistant.helpers.event import async_call_later
@@ -200,7 +200,7 @@ async def async_remove_scraper_device_store(hass: HomeAssistant, entry_id: str) 
 # The first cycle runs inside Home Assistant's setup and spends no burst, so
 # what it turned away follows this long after, one kind per follow-up. Two
 # cover programmes and statistics; a daily parameter re-read landing on the
-# same start takes the next regular cycle.
+# same start asks first, and the statistics then wait for a regular cycle.
 HEAVY_FOLLOW_UP_DELAY_SECONDS: Final = 60
 HEAVY_FOLLOW_UPS: Final = 2
 
@@ -228,18 +228,39 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             self._cancel_heavy_follow_up()
             self._cancel_heavy_follow_up = None
 
+    def _a_heavy_follow_up_is_worthwhile(self) -> bool:
+        """Something is owed, and the portal is not in trouble: a follow-up is
+        a request of its own, and an error state must not add traffic. Sixty
+        seconds after a failure it also counted as the second in a row."""
+        return (
+            self.api.heavy_fetch_turns.waiting
+            and self.last_update_success
+            and not self.api.is_rate_limited()
+        )
+
     @callback
     def _async_plan_heavy_follow_up(self) -> None:
-        """Only while something is owed: a follow-up is a request of its own,
-        and the regular cycles take over from a kind that keeps failing."""
-        if self._heavy_follow_ups_left and self.api.heavy_fetch_turns.waiting:
+        if self._heavy_follow_ups_left and self._a_heavy_follow_up_is_worthwhile():
             self._heavy_follow_ups_left -= 1
             self._cancel_heavy_follow_up = async_call_later(
-                self.hass, HEAVY_FOLLOW_UP_DELAY_SECONDS, self._async_heavy_follow_up
+                self.hass,
+                HEAVY_FOLLOW_UP_DELAY_SECONDS,
+                HassJob(self._async_launch_heavy_follow_up, cancel_on_shutdown=True),
             )
 
-    async def _async_heavy_follow_up(self, _now: Any) -> None:
+    @callback
+    def _async_launch_heavy_follow_up(self, _now: Any) -> None:
+        """In the background, like the regular tick: Home Assistant waits for
+        its plain tasks at the end of a start, the wait this is here to spare.
+
+        Asked again, because a regular tick may have come first."""
         self._cancel_heavy_follow_up = None
+        if self._a_heavy_follow_up_is_worthwhile():
+            self.config_entry.async_create_background_task(
+                self.hass, self._async_heavy_follow_up(), f"{DOMAIN} heavy follow-up"
+            )
+
+    async def _async_heavy_follow_up(self) -> None:
         self.api.read_api_on_the_next_tick()
         await self.async_refresh()
         self._async_plan_heavy_follow_up()
