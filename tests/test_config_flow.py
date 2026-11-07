@@ -189,7 +189,7 @@ async def test_web_setup_does_not_call_one_turned_away_login_a_block(hass, monke
     """The `web` twin of the API case above: the setup's web login answered
     403 once and paused everything for fifteen minutes, telling the user the
     network was refused."""
-    from custom_components.wemportal import transport
+    from custom_components.wemportal import scraper, transport
 
     from .test_hardening import FakeResponse
 
@@ -208,7 +208,7 @@ async def test_web_setup_does_not_call_one_turned_away_login_a_block(hass, monke
         def close(self):
             pass
 
-    monkeypatch.setattr(transport.requests, "Session", TurnedAway)
+    monkeypatch.setattr(scraper.requests, "Session", TurnedAway)
     monkeypatch.setattr(
         WemPortalApi, "web_login", transport.WemPortalTransport.web_login
     )

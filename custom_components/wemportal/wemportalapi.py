@@ -1196,15 +1196,25 @@ class WemPortalApi(
             self._scraper.close()
             self._scraper = None
 
+    def _new_scraper(self, cookie: dict[str, Any] | None = None) -> Any:
+        """A scraper for this account, for the scrape and the login check.
+
+        Function-local on purpose: the scraper pulls curl_cffi and lxml
+        (~140 ms, measured), and `api` mode never gets here.
+        """
+        from .scraper import WemPortalScraper
+
+        return WemPortalScraper(
+            self.username, self.password, cookie, budget=self.remaining_budget
+        )
+
     def fetch_webscraping_data(self) -> dict[str, Any]:
         """
         Call scraper to crawl WEM Portal.
         This function manages the process of initiating a web scraping job,
         handling errors, and returning the scraped data.
         """
-        # Function-local on purpose: the scraper pulls curl_cffi and lxml
-        # (~140 ms, measured), and `api` mode never gets here.
-        from .scraper import WemPortalScraper, refuse_folded_panels
+        from .scraper import refuse_folded_panels
 
         # Respect an active rate-limit cooldown for the scraping path too,
         # not just the API path - a 403 from either frontend means the
@@ -1221,12 +1231,7 @@ class WemPortalApi(
         # connection) across cycles; only create a new one on first use
         # or after it was deliberately discarded (see _reset_scraper).
         if self._scraper is None:
-            self._scraper = WemPortalScraper(
-                self.username,
-                self.password,
-                self.webscraping_cookie,
-                budget=self.remaining_budget,
-            )
+            self._scraper = self._new_scraper(self.webscraping_cookie)
         else:
             # Keep the scraper's cookie view in sync with ours (ours may
             # have been cleared after an auth error since the last cycle).

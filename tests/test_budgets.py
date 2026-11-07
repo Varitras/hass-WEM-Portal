@@ -30,11 +30,11 @@ PACKAGE = (
 )
 
 # No module may pass this without an entry below. The number is not sacred:
-# it sits above the ordinary modules and below the three that carry the
+# it sits above the ordinary modules and below the two that carry the
 # history.
 LINE_LIMIT = 900
 
-# The three that are over, frozen at what they weigh today. wemportalapi
+# The two that are over, frozen at what they weigh today. wemportalapi
 # and expert_writer are the remaining god modules - wemportalapi lost the
 # transport and the statistics path in the rebuild and should keep
 # shrinking; expert_writer is a Telerik form protocol written out longhand,
@@ -104,28 +104,9 @@ LINE_BUDGETS = {
     # swap needed are gone, less 7 for a read-back that reports every portal
     # error instead of raising it past the write, 18 for reading a write's
     # companions again before sending them, and 3 for the per-request
-    # re-login flag.
-    "wemportalapi.py": 2257,
-    # Over the default by six: a login a firewall turns away once is let
-    # pass, and deciding that belongs where the login's answer is read - five
-    # of the lines are the import that grew one name too long for one line.
-    # And by 12 for the setup's web login following the scraper's rule, so a
-    # single refusal there no longer pauses everything either.
-    # And by 3 for a login saying it went through, whoever made it.
-    # And by 11 for saying who answered each of its four 403s, gateway or
-    # portal - five of them the import that no longer fits one line, three
-    # the login's, said before a maintenance wording can raise past it.
-    # And by 2 for sending the HTTP-200 refusal through the same classifier,
-    # and by 5 for closing the web check's session: the body moved under a
-    # `with`, and the formatter wrapped what no longer fit. And by 19 for
-    # keeping a failed mid-poll re-login for the rest of the poll, in its
-    # own method so _recover_or_raise keeps its complexity.
-    # And by 5 for saying which pause holds and for how long, so a form
-    # can put it in the user's language.
-    # And by 10 for keeping a session the portal refuses right after a
-    # working login for the rest of the poll, like a login that raised, and
-    # by 2 for a login answer that is valid JSON but no object.
-    "transport.py": 975,
+    # re-login flag. And by 5 for building the scraper in one place, for the
+    # scrape and for the login check that moved out of transport.py.
+    "wemportalapi.py": 2262,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     # And by 12 for keeping a reused session only once it reached the
@@ -172,9 +153,6 @@ COMPLEXITY_BUDGETS = {
     # And by 2 for a refusal the client already said: raised to the caller
     # without a second, ERROR-level line.
     "__init__.py::_async_register_expert_service": 30,
-    # Back to 22: whether a page is the expert view is now answered once, by
-    # _load_expert_page, for the reused session and the fresh login alike.
-    "scraper.py::WemPortalScraper.scrape": 22,
     "sensor.py::_parse_schedule": 21,
     # 19 before the AuthError shield in front of its catch-all, which is
     # exactly the one branch.

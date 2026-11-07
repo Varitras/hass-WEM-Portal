@@ -3439,10 +3439,9 @@ def test_a_portal_error_page_on_the_login_url_is_not_a_wrong_password(monkeypatc
 
     A portal error or interstitial answers with HTTP 200 and stays on
     Login.aspx, which was the whole test - so three of those in web mode walk
-    into a re-authentication prompt. web_login in wemportalapi has had the
-    right answer all along: look for the logged-in marker, then the
-    maintenance notice, then the login FORM. Only the form is evidence that
-    credentials were seen and rejected.
+    into a re-authentication prompt. The right answer is to look for the
+    logged-in marker, then the maintenance notice, then the login FORM. Only
+    the form is evidence that credentials were seen and rejected.
     """
     from custom_components.wemportal.scraper import WemPortalScraper
 
@@ -4042,13 +4041,20 @@ def test_a_real_window_is_still_maintenance_and_not_a_wrong_password(monkeypatch
             posted.append(True)
             return FakeResponse_html(MAINTENANCE_PAGE)
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
     api = _api()
 
     with pytest.raises(exceptions.PortalMaintenanceError):
         api.web_login()
 
     assert posted, "the login is where maintenance is decided now"
+
+
+def _web_session(monkeypatch, make_session):
+    """The session the web login opens: the scraper's own."""
+    from custom_components.wemportal import scraper
+
+    monkeypatch.setattr(scraper.requests, "Session", lambda **_kwargs: make_session())
 
 
 def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
@@ -4075,7 +4081,7 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
         def post(self, *_args, **_kwargs):
             return post_answer
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
     return _api()
 
 
@@ -4101,7 +4107,7 @@ def test_the_web_login_check_closes_its_session(monkeypatch, outcome):
         def close(self):
             closed.append(True)
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
 
     with contextlib.suppress(exceptions.WemPortalError):
         _api().web_login()
@@ -4133,11 +4139,11 @@ def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
             posted.append(True)
             return FakeResponse_html("")
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
 
     api = _api()
 
-    with pytest.raises(exceptions.UnknownAuthError):
+    with pytest.raises(exceptions.ServerError):
         api.web_login()
 
     assert posted == [], "credentials were sent to a page that could not be read"
@@ -4165,7 +4171,7 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
         def post(self, *_args, **_kwargs):
             raise AssertionError("credentials were sent to a refusing portal")
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
     api = _api()
 
     # The first one in a row is let pass without the pause (WebLoginRefused);
@@ -4204,9 +4210,9 @@ def test_a_page_without_a_login_form_gets_no_credentials(monkeypatch):
         def post(self, *_args, **_kwargs):
             raise AssertionError("credentials were sent to a page with no login form")
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
 
-    with pytest.raises(exceptions.UnknownAuthError):
+    with pytest.raises(exceptions.ServerError):
         _api().web_login()
 
 
@@ -4220,7 +4226,7 @@ def test_a_page_that_is_neither_login_nor_session_is_not_a_wrong_password(monkey
         monkeypatch=monkeypatch,
     )
 
-    with pytest.raises(exceptions.UnknownAuthError):
+    with pytest.raises(exceptions.ServerError):
         api.web_login()
 
 
@@ -4253,6 +4259,7 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
             raise AssertionError("a request was sent during the cooldown")
 
     monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
     api = _api()
     api._activate_cooldown("a test 403")
 
@@ -4262,29 +4269,14 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
         api.api_login()
 
 
-FORM_PAGE = """<html><body>
-  <input type="hidden" name="__VIEWSTATE" value="vs">
-  <input type="hidden" name="__EVENTVALIDATION" value="ev">
-  <input type="hidden" name="__EMPTY">
-  <input type="hidden" value="no name of its own">
-  <input type="hidden" name="" value="blank name">
-  <input name="ctl00$content$tbxUserName" type="text" value="visible">
-  <input name="ctl00$content$btnLogin" type="submit" value="Anmelden">
-  <input name="ctl00$content$chkStayLoggedIn" type="checkbox" value="stray">
-</body></html>"""
+def test_the_web_login_check_logs_in_the_way_the_scrape_does(monkeypatch):
+    """The check before an entry is saved was its own client: plain requests,
+    with Chrome only in a header. The scrape it stands in for goes out as a
+    browser, so a gateway telling the two apart could refuse a login that
+    would have worked - or pass one that would not."""
+    from custom_components.wemportal import scraper
 
-
-def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
-    """ASP.NET rejects a post that does not echo its own hidden state back,
-    so which fields are collected IS the login.
-
-    Written against the behaviour before the HTML parser was swapped, so the
-    swap has something to be equal to - each of these is a way the two
-    parsers could differ: a hidden field with no value attribute, one with no
-    name, one whose name is empty, and the visible fields that must not come
-    along.
-    """
-    posted = {}
+    opened = []
 
     class _Session:
         cookies = {}
@@ -4293,29 +4285,22 @@ def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
             pass
 
         def get(self, *_args, **_kwargs):
-            return FakeResponse_html(FORM_PAGE)
+            return FakeResponse_html(NORMAL_LOGIN_PAGE)
 
-        def post(self, _url, data=None, **_kwargs):
-            posted.update(data)
-            return FakeResponse_html("<html>ctl00_btnLogout</html>")
+        def post(self, *_args, **_kwargs):
+            return FakeResponse_html(
+                f"<html><body><div id='{WEB_LOGGED_IN_MARKER}'></div></body></html>"
+            )
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    def session(**kwargs):
+        opened.append(kwargs)
+        return _Session()
+
+    monkeypatch.setattr(scraper.requests, "Session", session)
+
     _api().web_login()
 
-    hidden = {
-        key: value
-        for key, value in posted.items()
-        if not key.startswith("ctl00$content$")
-    }
-    assert hidden == {"__VIEWSTATE": "vs", "__EVENTVALIDATION": "ev", "__EMPTY": ""}
-    # The credentials and the button are added by the login itself, not read
-    # off the page.
-    assert posted["ctl00$content$tbxUserName"] == "user@example.org"
-    # A visible field the login does NOT overwrite. The first version of this
-    # test only had visible fields whose names the login sets anyway, so
-    # dropping the type filter from the selector changed nothing it could see
-    # - the assertion passed while every visible field was being collected.
-    assert "ctl00$content$chkStayLoggedIn" not in posted
+    assert [options.get("impersonate") for options in opened] == ["chrome110"]
 
 
 def test_maintenance_is_not_an_auth_error():
@@ -11760,7 +11745,7 @@ def test_a_setup_web_login_that_worked_starts_the_count_again(monkeypatch):
             )
 
     sessions = [_RefusingSession(), _WorkingSession(), _RefusingSession()]
-    monkeypatch.setattr(real_requests, "Session", lambda: sessions.pop(0))
+    _web_session(monkeypatch, lambda: sessions.pop(0))
     api = _api()
 
     with pytest.raises(exceptions.ForbiddenError):

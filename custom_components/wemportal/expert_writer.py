@@ -970,7 +970,7 @@ class WemPortalExpertClient:
         # URL - exactly the test for "these credentials were rejected" just
         # below - so a real window would read as a wrong password without it.
         self._check_response(login_response, "login POST", check_maintenance=True)
-        # Three outcomes, not two, same as the scraper and web_login: staying
+        # Three outcomes, not two, same as the scraper's login: staying
         # on the login URL was the whole test, and a portal error or
         # interstitial does that too while answering 200. Only the login FORM
         # is evidence that credentials were seen and refused.

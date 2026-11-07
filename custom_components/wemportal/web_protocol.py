@@ -1,7 +1,7 @@
 """The web login's maintenance protocol, with no idea of the domain.
 
 The maintenance marker and how a downtime page is recognised are the same
-question for three callers - the mobile transport's web_login, the scraper and
+question for three callers - the mobile transport's login, the scraper and
 the expert client - and none of it knows what a device, a module or a reading
 is. It lived in utils.py, which DOES pull in the sensor and reading models, so
 the transport half imported the whole domain transitively just to read a

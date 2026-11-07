@@ -53,8 +53,8 @@ WEB_LOGIN_URL: Final = "https://www.wemportal.com/Web/Login.aspx"
 # Named after the field the login POST itself sends, so the two cannot drift.
 WEB_LOGGED_IN_MARKER: Final = "ctl00_btnLogout"
 WEB_LOGIN_FORM_MARKER: Final = "ctl00$content$tbxPassword"
-# Both are read by transport.web_login and by the scraper's own login, which
-# classify the same answer the same way: a session, a refusal, or neither.
+# Both classify the answer to the scraper's login: a session, a refusal, or
+# neither.
 CONF_SCAN_INTERVAL_API: Final = "api_scan_interval"
 CONF_LANGUAGE: Final = "language"
 CONF_MODE: Final = "mode"

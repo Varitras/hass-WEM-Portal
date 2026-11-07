@@ -547,13 +547,6 @@
     "tests": "status_answer_without_a_status_is_a_failed_read"
   },
   {
-    "label": "web login: posting credentials to a page with no form again",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        if not {\"__VIEWSTATE\", \"__EVENTVALIDATION\"} <= form_data.keys():",
-    "new": "        if False:",
-    "tests": "page_without_a_login_form_gets_no_credentials"
-  },
-  {
     "label": "login: a maintenance message on the api login read as a wrong password",
     "path": "custom_components/wemportal/web_protocol.py",
     "old": "    return any(marker in lowered for marker in API_MAINTENANCE_MESSAGE_MARKERS)",
@@ -1779,34 +1772,6 @@
     "tests": "a_login_is_not_attempted_during_a_cooldown"
   },
   {
-    "label": "login: the web login sends before asking the cooldown",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        self.check_cooldown()\n        # Closed however",
-    "new": "        # Closed however",
-    "tests": "a_login_is_not_attempted_during_a_cooldown"
-  },
-  {
-    "label": "login: a refused login PAGE reported as a network problem",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                if initial_response is not None and initial_response.status_code == 403:\n                    log_refusal(redact_url(login_url), initial_response)\n                    raise self._refused_web_login(\n                        f\"the web login page {redact_url(login_url)}\",\n                        \"Access forbidden while loading the login page.\",\n                    ) from exc\n                raise UnknownAuthError",
-    "new": "                raise UnknownAuthError",
-    "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
-  },
-  {
-    "label": "login: any answered page taken as a wrong password",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                if WEB_LOGIN_FORM_MARKER in response.text:\n                    raise AuthError",
-    "new": "                if True:\n                    raise AuthError",
-    "tests": "a_page_that_is_neither_login_nor_session_is_not_a_wrong_password"
-  },
-  {
-    "label": "login: maintenance checked only before the credentials go out",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                notice = maintenance_blocking(response.text)\n                if notice:\n                    raise PortalMaintenanceError(notice)\n                if WEB_LOGIN_FORM_MARKER in response.text:",
-    "new": "                if WEB_LOGIN_FORM_MARKER in response.text:",
-    "tests": "maintenance_starting_between_the_two_requests_is_recognised"
-  },
-  {
     "label": "options: a mode change saved without checking its transport",
     "path": "custom_components/wemportal/options_flow.py",
     "old": "            if not errors:\n                errors.update(await self._validate_mode_change(user_input))\n",
@@ -1952,27 +1917,6 @@
     "old": "    except ForbiddenError as exc:\n        # Caught BEFORE the broad handler below, which would report it as\n",
     "new": "    except Exception as exc:\n        raise CannotConnect from exc\n    except ForbiddenError as exc:\n        # Caught BEFORE the broad handler below, which would report it as\n",
     "tests": "names_a_blocked_ip_as_one"
-  },
-  {
-    "label": "login: an unreadable page escaping as a parser error",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        except ParserError as exc:",
-    "new": "        except ZeroDivisionError as exc:",
-    "tests": "an_unreadable_login_page_costs_no_credentials"
-  },
-  {
-    "label": "login: a hidden field with a blank name posted anyway",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "'//input[@type=\"hidden\"][string(@name)]'",
-    "new": "'//input[@type=\"hidden\"][@name]'",
-    "tests": "the_login_form_carries_exactly_the_hidden_fields"
-  },
-  {
-    "label": "login: visible form fields read off the page too",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "'//input[@type=\"hidden\"][string(@name)]'",
-    "new": "'//input[string(@name)]'",
-    "tests": "the_login_form_carries_exactly_the_hidden_fields"
   },
   {
     "label": "options: a cleared slot name that comes back from the merge",
@@ -2278,8 +2222,8 @@
   {
     "label": "scrape: the api never handing the scraper its budget",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                budget=self.remaining_budget,\n",
-    "new": "",
+    "old": "            self.username, self.password, cookie, budget=self.remaining_budget\n",
+    "new": "            self.username, self.password, cookie\n",
     "tests": "the_scrape_is_built_with_the_cycles_budget"
   },
   {
@@ -3781,13 +3725,6 @@
     "tests": "an_announcement_does_not_stop_the_expert_login"
   },
   {
-    "label": "announcement: web_login bailing out before the POST again",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        # a logged-in page means the portal is working.\n",
-    "new": "        # a logged-in page means the portal is working.\n        if maintenance_blocking(initial_response.text):\n            raise PortalMaintenanceError(\"announced\")\n",
-    "tests": "an_announcement_on_the_login_page_does_not_stop_the_web_login"
-  },
-  {
     "label": "ci resolver: one dropped connection failing the run again",
     "path": ".github/scripts/resolve_phcc.py",
     "old": "FETCH_ATTEMPTS = 3",
@@ -4551,13 +4488,6 @@
     "tests": "web_setup_does_not_call_one_turned_away_login_a_block"
   },
   {
-    "label": "web login grace: a working setup web login does not end the streak",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                    _LOGGER.debug(\"WEB login successful.\")\n                    self._account_state.refused_web_logins = 0\n",
-    "new": "                    _LOGGER.debug(\"WEB login successful.\")\n",
-    "tests": "setup_web_login_that_worked_starts_the_count_again"
-  },
-  {
     "label": "web login grace: the login page recognised by a substring again",
     "path": "custom_components/wemportal/scraper.py",
     "old": "            if is_login_page(where):\n",
@@ -5076,13 +5006,6 @@
     "tests": "every_refusal_says_who_answered"
   },
   {
-    "label": "refusal: the web login form's 403 says nothing of who answered",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                log_refusal(redact_url(login_url), response)\n",
-    "new": "",
-    "tests": "every_refusal_says_who_answered"
-  },
-  {
     "label": "refusal: a login refused in maintenance wording says nothing of who answered",
     "path": "custom_components/wemportal/transport.py",
     "old": "        if response.status_code == 403:\n            log_refusal(redact_url(API_LOGIN_URL), response)\n",
@@ -5594,13 +5517,6 @@
     "tests": "refused_with_http_200_is_classified_like_any_refusal"
   },
   {
-    "label": "web login: the check leaves its session open again",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        with closing(requests.Session()) as session:\n",
-    "new": "        for session in (requests.Session(),):\n",
-    "tests": "web_login_check_closes_its_session"
-  },
-  {
     "label": "relogin: a failure kept past the poll it happened in",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            self._relogin_failure = None\n            self._api_lock.release()",
@@ -5715,8 +5631,8 @@
   {
     "label": "web login: a login let through leaves the refusal streak standing",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        self._account_state.refused_web_logins = 0\n\n        # Wait a moment\n",
-    "new": "\n        # Wait a moment\n",
+    "old": "        self._account_state.refused_web_logins = 0",
+    "new": "        pass",
     "tests": "login_that_went_through_ends_the_refusal_streak"
   },
   {
@@ -6572,5 +6488,47 @@
     "old": "            if response_data is None:\n",
     "new": "            if False:\n",
     "tests": "json_that_is_no_object"
+  },
+  {
+    "label": "web login: the check is its own client again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        scraper = self._new_scraper()\n        try:\n            scraper.log_in()\n",
+    "new": "        scraper = self._new_scraper()\n        scraper.session = __import__('requests').Session()\n        try:\n            scraper.log_in()\n",
+    "tests": "logs_in_the_way_the_scrape_does"
+  },
+  {
+    "label": "web login: the check sends before asking the cooldown",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        self.check_cooldown()\n        scraper = self._new_scraper()\n",
+    "new": "        scraper = self._new_scraper()\n",
+    "tests": "a_login_is_not_attempted_during_a_cooldown"
+  },
+  {
+    "label": "web login: the check leaves its session open",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        finally:\n            scraper.close()\n",
+    "new": "        finally:\n            pass\n",
+    "tests": "web_login_check_closes_its_session"
+  },
+  {
+    "label": "web login: a refused check never reaches the block",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            raise self._refused_web_login(f\"the web login: {exc}\", str(exc)) from exc\n",
+    "new": "            raise\n",
+    "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
+  },
+  {
+    "label": "web login: a working check does not end the refusal streak",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        self._account_state.refused_web_logins = 0\n",
+    "new": "",
+    "tests": "setup_web_login_that_worked_starts_the_count_again"
+  },
+  {
+    "label": "login: an unreadable page escaping as a parser error",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        except ParserError as exc:\n",
+    "new": "        except ZeroDivisionError as exc:\n",
+    "tests": "an_unreadable_login_page_costs_no_credentials"
   }
 ]
