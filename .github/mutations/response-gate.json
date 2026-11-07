@@ -4188,8 +4188,8 @@
   },
   {
     "label": "read-back: nothing read back taken as verified",
-    "old": "                return \"the device has nothing to read back\"\n",
-    "new": "                return None\n",
+    "old": "        if outcome is NoRead.NOTHING_TO_READ:\n            return \"the device has nothing to read back\"\n",
+    "new": "        if outcome is NoRead.NOTHING_TO_READ:\n            return None\n",
     "tests": "read_back_that_read_nothing_does_not_verify",
     "path": "custom_components/wemportal/wemportalapi.py"
   },
@@ -6422,15 +6422,15 @@
   {
     "label": "write: companions sent as the last poll saw them",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                together_with = self._companions_read_again(device_id, together_with)\n",
+    "old": "                together_with = self._companions_read_again(\n                    device_id, (module_index, module_type), together_with\n                )\n",
     "new": "                together_with = together_with()\n",
     "tests": "companion_changed_in_the_app"
   },
   {
     "label": "write: companions that could not be read again sent anyway",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        outcome = self._fetch_parameter_values(str(device_id))\n        if outcome is not None:\n",
-    "new": "        outcome = self._fetch_parameter_values(str(device_id))\n        if False:\n",
+    "old": "        failure = self._reason_the_read_failed(device_id)\n        if failure is not None:\n            raise WemPortalError(",
+    "new": "        failure = self._reason_the_read_failed(device_id)\n        if False:\n            raise WemPortalError(",
     "tests": "cannot_be_read_again_stops_the_write"
   },
   {
@@ -6593,5 +6593,19 @@
     "old": "        self._claimed = _TURN_HELD_FOR_SETUP\n",
     "new": "        pass\n",
     "tests": "held_for_the_setup"
+  },
+  {
+    "label": "write: a read without the module sends the cached companion",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if missing:\n            raise WemPortalError(\n                \"The other values",
+    "new": "        if False:\n            raise WemPortalError(\n                \"The other values",
+    "tests": "a_read_without_the_module_sends_no_write"
+  },
+  {
+    "label": "write: nothing to read shown as the enum",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if outcome is NoRead.NOTHING_TO_READ:\n            return \"the device has nothing to read back\"\n",
+    "new": "",
+    "tests": "nothing_to_read_is_said_in_words"
   }
 ]

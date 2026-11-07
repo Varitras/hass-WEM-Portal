@@ -1418,7 +1418,9 @@ class WemPortalApi(
             if not self.valid_login:
                 self.api_login()
             if callable(together_with):
-                together_with = self._companions_read_again(device_id, together_with)
+                together_with = self._companions_read_again(
+                    device_id, (module_index, module_type), together_with
+                )
             self._change_value(
                 device_id,
                 parameter_id,
@@ -1427,8 +1429,9 @@ class WemPortalApi(
                 numeric_value,
                 together_with=together_with,
             )
-            # Under the lock, after the portal accepted: the next writer reads
-            # these rows at once. Written value last - a companion repeats it.
+            # Under the lock, after the portal accepted: a write with fixed
+            # values and the poll read these rows next. Written value last - a
+            # companion repeats it.
             self._publish_accepted_values(
                 device_id,
                 module_index,
@@ -1438,8 +1441,19 @@ class WemPortalApi(
         finally:
             self._api_lock.release()
 
+    def _reason_the_read_failed(self, device_id: str) -> str | None:
+        """The value read for somebody waiting on its result: None if it
+        worked. Nothing read back is nothing verified."""
+        outcome = self._fetch_parameter_values(str(device_id))
+        if outcome is NoRead.NOTHING_TO_READ:
+            return "the device has nothing to read back"
+        return outcome
+
     def _companions_read_again(
-        self, device_id: str, companions: Callable[[], dict[str, float]]
+        self,
+        device_id: str,
+        module: tuple[int, int],
+        companions: Callable[[], dict[str, float]],
     ) -> dict[str, float]:
         """The companions of a write, from rows read just now.
 
@@ -1447,14 +1461,28 @@ class WemPortalApi(
         what the last poll saw: a date changed in the app or the web portal
         since then was otherwise sent back and undone, and the read-back,
         which checks the written parameter, did not notice. A read that fails
-        stops the write rather than fall back to the cached value.
+        or does not carry them stops the write rather than fall back to the
+        cached value.
+
+        Two writes in a row are the portal's to order: the second reads what
+        the portal holds, not what the first one wrote. If the portal does
+        not show that yet the first is undone, and its read-back says so.
         """
-        outcome = self._fetch_parameter_values(str(device_id))
-        if outcome is not None:
+        failure = self._reason_the_read_failed(device_id)
+        if failure is not None:
             raise WemPortalError(
-                f"The other values of this module could not be read first: {outcome}"
+                f"The other values of this module could not be read first: {failure}"
             )
-        return companions()
+        values = companions()
+        missing = unanswered_parameters(
+            self._last_values_answer.get(str(device_id)), module, values
+        )
+        if missing:
+            raise WemPortalError(
+                "The other values of this module could not be read first: "
+                f"the answer did not carry {', '.join(missing)}"
+            )
+        return values
 
     def reread_device_values(
         self,
@@ -1477,8 +1505,8 @@ class WemPortalApi(
         Same polarity as _fetch_parameter_values: None means it worked.
 
         Including the refused login, which that method raises for the poll's
-        benefit. This is the one caller that is NOT a poll: it runs after a
-        write the portal has already accepted, and both callers decide what
+        benefit. This caller is NOT a poll: it runs after a write the portal
+        has already accepted, and both of its callers decide what
         to publish from the return value. Raised past them, the service call
         reports a failure for a value that reached the heating system - and
         their `_forget_written_value()` never runs, so the value recorded
@@ -1501,12 +1529,9 @@ class WemPortalApi(
         except ApiBusyError as exc:
             return str(exc)
         try:
-            outcome = self._fetch_parameter_values(str(device_id))
-            if outcome is NoRead.NOTHING_TO_READ:
-                # Nothing read back is nothing verified.
-                return "the device has nothing to read back"
-            if outcome is not None:
-                return outcome
+            failure = self._reason_the_read_failed(device_id)
+            if failure is not None:
+                return failure
             missing = unanswered_parameters(
                 self._last_values_answer.get(str(device_id)), module, parameter_ids
             )
@@ -1918,8 +1943,8 @@ class WemPortalApi(
         A device with nothing to read answers NoRead.NOTHING_TO_READ: no
         request, so neither refreshed nor failed.
         """
-        # get_data skips any device_id that is not in self.modules; the
-        # read-back does not, and a missing device raises below.
+        # get_data skips any device_id that is not in self.modules; the reads
+        # around a write do not, and a missing device raises below.
         assert self.modules is not None
         try:
             data = {

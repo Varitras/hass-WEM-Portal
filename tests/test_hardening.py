@@ -8375,7 +8375,7 @@ def test_a_companion_repeating_the_written_date_does_not_undo_it():
         "After-U_Ende": date_row("U_Ende", 20.0),
     }
     api.data = {"1234": rows}
-    api._fetch_parameter_values = lambda _device_id: None
+    api._companions_read_again = lambda _device, _module, values: values()
     sent = []
     api._change_value = lambda *_args, **kwargs: sent.append(kwargs["together_with"])
 
@@ -8414,6 +8414,15 @@ def _dates_changed_elsewhere(api, end):
     def fresh_read(device_id):
         asked.append(device_id)
         api.data[device_id]["Heat pump-HolidayEnd"].value = end
+        api._last_values_answer[device_id] = {
+            "Modules": [
+                {
+                    "ModuleIndex": 0,
+                    "ModuleType": 1,
+                    "Values": [{"ParameterID": "HolidayEnd"}],
+                }
+            ]
+        }
         return None
 
     api._fetch_parameter_values = fresh_read
@@ -8491,7 +8500,7 @@ def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
             )
         }
     }
-    api._fetch_parameter_values = lambda _device_id: None
+    api._companions_read_again = lambda _device, _module, values: values()
     seen = {}
     api._change_value = lambda *_a, **kwargs: seen.__setitem__(
         "sent", kwargs.get("together_with")

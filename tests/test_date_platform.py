@@ -87,8 +87,8 @@ def _api_that_accepts(data):
     api.api_version = None
     api.reread_device_values = lambda *_args, **_kwargs: None
     # The read of the companions before the write: the rows already are what
-    # the portal holds.
-    api._fetch_parameter_values = lambda _device_id: None
+    # the portal holds. Its real path is tests/test_companion_read.py.
+    api._companions_read_again = lambda _device, _module, companions: companions()
     return api
 
 
@@ -528,7 +528,6 @@ def _real_read_back(entity, answered_modules, monkeypatch):
 
     api = entity.coordinator.api
     del api.reread_device_values
-    del api._fetch_parameter_values
     api.modules = {
         "1234": {
             ModuleRef(0, 1): {
@@ -549,9 +548,7 @@ def _real_read_back(entity, answered_modules, monkeypatch):
         }
     }
     api._module_answered_at = {"1234": {ModuleRef(0, 1): time.monotonic()}}
-    # Twice: the companions are read again before the write, then the
-    # written value after it.
-    answers = iter([{"Status": 0, "JobID": "job-1"}, {"Modules": answered_modules}] * 2)
+    answers = iter([{"Status": 0, "JobID": "job-1"}, {"Modules": answered_modules}])
     api.make_api_call = lambda *_args, **_kwargs: SimpleNamespace(
         json=lambda: next(answers)
     )
