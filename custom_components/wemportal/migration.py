@@ -252,7 +252,8 @@ def _give_up_an_entity_made_meanwhile(
     """Clear the current unique_id for the old entity, or say it cannot be.
 
     An entity the builder made during this setup, while the migration waited
-    for a device, has no history yet and is given up for the old one. One
+    for a device, is taken to have no history worth keeping and is given up
+    for the old one - which is a guess: a setup can last weeks. One
     registered before this setup has a history of its own: a legacy id two
     devices answered to held the migration back for as long as both did, and
     when one went away the next setup removed the entity in use for a frozen

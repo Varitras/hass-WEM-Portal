@@ -2628,7 +2628,7 @@ def test_the_constructor_restores_the_state_that_was_persisted():
     arguments survive a different boundary: Home Assistant restarts, where
     setup rebuilds the api from what the coordinator persisted. The cached
     modules and the stable scraper device id come back through them; an
-    active backoff comes back through the account state without one. All
+    active backoff comes back without one, from outside the object. All
     three have to, or the first cycle after a reload hits the portal as if
     nothing had happened.
 
@@ -3679,7 +3679,7 @@ def test_web_mode_scrapes_when_no_filter_is_given():
 
 def test_lock_timeout_is_not_treated_as_a_corrupted_session():
     """ApiBusyError must NOT be a plain WemPortalError to the coordinator's
-    recovery heuristic: re-instantiating the api would close the sessions the
+    recovery heuristic: resetting the transport would close the sessions the
     still-running thread is using and hand the next poll a fresh lock,
     removing the serialization and doubling the load on a slow portal."""
     assert issubclass(exceptions.ApiBusyError, exceptions.WemPortalError)
@@ -6005,7 +6005,7 @@ def test_a_refresh_without_a_status_field_still_works():
     assert api._fetch_parameter_values("1234") is None
 
 
-def test_a_fresh_api_without_carried_state_starts_clean():
+def test_a_fresh_api_starts_clean():
     """A normal first start must not inherit anything."""
     api = _api()
 
@@ -6999,15 +6999,14 @@ TRANSPORT_FIELDS = frozenset(
 # instance existed to copy from. A failed first refresh has none: Home
 # Assistant throws the object away and calls setup again, so the retry started
 # with no backoff at all, after a 403 that had very likely caused the failure.
-# They are module state now (see _BLOCKED_UNTIL in wemportalapi), which is
-# what makes them survive every path rather than the ones we remembered. A
-# guarantee that cannot be broken needs no entry in a list of things not to
-# break.
+# They live outside the object now (transport._BLOCKED_UNTIL and the account
+# state), which is what makes them survive every path rather than the ones we
+# remembered. A guarantee that cannot be broken needs no entry in a list of
+# things not to break.
 # _first_cycle_done is session bookkeeping, not transport: it says whether a
-# cycle has ever completed, which the daily parameter re-read reads to stay
-# out of Home Assistant's setup. A recovery does not un-complete the cycles
-# that already ran, and clearing it would only postpone that re-read by one
-# cycle for no reason.
+# cycle has ever completed, which keeps the bursts out of Home Assistant's
+# setup. A recovery does not un-complete the cycles that already ran, and
+# clearing it would hold the next cycle's burst with no follow-up planned.
 # _deadline belongs to the poll cycle in progress, not to the connection, so
 # replacing the connection must not touch it. In practice a recovery runs
 # between cycles and finds it None either way - but "the transport was
@@ -8453,7 +8452,9 @@ def test_a_companion_repeating_the_written_date_does_not_undo_it():
         "After-U_Ende": 21.0,
     }, "the published rows kept a date the portal had just been told to change"
     assert sent[1]["U_Beginn"] == 11.0, (
-        "the second write carried the first one's old date back to the portal"
+        "the second write carried the first one's old date back to the portal "
+        "(fixed values here: a companion read asks the portal, see "
+        "test_companion_read)"
     )
 
 
@@ -9139,8 +9140,8 @@ def test_stale_definitions_wait_for_the_second_cycle():
     """The first refresh runs inside Home Assistant's setup, and this
     discovery sleeps five seconds per module - a re-read there turns every
     restart with an expired cache into a slow startup, which Home Assistant
-    then complains about. Nothing is lost by waiting one interval for
-    something that is already a day old."""
+    then complains about. Nothing is lost by waiting for a follow-up or the
+    next cycle for something that is already a day old."""
     api, read = _cycle_api(
         time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     )

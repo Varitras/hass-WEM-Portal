@@ -407,9 +407,10 @@ class WemPortalScraper:
     def log_in(self) -> None:
         """Log in on this session, or raise saying why it did not work.
 
-        The one web login. The scrape continues from it, and the config flow
-        asks it whether a web login would succeed, so that check goes out as
-        the same client as the scrape it stands in for.
+        Shared by the scrape, which continues from it, and the config flow,
+        which asks whether a web login would succeed: that check goes out as
+        the same client as the scrape it stands in for. It says nothing about
+        the pages after the login.
         """
         # 1. GET the login page as its own step, so the maintenance gate below
         #    runs before any POST.
@@ -490,11 +491,11 @@ class WemPortalScraper:
         self._check_response(login_response, "login POST", check_maintenance=True)
 
         # Three outcomes, not two. Staying on the login URL was the whole
-        # test before, and a
-        # portal error or interstitial does that too while answering HTTP 200,
-        # so anything of that kind counted as "wrong password" and three in a
-        # row walked into a re-authentication prompt. Only the login FORM is
-        # evidence that credentials were seen and refused.
+        # test before, and a portal error or interstitial does that too while
+        # answering HTTP 200, so anything of that kind counted as "wrong
+        # password" and three in a row walked into a re-authentication prompt.
+        # Only the login FORM is evidence that credentials were seen and
+        # refused.
         logged_in = WEB_LOGGED_IN_MARKER in login_response.text
         if not logged_in and WEB_LOGIN_FORM_MARKER in login_response.text:
             raise AuthError("Authentication Error: Invalid username or password.")

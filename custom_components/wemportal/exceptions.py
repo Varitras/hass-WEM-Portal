@@ -39,8 +39,9 @@ class AuthError(WemPortalError):
     own terms. Kept there, the rejection costs twice:
 
       * the coordinator counts CONSECUTIVE auth failures before it offers
-        the reauth dialog, and a cycle that ends any other way resets that
-        count instead of raising it, so the dialog stays out of reach;
+        the reauth dialog, and a cycle that reaches the portal without one
+        resets that count instead of raising it, so the dialog stays out of
+        reach;
       * within a poll only `_ensure_api_session` looks at `valid_login`,
         once per cycle, and it has already run - so every request after this
         one goes out on the dead session, collects its own 401 and triggers

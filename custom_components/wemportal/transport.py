@@ -131,8 +131,8 @@ class WemPortalTransport:
 
     The block below is what this half needs from the object it is mixed
     into. Declaring it beats assuming it: a mixin's dependencies on its host
-    are invisible otherwise, and these five are exactly the seam along which
-    the god module was cut. mypy checks them, so a rename on either side
+    are invisible otherwise, and these are exactly the seam along which the
+    god module was cut. mypy checks them, so a rename on either side
     fails here rather than at runtime.
     """
 
@@ -833,7 +833,8 @@ class WemPortalTransport:
         Raises:
             AuthError: the portal rejected the credentials.
             PortalMaintenanceError: announced downtime, not a credential problem.
-            ForbiddenError: this network is refused (starts the cooldown).
+            ForbiddenError: this network is refused. Starts the cooldown, unless
+                it is the first login turned away in a row (WebLoginRefused).
             ServerError: anything else, including an unreadable answer.
         """
         self.check_cooldown()
@@ -841,9 +842,9 @@ class WemPortalTransport:
         try:
             scraper.log_in()
         except WebLoginRefused as exc:
-            raise self._refused_web_login(f"the web login: {exc}", str(exc)) from exc
-        except ForbiddenError as exc:
-            self._activate_cooldown(f"the web login: {exc}")
+            raise self._refused_web_login("the web login", str(exc)) from exc
+        except ForbiddenError:
+            self._activate_cooldown("the web login")
             raise
         finally:
             scraper.close()

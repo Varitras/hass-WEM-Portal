@@ -48,7 +48,7 @@ class AccountState:
     that used it - six of them across five files, each invisible from the
     others. They exist because a reload rebuilds every object while the
     portal's memory does not reset: a 403 backoff must not be forgotten by
-    the very reinstantiation it caused, and a warning already given must not
+    the very reload it caused, and a warning already given must not
     repeat after every options change.
 
     NOT here on purpose: the API-wide 403 backoff

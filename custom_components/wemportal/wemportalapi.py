@@ -282,7 +282,7 @@ class WemPortalApi(
         Both arguments exist because starting from zero was wrong: a fresh
         object would rediscover modules it already knew and give the scraped
         sensors a new device id - and with it a new history. The portal
-        backoffs need no argument: they live in the account state."""
+        backoffs need no argument: they live outside this object."""
         self.data: dict[str, dict[str, Any]] = {}
         # Stable device id under which scraped (web) sensors are stored, so
         # their entity unique_ids ("<entry>:<device_id>:<name>") - and thus
@@ -1010,9 +1010,8 @@ class WemPortalApi(
                 self.last_cycle_read_nothing = True
                 return self.data
 
-            # Set only after a cycle got this far, so a setup that fails
-            # halfway does not let the next attempt count as "not the first
-            # one" and slow itself down with a re-read.
+            # Set only after a cycle got this far: the next one may spend a
+            # burst, and a cycle that failed did not finish the setup's.
             self._first_cycle_done = True
 
             return self.data

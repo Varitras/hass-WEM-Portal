@@ -107,8 +107,9 @@ WEB_SCRAPE_ISSUE = "web_scrape_failing"
 # was unreachable during startup. A wrong password (changed while Home
 # Assistant was off) then left the entry retrying forever instead of asking
 # for new credentials. The account state outlives those retries on purpose;
-# see models.AccountState. Cleared by every cycle that ends another way, by a
-# new login from the reauth or reconfigure dialog, and on unload.
+# see models.AccountState. Cleared by a cycle that reached the portal without
+# an auth failure, by a new login from the reauth or reconfigure dialog, and
+# on unload.
 
 
 def forget_auth_failures(username: str | None) -> None:
@@ -294,8 +295,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         self._reported_failures: dict[str, str] = {}
         # Consecutive AuthError counter, separate from num_failed: only
         # after AUTH_ERROR_ESCALATION_THRESHOLD auth failures IN A ROW do we
-        # escalate to ConfigEntryAuthFailed (reauth). Reset by any cycle
-        # that does not end in one.
+        # escalate to ConfigEntryAuthFailed (reauth). Reset by a cycle that
+        # reached the portal without one.
         # Seeded from the account state: a failed setup triggers the very
         # reload that would otherwise reset a counter living here.
         self._account_state = account_state(config_entry.data.get(CONF_USERNAME))
@@ -715,9 +716,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         async with asyncio.timeout(DEFAULT_TIMEOUT):
             try:
                 # In `finally` below rather than per branch: every exit is a
-                # moment where the backoff either holds or
-                # does not, and a branch added later would otherwise silently
-                # skip the report.
+                # moment where the backoff either holds or does not, and a
+                # branch added later would otherwise silently skip the report.
                 fetched = await self._fetch(device_filter)
                 if self.api.last_cycle_read_nothing:
                     return self._a_tick_that_read_nothing(fetched)

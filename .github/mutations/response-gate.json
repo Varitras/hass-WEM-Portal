@@ -6499,7 +6499,7 @@
   {
     "label": "web login: a refused check never reaches the block",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            raise self._refused_web_login(f\"the web login: {exc}\", str(exc)) from exc\n",
+    "old": "            raise self._refused_web_login(\"the web login\", str(exc)) from exc\n",
     "new": "            raise\n",
     "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
   },
@@ -6709,7 +6709,7 @@
   {
     "label": "web login: a refusal behind the login page starts no pause",
     "path": "custom_components/wemportal/transport.py",
-    "old": "            self._activate_cooldown(f\"the web login: {exc}\")\n            raise\n",
+    "old": "            self._activate_cooldown(\"the web login\")\n            raise\n",
     "new": "            raise\n",
     "tests": "a_refusal_behind_the_login_page_starts_the_pause_at_once"
   }
