@@ -327,13 +327,16 @@ async def _load_scraper_device_id(
     loads as None, with a repair issue that says to restore a backup.
 
     `api` mode is let through: it neither reads the id nor saves a new one,
-    so a copy from an earlier mode would shut it out for good. Moving to a
+    so a file from an earlier mode would shut it out for good. Moving to a
     scraping mode reloads, and this asks again.
     """
     store = get_scraper_device_store(hass, entry.entry_id)
+    uses_the_id = entry.options.get(CONF_MODE, DEFAULT_MODE) != "api"
     try:
         scraper_device_id: str | None = await store.async_load()
     except Exception as exc:  # noqa: BLE001
+        if not uses_the_id:
+            return None
         raise ConfigEntryNotReady(
             "The stored scraper device id could not be read. Setting up "
             "without it would re-decide the id and move every scraped "
@@ -341,9 +344,9 @@ async def _load_scraper_device_id(
         ) from exc
     if scraper_device_id is not None:
         return scraper_device_id
-    if entry.options.get(CONF_MODE, DEFAULT_MODE) == "api":
-        return None
-    if await hass.async_add_executor_job(corrupt_scraper_device_copies, store):
+    if uses_the_id and await hass.async_add_executor_job(
+        corrupt_scraper_device_copies, store
+    ):
         raise ConfigEntryNotReady(
             "The stored scraper device id was corrupt and has been moved aside. "
             "Restore a backup, or delete the .corrupt file to let the id be "

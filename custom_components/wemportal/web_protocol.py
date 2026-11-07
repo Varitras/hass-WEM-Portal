@@ -4,8 +4,9 @@ The maintenance wording and how a downtime page is recognised are the same
 question for the mobile transport's login, the scraper and the expert client,
 and none of it knows what a device, a module or a reading is. It lived in
 utils.py, which DOES pull in the sensor and reading models, so the transport
-half imported the whole domain transitively. Here it stands on its own; tests/test_transport_boundary pins
-that the transport reaches for this rather than utils.
+half imported the whole domain transitively. Here it stands on its own;
+tests/test_transport_boundary pins that the transport reaches for this rather
+than utils.
 """
 
 from typing import Final

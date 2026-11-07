@@ -211,8 +211,8 @@ async def test_a_pause_stops_the_follow_ups(hass, monkeypatch):
 async def test_a_regular_cycle_that_served_the_kinds_cancels_the_follow_up(
     hass, monkeypatch
 ):
-    """Asked again when it fires: at the sixty-second floor the regular tick
-    comes first, and a follow-up then is a read nobody owes."""
+    """Asked again when it fires: a regular cycle that finished first leaves
+    a read nobody owes."""
     cycles = _cycles_leaving(monkeypatch, ["statistics"])
     entry = await _setup(hass, _entry(hass))
     entry.runtime_data.api.heavy_fetch_turns._queue = []
@@ -249,6 +249,21 @@ async def test_a_follow_up_runs_like_the_regular_tick(hass, monkeypatch):
     await _a_follow_up_later(hass)
 
     assert any("heavy follow-up" in name for name in background), background
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_follow_up_does_not_start_on_an_entry_going_away(hass, monkeypatch):
+    """The timer goes with the on_unload callbacks, which run after the
+    teardown began: a cycle started in between logs in again on a transport
+    that is being closed."""
+    cycles = _cycles_leaving(monkeypatch, ["statistics"])
+    entry = await _setup(hass, _entry(hass))
+    entry.runtime_data.begin_unload()
+
+    await _a_follow_up_later(hass)
+
+    assert len(cycles) == 1
+    entry.runtime_data.unloading = False
     await hass.config_entries.async_unload(entry.entry_id)
 
 

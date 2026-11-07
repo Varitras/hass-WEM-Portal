@@ -6604,22 +6604,22 @@
   {
     "label": "setup: a corrupt copy shuts an api entry out for good",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "    if entry.options.get(CONF_MODE, DEFAULT_MODE) == \"api\":\n        return None\n",
-    "new": "",
+    "old": "    uses_the_id = entry.options.get(CONF_MODE, DEFAULT_MODE) != \"api\"\n",
+    "new": "    uses_the_id = True\n",
     "tests": "corrupt_scraper_device_id_does_not_stop_an_api_entry"
   },
   {
     "label": "setup: a corrupt copy is ignored in every mode",
     "path": "custom_components/wemportal/__init__.py",
-    "old": "    if entry.options.get(CONF_MODE, DEFAULT_MODE) == \"api\":\n        return None\n",
-    "new": "    if True:\n        return None\n",
-    "tests": "corrupt_scraper_device_id_stops_setup"
+    "old": "    uses_the_id = entry.options.get(CONF_MODE, DEFAULT_MODE) != \"api\"\n",
+    "new": "    uses_the_id = False\n",
+    "tests": "corrupt_scraper_device_id_stops_setup or unreadable_scraper_device_id_stops_setup"
   },
   {
     "label": "store: removing the id leaves its corrupt copies",
     "path": "custom_components/wemportal/coordinator.py",
-    "old": "        await hass.async_add_executor_job(os.remove, copy)\n",
-    "new": "        pass\n",
+    "old": "            await hass.async_add_executor_job(os.remove, copy)\n",
+    "new": "            pass\n",
     "tests": "removing_an_entry_takes_the_corrupt_copy_with_it"
   },
   {
@@ -6712,5 +6712,19 @@
     "old": "            self._activate_cooldown(\"the web login\")\n            raise\n",
     "new": "            raise\n",
     "tests": "a_refusal_behind_the_login_page_starts_the_pause_at_once"
+  },
+  {
+    "label": "store: a copy that cannot be deleted stops the removal",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        except OSError as exc:\n",
+    "new": "        except ZeroDivisionError as exc:\n",
+    "tests": "corrupt_copy_that_cannot_be_deleted"
+  },
+  {
+    "label": "start: a follow-up starts on an entry going away",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            and self._owns_its_entry()\n        )\n",
+    "new": "        )\n",
+    "tests": "does_not_start_on_an_entry_going_away"
   }
 ]

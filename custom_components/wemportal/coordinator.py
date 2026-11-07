@@ -107,9 +107,8 @@ WEB_SCRAPE_ISSUE = "web_scrape_failing"
 # was unreachable during startup. A wrong password (changed while Home
 # Assistant was off) then left the entry retrying forever instead of asking
 # for new credentials. The account state outlives those retries on purpose;
-# see models.AccountState. Cleared by a cycle that reached the portal without
-# an auth failure, by a new login from the reauth or reconfigure dialog, and
-# on unload.
+# see models.AccountState. Cleared where _reset_auth_failures is called, by a
+# new login from the reauth or reconfigure dialog, and on unload.
 
 
 def forget_auth_failures(username: str | None) -> None:
@@ -195,7 +194,12 @@ async def async_remove_scraper_device_store(hass: HomeAssistant, entry_id: str) 
     await store.async_remove()
     copies = await hass.async_add_executor_job(corrupt_scraper_device_copies, store)
     for copy in copies:
-        await hass.async_add_executor_job(os.remove, copy)
+        try:
+            await hass.async_add_executor_job(os.remove, copy)
+        except OSError as exc:
+            # What follows a removal still has to run. A copy left behind
+            # refuses the next setup of a scraping entry, which says why.
+            _LOGGER.warning("A corrupt id file could not be deleted: %s", exc)
 
 
 # The first cycle runs inside Home Assistant's setup and spends no burst, so
@@ -237,6 +241,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
             self.api.heavy_fetch_turns.waiting
             and self.last_update_success
             and not self.api.is_rate_limited()
+            and self._owns_its_entry()
         )
 
     @callback
@@ -295,8 +300,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         self._reported_failures: dict[str, str] = {}
         # Consecutive AuthError counter, separate from num_failed: only
         # after AUTH_ERROR_ESCALATION_THRESHOLD auth failures IN A ROW do we
-        # escalate to ConfigEntryAuthFailed (reauth). Reset by a cycle that
-        # reached the portal without one.
+        # escalate to ConfigEntryAuthFailed (reauth). See _reset_auth_failures.
         # Seeded from the account state: a failed setup triggers the very
         # reload that would otherwise reset a counter living here.
         self._account_state = account_state(config_entry.data.get(CONF_USERNAME))
@@ -612,7 +616,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
     def _reset_auth_failures(self) -> None:
         """Clear the consecutive-auth-failure count.
 
-        Called on success AND on every failure that is not an auth failure.
+        Called on success AND on the failures that say something about the
+        portal rather than the login. A cycle that was busy, read nothing or
+        was turned away by the firewall leaves it alone.
         The threshold is documented as CONSECUTIVE, but the counter only ever
         went up: a timeout, a maintenance window or a 403 in between left it
         standing, so auth failures spread over hours - a portal that hands

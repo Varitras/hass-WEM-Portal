@@ -380,10 +380,11 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
         just-submitted value, `id_options` is the slot-id dropdown content."""
         return vol.Schema(
             {
-                # Both scan intervals are clamped to a lower bound (like
-                # the expert poll interval below): a stray tiny value
-                # such as "1" second would poll the portal continuously
-                # and reliably trigger the IP-wide 403 rate limit.
+                # Both scan intervals are clamped (like the expert poll
+                # interval below). The lower bound because a stray tiny value
+                # such as "1" second would poll the portal continuously and
+                # reliably trigger the IP-wide 403 rate limit; the upper one
+                # is explained at MAX_INTERVAL_SECONDS.
                 vol.Optional(
                     CONF_SCAN_INTERVAL,
                     default=prefill(

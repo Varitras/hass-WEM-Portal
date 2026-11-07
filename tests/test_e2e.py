@@ -4480,7 +4480,7 @@ async def test_an_unreadable_scraper_device_id_stops_setup_instead_of_re_decidin
         lambda *_args, **_kwargs: _UnreadableStore(),
     )
 
-    entry = _entry(hass)
+    entry = _entry(hass, {CONF_MODE: "web"})
     # Home Assistant catches ConfigEntryNotReady itself and parks the entry
     # for a retry, so the state is what says whether setup refused.
     await hass.config_entries.async_setup(entry.entry_id)
@@ -4550,6 +4550,49 @@ async def test_a_corrupt_scraper_device_id_does_not_stop_an_api_entry(
     entry = await _setup(hass, _entry(hass, {CONF_MODE: "api"}))
 
     assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_an_unreadable_scraper_device_id_does_not_stop_an_api_entry(
+    hass, monkeypatch
+):
+    """The same reasoning for a file that cannot be read at all."""
+    import custom_components.wemportal as integration
+
+    class _UnreadableStore:
+        async def async_load(self):
+            raise HomeAssistantError("the file is not readable")
+
+    monkeypatch.setattr(
+        integration,
+        "get_scraper_device_store",
+        lambda *_args, **_kwargs: _UnreadableStore(),
+    )
+
+    entry = await _setup(hass, _entry(hass, {CONF_MODE: "api"}))
+
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_a_corrupt_copy_that_cannot_be_deleted_does_not_stop_a_removal(
+    hass, monkeypatch, tmp_path, caplog
+):
+    """The steps after it clean up the issues and the account's state, and a
+    copy left behind says so itself the next time it matters."""
+    from custom_components.wemportal import coordinator as coordinator_module
+
+    store = _MovedAsideStore(tmp_path)
+    monkeypatch.setattr(
+        coordinator_module, "get_scraper_device_store", lambda *_args: store
+    )
+
+    def refuse(_path):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(coordinator_module.os, "remove", refuse)
+
+    await coordinator_module.async_remove_scraper_device_store(hass, "entry")
+
+    assert "could not be deleted" in caplog.text
 
 
 async def test_removing_an_entry_takes_the_corrupt_copy_with_it(

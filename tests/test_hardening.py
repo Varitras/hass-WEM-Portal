@@ -10907,10 +10907,16 @@ def test_a_cycle_with_only_an_empty_device_is_not_a_failure():
 
 def test_a_read_back_that_read_nothing_does_not_verify_a_write():
     """The read-back after a write shares the fetch. "Nothing to read" is not
-    a failed poll, but it is not a confirmation of the written value either."""
+    a failed poll, but it is not a confirmation of the written value either -
+    least of all by the last poll's answer, which still names the parameter."""
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
+    api._last_values_answer["1234"] = {
+        "Modules": [
+            {"ModuleIndex": 0, "ModuleType": 1, "Values": [{"ParameterID": "U_Beginn"}]}
+        ]
+    }
 
     assert isinstance(
         api.reread_device_values("1234", ModuleRef(0, 1), ("U_Beginn",)), str
