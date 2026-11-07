@@ -1462,6 +1462,32 @@ async def test_a_move_renames_an_entry_still_named_after_its_old_login(hass):
     assert entry.title == "WEM Portal"
 
 
+async def test_reconfigure_to_a_new_login_takes_the_corrupt_copy_with_it(
+    hass, monkeypatch, tmp_path
+):
+    """The new login is meant to decide its id afresh. A corrupt copy of the
+    old one left behind would refuse exactly that on the setup that follows."""
+    from custom_components.wemportal import coordinator as coordinator_module
+
+    from .test_e2e import _MovedAsideStore
+
+    store = _MovedAsideStore(tmp_path)
+    monkeypatch.setattr(
+        coordinator_module, "get_scraper_device_store", lambda *_args: store
+    )
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_USERNAME: "someone-else@example.org", CONF_PASSWORD: "new"},
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert not store.corrupt_copy.exists()
+
+
 async def test_reconfigure_will_not_merge_two_entries_into_one_account(hass):
     """An account another entry already holds would leave two entries polling
     one installation under one identity."""

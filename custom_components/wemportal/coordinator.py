@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 
 import asyncio
+import glob
+import os
 from collections.abc import Callable
 from datetime import timedelta
 from time import monotonic
@@ -177,6 +179,22 @@ def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store[Any]:
     return Store(
         hass, SCRAPER_DEVICE_STORAGE_VERSION, f"{DOMAIN}_{entry_id}_scraper_device"
     )
+
+
+def corrupt_scraper_device_copies(store: Store[Any]) -> list[str]:
+    """What Home Assistant moved aside as `<file>.corrupt.<time>` because it
+    could not decode it. Reads the disk: for the executor."""
+    return glob.glob(f"{glob.escape(store.path)}.corrupt.*")
+
+
+async def async_remove_scraper_device_store(hass: HomeAssistant, entry_id: str) -> None:
+    """Drop the stored id for good, corrupt copies included: left behind, one
+    refuses the setup of an entry that is meant to decide its id afresh."""
+    store = get_scraper_device_store(hass, entry_id)
+    await store.async_remove()
+    copies = await hass.async_add_executor_job(corrupt_scraper_device_copies, store)
+    for copy in copies:
+        await hass.async_add_executor_job(os.remove, copy)
 
 
 # The first cycle runs inside Home Assistant's setup and spends no burst, so

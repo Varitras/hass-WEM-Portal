@@ -2914,10 +2914,10 @@
   },
   {
     "label": "remove: the scraper device id must be deleted with its entry",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "    await get_scraper_device_store(hass, config_entry.entry_id).async_remove()",
-    "new": "    pass",
-    "tests": "removing_the_entry_deletes_its_stores"
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "    await store.async_remove()\n",
+    "new": "",
+    "tests": "removing_the_entry_deletes_its_stores or moving_to_another_login_forgets_what_was_cached_for_the_old_one"
   },
   {
     "label": "remove: the account memory must go with its account",
@@ -3874,13 +3874,6 @@
   {
     "label": "reconfigure: a move keeping the old installation's cache",
     "old": "        if moves_to_another_login and not (\n            await self._forget_the_old_installation(entry)\n        ):\n            return self.async_abort(reason=\"reconfigure_unload_failed\")\n",
-    "new": "",
-    "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
-    "path": "custom_components/wemportal/config_flow.py"
-  },
-  {
-    "label": "reconfigure: the old installation's device id kept after a move",
-    "old": "        await get_scraper_device_store(self.hass, entry.entry_id).async_remove()\n",
     "new": "",
     "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
     "path": "custom_components/wemportal/config_flow.py"
@@ -6414,10 +6407,10 @@
   },
   {
     "label": "setup: a corrupt scraper device id read as a fresh install",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "        glob.glob, f\"{glob.escape(store.path)}.corrupt.*\"\n",
-    "new": "        glob.glob, f\"{glob.escape(store.path)}.never.*\"\n",
-    "tests": "corrupt_scraper_device_id"
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "    return glob.glob(f\"{glob.escape(store.path)}.corrupt.*\")\n",
+    "new": "    return glob.glob(f\"{glob.escape(store.path)}.never.*\")\n",
+    "tests": "corrupt_scraper_device_id_stops_setup"
   },
   {
     "label": "write: companions sent as the last poll saw them",
@@ -6607,5 +6600,40 @@
     "old": "        if outcome is NoRead.NOTHING_TO_READ:\n            return \"the device has nothing to read back\"\n",
     "new": "",
     "tests": "nothing_to_read_is_said_in_words"
+  },
+  {
+    "label": "setup: a corrupt copy shuts an api entry out for good",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    if entry.options.get(CONF_MODE, DEFAULT_MODE) == \"api\":\n        return None\n",
+    "new": "",
+    "tests": "corrupt_scraper_device_id_does_not_stop_an_api_entry"
+  },
+  {
+    "label": "setup: a corrupt copy is ignored in every mode",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    if entry.options.get(CONF_MODE, DEFAULT_MODE) == \"api\":\n        return None\n",
+    "new": "    if True:\n        return None\n",
+    "tests": "corrupt_scraper_device_id_stops_setup"
+  },
+  {
+    "label": "store: removing the id leaves its corrupt copies",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        await hass.async_add_executor_job(os.remove, copy)\n",
+    "new": "        pass\n",
+    "tests": "removing_an_entry_takes_the_corrupt_copy_with_it"
+  },
+  {
+    "label": "store: an entry removed without its corrupt copy",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    await async_remove_scraper_device_store(hass, config_entry.entry_id)\n",
+    "new": "    await get_scraper_device_store(hass, config_entry.entry_id).async_remove()\n",
+    "tests": "removing_an_entry_takes_the_corrupt_copy_with_it"
+  },
+  {
+    "label": "store: a new login keeps the old login's corrupt copy",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "        await async_remove_scraper_device_store(self.hass, entry.entry_id)\n",
+    "new": "",
+    "tests": "reconfigure_to_a_new_login_takes_the_corrupt_copy_with_it"
   }
 ]

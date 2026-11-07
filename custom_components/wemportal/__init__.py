@@ -7,7 +7,6 @@ https://github.com/erikkastelec/hass-WEM-Portal
 """
 
 from typing import Any, Final
-import glob
 import logging
 
 from datetime import timedelta
@@ -34,6 +33,7 @@ from .const import (
     CONF_SCAN_INTERVAL_API,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+    DEFAULT_MODE,
     DOMAIN,
     EXPERT_SLOT_COUNT,
     MIN_SCAN_INTERVAL_API_SECONDS,
@@ -43,6 +43,8 @@ from .const import (
 from .coordinator import (
     WemPortalDataUpdateCoordinator,
     another_entry_shares_this_account,
+    async_remove_scraper_device_store,
+    corrupt_scraper_device_copies,
     forget_account_state_if_last_entry,
     forget_auth_failures,
     get_modules_store,
@@ -159,7 +161,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
             len(cached_modules),
         )
 
-    scraper_device_id = await _load_scraper_device_id(hass, entry.entry_id)
+    scraper_device_id = await _load_scraper_device_id(hass, entry)
 
     # Creating API object
     api = WemPortalApi(
@@ -304,7 +306,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
     return True
 
 
-async def _load_scraper_device_id(hass: HomeAssistant, entry_id: str) -> str | None:
+async def _load_scraper_device_id(
+    hass: HomeAssistant, entry: WemPortalConfigEntry
+) -> str | None:
     """The stable scraper device id, decided once and then persisted, so
     scraped sensors keep a constant device id - and history - across mode
     switches.
@@ -321,8 +325,12 @@ async def _load_scraper_device_id(hass: HomeAssistant, entry_id: str) -> str | N
     on its own; losing the history is not. A file Home Assistant could not
     decode is one of these: it is moved aside as `.corrupt.<time>` and
     loads as None, with a repair issue that says to restore a backup.
+
+    `api` mode is let through: it neither reads the id nor saves a new one,
+    so a copy from an earlier mode would shut it out for good. Moving to a
+    scraping mode reloads, and this asks again.
     """
-    store = get_scraper_device_store(hass, entry_id)
+    store = get_scraper_device_store(hass, entry.entry_id)
     try:
         scraper_device_id: str | None = await store.async_load()
     except Exception as exc:  # noqa: BLE001
@@ -333,9 +341,9 @@ async def _load_scraper_device_id(hass: HomeAssistant, entry_id: str) -> str | N
         ) from exc
     if scraper_device_id is not None:
         return scraper_device_id
-    if await hass.async_add_executor_job(
-        glob.glob, f"{glob.escape(store.path)}.corrupt.*"
-    ):
+    if entry.options.get(CONF_MODE, DEFAULT_MODE) == "api":
+        return None
+    if await hass.async_add_executor_job(corrupt_scraper_device_copies, store):
         raise ConfigEntryNotReady(
             "The stored scraper device id was corrupt and has been moved aside. "
             "Restore a backup, or delete the .corrupt file to let the id be "
@@ -832,6 +840,6 @@ async def async_remove_entry(
     in this installation.
     """
     await get_modules_store(hass, config_entry.entry_id).async_remove()
-    await get_scraper_device_store(hass, config_entry.entry_id).async_remove()
+    await async_remove_scraper_device_store(hass, config_entry.entry_id)
     _async_delete_entry_issues(hass, config_entry.entry_id)
     forget_account_state_if_last_entry(hass, config_entry)

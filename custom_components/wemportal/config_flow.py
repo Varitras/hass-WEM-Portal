@@ -48,10 +48,10 @@ from .exceptions import (
     WebLoginRefused,
 )
 from .coordinator import (
+    async_remove_scraper_device_store,
     forget_account_state_if_last_entry,
     forget_auth_failures,
     get_modules_store,
-    get_scraper_device_store,
 )
 from .wemportalapi import WemPortalApi
 
@@ -394,7 +394,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         except OperationNotAllowed:
             return False
         await get_modules_store(self.hass, entry.entry_id).async_remove()
-        await get_scraper_device_store(self.hass, entry.entry_id).async_remove()
+        await async_remove_scraper_device_store(self.hass, entry.entry_id)
         # Keyed by the account, not the entry: an older duplicate entry of
         # the account being left may still be loaded and still need it.
         forget_account_state_if_last_entry(self.hass, entry)

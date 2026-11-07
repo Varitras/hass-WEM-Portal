@@ -4484,6 +4484,25 @@ async def test_an_unreadable_scraper_device_id_stops_setup_instead_of_re_decidin
     )
 
 
+class _MovedAsideStore:
+    """A store whose file Home Assistant could not decode: moved aside as
+    `.corrupt.<time>` and loading as None. A stand-in, because the test
+    harness replaces the file storage with a dict and never decodes."""
+
+    def __init__(self, directory):
+        self.path = str(directory / "wemportal_entry_scraper_device")
+        self.corrupt_copy = directory / (
+            "wemportal_entry_scraper_device.corrupt.2026-10-31T00:00:00+00:00"
+        )
+        self.corrupt_copy.write_text('{"version": 1, "data": "12', encoding="utf-8")
+
+    async def async_load(self):
+        return None
+
+    async def async_remove(self):
+        pass
+
+
 async def test_a_corrupt_scraper_device_id_stops_setup_instead_of_re_deciding(
     hass, monkeypatch, tmp_path
 ):
@@ -4491,37 +4510,55 @@ async def test_a_corrupt_scraper_device_id_stops_setup_instead_of_re_deciding(
     corrupt store file. It moves the file aside as `.corrupt.<time>`, raises
     a repair issue and loads None - which reads exactly like a fresh install,
     so the api decided the id again.
-
-    The store is a stand-in doing exactly that, because the test harness
-    replaces Home Assistant's file storage with a dict and never decodes.
     """
     import custom_components.wemportal as integration
 
-    path = tmp_path / "wemportal_entry_scraper_device"
-    (tmp_path / f"{path.name}.corrupt.2026-10-31T00:00:00+00:00").write_text(
-        '{"version": 1, "data": "12', encoding="utf-8"
-    )
-
-    class _MovedAsideStore:
-        def __init__(self):
-            self.path = str(path)
-
-        async def async_load(self):
-            return None
-
+    store = _MovedAsideStore(tmp_path)
     monkeypatch.setattr(
-        integration,
-        "get_scraper_device_store",
-        lambda *_args, **_kwargs: _MovedAsideStore(),
+        integration, "get_scraper_device_store", lambda *_args, **_kwargs: store
     )
 
-    entry = _entry(hass)
+    entry = _entry(hass, {CONF_MODE: "web"})
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.SETUP_RETRY, (
         "setup read a corrupt id as no id at all, which re-decides it"
     )
+
+
+async def test_a_corrupt_scraper_device_id_does_not_stop_an_api_entry(
+    hass, monkeypatch, tmp_path
+):
+    """`api` mode never reads the id and never saves one, so nothing replaces
+    the moved file: a copy left from an earlier mode shut the entry out for
+    good, over an id it does not use. Moving to a scraping mode asks again."""
+    import custom_components.wemportal as integration
+
+    store = _MovedAsideStore(tmp_path)
+    monkeypatch.setattr(
+        integration, "get_scraper_device_store", lambda *_args, **_kwargs: store
+    )
+
+    entry = await _setup(hass, _entry(hass, {CONF_MODE: "api"}))
+
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_removing_an_entry_takes_the_corrupt_copy_with_it(
+    hass, monkeypatch, tmp_path
+):
+    from custom_components.wemportal import coordinator as coordinator_module
+
+    store = _MovedAsideStore(tmp_path)
+    monkeypatch.setattr(
+        coordinator_module, "get_scraper_device_store", lambda *_args: store
+    )
+    entry = await _setup(hass, _entry(hass))
+
+    await hass.config_entries.async_remove(entry.entry_id)
+
+    assert not store.corrupt_copy.exists()
 
 
 @pytest.mark.parametrize(
