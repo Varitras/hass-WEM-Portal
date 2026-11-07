@@ -6,6 +6,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Weekly programmes and statistics are no longer fetched while Home Assistant
+  waits for the integration to start. They follow about a minute later, which
+  shortens every restart and every saved option.
+
 ### Fixed
 
 - On Home Assistant before 2026.11, an expert parameter whose entity id
@@ -42,6 +48,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
   further request of the update logged in again.
 - The fault sensor no longer shows "(+0 more)" for a single long fault, and
   the module menu index in the expert options can be cleared again.
+- The web login check during setup, re-authentication and a mode change now
+  uses the same client as the scrape, so it can no longer pass or fail
+  differently from it.
 
 ## [1.15.0] – 2026-10-21
 
