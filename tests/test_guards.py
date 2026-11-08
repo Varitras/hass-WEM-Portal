@@ -529,7 +529,7 @@ def _scans_the_package(source: str) -> bool:
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "glob"
+            and node.func.attr in {"glob", "rglob"}
             and node.args
             and isinstance(node.args[0], ast.Constant)
             # Exactly "*.py" - every module. `test_*.py` is a scan of the
@@ -546,6 +546,9 @@ def test_the_index_scan_is_not_pinned_to_a_variable_name():
     lowercase = 'for module in sorted(package.glob("*.py")):\n    pass\n'
     assert _scans_the_package(lowercase), "the real spelling in test_security"
     assert _scans_the_package('PACKAGE.glob("*.py")')
+    assert _scans_the_package('sorted(package.rglob("*.py"))'), (
+        "a recursive walk is a scan of the package too"
+    )
     assert not _scans_the_package('TESTS.glob("test_*.py")'), (
         "a walk of the test directory is not a scan of the package"
     )

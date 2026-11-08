@@ -183,7 +183,8 @@ CACHED_MODULES = {
 
 def test_get_devices_failure_keeps_cache():
     """A failing device-list call must not wipe the discovery cache."""
-    api = _api(cached_modules=CACHED_MODULES, existing_data={"1234": {"k": "v"}})
+    api = _api(cached_modules=CACHED_MODULES)
+    api.data = {"1234": {"k": "v"}}
 
     def boom(*_args, **_kwargs):
         raise exceptions.WemPortalError("403 etc.")
@@ -316,7 +317,8 @@ def test_a_device_list_where_no_row_is_usable_is_reported_not_adopted():
     one-device installation that is everything gone, no setup error, and no
     way back until a reload: get_devices runs once per session.
     """
-    api = _api(cached_modules=CACHED_MODULES, existing_data={"1234": {"k": "v"}})
+    api = _api(cached_modules=CACHED_MODULES)
+    api.data = {"1234": {"k": "v"}}
     # Shaped like the contract at the top level, unreadable in every row.
     api.make_api_call = lambda *_args, **_kwargs: FakeResponse(
         {"Devices": [{"no": "id"}, {"also": "no id"}]}
@@ -413,16 +415,12 @@ def test_expert_cooldown_is_never_shortened():
 
 
 def test_expert_cooldown_survives_api_reinstantiation():
-    """The coordinator swaps the api object on repeated errors; a fresh
-    instance must not silently clear an active expert backoff."""
+    """Setup builds a new api object on every reload; it must not silently
+    clear an active expert backoff of the same account."""
     api = _api()
     api.activate_expert_cooldown()
 
-    replacement = WemPortalApi(
-        "user@example.org",
-        "secret",
-        expert_blocked_until=api._expert_blocked_until,
-    )
+    replacement = WemPortalApi("user@example.org", "secret")
 
     with pytest.raises(exceptions.ForbiddenError):
         replacement.check_expert_cooldown()
@@ -1327,6 +1325,43 @@ def test_a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise():
     )
 
 
+def test_a_read_back_of_a_device_without_modules_is_a_reason_not_a_raise():
+    """The same contract for the other way the read can fail.
+
+    A re-discovery that left the written device out of the module list makes
+    the value read raise its data-gathering error. Past the read-back that
+    is the refused login's story again: the caller's failure branch never
+    runs, and the written value stands as verified.
+    """
+    api = _api()
+    api.modules = {}
+
+    failure = api.reread_device_values("1234", ModuleRef(0, 1), ("U_Beginn",))
+
+    assert isinstance(failure, str) and failure, (
+        "the read-back raised instead of reporting, so the caller's failure "
+        "branch never ran"
+    )
+
+
+def test_a_read_back_behind_a_held_lock_is_a_reason_not_a_raise():
+    """A poll that holds the lock past the wait makes the read-back give up
+    before it reads - which is nothing verified, and has to be said as such."""
+    api = _api()
+
+    def busy(_what):
+        raise exceptions.ApiBusyError("a poll is still running")
+
+    api._acquire_api_lock = busy
+
+    failure = api.reread_device_values("1234", ModuleRef(0, 1), ("U_Beginn",))
+
+    assert isinstance(failure, str) and failure, (
+        "the read-back raised instead of reporting, so the caller's failure "
+        "branch never ran"
+    )
+
+
 def _two_entries_being_unloaded(both_unloading=True, expert=True):
     """Two loaded accounts, both in the middle of their teardown.
 
@@ -1887,7 +1922,7 @@ def test_an_abort_during_the_verify_does_not_deny_a_write_that_happened(monkeypa
         "the write never went out, so this test proves nothing about what "
         "happens after it"
     )
-    assert "posted and the portal accepted" in str(aborted.value), (
+    assert "posted and the portal answered" in str(aborted.value), (
         f"a write the portal took was reported as if it had not gone out: "
         f"{aborted.value}"
     )
@@ -2591,9 +2626,10 @@ def test_the_constructor_restores_the_state_that_was_persisted():
     Recovery stopped rebuilding the api object - it resets the transport in
     place (see the classification tests at the end of this file). These
     arguments survive a different boundary: Home Assistant restarts, where
-    setup rebuilds the api from what the coordinator persisted. An active
-    backoff, the cached modules and the stable scraper device id all have to
-    come back, or the first cycle after a restart hits the portal as if
+    setup rebuilds the api from what the coordinator persisted. The cached
+    modules and the stable scraper device id come back through them; an
+    active backoff comes back without one, from outside the object. All
+    three have to, or the first cycle after a reload hits the portal as if
     nothing had happened.
 
     Note what this does NOT show: it builds the second object itself, so it
@@ -2609,8 +2645,6 @@ def test_the_constructor_restores_the_state_that_was_persisted():
         "user@example.org",
         "secret",
         cached_modules=old.modules,
-        blocked_until=old._blocked_until,
-        expert_blocked_until=old._expert_blocked_until,
         scraper_device_id=old.scraper_device_id,
     )
     new.expert_cookies = old.expert_cookies
@@ -3405,10 +3439,9 @@ def test_a_portal_error_page_on_the_login_url_is_not_a_wrong_password(monkeypatc
 
     A portal error or interstitial answers with HTTP 200 and stays on
     Login.aspx, which was the whole test - so three of those in web mode walk
-    into a re-authentication prompt. web_login in wemportalapi has had the
-    right answer all along: look for the logged-in marker, then the
-    maintenance notice, then the login FORM. Only the form is evidence that
-    credentials were seen and rejected.
+    into a re-authentication prompt. The right answer is to look for the
+    logged-in marker, then the maintenance notice, then the login FORM. Only
+    the form is evidence that credentials were seen and rejected.
     """
     from custom_components.wemportal.scraper import WemPortalScraper
 
@@ -3646,7 +3679,7 @@ def test_web_mode_scrapes_when_no_filter_is_given():
 
 def test_lock_timeout_is_not_treated_as_a_corrupted_session():
     """ApiBusyError must NOT be a plain WemPortalError to the coordinator's
-    recovery heuristic: re-instantiating the api would close the sessions the
+    recovery heuristic: resetting the transport would close the sessions the
     still-running thread is using and hand the next poll a fresh lock,
     removing the serialization and doubling the load on a slow portal."""
     assert issubclass(exceptions.ApiBusyError, exceptions.WemPortalError)
@@ -4008,13 +4041,20 @@ def test_a_real_window_is_still_maintenance_and_not_a_wrong_password(monkeypatch
             posted.append(True)
             return FakeResponse_html(MAINTENANCE_PAGE)
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
     api = _api()
 
     with pytest.raises(exceptions.PortalMaintenanceError):
         api.web_login()
 
     assert posted, "the login is where maintenance is decided now"
+
+
+def _web_session(monkeypatch, make_session):
+    """The session the web login opens: the scraper's own."""
+    from custom_components.wemportal import scraper
+
+    monkeypatch.setattr(scraper.requests, "Session", lambda **_kwargs: make_session())
 
 
 def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
@@ -4041,7 +4081,7 @@ def _web_login_answering(post_answer, get_answer=None, monkeypatch=None):
         def post(self, *_args, **_kwargs):
             return post_answer
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
     return _api()
 
 
@@ -4067,7 +4107,7 @@ def test_the_web_login_check_closes_its_session(monkeypatch, outcome):
         def close(self):
             closed.append(True)
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
 
     with contextlib.suppress(exceptions.WemPortalError):
         _api().web_login()
@@ -4099,11 +4139,11 @@ def test_an_unreadable_login_page_costs_no_credentials(monkeypatch):
             posted.append(True)
             return FakeResponse_html("")
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
 
     api = _api()
 
-    with pytest.raises(exceptions.UnknownAuthError):
+    with pytest.raises(exceptions.ServerError):
         api.web_login()
 
     assert posted == [], "credentials were sent to a page that could not be read"
@@ -4131,7 +4171,7 @@ def test_a_forbidden_login_page_is_a_refusal_not_a_network_problem(monkeypatch):
         def post(self, *_args, **_kwargs):
             raise AssertionError("credentials were sent to a refusing portal")
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
     api = _api()
 
     # The first one in a row is let pass without the pause (WebLoginRefused);
@@ -4170,9 +4210,9 @@ def test_a_page_without_a_login_form_gets_no_credentials(monkeypatch):
         def post(self, *_args, **_kwargs):
             raise AssertionError("credentials were sent to a page with no login form")
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
 
-    with pytest.raises(exceptions.UnknownAuthError):
+    with pytest.raises(exceptions.ServerError):
         _api().web_login()
 
 
@@ -4186,7 +4226,7 @@ def test_a_page_that_is_neither_login_nor_session_is_not_a_wrong_password(monkey
         monkeypatch=monkeypatch,
     )
 
-    with pytest.raises(exceptions.UnknownAuthError):
+    with pytest.raises(exceptions.ServerError):
         api.web_login()
 
 
@@ -4219,6 +4259,7 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
             raise AssertionError("a request was sent during the cooldown")
 
     monkeypatch.setattr(real_requests, "Session", lambda: _Session())
+    _web_session(monkeypatch, _Session)
     api = _api()
     api._activate_cooldown("a test 403")
 
@@ -4228,29 +4269,68 @@ def test_a_login_is_not_attempted_during_a_cooldown(monkeypatch):
         api.api_login()
 
 
-FORM_PAGE = """<html><body>
-  <input type="hidden" name="__VIEWSTATE" value="vs">
-  <input type="hidden" name="__EVENTVALIDATION" value="ev">
-  <input type="hidden" name="__EMPTY">
-  <input type="hidden" value="no name of its own">
-  <input type="hidden" name="" value="blank name">
-  <input name="ctl00$content$tbxUserName" type="text" value="visible">
-  <input name="ctl00$content$btnLogin" type="submit" value="Anmelden">
-  <input name="ctl00$content$chkStayLoggedIn" type="checkbox" value="stray">
-</body></html>"""
+def test_the_web_login_check_logs_in_the_way_the_scrape_does(monkeypatch):
+    """The check before an entry is saved was its own client: plain requests,
+    with Chrome only in a header. The scrape it stands in for goes out as a
+    browser, so a gateway telling the two apart could refuse a login that
+    would have worked - or pass one that would not."""
+    from custom_components.wemportal import scraper
+
+    opened = []
+    posted = []
+
+    class _Plain:
+        cookies = {}
+
+        def close(self):
+            pass
+
+        def get(self, *_args, **_kwargs):
+            return FakeResponse_html(NORMAL_LOGIN_PAGE)
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse_html(
+                f"<html><body><div id='{WEB_LOGGED_IN_MARKER}'></div></body></html>"
+            )
+
+    class _Impersonated(_Plain):
+        def post(self, url, data=None, **kwargs):
+            posted.append(data)
+            return super().post(url, **kwargs)
+
+    def session(**kwargs):
+        opened.append(kwargs)
+        return _Impersonated()
+
+    monkeypatch.setattr(scraper.requests, "Session", session)
+    monkeypatch.setattr(real_requests, "Session", lambda: _Plain())
+
+    _api().web_login()
+
+    assert [options.get("impersonate") for options in opened] == ["chrome110"]
+    assert len(posted) == 1, "the login went out on another client"
+    # All there is to the login: nothing else pins these, and a field lost
+    # here reaches the user as a wrong password.
+    assert set(posted[0]) == {
+        "__VIEWSTATE",
+        "__EVENTVALIDATION",
+        "ctl00$content$tbxUserName",
+        "ctl00$content$tbxPassword",
+        "ctl00$content$btnLogin",
+    }
+    assert posted[0]["ctl00$content$tbxUserName"] == "user@example.org"
+    assert posted[0]["ctl00$content$tbxPassword"] == "secret"
 
 
-def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
-    """ASP.NET rejects a post that does not echo its own hidden state back,
-    so which fields are collected IS the login.
+def test_a_refusal_behind_the_login_page_starts_the_pause_at_once(monkeypatch):
+    """A 403 from anywhere but the login page is no firewall turning a login
+    away, so no first-one-is-free applies. The check treats it as the scrape
+    does."""
 
-    Written against the behaviour before the HTML parser was swapped, so the
-    swap has something to be equal to - each of these is a way the two
-    parsers could differ: a hidden field with no value attribute, one with no
-    name, one whose name is empty, and the visible fields that must not come
-    along.
-    """
-    posted = {}
+    class _Refused(FakeResponse_html):
+        def __init__(self):
+            super().__init__("forbidden", status_code=403)
+            self.url = "https://www.wemportal.com/Web/Default.aspx"
 
     class _Session:
         cookies = {}
@@ -4259,29 +4339,18 @@ def test_the_login_form_carries_exactly_the_hidden_fields(monkeypatch):
             pass
 
         def get(self, *_args, **_kwargs):
-            return FakeResponse_html(FORM_PAGE)
+            return FakeResponse_html(NORMAL_LOGIN_PAGE)
 
-        def post(self, _url, data=None, **_kwargs):
-            posted.update(data)
-            return FakeResponse_html("<html>ctl00_btnLogout</html>")
+        def post(self, *_args, **_kwargs):
+            return _Refused()
 
-    monkeypatch.setattr(real_requests, "Session", lambda: _Session())
-    _api().web_login()
+    _web_session(monkeypatch, _Session)
+    api = _api()
 
-    hidden = {
-        key: value
-        for key, value in posted.items()
-        if not key.startswith("ctl00$content$")
-    }
-    assert hidden == {"__VIEWSTATE": "vs", "__EVENTVALIDATION": "ev", "__EMPTY": ""}
-    # The credentials and the button are added by the login itself, not read
-    # off the page.
-    assert posted["ctl00$content$tbxUserName"] == "user@example.org"
-    # A visible field the login does NOT overwrite. The first version of this
-    # test only had visible fields whose names the login sets anyway, so
-    # dropping the type filter from the selector changed nothing it could see
-    # - the assertion passed while every visible field was being collected.
-    assert "ctl00$content$chkStayLoggedIn" not in posted
+    with pytest.raises(exceptions.ForbiddenError):
+        api.web_login()
+
+    assert api.is_rate_limited()
 
 
 def test_maintenance_is_not_an_auth_error():
@@ -4748,6 +4817,23 @@ def test_one_fault_too_long_on_its_own_is_cut_and_says_so():
     assert len(state) <= MAX_LENGTH_STATE_STATE
     assert "..." in state
     assert "(+1 more)" in state
+    assert detail == faults
+
+
+def test_a_single_fault_too_long_on_its_own_claims_no_others():
+    """With nothing dropped there is nothing to count: "(+0 more)" reads as
+    if the portal had reported a second fault."""
+    from homeassistant.const import MAX_LENGTH_STATE_STATE
+
+    from custom_components.wemportal.utils import error_state_and_detail
+
+    faults = ["E01 " + "x" * 400]
+
+    state, detail = error_state_and_detail(faults)
+
+    assert len(state) <= MAX_LENGTH_STATE_STATE
+    assert state.endswith("..."), state
+    assert "more)" not in state
     assert detail == faults
 
 
@@ -5381,6 +5467,22 @@ def test_a_usable_stored_interval_survives(stored, expected):
     assert clamped_scan_interval(options, "k", 300, 60) == expected
 
 
+def test_a_stored_interval_too_large_for_a_timer_is_held_to_the_ceiling():
+    """The form holds what is typed now; a value stored before it did is read
+    back as it was saved, and setup fails on a timer that large."""
+    from custom_components.wemportal.const import (
+        CONF_EXPERT_POLL_INTERVAL,
+        MAX_INTERVAL_SECONDS,
+    )
+    from custom_components.wemportal.expert_controller import poll_interval_minutes
+    from custom_components.wemportal.utils import clamped_scan_interval
+
+    stored = types.SimpleNamespace(options={CONF_EXPERT_POLL_INTERVAL: 10**15})
+
+    assert clamped_scan_interval({"k": 10**15}, "k", 300, 60) == MAX_INTERVAL_SECONDS
+    assert poll_interval_minutes(stored) == MAX_INTERVAL_SECONDS // 60
+
+
 def test_the_api_applies_the_floor_to_a_stored_interval():
     """End of the same path: the value the api actually polls with."""
     from datetime import timedelta
@@ -5903,11 +6005,15 @@ def test_a_refresh_without_a_status_field_still_works():
     assert api._fetch_parameter_values("1234") is None
 
 
-def test_a_fresh_api_without_carried_state_starts_clean():
+def test_a_fresh_api_starts_clean():
     """A normal first start must not inherit anything."""
     api = _api()
 
-    assert api.scraper_backoff == (0, 0, None)
+    assert (
+        api.spider_wait_interval,
+        api.spider_retry_count,
+        api.last_scraping_update,
+    ) == (0, 0, None)
 
 
 class _RecordingSession:
@@ -6893,15 +6999,14 @@ TRANSPORT_FIELDS = frozenset(
 # instance existed to copy from. A failed first refresh has none: Home
 # Assistant throws the object away and calls setup again, so the retry started
 # with no backoff at all, after a 403 that had very likely caused the failure.
-# They are module state now (see _BLOCKED_UNTIL in wemportalapi), which is
-# what makes them survive every path rather than the ones we remembered. A
-# guarantee that cannot be broken needs no entry in a list of things not to
-# break.
+# They live outside the object now (transport._BLOCKED_UNTIL and the account
+# state), which is what makes them survive every path rather than the ones we
+# remembered. A guarantee that cannot be broken needs no entry in a list of
+# things not to break.
 # _first_cycle_done is session bookkeeping, not transport: it says whether a
-# cycle has ever completed, which the daily parameter re-read reads to stay
-# out of Home Assistant's setup. A recovery does not un-complete the cycles
-# that already ran, and clearing it would only postpone that re-read by one
-# cycle for no reason.
+# cycle has ever completed, which keeps the bursts out of Home Assistant's
+# setup. A recovery does not un-complete the cycles that already ran, and
+# clearing it would hold the next cycle's burst with no follow-up planned.
 # _deadline belongs to the poll cycle in progress, not to the connection, so
 # replacing the connection must not touch it. In practice a recovery runs
 # between cycles and finds it None either way - but "the transport was
@@ -6934,6 +7039,8 @@ PRESERVED_FIELDS = frozenset(
         "_first_cycle_done",
         "_deadline",
         "_relogin_failure",
+        # Scratch of the request in flight, which sets it afresh.
+        "_logged_in_again_in_this_call",
         # Like _deadline, it belongs to the poll cycle in progress: which
         # burst that cycle has spent. A new connection does not un-spend it.
         "heavy_fetch_turns",
@@ -7258,13 +7365,15 @@ def test_an_expert_backoff_does_not_spread_to_another_account():
 
 
 def test_a_replacement_cannot_shorten_a_running_cooldown():
-    """Callers still pass the old value; passing a smaller one - or none -
-    must never pull the backoff in."""
+    """A new api object of the same account finds the running backoff, and
+    neither it nor anything else can pull it in: the backoff only ever moves
+    further out."""
     api = _api()
     api._activate_cooldown("a test 403")
     active = api._blocked_until
 
-    replacement = WemPortalApi("user@example.org", "secret", blocked_until=0.0)
+    replacement = WemPortalApi("user@example.org", "secret")
+    replacement._blocked_until = 0.0
 
     assert replacement._blocked_until == active
     with pytest.raises(exceptions.ForbiddenError):
@@ -8315,6 +8424,7 @@ def test_a_companion_repeating_the_written_date_does_not_undo_it():
         "After-U_Ende": date_row("U_Ende", 20.0),
     }
     api.data = {"1234": rows}
+    api._companions_read_again = lambda _device, _module, values: values()
     sent = []
     api._change_value = lambda *_args, **kwargs: sent.append(kwargs["together_with"])
 
@@ -8342,8 +8452,83 @@ def test_a_companion_repeating_the_written_date_does_not_undo_it():
         "After-U_Ende": 21.0,
     }, "the published rows kept a date the portal had just been told to change"
     assert sent[1]["U_Beginn"] == 11.0, (
-        "the second write carried the first one's old date back to the portal"
+        "the second write carried the first one's old date back to the portal "
+        "(fixed values here: a companion read asks the portal, see "
+        "test_companion_read)"
     )
+
+
+def _dates_changed_elsewhere(api, end):
+    """A fresh read finding the end date someone set in the app meanwhile."""
+    asked = []
+
+    def fresh_read(device_id):
+        asked.append(device_id)
+        api.data[device_id]["Heat pump-HolidayEnd"].value = end
+        api._last_values_answer[device_id] = {
+            "Modules": [
+                {
+                    "ModuleIndex": 0,
+                    "ModuleType": 1,
+                    "Values": [{"ParameterID": "HolidayEnd"}],
+                }
+            ]
+        }
+        return None
+
+    api._fetch_parameter_values = fresh_read
+    return asked
+
+
+def _a_holiday_module(api):
+    api.data = {
+        "1234": {
+            "Heat pump-HolidayEnd": Reading(
+                value=1.0, parameter_id="HolidayEnd", module_index=0, module_type=1
+            )
+        }
+    }
+    sent = []
+    api._change_value = lambda *_a, **kwargs: sent.append(kwargs["together_with"])
+    return sent
+
+
+def _companions_from_rows(api):
+    return lambda: {"HolidayEnd": api.data["1234"]["Heat pump-HolidayEnd"].value}
+
+
+def test_a_companion_changed_in_the_app_is_not_sent_back_stale():
+    """The other holiday date travels with a write unchanged - as the rows
+    last showed it. Set in the app or the web portal since the last poll,
+    the write took that change back, and the read-back, which looks at the
+    written date only, did not notice. The rows are read again first."""
+    api = _api_after_a_poll()
+    sent = _a_holiday_module(api)
+    asked = _dates_changed_elsewhere(api, end=5.0)
+
+    api.change_value(
+        "1234", "HolidayBegin", 0, 1, 2.0, together_with=_companions_from_rows(api)
+    )
+
+    assert asked == ["1234"], "the companions were not read again before the write"
+    assert sent == [{"HolidayEnd": 5.0}], (
+        f"the write sent the other date back as the rows last showed it: {sent}"
+    )
+
+
+def test_a_companion_that_cannot_be_read_again_stops_the_write():
+    """Sending the cached companion instead is the stale write the fresh read
+    exists to prevent; nothing goes out, and the reason does."""
+    api = _api_after_a_poll()
+    sent = _a_holiday_module(api)
+    api._fetch_parameter_values = lambda _device_id: "the portal did not answer"
+
+    with pytest.raises(exceptions.WemPortalError, match="did not answer"):
+        api.change_value(
+            "1234", "HolidayBegin", 0, 1, 2.0, together_with=_companions_from_rows(api)
+        )
+
+    assert sent == [], f"a write went out with an unconfirmed companion: {sent}"
 
 
 def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
@@ -8366,6 +8551,7 @@ def test_a_write_resolves_and_publishes_its_companions_under_the_lock():
             )
         }
     }
+    api._companions_read_again = lambda _device, _module, values: values()
     seen = {}
     api._change_value = lambda *_a, **kwargs: seen.__setitem__(
         "sent", kwargs.get("together_with")
@@ -8503,7 +8689,7 @@ def test_the_filter_survives_the_handover_to_the_reads():
     The filter travels fetch_data -> get_data -> discovery. Both ends were
     covered and the handover was not: dropping the argument here left every
     test green while a device the user switched off was asked for its
-    definitions again. Found by an audit of THIS repair, not of the code it
+    definitions again. Found by a review of THIS repair, not of the code it
     repaired - the test sat one step behind the line that can regress.
     """
     api, asked = _two_device_discovery_api()
@@ -8954,8 +9140,8 @@ def test_stale_definitions_wait_for_the_second_cycle():
     """The first refresh runs inside Home Assistant's setup, and this
     discovery sleeps five seconds per module - a re-read there turns every
     restart with an expired cache into a slow startup, which Home Assistant
-    then complains about. Nothing is lost by waiting one interval for
-    something that is already a day old."""
+    then complains about. Nothing is lost by waiting for a follow-up or the
+    next cycle for something that is already a day old."""
     api, read = _cycle_api(
         time.time() - (discovery.PARAMETER_REDISCOVERY_INTERVAL_SECONDS + 60)
     )
@@ -9556,7 +9742,7 @@ def test_a_reload_fetches_statistics_again_because_the_data_did_not_survive():
 
     Every options save is a reload, and a reload builds a new api with no
     readings at all: async_setup_entry passes the module cache and the
-    scraper id, never `existing_data`. A gate that outlived that reload
+    scraper id, never any readings. A gate that outlived that reload
     therefore held back the one fetch that could have refilled the
     statistics sensors - they sat on unknown for up to an hour, with
     nothing in the log to say why.
@@ -10721,10 +10907,16 @@ def test_a_cycle_with_only_an_empty_device_is_not_a_failure():
 
 def test_a_read_back_that_read_nothing_does_not_verify_a_write():
     """The read-back after a write shares the fetch. "Nothing to read" is not
-    a failed poll, but it is not a confirmation of the written value either."""
+    a failed poll, but it is not a confirmation of the written value either -
+    least of all by the last poll's answer, which still names the parameter."""
     api = _api()
     api.data = {"1234": {}}
     api.modules = {"1234": {}}
+    api._last_values_answer["1234"] = {
+        "Modules": [
+            {"ModuleIndex": 0, "ModuleType": 1, "Values": [{"ParameterID": "U_Beginn"}]}
+        ]
+    }
 
     assert isinstance(
         api.reread_device_values("1234", ModuleRef(0, 1), ("U_Beginn",)), str
@@ -11619,7 +11811,7 @@ def test_a_setup_web_login_that_worked_starts_the_count_again(monkeypatch):
             )
 
     sessions = [_RefusingSession(), _WorkingSession(), _RefusingSession()]
-    monkeypatch.setattr(real_requests, "Session", lambda: sessions.pop(0))
+    _web_session(monkeypatch, lambda: sessions.pop(0))
     api = _api()
 
     with pytest.raises(exceptions.ForbiddenError):

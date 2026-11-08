@@ -86,6 +86,9 @@ def _api_that_accepts(data):
     api.device_types = {}
     api.api_version = None
     api.reread_device_values = lambda *_args, **_kwargs: None
+    # The read of the companions before the write: the rows already are what
+    # the portal holds. Its real path is tests/test_companion_read.py.
+    api._companions_read_again = lambda _device, _module, companions: companions()
     return api
 
 

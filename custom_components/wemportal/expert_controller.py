@@ -37,6 +37,7 @@ from .const import (
     CONF_EXPERT_POLL_INTERVAL,
     DEFAULT_EXPERT_POLL_INTERVAL_MINUTES,
     DOMAIN,
+    MAX_INTERVAL_SECONDS,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
 )
 from .exceptions import ExpertOperationAborted, ForbiddenError
@@ -79,15 +80,16 @@ REPORTED_ID_RETRY_SECONDS = 24 * 3600
 
 
 def poll_interval_minutes(entry: ConfigEntry) -> int:
-    """The configured poll interval, never below the floor and never a value
-    the options flow let through in a shape int() chokes on."""
+    """The configured poll interval, between the floor and the ceiling, and
+    never a value the options flow let through in a shape int() chokes on."""
     interval_min = entry.options.get(
         CONF_EXPERT_POLL_INTERVAL, DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
     )
     try:
-        return max(int(interval_min), MIN_EXPERT_POLL_INTERVAL_MINUTES)
+        interval_min = max(int(interval_min), MIN_EXPERT_POLL_INTERVAL_MINUTES)
     except TypeError, ValueError:
         return DEFAULT_EXPERT_POLL_INTERVAL_MINUTES
+    return min(interval_min, MAX_INTERVAL_SECONDS // 60)
 
 
 class ExpertBusy(Exception):

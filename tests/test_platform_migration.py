@@ -11,6 +11,7 @@ our own unique_ids, only our own platforms, and never the entity that is
 currently correct.
 """
 
+import datetime
 import types
 
 import pytest
@@ -26,6 +27,7 @@ from custom_components.wemportal.models import ModuleRef, Reading
 
 ENTRY_ID = "entry-1"
 DEVICE = "1234"
+LONG_AGO = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 
 
 class FakeConfigEntry:
@@ -38,10 +40,13 @@ class FakeConfigEntry:
 class FakeRegistry:
     """Just enough registry: a lookup by (platform, unique_id) and a remove."""
 
-    def __init__(self, entries, owners=None):
+    def __init__(self, entries, owners=None, created=None):
         self.entries = dict(entries)
         # Every entity belongs to this entry unless a test says otherwise.
         self.owners = dict(owners or {entity: ENTRY_ID for entity in entries.values()})
+        # And was registered long before this setup, unless a test says it
+        # was made during it.
+        self.created = dict(created or {})
         self.removed = []
         self.renamed = []
         self.domains_asked = set()
@@ -61,7 +66,11 @@ class FakeRegistry:
         account. Only this object knows that, which is why the fake has to.
         """
         owner = self.owners.get(entity_id)
-        return None if owner is None else types.SimpleNamespace(config_entry_id=owner)
+        if owner is None:
+            return None
+        return types.SimpleNamespace(
+            config_entry_id=owner, created_at=self.created.get(entity_id, LONG_AGO)
+        )
 
     def async_update_entity(self, entity_id, new_unique_id):
         self.renamed.append((entity_id, new_unique_id))
@@ -812,6 +821,7 @@ def test_the_migration_leaves_another_accounts_entity_alone():
         FakeConfigEntry(),
         DEVICE,
         {"Outside": Reading(value=1.0, platform="sensor", parameter_id="Outside")},
+        made_before=LONG_AGO,
     )
 
     assert registry.renamed == [], (
@@ -859,3 +869,66 @@ async def test_a_registry_hiccup_does_not_consume_the_migration(monkeypatch):
     assert registry.removed == ["switch.holiday_begin"], (
         "an unchanged reading whose migration failed was treated as done"
     )
+
+
+async def test_an_entity_with_a_history_of_its_own_is_not_given_up(monkeypatch, caplog):
+    """A legacy id two devices answer to is left alone, and the current
+    entity collects history meanwhile - for months, until the second device
+    is disabled or removed and the old id is suddenly nobody else's.
+
+    The next setup then found both and kept the legacy one: the entity
+    dashboards and automations had been using was removed, and the frozen
+    one took its unique_id. Two histories and no way to tell from the
+    registry which one matters, so neither is taken down; the log says so.
+    """
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry(
+        {
+            ("sensor", "Outside"): "sensor.outside_legacy",
+            ("sensor", _uid("Outside")): "sensor.live_for_months",
+        }
+    )
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
+    alone = {
+        DEVICE: {"Outside": Reading(value=1.0, platform="sensor")},
+        "5678": {"ConnectionStatus": 0},
+    }
+
+    with caplog.at_level("WARNING"):
+        wemportal.migrate_unique_ids(None, FakeConfigEntry(), FakeCoordinator(alone))
+
+    assert registry.removed == [], (
+        f"an entity with months of history was removed: {registry.removed}"
+    )
+    assert registry.renamed == []
+    assert "Both are kept" in caplog.text, "nothing said why both stay"
+
+
+async def test_an_entity_made_during_this_setup_is_still_given_up(monkeypatch):
+    """The control case, and the design the test above narrows: an entity the
+    builder made while the migration waited for a device has no history to
+    lose, so the old one takes the current id as before."""
+    import custom_components.wemportal as wemportal
+
+    registry = FakeRegistry(
+        {
+            ("sensor", "Outside"): "sensor.outside_legacy",
+            ("sensor", _uid("Outside")): "sensor.made_minutes_ago",
+        },
+        created={
+            "sensor.made_minutes_ago": datetime.datetime.now(datetime.UTC)
+            + datetime.timedelta(minutes=1)
+        },
+    )
+    monkeypatch.setattr(
+        wemportal.migration.entity_registry, "async_get", lambda _hass: registry
+    )
+    alone = {DEVICE: {"Outside": Reading(value=1.0, platform="sensor")}}
+
+    wemportal.migrate_unique_ids(None, FakeConfigEntry(), FakeCoordinator(alone))
+
+    assert registry.removed == ["sensor.made_minutes_ago"]
+    assert registry.renamed == [("sensor.outside_legacy", _uid("Outside"))]

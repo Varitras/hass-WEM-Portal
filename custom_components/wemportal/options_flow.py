@@ -51,6 +51,7 @@ from .const import (
     DEFAULT_MODE,
     EXPERT_SLOT_COUNT,
     MIN_EXPERT_ENTITYVALUE_LENGTH,
+    MAX_INTERVAL_SECONDS,
     MIN_EXPERT_POLL_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_API_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
@@ -69,6 +70,7 @@ from .config_flow import (
     CannotConnect,
     ExpertBusy,
     InvalidAuth,
+    PortalMaintenance,
     RateLimited,
     login_commit_lock,
     validate_input,
@@ -264,6 +266,8 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
             return {"base": "rate_limited"}
         except InvalidAuth:
             return {CONF_MODE: "invalid_auth"}
+        except PortalMaintenance:
+            return {"base": "portal_maintenance"}
         except CannotConnect:
             return {"base": "cannot_connect"}
         return {}
@@ -376,10 +380,11 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
         just-submitted value, `id_options` is the slot-id dropdown content."""
         return vol.Schema(
             {
-                # Both scan intervals are clamped to a lower bound (like
-                # the expert poll interval below): a stray tiny value
-                # such as "1" second would poll the portal continuously
-                # and reliably trigger the IP-wide 403 rate limit.
+                # Both scan intervals are clamped (like the expert poll
+                # interval below). The lower bound because a stray tiny value
+                # such as "1" second would poll the portal continuously and
+                # reliably trigger the IP-wide 403 rate limit; the upper one
+                # is explained at MAX_INTERVAL_SECONDS.
                 vol.Optional(
                     CONF_SCAN_INTERVAL,
                     default=prefill(
@@ -387,7 +392,7 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                     ),
                 ): vol.All(
                     cv.positive_int,
-                    vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS),
+                    vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS, max=MAX_INTERVAL_SECONDS),
                 ),
                 vol.Optional(
                     CONF_SCAN_INTERVAL_API,
@@ -396,7 +401,10 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                     ),
                 ): vol.All(
                     cv.positive_int,
-                    vol.Clamp(min=MIN_SCAN_INTERVAL_API_SECONDS),
+                    vol.Clamp(
+                        min=MIN_SCAN_INTERVAL_API_SECONDS,
+                        max=MAX_INTERVAL_SECONDS,
+                    ),
                 ),
                 # Same closed choice as the initial setup form -
                 # previously a free string here allowed saving an
@@ -437,7 +445,10 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                     ),
                 ): vol.All(
                     cv.positive_int,
-                    vol.Clamp(min=MIN_EXPERT_POLL_INTERVAL_MINUTES),
+                    vol.Clamp(
+                        min=MIN_EXPERT_POLL_INTERVAL_MINUTES,
+                        max=MAX_INTERVAL_SECONDS // 60,
+                    ),
                 ),
                 # --- Advanced expert options (only if you know what you
                 # are doing) --------------------------------------------
@@ -451,10 +462,13 @@ class WemportalOptionsFlow(OptionsFlowWithReload):
                 ): cv.boolean,
                 # Module menu index used ONLY when module select is
                 # enabled above. Empty default; "6" = heat pump on the
-                # reference install.
+                # reference install. A suggested value, not a default, so
+                # that emptying the field clears it - see _expert_slot_schema.
                 vol.Optional(
                     CONF_EXPERT_MODULE_ARG,
-                    default=prefill(CONF_EXPERT_MODULE_ARG, ""),
+                    description={
+                        "suggested_value": prefill(CONF_EXPERT_MODULE_ARG, "")
+                    },
                 ): cv.string,
                 vol.Optional(
                     CONF_EXPERT_ENABLE_SECURITY_CODE,

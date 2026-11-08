@@ -17,7 +17,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field, fields
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 from homeassistant.config_entries import ConfigEntry
 
@@ -48,7 +48,7 @@ class AccountState:
     that used it - six of them across five files, each invisible from the
     others. They exist because a reload rebuilds every object while the
     portal's memory does not reset: a 403 backoff must not be forgotten by
-    the very reinstantiation it caused, and a warning already given must not
+    the very reload it caused, and a warning already given must not
     repeat after every options change.
 
     NOT here on purpose: the API-wide 403 backoff
@@ -145,6 +145,10 @@ def reset_account_states_for_tests() -> None:
     _ACCOUNT_STATES.clear()
 
 
+# Claimed by no kind, so every kind that asks is turned away.
+_TURN_HELD_FOR_SETUP: Final = "setup"
+
+
 class HeavyFetchTurns:
     """Which burst of requests a poll cycle has already spent.
 
@@ -170,6 +174,16 @@ class HeavyFetchTurns:
         self._claimed: str | None = None
         self._queue: list[str] = []
         self._asked: set[str] = set()
+
+    @property
+    def waiting(self) -> bool:
+        """Whether a kind was turned away and still has its burst to spend."""
+        return bool(self._queue)
+
+    def hold_for_setup(self) -> None:
+        """Spend this cycle's turn on nothing: the setup is waiting for it.
+        The kinds that ask queue up as usual, in the order they asked."""
+        self._claimed = _TURN_HELD_FOR_SETUP
 
     def new_cycle(self) -> None:
         if self._asked:

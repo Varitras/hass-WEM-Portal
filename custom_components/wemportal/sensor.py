@@ -337,8 +337,8 @@ def _schedule_from_json(raw):
     Incomplete by construction - the base level is a GAP here, not an entry,
     so a day that is reduced from ten past ten until half one shows nothing
     for those three hours. What the letters mean is not readable from this
-    side either. It is the fallback for the hour after a restart, before the
-    schedule fetch has run.
+    side either. It is the fallback until the schedule fetch has run: for a
+    minute or two after a start, or for as long as that fetch fails.
     """
     schedule = _parse_schedule(raw)
     if schedule is None:

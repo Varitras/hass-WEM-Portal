@@ -228,12 +228,8 @@ class WemPortalApi(
         username: str,
         password: str,
         config: Mapping[str, Any] | None = None,
-        existing_data: dict[str, dict[str, Any]] | None = None,
         cached_modules: dict[str, Any] | None = None,
-        blocked_until: float = 0.0,
         scraper_device_id: str | None = None,
-        expert_blocked_until: float = 0.0,
-        scraper_backoff: tuple[int, int, datetime | None] | None = None,
     ) -> None:
         """Assemble the api object from three sources, kept apart because
         they have different lifetimes: the user's options, the state the
@@ -247,14 +243,7 @@ class WemPortalApi(
         # once-per-subject warnings. See models.AccountState.
         self._account_state = account_state(username)
         self._init_from_config(config)
-        self._init_from_storage(
-            existing_data,
-            cached_modules,
-            scraper_device_id,
-            blocked_until,
-            expert_blocked_until,
-            scraper_backoff,
-        )
+        self._init_from_storage(cached_modules, scraper_device_id)
         self._init_runtime_state()
 
     def _init_from_config(self, config: Mapping[str, Any] | None) -> None:
@@ -285,20 +274,16 @@ class WemPortalApi(
 
     def _init_from_storage(
         self,
-        existing_data: dict[str, dict[str, Any]] | None,
         cached_modules: dict[str, Any] | None,
         scraper_device_id: str | None,
-        blocked_until: float,
-        expert_blocked_until: float,
-        scraper_backoff: tuple[int, int, datetime | None] | None,
     ) -> None:
         """State the coordinator persisted, handed back after a restart.
 
-        Every argument here exists because starting from zero was wrong:
-        a fresh object would poll a portal that had just asked us to back
-        off, rediscover modules it already knew, and give the scraped
-        sensors a new device id - and with it a new history."""
-        self.data = copy.deepcopy(existing_data) if existing_data else {}
+        Both arguments exist because starting from zero was wrong: a fresh
+        object would rediscover modules it already knew and give the scraped
+        sensors a new device id - and with it a new history. The portal
+        backoffs need no argument: they live outside this object."""
+        self.data: dict[str, dict[str, Any]] = {}
         # Stable device id under which scraped (web) sensors are stored, so
         # their entity unique_ids ("<entry>:<device_id>:<name>") - and thus
         # their history - stay constant across mode switches. Decided once
@@ -325,38 +310,13 @@ class WemPortalApi(
         # The last values answer per device, for the read-back after a write:
         # a read that worked says nothing about a parameter it did not carry.
         self._last_values_answer: dict[str, Mapping[str, Any]] = {}
-        # Monotonic timestamp until which ALL outbound requests are
-        # paused, activated after receiving a 403 (rate limit/forbidden)
-        # from the server anywhere in a cycle. This is a strictly
-        # additive safety measure: it only ever makes the integration
-        # quieter after the server has already signaled distress, never
-        # more aggressive. See check_cooldown()/_activate_cooldown().
-        # Accepted as a constructor argument so an active cooldown survives
-        # the coordinator re-instantiating this object on repeated errors -
-        # otherwise a fresh instance would reset it to 0.0 and resume
-        # hitting a server that just told us to back off.
-        # Seeded, not stored: both backoffs live at module level so that no
-        # construction site can drop them (see _BLOCKED_UNTIL). The arguments
-        # remain because callers that DO hold a previous value still pass it,
-        # and extending is harmless - a caller can only ever push the backoff
-        # further out, never pull it in.
-        self._blocked_until = blocked_until
-        self._expert_blocked_until = expert_blocked_until
-
-        # Scrape backoff, carried across a coordinator swap when given.
-        #
-        # The coordinator builds a fresh WemPortalApi to recover from repeated
-        # errors, and a fresh instance started at zero - so the backoff the
-        # scraper had just earned was discarded by the very recovery those
-        # failures triggered, and the next cycle scraped immediately.
-        # `last_scraping_update` belongs to the same state: without it the
-        # interval check has no reference point and scrapes at once.
-        wait_interval, retry_count, last_update = scraper_backoff or (0, 0, None)
+        # Scrape backoff. A transport reset keeps this object, and with it
+        # the backoff the failures behind the reset had just earned.
         # Used to keep track of how many update intervals to wait before retrying spider
-        self.spider_wait_interval = wait_interval
+        self.spider_wait_interval = 0
         # Used to keep track of the number of times the spider consecutively fails
-        self.spider_retry_count = retry_count
-        self.last_scraping_update = last_update
+        self.spider_retry_count = 0
+        self.last_scraping_update: datetime | None = None
         # When the backoff last moved a step; see _count_down_scrape_backoff.
         self._backoff_stepped_at: float | None = None
 
@@ -364,11 +324,9 @@ class WemPortalApi(
         """State that always starts empty: the HTTP transport, the
         per-session caches and the timestamps a cycle fills in.
         """
-        # Whether a full cycle has completed in this session. The daily
-        # parameter re-read waits for it: the FIRST refresh runs inside Home
-        # Assistant's setup, and a discovery there (five seconds of sleep per
-        # module) turns every restart with an expired cache into a slow
-        # startup.
+        # Whether a full cycle has completed in this session. The FIRST
+        # refresh runs inside Home Assistant's setup, so it spends no burst;
+        # see _fetch_data.
         self._first_cycle_done = False
         # A `both`-mode tick can end with neither source read, which is no
         # sign of recovery.
@@ -399,6 +357,9 @@ class WemPortalApi(
         self._deadline: float | None = None
         # A re-login that failed during this poll; see _recover_or_raise.
         self._relogin_failure: Exception | None = None
+        # Whether the request in flight has logged in again; see
+        # _keep_a_session_refused_after_its_login.
+        self._logged_in_again_in_this_call = False
         # device_id -> when its values were last refreshed, for the staleness
         # check above. Monotonic because it measures a duration and never
         # appears in output; a restart starts empty, which is correct - there
@@ -682,19 +643,6 @@ class WemPortalApi(
                 self.last_scraping_update or "at the last successful scrape",
             )
 
-    @property
-    def scraper_backoff(self) -> tuple[int, int, datetime | None]:
-        """The scrape backoff as the constructor takes it back.
-
-        Exposed as one value so a caller carrying state across an instance
-        swap cannot pick up two of the three and silently lose the third.
-        """
-        return (
-            self.spider_wait_interval,
-            self.spider_retry_count,
-            self.last_scraping_update,
-        )
-
     def resolve_scraper_device_id(self) -> str:
         """Return the stable device id to store scraped sensors under.
 
@@ -881,8 +829,8 @@ class WemPortalApi(
         when it mattered. The backoff is asked at the TOP level for the same
         reason - it used to sit inside that branch, and `last_scraping_update
         is None` is true on every fresh WemPortalApi, which the coordinator
-        builds whenever it recovers from repeated errors. The scrape backoff
-        was therefore skipped right after the failures that set it.
+        used to build whenever it recovered from repeated errors. The scrape
+        backoff was therefore skipped right after the failures that set it.
         """
         if not self._scraper_enabled(enabled_devices):
             return False
@@ -927,6 +875,10 @@ class WemPortalApi(
             return True
         waited: float = time.monotonic() - self._last_api_read
         return waited + TICK_TOLERANCE_SECONDS >= self.scan_interval_api.total_seconds()
+
+    def read_api_on_the_next_tick(self) -> None:
+        """Make the next `both`-mode tick read the API, interval or not."""
+        self._last_api_read = None
 
     def _count_down_scrape_backoff(self) -> None:
         """One web interval closer to the next scrape attempt.
@@ -1041,6 +993,10 @@ class WemPortalApi(
         # etc.) that we already know will be aborted immediately.
         self.check_cooldown()
         self.heavy_fetch_turns.new_cycle()
+        if not self._first_cycle_done:
+            # Awaited by Home Assistant's setup, on every restart and every
+            # saved option. The coordinator follows up on what this turns away.
+            self.heavy_fetch_turns.hold_for_setup()
         self.last_cycle_read_nothing = False
         try:
             if self.mode != "web":
@@ -1054,9 +1010,8 @@ class WemPortalApi(
                 self.last_cycle_read_nothing = True
                 return self.data
 
-            # Set only after a cycle got this far, so a setup that fails
-            # halfway does not let the next attempt count as "not the first
-            # one" and slow itself down with a re-read.
+            # Set only after a cycle got this far: the next one may spend a
+            # burst, and a cycle that failed did not finish the setup's.
             self._first_cycle_done = True
 
             return self.data
@@ -1246,15 +1201,25 @@ class WemPortalApi(
             self._scraper.close()
             self._scraper = None
 
+    def _new_scraper(self, cookie: dict[str, Any] | None = None) -> Any:
+        """A scraper for this account, for the scrape and the login check.
+
+        Function-local on purpose: the scraper pulls curl_cffi and lxml
+        (~140 ms, measured), and `api` mode never gets here.
+        """
+        from .scraper import WemPortalScraper
+
+        return WemPortalScraper(
+            self.username, self.password, cookie, budget=self.remaining_budget
+        )
+
     def fetch_webscraping_data(self) -> dict[str, Any]:
         """
         Call scraper to crawl WEM Portal.
         This function manages the process of initiating a web scraping job,
         handling errors, and returning the scraped data.
         """
-        # Function-local on purpose: the scraper pulls curl_cffi and lxml
-        # (~140 ms, measured), and `api` mode never gets here.
-        from .scraper import WemPortalScraper, refuse_folded_panels
+        from .scraper import refuse_folded_panels
 
         # Respect an active rate-limit cooldown for the scraping path too,
         # not just the API path - a 403 from either frontend means the
@@ -1271,12 +1236,7 @@ class WemPortalApi(
         # connection) across cycles; only create a new one on first use
         # or after it was deliberately discarded (see _reset_scraper).
         if self._scraper is None:
-            self._scraper = WemPortalScraper(
-                self.username,
-                self.password,
-                self.webscraping_cookie,
-                budget=self.remaining_budget,
-            )
+            self._scraper = self._new_scraper(self.webscraping_cookie)
         else:
             # Keep the scraper's cookie view in sync with ours (ours may
             # have been cleared after an auth error since the last cycle).
@@ -1457,7 +1417,9 @@ class WemPortalApi(
             if not self.valid_login:
                 self.api_login()
             if callable(together_with):
-                together_with = together_with()
+                together_with = self._companions_read_again(
+                    device_id, (module_index, module_type), together_with
+                )
             self._change_value(
                 device_id,
                 parameter_id,
@@ -1466,8 +1428,9 @@ class WemPortalApi(
                 numeric_value,
                 together_with=together_with,
             )
-            # Under the lock, after the portal accepted: the next writer reads
-            # these rows at once. Written value last - a companion repeats it.
+            # Under the lock, after the portal accepted: a write with fixed
+            # values and the poll read these rows next. Written value last - a
+            # companion repeats it.
             self._publish_accepted_values(
                 device_id,
                 module_index,
@@ -1476,6 +1439,49 @@ class WemPortalApi(
             )
         finally:
             self._api_lock.release()
+
+    def _reason_the_read_failed(self, device_id: str) -> str | None:
+        """The value read for somebody waiting on its result: None if it
+        worked. Nothing read back is nothing verified."""
+        outcome = self._fetch_parameter_values(str(device_id))
+        if outcome is NoRead.NOTHING_TO_READ:
+            return "the device has nothing to read back"
+        return outcome
+
+    def _companions_read_again(
+        self,
+        device_id: str,
+        module: tuple[int, int],
+        companions: Callable[[], dict[str, float]],
+    ) -> dict[str, float]:
+        """The companions of a write, from rows read just now.
+
+        They go out unchanged, so they have to be what the portal holds, not
+        what the last poll saw: a date changed in the app or the web portal
+        since then was otherwise sent back and undone, and the read-back,
+        which checks the written parameter, did not notice. A read that fails
+        or does not carry them stops the write rather than fall back to the
+        cached value.
+
+        Two writes in a row are the portal's to order: the second reads what
+        the portal holds, not what the first one wrote. If the portal does
+        not show that yet the first is undone, and its read-back says so.
+        """
+        failure = self._reason_the_read_failed(device_id)
+        if failure is not None:
+            raise WemPortalError(
+                f"The other values of this module could not be read first: {failure}"
+            )
+        values = companions()
+        missing = unanswered_parameters(
+            self._last_values_answer.get(str(device_id)), module, values
+        )
+        if missing:
+            raise WemPortalError(
+                "The other values of this module could not be read first: "
+                f"the answer did not carry {', '.join(missing)}"
+            )
+        return values
 
     def reread_device_values(
         self,
@@ -1498,8 +1504,8 @@ class WemPortalApi(
         Same polarity as _fetch_parameter_values: None means it worked.
 
         Including the refused login, which that method raises for the poll's
-        benefit. This is the one caller that is NOT a poll: it runs after a
-        write the portal has already accepted, and both callers decide what
+        benefit. This caller is NOT a poll: it runs after a write the portal
+        has already accepted, and both of its callers decide what
         to publish from the return value. Raised past them, the service call
         reports a failure for a value that reached the heating system - and
         their `_forget_written_value()` never runs, so the value recorded
@@ -1512,22 +1518,26 @@ class WemPortalApi(
         to carry each of them. Any successful read used to count, and one
         that held only another module left the written rows untouched - so
         the value that was asked for stood as the one the portal kept.
+
+        Every portal error is answered that way, not only the refused login:
+        a lock held past the wait, or a device the last discovery left out,
+        ends in the same unverified write.
         """
-        self._acquire_api_lock("value re-read")
         try:
-            outcome = self._fetch_parameter_values(str(device_id))
-            if outcome is NoRead.NOTHING_TO_READ:
-                # Nothing read back is nothing verified.
-                return "the device has nothing to read back"
-            if outcome is not None:
-                return outcome
+            self._acquire_api_lock("value re-read")
+        except ApiBusyError as exc:
+            return str(exc)
+        try:
+            failure = self._reason_the_read_failed(device_id)
+            if failure is not None:
+                return failure
             missing = unanswered_parameters(
                 self._last_values_answer.get(str(device_id)), module, parameter_ids
             )
             if missing:
                 return f"the answer did not carry {', '.join(missing)}"
             return None
-        except AuthError as exc:
+        except WemPortalError as exc:
             return str(exc)
         finally:
             self._api_lock.release()
@@ -1663,11 +1673,11 @@ class WemPortalApi(
     def get_data(self, enabled_devices: list[str] | None = None) -> None:
         """Refresh all data for the target devices.
 
-        Thin per-device orchestration; the actual work is split into the
-        three focused steps below (status, parameter values, heating
-        schedules) plus the rate-limited statistics fetch. Purely a
-        readability refactor - order, error handling and behaviour of the
-        former inline blocks are unchanged.
+        A parameter re-discovery when one is due, then per device: status,
+        parameter values and heating schedules, with the readings of a
+        device that could not be read aged; then the rate-limited statistics
+        fetch. Raises one WemPortalError naming every device when no device
+        could be read at all - a partial success counts as success.
         """
         _LOGGER.debug(
             "Fetching fresh api data. enabled_devices=%s, known devices=%s",
@@ -1768,8 +1778,7 @@ class WemPortalApi(
         Returns False only when the status was read successfully and the
         device is not online (polling it further is pointless this cycle).
         A FAILED status fetch returns True: the device may well be fine,
-        so the parameter fetch still gets its chance - same behaviour as
-        the former inline block.
+        so the parameter fetch still gets its chance.
         """
         try:
             status_response = self.make_api_call(
@@ -1933,8 +1942,8 @@ class WemPortalApi(
         A device with nothing to read answers NoRead.NOTHING_TO_READ: no
         request, so neither refreshed nor failed.
         """
-        # Reached only from get_data, which skips any device_id that is not in
-        # self.modules - so the module list is a real dict at this point.
+        # get_data skips any device_id that is not in self.modules; the reads
+        # around a write do not, and a missing device raises below.
         assert self.modules is not None
         try:
             data = {

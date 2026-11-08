@@ -547,13 +547,6 @@
     "tests": "status_answer_without_a_status_is_a_failed_read"
   },
   {
-    "label": "web login: posting credentials to a page with no form again",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        if not {\"__VIEWSTATE\", \"__EVENTVALIDATION\"} <= form_data.keys():",
-    "new": "        if False:",
-    "tests": "page_without_a_login_form_gets_no_credentials"
-  },
-  {
     "label": "login: a maintenance message on the api login read as a wrong password",
     "path": "custom_components/wemportal/web_protocol.py",
     "old": "    return any(marker in lowered for marker in API_MAINTENANCE_MESSAGE_MARKERS)",
@@ -780,8 +773,8 @@
   {
     "label": "auth: a refused re-login raised past the post-write read-back",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        except AuthError as exc:\n            return str(exc)",
-    "new": "        except () as exc:\n            return str(exc)",
+    "old": "        except WemPortalError as exc:\n            return str(exc)\n        finally:",
+    "new": "        except () as exc:\n            return str(exc)\n        finally:",
     "tests": "a_refused_relogin_during_a_read_back_is_a_reason_not_a_raise"
   },
   {
@@ -1226,17 +1219,10 @@
     "tests": "module_described_as_empty_is_kept_and_not_asked_again"
   },
   {
-    "label": "startup: re-reading during the first refresh must be noticed",
-    "path": "custom_components/wemportal/discovery.py",
-    "old": "        if not (missing or (stale and self._first_cycle_done)):\n            return",
-    "new": "        if not (missing or stale):\n            return",
-    "tests": "stale_definitions_wait_for_the_second_cycle"
-  },
-  {
     "label": "startup: never re-reading at all must be noticed",
     "path": "custom_components/wemportal/discovery.py",
-    "old": "        if not (missing or (stale and self._first_cycle_done)):",
-    "new": "        if not missing:",
+    "old": "        if not (missing or stale):\n            return",
+    "new": "        if not missing:\n            return",
     "tests": "stale_definitions_are_read_on_a_later_cycle"
   },
   {
@@ -1732,8 +1718,8 @@
   {
     "label": "blocked ip: swallowing every failure as a refusal must be noticed",
     "path": "custom_components/wemportal/config_flow.py",
-    "old": "        raise RateLimited from exc\n    except Exception as exc:",
-    "new": "        raise RateLimited from exc\n    except BaseException as exc:\n        raise RateLimited from exc\n    except Exception as exc:",
+    "old": "        raise RateLimited from exc\n    except PortalMaintenanceError as exc:",
+    "new": "        raise RateLimited from exc\n    except BaseException as exc:\n        raise RateLimited from exc\n    except PortalMaintenanceError as exc:",
     "tests": "an_ordinary_failure_is_still_a_connection_problem"
   },
   {
@@ -1777,34 +1763,6 @@
     "old": "        self.check_cooldown()\n        # And the deadline, for the same reason",
     "new": "        # And the deadline, for the same reason",
     "tests": "a_login_is_not_attempted_during_a_cooldown"
-  },
-  {
-    "label": "login: the web login sends before asking the cooldown",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        self.check_cooldown()\n        # Closed however",
-    "new": "        # Closed however",
-    "tests": "a_login_is_not_attempted_during_a_cooldown"
-  },
-  {
-    "label": "login: a refused login PAGE reported as a network problem",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                if initial_response is not None and initial_response.status_code == 403:\n                    log_refusal(redact_url(login_url), initial_response)\n                    raise self._refused_web_login(\n                        f\"the web login page {redact_url(login_url)}\",\n                        \"Access forbidden while loading the login page.\",\n                    ) from exc\n                raise UnknownAuthError",
-    "new": "                raise UnknownAuthError",
-    "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
-  },
-  {
-    "label": "login: any answered page taken as a wrong password",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                if WEB_LOGIN_FORM_MARKER in response.text:\n                    raise AuthError",
-    "new": "                if True:\n                    raise AuthError",
-    "tests": "a_page_that_is_neither_login_nor_session_is_not_a_wrong_password"
-  },
-  {
-    "label": "login: maintenance checked only before the credentials go out",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                notice = maintenance_blocking(response.text)\n                if notice:\n                    raise PortalMaintenanceError(notice)\n                if WEB_LOGIN_FORM_MARKER in response.text:",
-    "new": "                if WEB_LOGIN_FORM_MARKER in response.text:",
-    "tests": "maintenance_starting_between_the_two_requests_is_recognised"
   },
   {
     "label": "options: a mode change saved without checking its transport",
@@ -1952,27 +1910,6 @@
     "old": "    except ForbiddenError as exc:\n        # Caught BEFORE the broad handler below, which would report it as\n",
     "new": "    except Exception as exc:\n        raise CannotConnect from exc\n    except ForbiddenError as exc:\n        # Caught BEFORE the broad handler below, which would report it as\n",
     "tests": "names_a_blocked_ip_as_one"
-  },
-  {
-    "label": "login: an unreadable page escaping as a parser error",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        except ParserError as exc:",
-    "new": "        except ZeroDivisionError as exc:",
-    "tests": "an_unreadable_login_page_costs_no_credentials"
-  },
-  {
-    "label": "login: a hidden field with a blank name posted anyway",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "'//input[@type=\"hidden\"][string(@name)]'",
-    "new": "'//input[@type=\"hidden\"][@name]'",
-    "tests": "the_login_form_carries_exactly_the_hidden_fields"
-  },
-  {
-    "label": "login: visible form fields read off the page too",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "'//input[@type=\"hidden\"][string(@name)]'",
-    "new": "'//input[string(@name)]'",
-    "tests": "the_login_form_carries_exactly_the_hidden_fields"
   },
   {
     "label": "options: a cleared slot name that comes back from the merge",
@@ -2278,8 +2215,8 @@
   {
     "label": "scrape: the api never handing the scraper its budget",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "                budget=self.remaining_budget,\n",
-    "new": "",
+    "old": "            self.username, self.password, cookie, budget=self.remaining_budget\n",
+    "new": "            self.username, self.password, cookie\n",
     "tests": "the_scrape_is_built_with_the_cycles_budget"
   },
   {
@@ -2334,7 +2271,7 @@
   {
     "label": "expert: an abort after the postback reported as a write that never left",
     "path": "custom_components/wemportal/expert_writer.py",
-    "old": "                raise ExpertOperationAborted(\n                    f\"{aborted}. The value was posted and the portal accepted \"\n                    \"it; only the confirming read did not run.\"\n                ) from aborted",
+    "old": "                raise ExpertOperationAborted(\n                    f\"{aborted}. The value was posted and the portal answered; \"\n                    \"only the confirming read did not run.\"\n                ) from aborted",
     "new": "                raise aborted",
     "tests": "an_abort_during_the_verify_does_not_deny_a_write_that_happened"
   },
@@ -2719,7 +2656,7 @@
   {
     "label": "privacy: the full device id back in a message written to be shared",
     "path": "custom_components/wemportal/utils.py",
-    "old": "    return f\"\u2026{text[-2:]}\" if len(text) > 2 else text",
+    "old": "    return f\"…{text[-2:]}\" if len(text) > 2 else text",
     "new": "    return text",
     "tests": "a_failed_cycle_says_why_it_failed"
   },
@@ -2977,10 +2914,10 @@
   },
   {
     "label": "remove: the scraper device id must be deleted with its entry",
-    "path": "custom_components/wemportal/__init__.py",
-    "old": "    await get_scraper_device_store(hass, config_entry.entry_id).async_remove()",
-    "new": "    pass",
-    "tests": "removing_the_entry_deletes_its_stores"
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "    await store.async_remove()\n",
+    "new": "",
+    "tests": "removing_the_entry_deletes_its_stores or moving_to_another_login_forgets_what_was_cached_for_the_old_one"
   },
   {
     "label": "remove: the account memory must go with its account",
@@ -3781,13 +3718,6 @@
     "tests": "an_announcement_does_not_stop_the_expert_login"
   },
   {
-    "label": "announcement: web_login bailing out before the POST again",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        # a logged-in page means the portal is working.\n",
-    "new": "        # a logged-in page means the portal is working.\n        if maintenance_blocking(initial_response.text):\n            raise PortalMaintenanceError(\"announced\")\n",
-    "tests": "an_announcement_on_the_login_page_does_not_stop_the_web_login"
-  },
-  {
     "label": "ci resolver: one dropped connection failing the run again",
     "path": ".github/scripts/resolve_phcc.py",
     "old": "FETCH_ATTEMPTS = 3",
@@ -3944,13 +3874,6 @@
   {
     "label": "reconfigure: a move keeping the old installation's cache",
     "old": "        if moves_to_another_login and not (\n            await self._forget_the_old_installation(entry)\n        ):\n            return self.async_abort(reason=\"reconfigure_unload_failed\")\n",
-    "new": "",
-    "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
-    "path": "custom_components/wemportal/config_flow.py"
-  },
-  {
-    "label": "reconfigure: the old installation's device id kept after a move",
-    "old": "        await get_scraper_device_store(self.hass, entry.entry_id).async_remove()\n",
     "new": "",
     "tests": "moving_to_another_login_forgets_what_was_cached_for_the_old_one",
     "path": "custom_components/wemportal/config_flow.py"
@@ -4258,8 +4181,8 @@
   },
   {
     "label": "read-back: nothing read back taken as verified",
-    "old": "                return \"the device has nothing to read back\"\n",
-    "new": "                return None\n",
+    "old": "        if outcome is NoRead.NOTHING_TO_READ:\n            return \"the device has nothing to read back\"\n",
+    "new": "        if outcome is NoRead.NOTHING_TO_READ:\n            return None\n",
     "tests": "read_back_that_read_nothing_does_not_verify",
     "path": "custom_components/wemportal/wemportalapi.py"
   },
@@ -4549,13 +4472,6 @@
     "old": "        if self._account_state.note_refused_web_login():\n",
     "new": "        if False:\n",
     "tests": "web_setup_does_not_call_one_turned_away_login_a_block"
-  },
-  {
-    "label": "web login grace: a working setup web login does not end the streak",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                    _LOGGER.debug(\"WEB login successful.\")\n                    self._account_state.refused_web_logins = 0\n",
-    "new": "                    _LOGGER.debug(\"WEB login successful.\")\n",
-    "tests": "setup_web_login_that_worked_starts_the_count_again"
   },
   {
     "label": "web login grace: the login page recognised by a substring again",
@@ -5076,13 +4992,6 @@
     "tests": "every_refusal_says_who_answered"
   },
   {
-    "label": "refusal: the web login form's 403 says nothing of who answered",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "                log_refusal(redact_url(login_url), response)\n",
-    "new": "",
-    "tests": "every_refusal_says_who_answered"
-  },
-  {
     "label": "refusal: a login refused in maintenance wording says nothing of who answered",
     "path": "custom_components/wemportal/transport.py",
     "old": "        if response.status_code == 403:\n            log_refusal(redact_url(API_LOGIN_URL), response)\n",
@@ -5594,13 +5503,6 @@
     "tests": "refused_with_http_200_is_classified_like_any_refusal"
   },
   {
-    "label": "web login: the check leaves its session open again",
-    "path": "custom_components/wemportal/transport.py",
-    "old": "        with closing(requests.Session()) as session:\n",
-    "new": "        for session in (requests.Session(),):\n",
-    "tests": "web_login_check_closes_its_session"
-  },
-  {
     "label": "relogin: a failure kept past the poll it happened in",
     "path": "custom_components/wemportal/wemportalapi.py",
     "old": "            self._relogin_failure = None\n            self._api_lock.release()",
@@ -5715,8 +5617,8 @@
   {
     "label": "web login: a login let through leaves the refusal streak standing",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        self._account_state.refused_web_logins = 0\n\n        # Wait a moment\n",
-    "new": "\n        # Wait a moment\n",
+    "old": "        self._account_state.refused_web_logins = 0",
+    "new": "        pass",
     "tests": "login_that_went_through_ends_the_refusal_streak"
   },
   {
@@ -6460,5 +6362,369 @@
     "old": "        not takes_a_unit(raw)\n        and stored.native_value is None\n",
     "new": "        stored.native_value is None\n",
     "tests": "no_value_yet_gets_its_unit_back"
+  },
+  {
+    "label": "fault sensor: a single long fault claims others that are not there",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    marker = _MORE.format(others) if others else \"\"\n",
+    "new": "    marker = _MORE.format(others)\n",
+    "tests": "claims_no_others"
+  },
+  {
+    "label": "options: the module menu index cannot be cleared",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                    description={\n                        \"suggested_value\": prefill(CONF_EXPERT_MODULE_ARG, \"\")\n                    },\n",
+    "new": "                    default=prefill(CONF_EXPERT_MODULE_ARG, \"\"),\n",
+    "tests": "cleared_module_menu_index"
+  },
+  {
+    "label": "read-back: a device the discovery left out raised past the write",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        except WemPortalError as exc:\n            return str(exc)\n        finally:",
+    "new": "        except AuthError as exc:\n            return str(exc)\n        finally:",
+    "tests": "device_without_modules_is_a_reason_not_a_raise"
+  },
+  {
+    "label": "read-back: a held lock raised past the write",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        except ApiBusyError as exc:\n            return str(exc)\n        try:",
+    "new": "        except ApiBusyError:\n            raise\n        try:",
+    "tests": "held_lock_is_a_reason_not_a_raise"
+  },
+  {
+    "label": "migration: an entity with a history of its own is given up",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "    if current is not None and current.created_at < made_before:\n",
+    "new": "    if False:\n",
+    "tests": "history_of_its_own_is_not_given_up"
+  },
+  {
+    "label": "migration: an entity made during this setup is kept beside the old one",
+    "path": "custom_components/wemportal/migration.py",
+    "old": "    if current is not None and current.created_at < made_before:\n",
+    "new": "    if current is not None:\n",
+    "tests": "made_during_this_setup_is_still_given_up"
+  },
+  {
+    "label": "setup: a corrupt scraper device id read as a fresh install",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "    return glob.glob(f\"{glob.escape(store.path)}.corrupt.*\")\n",
+    "new": "    return glob.glob(f\"{glob.escape(store.path)}.never.*\")\n",
+    "tests": "corrupt_scraper_device_id_stops_setup"
+  },
+  {
+    "label": "write: companions sent as the last poll saw them",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "                together_with = self._companions_read_again(\n                    device_id, (module_index, module_type), together_with\n                )\n",
+    "new": "                together_with = together_with()\n",
+    "tests": "companion_changed_in_the_app"
+  },
+  {
+    "label": "write: companions that could not be read again sent anyway",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        failure = self._reason_the_read_failed(device_id)\n        if failure is not None:\n            raise WemPortalError(",
+    "new": "        failure = self._reason_the_read_failed(device_id)\n        if False:\n            raise WemPortalError(",
+    "tests": "cannot_be_read_again_stops_the_write"
+  },
+  {
+    "label": "intervals: a stored interval too large for a timer",
+    "path": "custom_components/wemportal/utils.py",
+    "old": "    return min(value, MAX_INTERVAL_SECONDS)\n",
+    "new": "    return value\n",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "intervals: an expert poll interval too large for a timer",
+    "path": "custom_components/wemportal/expert_controller.py",
+    "old": "    return min(interval_min, MAX_INTERVAL_SECONDS // 60)\n",
+    "new": "    return interval_min\n",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "setup flow: maintenance reported as a connection problem",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "    except PortalMaintenanceError as exc:\n        raise PortalMaintenance from exc\n",
+    "new": "",
+    "tests": "maintenance_as_such"
+  },
+  {
+    "label": "transport: a session refused after its login retried by every request",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        self._keep_a_session_refused_after_its_login(is_session_error, wem_error)\n",
+    "new": "",
+    "tests": "costs_one_login_per_poll"
+  },
+  {
+    "label": "transport: one request's login carried over to the next",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        self._logged_in_again_in_this_call = False\n        attempts =",
+    "new": "        attempts =",
+    "tests": "does_not_condemn_a_later_one"
+  },
+  {
+    "label": "transport: a refused session outside a poll stops the next request",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        in_a_poll = self.remaining_budget() is not None\n",
+    "new": "        in_a_poll = True\n",
+    "tests": "tried_again_outside_a_poll"
+  },
+  {
+    "label": "login: an answer that is no object crashes",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            if response_data is None:\n",
+    "new": "            if False:\n",
+    "tests": "json_that_is_no_object"
+  },
+  {
+    "label": "web login: the check is its own client again",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        scraper = self._new_scraper()\n        try:\n            scraper.log_in()\n",
+    "new": "        scraper = self._new_scraper()\n        scraper.session = __import__('requests').Session()\n        try:\n            scraper.log_in()\n",
+    "tests": "logs_in_the_way_the_scrape_does"
+  },
+  {
+    "label": "web login: the check sends before asking the cooldown",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        self.check_cooldown()\n        scraper = self._new_scraper()\n",
+    "new": "        scraper = self._new_scraper()\n",
+    "tests": "a_login_is_not_attempted_during_a_cooldown"
+  },
+  {
+    "label": "web login: the check leaves its session open",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "        finally:\n            scraper.close()\n",
+    "new": "        finally:\n            pass\n",
+    "tests": "web_login_check_closes_its_session"
+  },
+  {
+    "label": "web login: a refused check never reaches the block",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            raise self._refused_web_login(\"the web login\", str(exc)) from exc\n",
+    "new": "            raise\n",
+    "tests": "a_forbidden_login_page_is_a_refusal_not_a_network_problem"
+  },
+  {
+    "label": "web login: a working check does not end the refusal streak",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        self._account_state.refused_web_logins = 0\n",
+    "new": "",
+    "tests": "setup_web_login_that_worked_starts_the_count_again"
+  },
+  {
+    "label": "login: an unreadable page escaping as a parser error",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        except ParserError as exc:\n",
+    "new": "        except ZeroDivisionError as exc:\n",
+    "tests": "an_unreadable_login_page_costs_no_credentials"
+  },
+  {
+    "label": "start: the first cycle spends a burst inside the setup again",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            self.heavy_fetch_turns.hold_for_setup()\n",
+    "new": "            pass\n",
+    "tests": "only_the_first_cycle_of_an_api_is_held or stale_definitions_wait_for_the_second_cycle"
+  },
+  {
+    "label": "start: every cycle is held like the first",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if not self._first_cycle_done:\n            # Awaited by Home Assistant's setup",
+    "new": "        if True:\n            # Awaited by Home Assistant's setup",
+    "tests": "only_the_first_cycle_of_an_api_is_held"
+  },
+  {
+    "label": "start: no follow-up is ever started",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "        coordinator.async_start_heavy_follow_ups()\n",
+    "new": "",
+    "tests": "one_kind_waiting_needs_one_follow_up"
+  },
+  {
+    "label": "start: a follow-up runs with nothing waiting",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            self.api.heavy_fetch_turns.waiting\n            and self.last_update_success\n",
+    "new": "            self.last_update_success\n",
+    "tests": "nothing_waiting_costs_no_follow_up"
+  },
+  {
+    "label": "start: follow-ups run for as long as a kind waits",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            self._heavy_follow_ups_left -= 1\n",
+    "new": "",
+    "tests": "keeps_waiting"
+  },
+  {
+    "label": "start: a follow-up inside the interval reads nothing",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        self.api.read_api_on_the_next_tick()\n",
+    "new": "",
+    "tests": "reads_the_api_inside_the_interval"
+  },
+  {
+    "label": "start: only one follow-up runs",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        await self.async_refresh()\n        self._async_plan_heavy_follow_up()\n",
+    "new": "        await self.async_refresh()\n",
+    "tests": "two_kinds_waiting"
+  },
+  {
+    "label": "start: an unload leaves the follow-up running",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        self.config_entry.async_on_unload(self._async_stop_heavy_follow_ups)\n",
+    "new": "",
+    "tests": "unload_takes_the_follow_up"
+  },
+  {
+    "label": "start: asking for the read does not lift the interval",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        self._last_api_read = None\n\n    def _count_down_scrape_backoff",
+    "new": "        pass\n\n    def _count_down_scrape_backoff",
+    "tests": "api_read_is_due_after_being_asked_for"
+  },
+  {
+    "label": "start: a held cycle hands out its turn",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        self._claimed = _TURN_HELD_FOR_SETUP\n",
+    "new": "        pass\n",
+    "tests": "held_for_the_setup"
+  },
+  {
+    "label": "write: a read without the module sends the cached companion",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if missing:\n            raise WemPortalError(\n                \"The other values",
+    "new": "        if False:\n            raise WemPortalError(\n                \"The other values",
+    "tests": "a_read_without_the_module_sends_no_write"
+  },
+  {
+    "label": "write: nothing to read shown as the enum",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        if outcome is NoRead.NOTHING_TO_READ:\n            return \"the device has nothing to read back\"\n",
+    "new": "",
+    "tests": "nothing_to_read_is_said_in_words"
+  },
+  {
+    "label": "setup: a corrupt copy shuts an api entry out for good",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    uses_the_id = entry.options.get(CONF_MODE, DEFAULT_MODE) != \"api\"\n",
+    "new": "    uses_the_id = True\n",
+    "tests": "corrupt_scraper_device_id_does_not_stop_an_api_entry"
+  },
+  {
+    "label": "setup: a corrupt copy is ignored in every mode",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    uses_the_id = entry.options.get(CONF_MODE, DEFAULT_MODE) != \"api\"\n",
+    "new": "    uses_the_id = False\n",
+    "tests": "corrupt_scraper_device_id_stops_setup or unreadable_scraper_device_id_stops_setup"
+  },
+  {
+    "label": "store: removing the id leaves its corrupt copies",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            await hass.async_add_executor_job(os.remove, copy)\n",
+    "new": "            pass\n",
+    "tests": "removing_an_entry_takes_the_corrupt_copy_with_it"
+  },
+  {
+    "label": "store: an entry removed without its corrupt copy",
+    "path": "custom_components/wemportal/__init__.py",
+    "old": "    await async_remove_scraper_device_store(hass, config_entry.entry_id)\n",
+    "new": "    await get_scraper_device_store(hass, config_entry.entry_id).async_remove()\n",
+    "tests": "removing_an_entry_takes_the_corrupt_copy_with_it"
+  },
+  {
+    "label": "store: a new login keeps the old login's corrupt copy",
+    "path": "custom_components/wemportal/config_flow.py",
+    "old": "        await async_remove_scraper_device_store(self.hass, entry.entry_id)\n",
+    "new": "",
+    "tests": "reconfigure_to_a_new_login_takes_the_corrupt_copy_with_it"
+  },
+  {
+    "label": "start: a failed follow-up plans the next",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            and self.last_update_success\n",
+    "new": "",
+    "tests": "a_failed_follow_up_plans_no_other"
+  },
+  {
+    "label": "start: a pause does not stop the follow-ups",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            and not self.api.is_rate_limited()\n",
+    "new": "",
+    "tests": "a_pause_stops_the_follow_ups"
+  },
+  {
+    "label": "start: a follow-up nobody owes any more still runs",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        self._cancel_heavy_follow_up = None\n        if self._a_heavy_follow_up_is_worthwhile():\n",
+    "new": "        self._cancel_heavy_follow_up = None\n        if True:\n",
+    "tests": "a_regular_cycle_that_served_the_kinds_cancels_the_follow_up"
+  },
+  {
+    "label": "start: the follow-up timer outlives Home Assistant's stop",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "HassJob(self._async_launch_heavy_follow_up, cancel_on_shutdown=True)",
+    "new": "HassJob(self._async_launch_heavy_follow_up)",
+    "tests": "a_follow_up_runs_like_the_regular_tick"
+  },
+  {
+    "label": "start: a stopped follow-up is planned again",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "    def _async_stop_heavy_follow_ups(self) -> None:\n        self._heavy_follow_ups_left = 0\n",
+    "new": "    def _async_stop_heavy_follow_ups(self) -> None:\n",
+    "tests": "a_stopped_follow_up_is_not_planned_again"
+  },
+  {
+    "label": "form: the web interval keeps a value above the ceiling",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS, max=MAX_INTERVAL_SECONDS)",
+    "new": "vol.Clamp(min=MIN_SCAN_INTERVAL_SECONDS)",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "form: the api interval keeps a value above the ceiling",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                        max=MAX_INTERVAL_SECONDS,\n",
+    "new": "",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "form: the expert interval keeps a value above the ceiling",
+    "path": "custom_components/wemportal/options_flow.py",
+    "old": "                        max=MAX_INTERVAL_SECONDS // 60,\n",
+    "new": "",
+    "tests": "too_large_for_a_timer"
+  },
+  {
+    "label": "login: a field of the form dropped from the post",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "            \"__EVENTVALIDATION\": eventval,\n",
+    "new": "",
+    "tests": "logs_in_the_way_the_scrape_does"
+  },
+  {
+    "label": "login: credentials posted to a page with no form",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        if not viewstate_elem or not eventval_elem:\n",
+    "new": "        if False:\n",
+    "tests": "page_without_a_login_form_gets_no_credentials"
+  },
+  {
+    "label": "web login: a refusal behind the login page starts no pause",
+    "path": "custom_components/wemportal/transport.py",
+    "old": "            self._activate_cooldown(\"the web login\")\n            raise\n",
+    "new": "            raise\n",
+    "tests": "a_refusal_behind_the_login_page_starts_the_pause_at_once"
+  },
+  {
+    "label": "store: a copy that cannot be deleted stops the removal",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "        except OSError as exc:\n",
+    "new": "        except ZeroDivisionError as exc:\n",
+    "tests": "corrupt_copy_that_cannot_be_deleted"
+  },
+  {
+    "label": "start: a follow-up starts on an entry going away",
+    "path": "custom_components/wemportal/coordinator.py",
+    "old": "            and self._owns_its_entry()\n        )\n",
+    "new": "        )\n",
+    "tests": "does_not_start_on_an_entry_going_away"
   }
 ]

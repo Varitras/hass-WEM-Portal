@@ -131,7 +131,8 @@ class WemPortalDate(WemPortalEntity, DateEntity):
         turned two dates into switches. So instead of deciding what the
         portal will accept, this asks it afterwards.
 
-        Costs one refresh-and-read of this device. Dates are changed by hand
+        Costs two refresh-and-reads of this device, one for the companions
+        and one for this answer. Dates are changed by hand
         a few times a year, not once a cycle, and the alternative is
         reporting a setting that did not happen.
         """

@@ -1,12 +1,12 @@
 """The web login's maintenance protocol, with no idea of the domain.
 
-The maintenance marker and how a downtime page is recognised are the same
-question for three callers - the mobile transport's web_login, the scraper and
-the expert client - and none of it knows what a device, a module or a reading
-is. It lived in utils.py, which DOES pull in the sensor and reading models, so
-the transport half imported the whole domain transitively just to read a
-downtime page. Here it stands on its own; tests/test_transport_boundary pins
-that the transport reaches for this rather than utils.
+The maintenance wording and how a downtime page is recognised are the same
+question for the mobile transport's login, the scraper and the expert client,
+and none of it knows what a device, a module or a reading is. It lived in
+utils.py, which DOES pull in the sensor and reading models, so the transport
+half imported the whole domain transitively. Here it stands on its own;
+tests/test_transport_boundary pins that the transport reaches for this rather
+than utils.
 """
 
 from typing import Final
@@ -85,7 +85,7 @@ def message_reports_maintenance(message: str | None) -> bool:
 def maintenance_blocking(html_text: str) -> str | None:
     """The maintenance notice, if it is why this page is not a session.
 
-    The one rule for what the marker means, for all three logins. It explains
+    The one rule for what the marker means, for both web logins. It explains
     a failure and never overrides a success: a logged-in page with the notice
     on it is an announcement - the portal is working - while a page that is
     not logged in and carries it is the portal refusing because of downtime.

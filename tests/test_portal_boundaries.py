@@ -226,11 +226,10 @@ HTML_PARSE_BOUNDARIES = {
     },
     "scraper.py": {
         "_load_expert_page",
-        "scrape",
+        "log_in",
         "_report_empty_page",
         "parse_expert_page",
     },
-    "transport.py": {"web_login"},
     "web_protocol.py": {"maintenance_notice"},
 }
 

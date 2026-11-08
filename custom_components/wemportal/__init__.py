@@ -33,6 +33,7 @@ from .const import (
     CONF_SCAN_INTERVAL_API,
     DEFAULT_CONF_SCAN_INTERVAL_API_VALUE,
     DEFAULT_CONF_SCAN_INTERVAL_VALUE,
+    DEFAULT_MODE,
     DOMAIN,
     EXPERT_SLOT_COUNT,
     MIN_SCAN_INTERVAL_API_SECONDS,
@@ -42,6 +43,8 @@ from .const import (
 from .coordinator import (
     WemPortalDataUpdateCoordinator,
     another_entry_shares_this_account,
+    async_remove_scraper_device_store,
+    corrupt_scraper_device_copies,
     forget_account_state_if_last_entry,
     forget_auth_failures,
     get_modules_store,
@@ -126,8 +129,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
             "No devices found for %s. Starting first time initialization.", DOMAIN
         )
     else:
-        # A count, not the names: the hub is named after the entry's title,
-        # which is the login, and this line lands in logs people share.
+        # A count, not the names: this line lands in logs people share, and
+        # a device's name is whatever its owner called it in the portal.
         _LOGGER.info("Found %d devices for %s", len(devices), DOMAIN)
 
     # Load any previously persisted device/module/parameter metadata, so we
@@ -158,28 +161,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
             len(cached_modules),
         )
 
-    # Load the stable scraper device id (decided once, then persisted) so
-    # scraped sensors keep a constant device id - and history - across mode
-    # switches. None on a fresh install / first run after upgrade: the api
-    # then decides it deterministically on the first scrape (preferring the
-    # real API device id, else the placeholder) and the coordinator persists
-    # it. Existing installs therefore lock in whatever id they already use,
-    # so nobody loses history at upgrade.
-    try:
-        scraper_device_id = await get_scraper_device_store(
-            hass, entry.entry_id
-        ).async_load()
-    except Exception as exc:  # noqa: BLE001
-        # Not swallowed. Carrying on with None does not mean "no id yet" - it
-        # means the api decides one again, and where that decision lands
-        # somewhere else, every scraped sensor gets a new unique_id and its
-        # history is orphaned. Refusing to set up is recoverable and Home
-        # Assistant retries on its own; losing the history is not.
-        raise ConfigEntryNotReady(
-            "The stored scraper device id could not be read. Setting up "
-            "without it would re-decide the id and move every scraped "
-            f"sensor to a new one, so this account is not loaded: {exc}"
-        ) from exc
+    scraper_device_id = await _load_scraper_device_id(hass, entry)
 
     # Creating API object
     api = WemPortalApi(
@@ -196,7 +178,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
 
     try:
         await coordinator.async_config_entry_first_refresh()
-        _LOGGER.info("Migrating entity names for wemportal")
+        _LOGGER.info("Migrating entity unique ids for wemportal")
         try:
             migrate_unique_ids(hass, entry, coordinator)
         except Exception as exc:  # noqa: BLE001
@@ -272,6 +254,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         if entry.options.get(CONF_EXPERT_WRITE, False):
             await _async_register_expert_service(hass)
             entry.runtime_data.expert.setup_auto_poll(hass, entry)
+        coordinator.async_start_heavy_follow_ups()
     except BaseException:
         # BaseException for the same reason as the block above: a setup task
         # cancelled on shutdown or on the setup timeout ends without an
@@ -321,6 +304,55 @@ async def async_setup_entry(hass: HomeAssistant, entry: WemPortalConfigEntry) ->
         raise
 
     return True
+
+
+async def _load_scraper_device_id(
+    hass: HomeAssistant, entry: WemPortalConfigEntry
+) -> str | None:
+    """The stable scraper device id, decided once and then persisted, so
+    scraped sensors keep a constant device id - and history - across mode
+    switches.
+
+    None on a fresh install / first run after upgrade: the api then decides
+    it deterministically on the first scrape (preferring the real API device
+    id, else the placeholder) and the coordinator persists it. Existing
+    installs therefore lock in whatever id they already use.
+
+    Every other None is refused. Carrying on with None does not mean "no id
+    yet" - it means the api decides one again, and where that decision lands
+    somewhere else, every scraped sensor gets a new unique_id and its history
+    is orphaned. Refusing to set up is recoverable and Home Assistant retries
+    on its own; losing the history is not. A file Home Assistant could not
+    decode is one of these: it is moved aside as `.corrupt.<time>` and
+    loads as None, with a repair issue that says to restore a backup.
+
+    `api` mode is let through: it neither reads the id nor saves a new one,
+    so a file from an earlier mode would shut it out for good. Moving to a
+    scraping mode reloads, and this asks again.
+    """
+    store = get_scraper_device_store(hass, entry.entry_id)
+    uses_the_id = entry.options.get(CONF_MODE, DEFAULT_MODE) != "api"
+    try:
+        scraper_device_id: str | None = await store.async_load()
+    except Exception as exc:  # noqa: BLE001
+        if not uses_the_id:
+            return None
+        raise ConfigEntryNotReady(
+            "The stored scraper device id could not be read. Setting up "
+            "without it would re-decide the id and move every scraped "
+            f"sensor to a new one, so this account is not loaded: {exc}"
+        ) from exc
+    if scraper_device_id is not None:
+        return scraper_device_id
+    if uses_the_id and await hass.async_add_executor_job(
+        corrupt_scraper_device_copies, store
+    ):
+        raise ConfigEntryNotReady(
+            "The stored scraper device id was corrupt and has been moved aside. "
+            "Restore a backup, or delete the .corrupt file to let the id be "
+            "decided again, which moves every scraped sensor to a new one."
+        )
+    return None
 
 
 def _async_release_expert_service(
@@ -541,7 +573,7 @@ async def _async_register_expert_service(hass: HomeAssistant) -> None:
         except ExpertOperationAborted as exc:
             # The configuration went away mid-write. Usually nothing reached
             # the portal; stopped during the confirming read, the value was
-            # already accepted, and the message says so. Either way the
+            # already posted, and the message says so. Either way the
             # caller is still waiting on this call, so it has to be told, in
             # the kind of error Home Assistant surfaces.
             # It used to arrive here as an ordinary Exception and be wrapped
@@ -811,6 +843,6 @@ async def async_remove_entry(
     in this installation.
     """
     await get_modules_store(hass, config_entry.entry_id).async_remove()
-    await get_scraper_device_store(hass, config_entry.entry_id).async_remove()
+    await async_remove_scraper_device_store(hass, config_entry.entry_id)
     _async_delete_entry_issues(hass, config_entry.entry_id)
     forget_account_state_if_last_entry(hass, config_entry)

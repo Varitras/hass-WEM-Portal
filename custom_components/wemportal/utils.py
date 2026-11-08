@@ -25,6 +25,7 @@ from .const import (
     BOOLEAN_OFF_STRINGS,
     BOOLEAN_ON_STRINGS,
     DOMAIN,
+    MAX_INTERVAL_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,7 +49,9 @@ DEVICE_TYPE_NAMES: Final = {
 }
 
 # Scraper Constants
-MISSING_DATA_STRINGS: Final = ["label ist null", "label ist null "]
+# Compared after strip() and lower(), so one spelling covers the trailing
+# space the portal sometimes sends.
+MISSING_DATA_STRINGS: Final = frozenset({"label ist null"})
 # What the portal shows where nothing is active: a setpoint while there is no
 # demand, a fault field without a fault. Read as missing data, every such
 # sensor stood at unknown whenever the heat pump was idle. Kept as this text
@@ -60,7 +63,8 @@ NOTHING_ACTIVE: Final = "--"
 def clamped_scan_interval(
     options: Mapping[str, Any], key: str, default: int, minimum: int
 ) -> int:
-    """Read a stored scan interval and hold it to its floor.
+    """Read a stored scan interval and hold it between its floor and the
+    ceiling all intervals share.
 
     The floors were only ever enforced by the options-flow schema, which
     validates what the user types NOW. Options stored by an older release -
@@ -93,7 +97,7 @@ def clamped_scan_interval(
             minimum,
         )
         return minimum
-    return value
+    return min(value, MAX_INTERVAL_SECONDS)
 
 
 def device_identifier(entry_id: str, device_id: str) -> tuple[str, str]:
@@ -312,9 +316,9 @@ def sanitize_value(value_str: Any) -> Any:
         "--" among them, see NOTHING_ACTIVE.
 
     Note on boolean handling: "Ein"/"On"/"Aus"/"Off" are ALWAYS mapped to
-    1/0 here, never to text, regardless of `unit`. An earlier version
-    of this function returned text ("On"/"Off") when no unit was present,
-    to make plain status sensors read more naturally - but the same raw
+    1/0 here, never to text, whatever unit the reading has. An earlier
+    version of this function returned text ("On"/"Off") when no unit was
+    present, to make plain status sensors read more naturally - but the same raw
     value/name can also belong to a genuinely numeric sensor (e.g. a
     "power" sensor reading "Aus" while idle, with device_class="power"
     and a real unit like "kW" that simply isn't attached to *this*
@@ -335,19 +339,14 @@ def sanitize_value(value_str: Any) -> Any:
     # reaches a numeric sensor and crashes entity setup with
     # "could not convert string to float: ''". Return None (HA shows the
     # sensor as unknown) rather than a fabricated 0.0 - a room sensor
-    # briefly without a reading should not report 0 degrees. This is the
-    # same honesty the energy/power branch below already applies.
+    # briefly without a reading should not report 0 degrees.
     if value_lower == "":
         return None
 
-    if value_lower in [missing.strip() for missing in MISSING_DATA_STRINGS]:
-        # Missing data is missing for EVERY sensor, not just energy/power:
-        # return None (HA shows the sensor as unknown) instead of a
-        # fabricated 0.0. Previously non-energy/power sensors fell through to
-        # 0.0, so a momentarily missing temperature read as 0 C and could
-        # fire automations. This matches the empty-string branch above and
-        # the project's "None over fabrication" principle (energy/power
-        # already returned None; now the same honesty applies to all).
+    if value_lower in MISSING_DATA_STRINGS:
+        # Missing for every sensor, not only energy and power ones: a
+        # fabricated 0.0 once made a momentarily missing temperature read
+        # 0 C and fire automations.
         return None
 
     if value_lower in BOOLEAN_OFF_STRINGS:
@@ -644,7 +643,7 @@ def latest_statistics_entry(
     yesterday's number - and the caller then reached past this whole
     response for its own last stored value, which is older still. Only when
     NO entry has a value is that fallback the right one, and this returns
-    the newest dateless entry then, so the caller still sees the null.
+    the newest dated entry then, so the caller still sees the null.
     """
     if not values:
         return None
@@ -711,7 +710,8 @@ def error_state_and_detail(errors: Iterable[Any] | None) -> tuple[str, list[str]
     if kept:
         return ", ".join(kept) + _MORE.format(len(messages) - len(kept)), messages
 
-    marker = _MORE.format(len(messages) - 1)
+    others = len(messages) - 1
+    marker = _MORE.format(others) if others else ""
     room = MAX_LENGTH_STATE_STATE - len(marker) - len("...")
     return messages[0][:room] + "..." + marker, messages
 

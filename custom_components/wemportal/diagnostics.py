@@ -22,8 +22,10 @@ from .const import (
 )
 from .models import Reading, WemPortalConfigEntry
 
-# Keys whose values identify the installation or the account. "cookie" is the
-# scraped session (stored as a data row); "DeviceID" appears inside API rows.
+# Keys whose values identify the installation or the account. "cookie" and
+# "DeviceID" reach no row today - the scraper's cookie is taken out before the
+# rows are stored, and a Reading has no device id field - and stay listed as a
+# safety net for the day one does.
 #
 # CONF_EXPERT_MODULE_LIST is the cache of what a discovery run found, and
 # every entry carries an entityvalue under the key "value" - far too generic
@@ -77,8 +79,9 @@ async def async_get_config_entry_diagnostics(
     coordinator = getattr(data, "coordinator", None)
     api = getattr(data, "api", None)
 
-    # The coordinator snapshot rather than api.data: it is what the entities
-    # read, so the report shows the same world the dashboard does.
+    # coordinator.data, because it is what the entities read, so the report
+    # shows the same world the dashboard does. It is the same dict as
+    # api.data, not a copy taken at the end of the cycle.
     current = getattr(coordinator, "data", None) or {}
     modules = (getattr(api, "modules", None) or {}) if api is not None else {}
     aliases = _device_aliases(current.keys() | modules.keys())

@@ -37,7 +37,7 @@ async def async_setup_entry(
 
 
 class WemPortalSelect(WemPortalEntity, SelectEntity):
-    """Representation of a WEM Portal Sensor."""
+    """Representation of a WEM Portal select."""
 
     def _match_boolean_synonym(self, value):
         """Match common German/English on-off synonyms across languages.
@@ -138,7 +138,7 @@ class WemPortalSelect(WemPortalEntity, SelectEntity):
     def __init__(
         self, coordinator, config_entry: ConfigEntry, device_id, _unique_id, entity_data
     ) -> None:
-        """Initialize the sensor."""
+        """Initialize the select."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
         self._options: list[Any] = entity_data.options or []
         self._options_names: list[Any] = entity_data.options_names or []

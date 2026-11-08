@@ -5,15 +5,19 @@ from __future__ import annotations
 import logging
 
 import asyncio
+import glob
+import os
+from collections.abc import Callable
 from datetime import timedelta
 from time import monotonic
-from typing import Any
+from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_USERNAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HassJob, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
@@ -95,7 +99,7 @@ RATE_LIMIT_ISSUE = "rate_limited"
 # refusing this network.
 WEB_SCRAPE_ISSUE = "web_scrape_failing"
 
-# Consecutive auth failures per config entry, kept OUTSIDE the coordinator.
+# Consecutive auth failures per account, kept OUTSIDE the coordinator.
 #
 # A failed first refresh makes Home Assistant retry the whole setup, and
 # every retry builds a fresh coordinator - so a counter living on the
@@ -103,7 +107,8 @@ WEB_SCRAPE_ISSUE = "web_scrape_failing"
 # was unreachable during startup. A wrong password (changed while Home
 # Assistant was off) then left the entry retrying forever instead of asking
 # for new credentials. The account state outlives those retries on purpose;
-# see models.AccountState. Cleared on success and on unload.
+# see models.AccountState. Cleared where _reset_auth_failures is called, by a
+# new login from the reauth or reconfigure dialog, and on unload.
 
 
 def forget_auth_failures(username: str | None) -> None:
@@ -176,12 +181,95 @@ def get_scraper_device_store(hass: HomeAssistant, entry_id: str) -> Store[Any]:
     )
 
 
+def corrupt_scraper_device_copies(store: Store[Any]) -> list[str]:
+    """What Home Assistant moved aside as `<file>.corrupt.<time>` because it
+    could not decode it. Reads the disk: for the executor."""
+    return glob.glob(f"{glob.escape(store.path)}.corrupt.*")
+
+
+async def async_remove_scraper_device_store(hass: HomeAssistant, entry_id: str) -> None:
+    """Drop the stored id for good, corrupt copies included: left behind, one
+    refuses the setup of an entry that is meant to decide its id afresh."""
+    store = get_scraper_device_store(hass, entry_id)
+    await store.async_remove()
+    copies = await hass.async_add_executor_job(corrupt_scraper_device_copies, store)
+    for copy in copies:
+        try:
+            await hass.async_add_executor_job(os.remove, copy)
+        except OSError as exc:
+            # What follows a removal still has to run. A copy left behind
+            # refuses the next setup of a scraping entry, which says why.
+            _LOGGER.warning("A corrupt id file could not be deleted: %s", exc)
+
+
+# The first cycle runs inside Home Assistant's setup and spends no burst, so
+# what it turned away follows this long after, one kind per follow-up. Two
+# cover programmes and statistics; a daily parameter re-read landing on the
+# same start asks first, and the statistics then wait for a regular cycle.
+HEAVY_FOLLOW_UP_DELAY_SECONDS: Final = 60
+HEAVY_FOLLOW_UPS: Final = 2
+
+
 class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
     """DataUpdateCoordinator for wemportal component"""
 
     # Always set (passed in __init__); narrows the base's Optional so the
     # entry_id/state accesses below do not each need a None check.
     config_entry: ConfigEntry
+    _heavy_follow_ups_left = 0
+    _cancel_heavy_follow_up: Callable[[], None] | None = None
+
+    @callback
+    def async_start_heavy_follow_ups(self) -> None:
+        """Fetch what the first cycle turned away, once the setup is done."""
+        self._heavy_follow_ups_left = HEAVY_FOLLOW_UPS
+        self.config_entry.async_on_unload(self._async_stop_heavy_follow_ups)
+        self._async_plan_heavy_follow_up()
+
+    @callback
+    def _async_stop_heavy_follow_ups(self) -> None:
+        self._heavy_follow_ups_left = 0
+        if self._cancel_heavy_follow_up is not None:
+            self._cancel_heavy_follow_up()
+            self._cancel_heavy_follow_up = None
+
+    def _a_heavy_follow_up_is_worthwhile(self) -> bool:
+        """Something is owed, and the portal is not in trouble: a follow-up is
+        a request of its own, and an error state must not add traffic. Sixty
+        seconds after a failure it also counted as the second in a row."""
+        return (
+            self.api.heavy_fetch_turns.waiting
+            and self.last_update_success
+            and not self.api.is_rate_limited()
+            and self._owns_its_entry()
+        )
+
+    @callback
+    def _async_plan_heavy_follow_up(self) -> None:
+        if self._heavy_follow_ups_left and self._a_heavy_follow_up_is_worthwhile():
+            self._heavy_follow_ups_left -= 1
+            self._cancel_heavy_follow_up = async_call_later(
+                self.hass,
+                HEAVY_FOLLOW_UP_DELAY_SECONDS,
+                HassJob(self._async_launch_heavy_follow_up, cancel_on_shutdown=True),
+            )
+
+    @callback
+    def _async_launch_heavy_follow_up(self, _now: Any) -> None:
+        """In the background, like the regular tick: Home Assistant waits for
+        its plain tasks at the end of a start, the wait this is here to spare.
+
+        Asked again, because a regular tick may have come first."""
+        self._cancel_heavy_follow_up = None
+        if self._a_heavy_follow_up_is_worthwhile():
+            self.config_entry.async_create_background_task(
+                self.hass, self._async_heavy_follow_up(), f"{DOMAIN} heavy follow-up"
+            )
+
+    async def _async_heavy_follow_up(self) -> None:
+        self.api.read_api_on_the_next_tick()
+        await self.async_refresh()
+        self._async_plan_heavy_follow_up()
 
     def __init__(
         self,
@@ -212,7 +300,7 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         self._reported_failures: dict[str, str] = {}
         # Consecutive AuthError counter, separate from num_failed: only
         # after AUTH_ERROR_ESCALATION_THRESHOLD auth failures IN A ROW do we
-        # escalate to ConfigEntryAuthFailed (reauth). Reset on any success.
+        # escalate to ConfigEntryAuthFailed (reauth). See _reset_auth_failures.
         # Seeded from the account state: a failed setup triggers the very
         # reload that would otherwise reset a counter living here.
         self._account_state = account_state(config_entry.data.get(CONF_USERNAME))
@@ -528,7 +616,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
     def _reset_auth_failures(self) -> None:
         """Clear the consecutive-auth-failure count.
 
-        Called on success AND on every failure that is not an auth failure.
+        Called on success AND on the failures that say something about the
+        portal rather than the login. A cycle that was busy, read nothing or
+        was turned away by the firewall leaves it alone.
         The threshold is documented as CONSECUTIVE, but the counter only ever
         went up: a timeout, a maintenance window or a 403 in between left it
         standing, so auth failures spread over hours - a portal that hands
@@ -582,8 +672,8 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         shows, and telling every listener about each of them would write the
         same state again on every cycle of an outage.
 
-        One method for all six raising paths, because each of them is a
-        failed cycle and a seventh added later would otherwise quietly skip
+        One method for every raising path, because each of them is a
+        failed cycle and one added later would otherwise quietly skip
         the notification - which is how this asymmetry got here in the first
         place.
         """
@@ -631,10 +721,9 @@ class WemPortalDataUpdateCoordinator(DataUpdateCoordinator):
         around it without moving the error handling one level in."""
         async with asyncio.timeout(DEFAULT_TIMEOUT):
             try:
-                # In `finally` below rather than per branch: every one of the
-                # seven exits is a moment where the backoff either holds or
-                # does not, and a branch added later would otherwise silently
-                # skip the report.
+                # In `finally` below rather than per branch: every exit is a
+                # moment where the backoff either holds or does not, and a
+                # branch added later would otherwise silently skip the report.
                 fetched = await self._fetch(device_filter)
                 if self.api.last_cycle_read_nothing:
                     return self._a_tick_that_read_nothing(fetched)

@@ -40,7 +40,7 @@ async def async_setup_entry(
 
 
 class WemPortalSwitch(WemPortalEntity, SwitchEntity):
-    """Representation of a WEM Portal Sensor."""
+    """Representation of a WEM Portal switch."""
 
     def __init__(
         self,
@@ -50,7 +50,7 @@ class WemPortalSwitch(WemPortalEntity, SwitchEntity):
         _unique_id,
         entity_data,
     ) -> None:
-        """Initialize the sensor."""
+        """Initialize the switch."""
         super().__init__(coordinator, config_entry, device_id, _unique_id, entity_data)
 
         value, unit = fix_value_and_unit(entity_data.value, entity_data.unit)

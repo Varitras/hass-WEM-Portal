@@ -7,12 +7,14 @@ them from. That reads like the portal answered and said nothing, and it failed
 the whole cycle on the first try.
 
 These tests pin both halves of the fix: the wording, and the single retry that
-the three value-carrying requests are allowed and the other twelve are not.
+the value-path reads are allowed (VALUE_PATH_URLS) and every other request is
+not.
 """
 
 import ast
 import logging
 import pathlib
+import time
 
 import pytest
 import requests as real_requests
@@ -284,6 +286,85 @@ def test_a_403_on_the_login_redirect_is_still_the_block(monkeypatch):
     assert api.logins == []
 
 
+@pytest.mark.parametrize("retry_transport", [False, True])
+def test_a_session_refused_right_after_its_login_costs_one_login_per_poll(
+    retry_transport,
+):
+    """The login worked, and the portal still sent the very next request back
+    to the login page. Only a login that RAISED was kept for the rest of the
+    poll, so every later request in the cycle paid for the same thing again:
+    a request, a login, a request - on a portal that counts all of them."""
+    session = FlakySession(
+        failures=0,
+        final=FakeResponse({}, url="https://www.wemportal.com/Account/Login"),
+    )
+    api = _api(session)
+    api._deadline = time.monotonic() + 300
+
+    for _ in range(3):
+        with pytest.raises(exceptions.WemPortalError):
+            api.make_api_call(
+                "https://example.invalid/read",
+                data={"x": 1},
+                retry_transport=retry_transport,
+            )
+
+    assert api.logins == [1], f"{len(api.logins)} logins in one poll"
+    assert session.attempts == 2, "later requests of the poll still went out"
+
+
+class ScriptedSession:
+    """A session answering each request with the next response in turn."""
+
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.attempts = 0
+
+    def post(self, url, **_kwargs):
+        self.attempts += 1
+        return self.responses.pop(0)
+
+    get = post
+
+    def close(self):
+        pass
+
+
+def test_a_login_that_helped_an_earlier_request_does_not_condemn_a_later_one():
+    """Which request logged in again is a fact about that request. Carried
+    over, a single expired answer later in the same poll - one that tried no
+    login of its own - stopped every request after it."""
+    expired = FakeResponse({}, url="https://www.wemportal.com/Account/Login")
+    session = ScriptedSession(
+        expired, FakeResponse({"Status": 0}), expired, FakeResponse({"Status": 0})
+    )
+    api = _api(session)
+    api._deadline = time.monotonic() + 300
+
+    api.make_api_call("https://example.invalid/read", data={"x": 1})
+    with pytest.raises(exceptions.WemPortalError):
+        api.make_api_call("https://example.invalid/read", data={"x": 1}, do_retry=False)
+    api.make_api_call("https://example.invalid/read", data={"x": 1})
+
+    assert session.attempts == 4, "a request of the poll was never sent"
+
+
+def test_a_session_refused_after_its_login_is_tried_again_outside_a_poll():
+    """The counter-test: a write or a service call has nobody else in the
+    cycle to spare, so each keeps its own attempt."""
+    session = FlakySession(
+        failures=0,
+        final=FakeResponse({}, url="https://www.wemportal.com/Account/Login"),
+    )
+    api = _api(session)
+
+    for _ in range(2):
+        with pytest.raises(exceptions.WemPortalError):
+            api.make_api_call("https://example.invalid/read", data={"x": 1})
+
+    assert api.logins == [1, 1]
+
+
 def test_expired_session_still_re_authenticates_and_retries():
     """The pre-existing retry must keep its own behaviour: this one DOES
     re-login, which is exactly what the transport retry must not do."""
@@ -547,6 +628,36 @@ def _try_login():
     except exceptions.WemPortalError as exc:
         return api, exc
     return api, None
+
+
+class _LoginBody(FakeResponse):
+    """A login answered with HTTP 200 and `body`, whatever JSON that is."""
+
+    def __init__(self, body):
+        super().__init__({})
+        self._body = body
+
+    def json(self):
+        return self._body
+
+
+@pytest.mark.parametrize("body", [None, [], "ok"], ids=["null", "list", "string"])
+def test_a_login_answered_with_json_that_is_no_object_is_a_portal_error(
+    monkeypatch, body
+):
+    """`.get` on the answer died with an AttributeError: a write reached the
+    user as a raw Python error, and a poll as "Unexpected error". It is the
+    portal answering outside its contract - neither a wrong password nor a
+    crash."""
+    _login_answering(monkeypatch, _LoginBody(body))
+
+    api, refused = _try_login()
+
+    assert refused is not None, "an answer without a status was taken for a login"
+    assert not isinstance(refused, exceptions.AuthError), (
+        "an unreadable answer counted towards a re-authentication"
+    )
+    assert api.valid_login is False
 
 
 def test_a_login_turned_away_once_pauses_nothing(monkeypatch, caplog):

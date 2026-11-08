@@ -31,6 +31,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.wemportal import expert_number, expert_options, expert_writer
 from custom_components.wemportal.models import ModuleRef, Reading
 from custom_components.wemportal.const import (
+    CONF_EXPERT_AUTO_POLL,
+    CONF_EXPERT_MODULE_ARG,
+    CONF_EXPERT_POLL_INTERVAL,
     CONF_EXPERT_SLOT_ID_TEMPLATE,
     CONF_EXPERT_SLOT_NAME_TEMPLATE,
     CONF_EXPERT_WRITE,
@@ -38,6 +41,7 @@ from custom_components.wemportal.const import (
     CONF_MODE,
     CONF_SCAN_INTERVAL_API,
     DOMAIN,
+    MAX_INTERVAL_SECONDS,
     PLATFORMS,
 )
 from custom_components.wemportal.exceptions import (
@@ -2769,6 +2773,44 @@ async def test_a_cleared_slot_name_is_actually_cleared(hass):
     )
 
 
+async def test_a_cleared_module_menu_index_is_actually_cleared(hass):
+    """The form promises that an empty index means the default menu entry.
+
+    With the stored value as the field's `default`, the emptied field came
+    back as that value, so a wrong index kept steering the expert navigation
+    and could only be replaced by another number, never removed.
+    """
+    entry = await _setup(hass, _entry(hass, {CONF_EXPERT_MODULE_ARG: "7"}))
+
+    await _submit_options(hass, entry, {}, omit=[CONF_EXPERT_MODULE_ARG])
+
+    assert entry.options[CONF_EXPERT_MODULE_ARG] == "", (
+        "the cleared module menu index kept its stored value"
+    )
+
+
+@pytest.mark.parametrize(
+    ("key", "kept"),
+    [
+        (CONF_SCAN_INTERVAL, MAX_INTERVAL_SECONDS),
+        (CONF_SCAN_INTERVAL_API, MAX_INTERVAL_SECONDS),
+        (CONF_EXPERT_POLL_INTERVAL, MAX_INTERVAL_SECONDS // 60),
+    ],
+)
+async def test_an_interval_too_large_for_a_timer_still_loads(hass, key, kept):
+    """The intervals had a floor and no ceiling. A number with fifteen digits
+    passed the form, and the reload that saving it starts failed on a timer
+    that large, leaving the entry in a setup error."""
+    entry = await _setup(
+        hass, _entry(hass, {CONF_EXPERT_WRITE: True, CONF_EXPERT_AUTO_POLL: True})
+    )
+
+    await _submit_options(hass, entry, {key: 10**15})
+
+    assert entry.state is ConfigEntryState.LOADED, entry.state
+    assert entry.options[key] == kept, "the form kept a value that is not used"
+
+
 async def test_a_slot_name_is_stored_stripped(hass):
     """Whitespace around a name would travel into the entity name."""
     entry = await _setup(
@@ -3123,7 +3165,7 @@ async def test_a_busy_api_counts_neither_for_nor_against_the_credentials(
     the credentials are fine; a cycle that sent no request is not.
 
     Written down as a test because the code says only why this clause comes
-    before the WemPortalError one, and an audit read the two silences as
+    before the WemPortalError one, and a review read the two silences as
     oversights.
     """
     from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -4438,7 +4480,7 @@ async def test_an_unreadable_scraper_device_id_stops_setup_instead_of_re_decidin
         lambda *_args, **_kwargs: _UnreadableStore(),
     )
 
-    entry = _entry(hass)
+    entry = _entry(hass, {CONF_MODE: "web"})
     # Home Assistant catches ConfigEntryNotReady itself and parks the entry
     # for a retry, so the state is what says whether setup refused.
     await hass.config_entries.async_setup(entry.entry_id)
@@ -4447,6 +4489,126 @@ async def test_an_unreadable_scraper_device_id_stops_setup_instead_of_re_decidin
     assert entry.state is ConfigEntryState.SETUP_RETRY, (
         "setup carried on without the stored id, which re-decides it"
     )
+
+
+class _MovedAsideStore:
+    """A store whose file Home Assistant could not decode: moved aside as
+    `.corrupt.<time>` and loading as None. A stand-in, because the test
+    harness replaces the file storage with a dict and never decodes."""
+
+    def __init__(self, directory):
+        self.path = str(directory / "wemportal_entry_scraper_device")
+        self.corrupt_copy = directory / (
+            "wemportal_entry_scraper_device.corrupt.2026-10-31T00:00:00+00:00"
+        )
+        self.corrupt_copy.write_text('{"version": 1, "data": "12', encoding="utf-8")
+
+    async def async_load(self):
+        return None
+
+    async def async_remove(self):
+        pass
+
+
+async def test_a_corrupt_scraper_device_id_stops_setup_instead_of_re_deciding(
+    hass, monkeypatch, tmp_path
+):
+    """The same loss by another road: Home Assistant does not raise on a
+    corrupt store file. It moves the file aside as `.corrupt.<time>`, raises
+    a repair issue and loads None - which reads exactly like a fresh install,
+    so the api decided the id again.
+    """
+    import custom_components.wemportal as integration
+
+    store = _MovedAsideStore(tmp_path)
+    monkeypatch.setattr(
+        integration, "get_scraper_device_store", lambda *_args, **_kwargs: store
+    )
+
+    entry = _entry(hass, {CONF_MODE: "web"})
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY, (
+        "setup read a corrupt id as no id at all, which re-decides it"
+    )
+
+
+async def test_a_corrupt_scraper_device_id_does_not_stop_an_api_entry(
+    hass, monkeypatch, tmp_path
+):
+    """`api` mode never reads the id and never saves one, so nothing replaces
+    the moved file: a copy left from an earlier mode shut the entry out for
+    good, over an id it does not use. Moving to a scraping mode asks again."""
+    import custom_components.wemportal as integration
+
+    store = _MovedAsideStore(tmp_path)
+    monkeypatch.setattr(
+        integration, "get_scraper_device_store", lambda *_args, **_kwargs: store
+    )
+
+    entry = await _setup(hass, _entry(hass, {CONF_MODE: "api"}))
+
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_an_unreadable_scraper_device_id_does_not_stop_an_api_entry(
+    hass, monkeypatch
+):
+    """The same reasoning for a file that cannot be read at all."""
+    import custom_components.wemportal as integration
+
+    class _UnreadableStore:
+        async def async_load(self):
+            raise HomeAssistantError("the file is not readable")
+
+    monkeypatch.setattr(
+        integration,
+        "get_scraper_device_store",
+        lambda *_args, **_kwargs: _UnreadableStore(),
+    )
+
+    entry = await _setup(hass, _entry(hass, {CONF_MODE: "api"}))
+
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_a_corrupt_copy_that_cannot_be_deleted_does_not_stop_a_removal(
+    hass, monkeypatch, tmp_path, caplog
+):
+    """The steps after it clean up the issues and the account's state, and a
+    copy left behind says so itself the next time it matters."""
+    from custom_components.wemportal import coordinator as coordinator_module
+
+    store = _MovedAsideStore(tmp_path)
+    monkeypatch.setattr(
+        coordinator_module, "get_scraper_device_store", lambda *_args: store
+    )
+
+    def refuse(_path):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(coordinator_module.os, "remove", refuse)
+
+    await coordinator_module.async_remove_scraper_device_store(hass, "entry")
+
+    assert "could not be deleted" in caplog.text
+
+
+async def test_removing_an_entry_takes_the_corrupt_copy_with_it(
+    hass, monkeypatch, tmp_path
+):
+    from custom_components.wemportal import coordinator as coordinator_module
+
+    store = _MovedAsideStore(tmp_path)
+    monkeypatch.setattr(
+        coordinator_module, "get_scraper_device_store", lambda *_args: store
+    )
+    entry = await _setup(hass, _entry(hass))
+
+    await hass.config_entries.async_remove(entry.entry_id)
+
+    assert not store.corrupt_copy.exists()
 
 
 @pytest.mark.parametrize(

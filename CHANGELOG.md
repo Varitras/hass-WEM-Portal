@@ -6,6 +6,15 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Weekly programmes and statistics are no longer fetched while Home Assistant
+  waits for the integration to start, which shortens every restart and every
+  saved option in the `api` and `both` modes. They follow within the next
+  minutes. Until then a programme sensor shows only its programmed windows,
+  without level names and without the `CircuitTimesDay` and `PossibleValues`
+  attributes, and it changes state once when they arrive.
+
 ### Fixed
 
 - On Home Assistant before 2026.11, an expert parameter whose entity id
@@ -23,6 +32,33 @@ versioning follows [Semantic Versioning](https://semver.org/).
   entity's state, or - as a parameter's bounds - let any value through to the
   portal. A sensor with a unit and a number now show such a value as unknown,
   and such bounds fall back to the defaults.
+- Changing one holiday date sent the other one back as the last update saw
+  it, undoing a change made in the app or web portal meanwhile. It is now
+  read from the portal right before the write, and if that read fails the
+  date is not written.
+- When a second device that had held the entity migration back was disabled
+  or removed, the entity in use was removed in favour of an older one for the
+  same parameter. Both are now kept, with a warning.
+- A scraped-device id file Home Assistant found corrupt was read as a fresh
+  install, which could move every scraped sensor to a new entity. In the
+  `web` and `both` modes setup now stops until a backup is restored or the
+  corrupt file is deleted; `api` mode does not use the id and is let through.
+- A failed read-back after writing a date could report the write as failed
+  while showing the value as confirmed.
+- A very large interval saved in the options left the entry in a setup
+  error; intervals are now held to one week.
+- Setup, re-authentication, reconfiguring and a mode change say when the
+  portal is down for maintenance instead of "Failed to connect".
+- When the portal refused a session right after a working login, every
+  further request of the update logged in again.
+- The fault sensor no longer shows "(+0 more)" for a single long fault, and
+  the module menu index in the expert options can be cleared again.
+- The web login check during setup, re-authentication, reconfiguring and a
+  mode change now uses the same login as the scrape.
+- A login answered with something other than a JSON object is reported as a
+  portal error instead of a raw Python error.
+- An expert write stopped during its confirming read now says the portal
+  answered, not that it accepted the value: only that read could tell.
 
 ## [1.15.0] – 2026-10-21
 

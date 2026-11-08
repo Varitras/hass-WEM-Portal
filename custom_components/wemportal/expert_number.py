@@ -296,14 +296,14 @@ class WemPortalExpertNumber(RestoreNumber):
 
     @callback
     def apply_read_state(self, state):
-        """Update this entity from a periodic read result (ExpertParameterState).
+        """Update this entity from a read result (ExpertParameterState).
 
-        Called by the hourly auto-poll after reading the parameter in a
-        shared session. Updates the value and the live device range, then
-        writes HA state. A no-op if state is None (read failed for this
-        id) or while a write is in flight - a poll that started before
-        the write carries the pre-write value, and applying it would
-        briefly overwrite the freshly verified one.
+        Called by the expert auto-poll, at its configured interval, and with
+        the confirming read of a verified write. Updates the value and the
+        live device range, then writes HA state. A no-op if state is None
+        (read failed for this id) or while a write is in flight - a read
+        that started before the write carries the pre-write value, and
+        applying it would briefly overwrite the freshly verified one.
         """
         if state is None:
             return
@@ -311,7 +311,7 @@ class WemPortalExpertNumber(RestoreNumber):
             return
         if self._write_in_progress:
             _LOGGER.debug(
-                "Discarding poll result for %s: a write is in progress.",
+                "Discarding read result for %s: a write is in progress.",
                 self._label,
             )
             return

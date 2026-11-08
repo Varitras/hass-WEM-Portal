@@ -43,6 +43,7 @@ from custom_components.wemportal.const import (
 from custom_components.wemportal.exceptions import (
     AuthError,
     ForbiddenError,
+    PortalMaintenanceError,
 )
 from custom_components.wemportal.wemportalapi import WemPortalApi
 
@@ -188,7 +189,7 @@ async def test_web_setup_does_not_call_one_turned_away_login_a_block(hass, monke
     """The `web` twin of the API case above: the setup's web login answered
     403 once and paused everything for fifteen minutes, telling the user the
     network was refused."""
-    from custom_components.wemportal import transport
+    from custom_components.wemportal import scraper, transport
 
     from .test_hardening import FakeResponse
 
@@ -207,7 +208,7 @@ async def test_web_setup_does_not_call_one_turned_away_login_a_block(hass, monke
         def close(self):
             pass
 
-    monkeypatch.setattr(transport.requests, "Session", TurnedAway)
+    monkeypatch.setattr(scraper.requests, "Session", TurnedAway)
     monkeypatch.setattr(
         WemPortalApi, "web_login", transport.WemPortalTransport.web_login
     )
@@ -227,6 +228,58 @@ async def test_web_setup_does_not_call_one_turned_away_login_a_block(hass, monke
 
     assert result["errors"] == {"base": "cannot_connect"}
     assert not WemPortalApi(USER, "secret").is_rate_limited()
+
+
+def _in_maintenance(monkeypatch):
+    """A portal down for maintenance, on whichever login is tried."""
+
+    def down(self, *_args, **_kwargs):
+        raise PortalMaintenanceError("The portal is down for maintenance")
+
+    monkeypatch.setattr(WemPortalApi, "api_login", down)
+    monkeypatch.setattr(WemPortalApi, "web_login", down)
+
+
+async def test_setup_names_maintenance_as_such(hass, monkeypatch):
+    """Reported as "failed to connect" and logged nowhere, maintenance read
+    like a network fault - the one cause nothing on this side can fix."""
+    _in_maintenance(monkeypatch)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_USERNAME: USER,
+            CONF_PASSWORD: "secret",
+            CONF_LANGUAGE: "en",
+            CONF_MODE: "api",
+        },
+    )
+
+    assert result["errors"] == {"base": "portal_maintenance"}
+
+
+async def test_reauthentication_names_maintenance_as_such(hass, monkeypatch):
+    entry = await _setup(hass, _entry(hass))
+    _in_maintenance(monkeypatch)
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: USER, CONF_PASSWORD: "secret"}
+    )
+
+    assert result["errors"] == {"base": "portal_maintenance"}
+
+
+async def test_a_mode_change_names_maintenance_as_such(hass, monkeypatch):
+    entry = await _setup(hass, _entry(hass))
+    _in_maintenance(monkeypatch)
+
+    result = await _submit_options(hass, entry, {CONF_MODE: "web"})
+
+    assert result["errors"] == {"base": "portal_maintenance"}
 
 
 async def test_reauthentication_names_a_blocked_ip_as_one(hass, monkeypatch):
@@ -1407,6 +1460,32 @@ async def test_a_move_renames_an_entry_still_named_after_its_old_login(hass):
 
     assert result["reason"] == "reconfigure_successful"
     assert entry.title == "WEM Portal"
+
+
+async def test_reconfigure_to_a_new_login_takes_the_corrupt_copy_with_it(
+    hass, monkeypatch, tmp_path
+):
+    """The new login is meant to decide its id afresh. A corrupt copy of the
+    old one left behind would refuse exactly that on the setup that follows."""
+    from custom_components.wemportal import coordinator as coordinator_module
+
+    from .test_e2e import _MovedAsideStore
+
+    store = _MovedAsideStore(tmp_path)
+    monkeypatch.setattr(
+        coordinator_module, "get_scraper_device_store", lambda *_args: store
+    )
+    entry = await _setup(hass, _entry(hass))
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_USERNAME: "someone-else@example.org", CONF_PASSWORD: "new"},
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert not store.corrupt_copy.exists()
 
 
 async def test_reconfigure_will_not_merge_two_entries_into_one_account(hass):

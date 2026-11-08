@@ -53,8 +53,7 @@ WEB_LOGIN_URL: Final = "https://www.wemportal.com/Web/Login.aspx"
 # Named after the field the login POST itself sends, so the two cannot drift.
 WEB_LOGGED_IN_MARKER: Final = "ctl00_btnLogout"
 WEB_LOGIN_FORM_MARKER: Final = "ctl00$content$tbxPassword"
-# Both are read by wemportalapi.web_login and by the scraper's own login, which
-# classify the same answer the same way: a session, a refusal, or neither.
+# Both classify the answer to a web login: a session, a refusal, or neither.
 CONF_SCAN_INTERVAL_API: Final = "api_scan_interval"
 CONF_LANGUAGE: Final = "language"
 CONF_MODE: Final = "mode"
@@ -79,6 +78,10 @@ MIN_SCAN_INTERVAL_SECONDS: Final = 60  # web scraping interval floor
 # (matching the web floor) - the actual recommendation lives in the
 # options form, so a deliberate choice is not overridden.
 MIN_SCAN_INTERVAL_API_SECONDS: Final = 60  # mobile-API interval floor
+# And a ceiling for all three intervals. Far above any useful one, and far
+# below what Home Assistant's timer can schedule: a fifteen-digit number
+# passed the form and failed the setup it triggered.
+MAX_INTERVAL_SECONDS: Final = 7 * 24 * 3600
 DEFAULT_CONF_LANGUAGE_VALUE: Final = "en"
 
 

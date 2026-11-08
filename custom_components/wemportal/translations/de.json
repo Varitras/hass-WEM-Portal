@@ -45,7 +45,8 @@
       "invalid_auth": "Ungültige Anmeldedaten",
       "unknown": "Unerwarteter Fehler",
       "wrong_account": "Der Benutzername stimmt nicht mit diesem Konto überein. Die Neuanmeldung behält dasselbe Konto; nur das Passwort kann geändert werden.",
-      "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz gerade ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Hier hilft nur Warten: Die Sperre löst sich von selbst, und jeder weitere Versuch verlängert sie. An Benutzername und Passwort liegt es nicht."
+      "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz gerade ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Hier hilft nur Warten: Die Sperre löst sich von selbst, und jeder weitere Versuch verlängert sie. An Benutzername und Passwort liegt es nicht.",
+      "portal_maintenance": "Das WEM Portal ist gerade in Wartung. Bitte später erneut versuchen; an Benutzername und Passwort liegt es nicht."
     },
     "abort": {
       "already_configured": "Konto ist bereits konfiguriert",
@@ -103,14 +104,14 @@
           "expert_notify_on_success": "Bei erfolgreichem Fachmann-Schreibvorgang benachrichtigen"
         },
         "data_description": {
-          "scan_interval": "In Sekunden; gilt im Modus web und both. Standard 1800, unter 900 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
-          "api_scan_interval": "In Sekunden; gilt im Modus api und both. Standard 300, unter 180 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
+          "scan_interval": "In Sekunden; gilt im Modus web und both. Standard 1800, höchstens 604800 (eine Woche), unter 900 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
+          "api_scan_interval": "In Sekunden; gilt im Modus api und both. Standard 300, höchstens 604800 (eine Woche), unter 180 nicht empfohlen. Jede Anfrage zählt gegen das Limit des Portals pro IP-Adresse.",
           "language": "Englisch (en) oder Deutsch (de) für die Namen, die aus dem entstehen, was das Portal meldet; die Sprache von Home Assistant ändert sie nicht. Die Namen, die die Integration selbst vergibt – die Status-Sensoren, ein unbenannter Fachmann-Platz –, folgen der Sprache von Home Assistant. Standard: en.",
           "mode": "Woher die Werte kommen: api (die Schnittstelle der App, deckt jedes Gerät ab – für die meisten richtig), web (die Fachmann-Webseite) oder both. Wird vor dem Speichern am Portal geprüft. Standard: api.",
           "expert_write_enabled": "Macht jeden gefüllten Parameter-Platz unten zu einer beschreibbaren Zahl-Entität und schaltet die Aktion set_expert_parameter frei. Ändert echte Einstellungen deiner Heizung. Standard: aus.",
           "expert_module_arg": "Nur wirksam bei aktivierter Modulauswahl. Leer bedeutet 6, die Wärmepumpe der Referenzanlage.",
           "expert_auto_poll_enabled": "Liest die Parameter der Plätze zeitgesteuert, damit ihre Entitäten ohne Schreibvorgang aktuelle Werte zeigen. Jeder Lesevorgang ist eine vollständige Web-Navigation; zu häufiges Abfragen kann eine vorübergehende Sperre (403) auslösen. Standard: aus.",
-          "expert_poll_interval_minutes": "In Minuten. Standard 60, Minimum 15.",
+          "expert_poll_interval_minutes": "In Minuten. Standard 60, Minimum 15, Maximum 10080 (eine Woche).",
           "expert_slot_1_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
           "expert_slot_1_id": "Die entityvalue des Parameters – aus der Suche auswählen oder die Hex-ID aus dem Portal eintragen. Gilt nur für deine Anlage; nicht öffentlich teilen. Für einen unbenutzten Platz leer lassen.",
           "expert_slot_2_name": "Optional. Wird zum Namen der Entität; ein Platz mit ID, aber ohne Namen bekommt einen Standardnamen.",
@@ -159,7 +160,8 @@
       "discovery_busy": "Für dieses Konto läuft gerade eine andere Fachmann-Operation – eine geplante Abfrage oder ein Schreibvorgang. Es ist immer nur eine gleichzeitig erlaubt, daher wurde diese Suche nicht gestartet. Bitte gleich noch einmal versuchen.",
       "invalid_auth": "Die gespeicherten Zugangsdaten funktionieren nicht für die Verbindung, die dieser Modus verwendet. Mobile API und Web-Portal sind getrennte Anmeldungen – dass eines geht, sagt nichts über das andere. Der Modus wurde nicht geändert.",
       "cannot_connect": "Die Verbindung, die dieser Modus verwendet, war nicht erreichbar. Der Modus wurde nicht geändert. Bitte später erneut versuchen.",
-      "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz derzeit ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Der Modus wurde nicht geändert. Hier hilft nur Warten: Die Sperre löst sich von selbst, und jeder Versuch verlängert sie."
+      "rate_limited": "Das WEM Portal weist Anfragen aus diesem Netz derzeit ab – das tut es nach zu vielen Anfragen in kurzer Zeit. Der Modus wurde nicht geändert. Hier hilft nur Warten: Die Sperre löst sich von selbst, und jeder Versuch verlängert sie.",
+      "portal_maintenance": "Das WEM Portal ist gerade in Wartung, daher wurde der Modus nicht geändert. Bitte später erneut versuchen."
     },
     "abort": {
       "no_changes": "Keine Änderungen zum Speichern – die Integration wurde nicht neu geladen.",

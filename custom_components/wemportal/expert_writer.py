@@ -642,10 +642,10 @@ class ExpertParameterState:
 
 
 class WemPortalExpertClient:
-    """On-demand web client for reading expert parameters.
+    """On-demand web client that reads and writes expert parameters.
 
-    Uses its own HTTP session, created per operation and closed afterwards -
-    fully independent of the polling scraper/API paths.
+    Its own HTTP session per operation, but not independent of the polling
+    paths: it shares the api's cookies, the account state and the gates.
     """
 
     def __init__(
@@ -753,8 +753,8 @@ class WemPortalExpertClient:
         This exists because the alternative kept failing. Each request site
         used to decide for itself what to validate, and the result was ten
         sites checking for a 403 while three checked the status code - so an
-        error page was parsed as a portal answer, and three separate audit
-        rounds each found the next unguarded request. A per-site decision is
+        error page was parsed as a portal answer, and three separate reviews
+        each found the next unguarded request. A per-site decision is
         a per-site chance to forget; one gate cannot be forgotten.
 
         `check_maintenance` raises only where the notice explains a page that
@@ -970,7 +970,7 @@ class WemPortalExpertClient:
         # URL - exactly the test for "these credentials were rejected" just
         # below - so a real window would read as a wrong password without it.
         self._check_response(login_response, "login POST", check_maintenance=True)
-        # Three outcomes, not two, same as the scraper and web_login: staying
+        # Three outcomes, not two, same as the scraper's login: staying
         # on the login URL was the whole test, and a portal error or
         # interstitial does that too while answering 200. Only the login FORM
         # is evidence that credentials were seen and refused.
@@ -1789,13 +1789,13 @@ class WemPortalExpertClient:
                 verify = self._fetch_form(entityvalue, max_attempts=2)
             except ExpertOperationAborted as aborted:
                 # The gates are asked before every request, this read
-                # included - and by here the postback is through, so the
-                # heating system already has the value. Said plainly, because
+                # included - and by here the postback is through and answered;
+                # only the read would have shown it kept. Said plainly, because
                 # an abort that reads like every other one sends whoever
                 # asked for the write to repeat a change that has happened.
                 raise ExpertOperationAborted(
-                    f"{aborted}. The value was posted and the portal accepted "
-                    "it; only the confirming read did not run."
+                    f"{aborted}. The value was posted and the portal answered; "
+                    "only the confirming read did not run."
                 ) from aborted
             # A word is confirmed by the word the dialog shows, because a
             # value beside the scale leaves `current` empty by design - that

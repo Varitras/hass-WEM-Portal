@@ -7,7 +7,7 @@ import time
 
 from curl_cffi import requests
 from lxml import html
-from lxml.etree import LxmlError
+from lxml.etree import LxmlError, ParserError
 
 from .const import (
     GITHUB_PROJECT_URL,
@@ -50,11 +50,6 @@ from .web_protocol import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# Unit -> icon mapping for scraped sensors. Defined once at module level
-# instead of being re-created for every single table row during parsing
-# (it never changes, so per-row construction was pure waste).
-
 
 # The panel container the expert page is built from. Named once because two
 # things ask about it: the parser, and the report that explains an empty page.
@@ -257,7 +252,7 @@ class WemPortalScraper:
         """Release the underlying HTTP session/connection.
 
         Called when the owning WemPortalApi discards this scraper (e.g.
-        on credential change or API re-instantiation), so the connection
+        on credential change or a transport reset), so the connection
         doesn't linger open on Weishaupt's side after we stop using it.
         """
         try:
@@ -273,8 +268,15 @@ class WemPortalScraper:
 
         Same reasoning as in expert_writer: deciding per request site what to
         validate means a per-site chance to forget, and that is exactly how a
-        500 kept being parsed as a real page - once per audit round, at the
-        next unguarded request.
+        500 kept being parsed as a real page, each time at the next
+        unguarded request.
+
+        A non-200 body raises rather than returning None. None means "this
+        session is no longer valid", which the full login turns into an
+        AuthError - so a plain server error was reported as a wrong password
+        and fed the re-authentication counter, where three outages in a row
+        could ask the user to re-enter working credentials. Raising also
+        stops the reuse path from answering a 500 with two more requests.
 
         403 first, because it is a rate-limit signal and must reach the
         caller's cooldown handling as its own type. `check_maintenance` raises
@@ -395,23 +397,119 @@ class WemPortalScraper:
         if on_login_page:
             return None
 
-        # A non-200 body is an error page, not the expert view. Returned
-        # unchecked it was parsed like a real page: the scrape counted as
-        # successful and the sensors took on whatever fell out of a 500.
-        #
-        # Raised rather than returned as None, and for both callers. None
-        # means "this session is no longer valid", which the full login turns
-        # into an AuthError - so a plain server error was reported as a wrong
-        # password and fed the re-authentication counter, where three outages
-        # in a row could ask the user to re-enter working credentials. It also
-        # stops the reuse path from answering a 500 with two more requests.
-        #
         # A postback the portal does not honour lands on the user view: HTTP
         # 200, panels and a third of the rows. Only the reuse path checked
         # for it, and the fresh login published that third as the page.
         if not is_expert_view(r_expert.text):
             return None
         return r_expert.text
+
+    def log_in(self) -> None:
+        """Log in on this session, or raise saying why it did not work.
+
+        Shared by the scrape, which continues from it, and the config flow,
+        which asks whether a web login would succeed: that check goes out as
+        the same client as the scrape it stands in for. It says nothing about
+        the pages after the login.
+        """
+        # 1. GET the login page as its own step, so the maintenance gate below
+        #    runs before any POST.
+        try:
+            login_page = self.session.get(
+                WEB_LOGIN_URL, timeout=self._request_timeout()
+            )
+        except Exception as exc:
+            # A transport failure (timeout, connection reset, DNS) says
+            # nothing about the credentials. Reported as AuthError it fed the
+            # reauth counter, so three network hiccups in a row could ask the
+            # user to re-enter a working password.
+            raise self._transport_failure(
+                exc, "reach the WEM Portal login page"
+            ) from exc
+        # Deliberately outside the try block: our own ForbiddenError /
+        # AuthError below must propagate as-is instead of being caught by
+        # the broad network-error handler above and re-wrapped (which
+        # would, among other things, hide the 403 from the caller's
+        # cooldown handling).
+        # No maintenance decision on this page: it looks the same before and
+        # during a window, so deciding here turned every announcement into an
+        # outage. The answer to the POST below decides it.
+        self._check_response(login_page, "login page")
+
+        try:
+            tree = html.fromstring(login_page.text)
+        except ParserError as exc:
+            # An empty body. Nothing to log in with, and the password stays
+            # here: a page that said nothing can only refuse it.
+            raise ServerError(
+                "The WEM Portal login page could not be read, so no credentials "
+                "were sent. This is a portal-side problem, not a credential one."
+            ) from exc
+        viewstate_elem = tree.xpath("//*[@id='__VIEWSTATE']/@value")
+        eventval_elem = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
+
+        if not viewstate_elem or not eventval_elem:
+            # NOT an AuthError: the password has not been sent yet - these
+            # fields are what it would be sent WITH. A 200 that is not the
+            # login form is the portal misbehaving, and blaming the
+            # credentials for it fed the reauth counter, so three such
+            # hiccups in a row could ask for a password that was correct all
+            # along. Same reasoning as the transport handler above; this was
+            # the half of it that got left behind.
+            raise ServerError(
+                "The WEM Portal login page came back without its form fields, "
+                "so there was nothing to log in with. This is a portal-side "
+                "problem, not a credential one."
+            )
+
+        viewstate = viewstate_elem[0]
+        eventval = eventval_elem[0]
+
+        # 2. POST Login
+        login_data = {
+            "__VIEWSTATE": viewstate,
+            "__EVENTVALIDATION": eventval,
+            "ctl00$content$tbxUserName": self.username,
+            "ctl00$content$tbxPassword": self.password,
+            "ctl00$content$btnLogin": "Anmelden",
+        }
+
+        try:
+            login_response = self.session.post(
+                WEB_LOGIN_URL,
+                data=login_data,
+                allow_redirects=True,
+                timeout=self._request_timeout(),
+            )
+        except Exception as exc:
+            raise self._transport_failure(exc, "send the WEM Portal login") from exc
+        # The place the maintenance question is answered. A refused login
+        # comes back on the login URL, which is also the test for "the portal
+        # rejected these credentials" - so without this, a real window read as
+        # a wrong password and fed the re-authentication counter. A login that
+        # got through is not refused by a banner announcing a window.
+        self._check_response(login_response, "login POST", check_maintenance=True)
+
+        # Three outcomes, not two. Staying on the login URL was the whole
+        # test before, and a portal error or interstitial does that too while
+        # answering HTTP 200, so anything of that kind counted as "wrong
+        # password" and three in a row walked into a re-authentication prompt.
+        # Only the login FORM is evidence that credentials were seen and
+        # refused.
+        logged_in = WEB_LOGGED_IN_MARKER in login_response.text
+        if not logged_in and WEB_LOGIN_FORM_MARKER in login_response.text:
+            raise AuthError("Authentication Error: Invalid username or password.")
+        if not logged_in:
+            raise ServerError(
+                "The WEM Portal answered the login with a page that is neither "
+                "a session nor the login form, so there is nothing to read and "
+                "nothing to say about the credentials. This can also mean the "
+                f"portal did not accept our cookies. URL: {redact_url(login_response.url)}"
+            )
+
+        # The gateway let this login through: that ends a refusal streak,
+        # whatever the pages after it do (see WebLoginRefused).
+        self._account_state.refused_web_logins = 0
 
     def scrape(self) -> list[dict[str, Any]]:
         """Perform the scraping process and return the extracted data."""
@@ -459,14 +557,11 @@ class WemPortalScraper:
 
                 if reused_html is not None:
                     # required=False: for the fast path an empty page is not a
-                    # broken portal. The postback that selects the Expert tab
-                    # carries state from the reused session, and when the
-                    # portal no longer honours it the answer is still HTTP
-                    # 200 - the main page instead of the expert view, with no
-                    # login redirect and no error status for the checks above
-                    # to catch. Raising there lost the whole scrape for a
-                    # cycle while a fresh login, which the lines below already
-                    # perform, would have worked.
+                    # broken portal but a reason to log in fresh, which the
+                    # lines below already do. Raising there lost the whole
+                    # scrape for a cycle. (A postback that lands on the main
+                    # page never gets here: _load_expert_page answers it with
+                    # None.)
                     panels = self.parse_expert_page(
                         reused_html, source="the reused session", required=False
                     )
@@ -492,96 +587,7 @@ class WemPortalScraper:
                     _LOGGER.debug("Ignoring error while clearing cookies: %s", exc)
 
         # --- Full login sequence ---
-        # 1. GET the login page as its own step, so the maintenance gate below
-        #    runs before any POST.
-        try:
-            login_page = self.session.get(
-                WEB_LOGIN_URL, timeout=self._request_timeout()
-            )
-        except Exception as exc:
-            # A transport failure (timeout, connection reset, DNS) says
-            # nothing about the credentials. Reported as AuthError it fed the
-            # reauth counter, so three network hiccups in a row could ask the
-            # user to re-enter a working password.
-            raise self._transport_failure(
-                exc, "reach the WEM Portal login page"
-            ) from exc
-        # Deliberately outside the try block: our own ForbiddenError /
-        # AuthError below must propagate as-is instead of being caught by
-        # the broad network-error handler above and re-wrapped (which
-        # would, among other things, hide the 403 from the caller's
-        # cooldown handling).
-        # No maintenance decision on this page: it looks the same before and
-        # during a window, so deciding here turned every announcement into an
-        # outage. The answer to the POST below decides it.
-        self._check_response(login_page, "login page")
-
-        tree = html.fromstring(login_page.text)
-        viewstate_elem = tree.xpath("//*[@id='__VIEWSTATE']/@value")
-        eventval_elem = tree.xpath("//*[@id='__EVENTVALIDATION']/@value")
-
-        if not viewstate_elem or not eventval_elem:
-            # NOT an AuthError: the password has not been sent yet - these
-            # fields are what it would be sent WITH. A 200 that is not the
-            # login form is the portal misbehaving, and blaming the
-            # credentials for it fed the reauth counter, so three such
-            # hiccups in a row could ask for a password that was correct all
-            # along. Same reasoning as the transport handler above; this was
-            # the half of it that got left behind.
-            raise ServerError(
-                "The WEM Portal login page came back without its form fields, "
-                "so there was nothing to log in with. This is a portal-side "
-                "problem, not a credential one."
-            )
-
-        viewstate = viewstate_elem[0]
-        eventval = eventval_elem[0]
-
-        # 2. POST Login
-        login_data = {
-            "__VIEWSTATE": viewstate,
-            "__EVENTVALIDATION": eventval,
-            "ctl00$content$tbxUserName": self.username,
-            "ctl00$content$tbxPassword": self.password,
-            "ctl00$content$btnLogin": "Anmelden",
-        }
-
-        try:
-            login_response = self.session.post(
-                WEB_LOGIN_URL,
-                data=login_data,
-                allow_redirects=True,
-                timeout=self._request_timeout(),
-            )
-        except Exception as exc:
-            raise self._transport_failure(exc, "send the WEM Portal login") from exc
-        # The place the maintenance question is answered. A refused login
-        # comes back on the login URL, which is also the test for "the portal
-        # rejected these credentials" - so without this, a real window read as
-        # a wrong password and fed the re-authentication counter. A login that
-        # got through is not refused by a banner announcing a window.
-        self._check_response(login_response, "login POST", check_maintenance=True)
-
-        # Three outcomes, not two - the classification web_login has used all
-        # along. Staying on the login URL was the whole test before, and a
-        # portal error or interstitial does that too while answering HTTP 200,
-        # so anything of that kind counted as "wrong password" and three in a
-        # row walked into a re-authentication prompt. Only the login FORM is
-        # evidence that credentials were seen and refused.
-        logged_in = WEB_LOGGED_IN_MARKER in login_response.text
-        if not logged_in and WEB_LOGIN_FORM_MARKER in login_response.text:
-            raise AuthError("Authentication Error: Invalid username or password.")
-        if not logged_in:
-            raise ServerError(
-                "The WEM Portal answered the login with a page that is neither "
-                "a session nor the login form, so there is nothing to read and "
-                "nothing to say about the credentials. This can also mean the "
-                f"portal did not accept our cookies. URL: {redact_url(login_response.url)}"
-            )
-
-        # The gateway let this login through: that ends a refusal streak,
-        # whatever the pages after it do (see WebLoginRefused).
-        self._account_state.refused_web_logins = 0
+        self.log_in()
 
         # Wait a moment
         time.sleep(2)

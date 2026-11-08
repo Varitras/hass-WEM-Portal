@@ -2,7 +2,7 @@
 
 The comment rule says a comment states a decision or a constraint,
 not what the next line already says - a narrating comment is noise today and
-doc-drift tomorrow (the recurring audit class "comment describes behaviour the
+doc-drift tomorrow (the recurring defect "comment describes behaviour the
 code no longer has"). A prose rule does not reach the moment of writing; this
 scan does. It covers the shipped package and the test suite alike, so a
 narrating comment in a test is held to the same rule as one in shipped code.

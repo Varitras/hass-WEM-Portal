@@ -40,12 +40,18 @@ from .const import (
     DOMAIN,
     EXPERT_SLOT_COUNT,
 )
-from .exceptions import AuthError, ForbiddenError, LoginRefused, WebLoginRefused
+from .exceptions import (
+    AuthError,
+    ForbiddenError,
+    LoginRefused,
+    PortalMaintenanceError,
+    WebLoginRefused,
+)
 from .coordinator import (
+    async_remove_scraper_device_store,
     forget_account_state_if_last_entry,
     forget_auth_failures,
     get_modules_store,
-    get_scraper_device_store,
 )
 from .wemportalapi import WemPortalApi
 
@@ -110,10 +116,14 @@ async def validate_input(hass: HomeAssistant, data):
         # where somebody lands after deleting and re-adding the integration
         # to "fix" the blockade, did not.
         raise RateLimited from exc
+    except PortalMaintenanceError as exc:
+        raise PortalMaintenance from exc
     except Exception as exc:
         # Broad on purpose: this runs during the config flow, where any
         # failure that is not an auth rejection has to reach the user as
-        # "cannot connect" rather than as an unhandled flow error.
+        # "cannot connect" rather than as an unhandled flow error. Logged,
+        # because that message alone gives nobody anything to go on.
+        _LOGGER.debug("The login check failed", exc_info=True)
         raise CannotConnect from exc
     finally:
         # Close the throwaway validation session(s); config-flow validation
@@ -135,6 +145,11 @@ class CannotConnect(exceptions.HomeAssistantError):
 
 class InvalidAuth(exceptions.HomeAssistantError):
     """Error to indicate there is invalid auth."""
+
+
+class PortalMaintenance(CannotConnect):
+    """The portal is down for maintenance. A CannotConnect, so a caller that
+    does not tell the two apart still reports a failure."""
 
 
 LoginState = tuple[dict[str, Any], Any]
@@ -245,6 +260,8 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
                 raise
             except RateLimited:
                 errors["base"] = "rate_limited"
+            except PortalMaintenance:
+                errors["base"] = "portal_maintenance"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
@@ -299,6 +316,8 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             await validate_input(self.hass, {**new_data, CONF_MODE: effective_mode})
         except RateLimited:
             return "rate_limited"
+        except PortalMaintenance:
+            return "portal_maintenance"
         except CannotConnect:
             return "cannot_connect"
         except InvalidAuth:
@@ -375,7 +394,7 @@ class WemPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         except OperationNotAllowed:
             return False
         await get_modules_store(self.hass, entry.entry_id).async_remove()
-        await get_scraper_device_store(self.hass, entry.entry_id).async_remove()
+        await async_remove_scraper_device_store(self.hass, entry.entry_id)
         # Keyed by the account, not the entry: an older duplicate entry of
         # the account being left may still be loaded and still need it.
         forget_account_state_if_last_entry(self.hass, entry)

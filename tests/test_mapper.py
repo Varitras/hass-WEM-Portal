@@ -1739,7 +1739,7 @@ def test_a_scraped_row_the_page_dropped_is_not_a_new_merge_target():
 
 
 def test_a_row_still_on_the_page_is_merged_even_while_the_scrape_is_failing():
-    """The counter-test to the one above, and the re-audit's own finding.
+    """The counter-test to the one above, found by reviewing that fix.
 
     "Does the scrape still feed this row" answers two questions at once: is
     the row on the page, and is the scrape healthy right now. Only the first
