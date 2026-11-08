@@ -6,6 +6,14 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.16.0b1] – 2026-11-08
+
+A first beta of 1.16.0. Weekly programmes and statistics no longer hold up
+Home Assistant's start - a programme sensor shows a plain view for a minute
+or two after each start - and fixes for date writes, the entity migration, a
+corrupt device id file, the web login check, intervals, maintenance messages
+and values the portal sends as NaN or infinity.
+
 ### Changed
 
 - Weekly programmes and statistics are no longer fetched while Home Assistant

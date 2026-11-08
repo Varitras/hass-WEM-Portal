@@ -256,7 +256,10 @@ The integration is built around that:
   a block is the one thing that reliably prolongs it.
 - Repeated failures back off progressively instead of retrying at full speed.
 - Parameter lists are discovered once and re-read daily, not every cycle.
-- Weekly programmes refresh hourly, statistics hourly.
+- Weekly programmes refresh hourly, statistics hourly. After a start both
+  follow within a few minutes rather than holding up Home Assistant's start;
+  until then a programme sensor shows only its programmed windows, without
+  level names.
 
 A single failed cycle does not take the entities with it. The portal answers a
 poll with an error now and then and the next one succeeds; at a 30-minute
