@@ -235,9 +235,9 @@ account.
 
 ## Polling and the portal's rate limit
 
-Weishaupt blocks an IP address that sends **too many requests in a 12-hour
-window**. The block is per IP, not per account, and waiting is the only cure —
-every retry during it makes it last longer.
+Weishaupt blocks an IP address that sends **too many requests**. The exact
+limit is not known and may change. The block is per IP, not per account, and
+waiting is the only cure — every retry during it makes it last longer.
 
 The integration is built around that:
 
@@ -681,7 +681,7 @@ every model.
 - **Cloud only.** Everything goes through Weishaupt's WEM Portal; there is no
   local connection, and no data while the portal or your internet is down.
 - **A request limit per IP address.** The portal blocks an IP that sends too
-  many requests in 12 hours; see
+  many requests; see
   [Polling and the portal's rate limit](#polling-and-the-portals-rate-limit).
 - **Values are as fresh as the portal has them.** A shorter scan interval does
   not make the heat pump report more often, it only spends requests.
