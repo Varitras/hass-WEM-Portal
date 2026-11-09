@@ -6,6 +6,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A skipped expert page no longer asks for a bug report.** A page with
+  every panel headed "Info" logged a warning about two rows producing the
+  same sensor before it was skipped.
+
 ## [1.16.0b1] – 2026-11-08
 
 A first beta of 1.16.0. Weekly programmes and statistics no longer hold up

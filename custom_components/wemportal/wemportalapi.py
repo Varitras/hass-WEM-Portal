@@ -1248,6 +1248,7 @@ class WemPortalApi(
             data = self._scrape_with(scraper)
             # In the try: a broken page counts as a failed scrape, never as rows.
             refuse_folded_panels(self._previous_scraper_keys, data)
+            scraper.report_duplicate_rows()
 
         except IndexError as exc:
             # Handle the case where the job result is not found

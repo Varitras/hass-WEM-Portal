@@ -1669,9 +1669,37 @@
   {
     "label": "collision: overwriting a reading without a word must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "                if name in output:\n                    _report_duplicate_row(\n                        name,\n                        heading,\n                        raw_name,\n                        self._account_state.duplicate_rows_reported,\n                    )",
-    "new": "                if False:\n                    _report_duplicate_row(\n                        name,\n                        heading,\n                        raw_name,\n                        self._account_state.duplicate_rows_reported,\n                    )",
+    "old": "                if name in output:\n                    self._duplicate_rows.append((name, heading, raw_name))",
+    "new": "                if False:\n                    self._duplicate_rows.append((name, heading, raw_name))",
     "tests": "the_same_row_twice_in_one_panel_is_reported"
+  },
+  {
+    "label": "collision: reporting one from a page that is then refused must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            refuse_folded_panels(self._previous_scraper_keys, data)\n            scraper.report_duplicate_rows()\n",
+    "new": "            scraper.report_duplicate_rows()\n            refuse_folded_panels(self._previous_scraper_keys, data)\n",
+    "tests": "a_refused_page_does_not_ask_for_a_collision_report"
+  },
+  {
+    "label": "collision: a page that is used and never reported must be noticed",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "            refuse_folded_panels(self._previous_scraper_keys, data)\n            scraper.report_duplicate_rows()\n",
+    "new": "            refuse_folded_panels(self._previous_scraper_keys, data)\n",
+    "tests": "a_collision_on_a_page_that_is_used_is_still_reported"
+  },
+  {
+    "label": "collision: a refused page's rows reported with the next page must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        output: dict[str, Any] = {}\n        self._duplicate_rows = []\n",
+    "new": "        output: dict[str, Any] = {}\n",
+    "tests": "a_refused_page_leaves_no_report_for_the_next_one"
+  },
+  {
+    "label": "collision: a report that does not name the portal's own fault must be noticed",
+    "path": "custom_components/wemportal/scraper.py",
+    "old": "        \"the portal's side, and the next page is usually normal again.\",\n        key,",
+    "new": "        \"\",\n        key,",
+    "tests": "a_collision_on_the_first_page_names_the_portal_fault"
   },
   {
     "label": "collision: reporting the same one every cycle must be noticed",
