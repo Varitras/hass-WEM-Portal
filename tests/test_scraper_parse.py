@@ -1185,6 +1185,7 @@ def test_the_same_row_twice_in_one_panel_is_reported(scraper, caplog):
 
     with caplog.at_level(logging.WARNING):
         result = scraper.parse_expert_page(page)
+        scraper.report_duplicate_rows()
 
     assert "same sensor" in caplog.text
     assert "Outside temperature" in caplog.text
@@ -1206,6 +1207,7 @@ def test_two_panels_with_the_same_heading_are_reported(scraper, caplog):
 
     with caplog.at_level(logging.WARNING):
         scraper.parse_expert_page(page)
+        scraper.report_duplicate_rows()
 
     assert "same sensor" in caplog.text
 
@@ -1227,7 +1229,9 @@ def test_a_collision_is_reported_once_not_every_cycle(scraper, caplog):
 
     with caplog.at_level(logging.WARNING):
         scraper.parse_expert_page(page)
+        scraper.report_duplicate_rows()
         scraper.parse_expert_page(page)
+        scraper.report_duplicate_rows()
 
     hits = [record for record in caplog.records if "same sensor" in record.getMessage()]
     assert len(hits) == 1, f"reported {len(hits)} times"
@@ -1243,6 +1247,7 @@ def test_rows_that_do_not_collide_say_nothing(scraper, caplog):
                 _panel("Heating circuit", [("Outside temperature", "40.0 C")]),
             )
         )
+        scraper.report_duplicate_rows()
 
     assert "same sensor" not in caplog.text
 

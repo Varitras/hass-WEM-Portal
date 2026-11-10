@@ -160,6 +160,11 @@ def _report_duplicate_row(
     leave the old ones behind as corpses, for a collision nobody has yet been
     observed to have. A real log will say which of the two it is, and that is
     what a fix should be built on.
+
+    The one real log so far was neither: the portal's own fault of heading
+    every panel alike (see refuse_folded_panels), reported from a page that
+    was then not used. Hence the last sentence, and why the parser only
+    notes a collision and leaves the saying to report_duplicate_rows.
     """
     if key in reported:
         return
@@ -169,7 +174,9 @@ def _report_duplicate_row(
         "panel %r, row %r. The later one wins and the earlier reading is lost, "
         "so a value shown here may belong to the other row. This happens when "
         "one panel lists a name twice, or when two panels carry the same "
-        "heading. Please report it at %s with the panel headings you see.",
+        "heading. Please report it at %s with the panel headings you see. "
+        "Not if every panel is headed alike, as in 'Info': that is a fault on "
+        "the portal's side, and the next page is usually normal again.",
         key,
         panel,
         row_name,
@@ -199,6 +206,21 @@ class WemPortalScraper:
         # scrape has a user waiting on it and no coordinator timeout behind
         # it. See WemPortalApi.remaining_budget.
         self._budget = budget
+        # (key, panel heading, row name) of every row the last parsed page
+        # lost to a later one. See report_duplicate_rows.
+        self._duplicate_rows: list[tuple[str, str, str]] = []
+
+    def report_duplicate_rows(self) -> None:
+        """Say which rows of the last page overwrote one another.
+
+        For the caller to do once it has decided to use the page: said by the
+        parser, a page with every panel headed alike asked for a report and
+        was refused a line later.
+        """
+        for key, panel, row_name in self._duplicate_rows:
+            _report_duplicate_row(
+                key, panel, row_name, self._account_state.duplicate_rows_reported
+            )
 
     def _request_timeout(self) -> float:
         """How long the next request may take.
@@ -741,6 +763,7 @@ class WemPortalScraper:
         """
         _LOGGER.debug("Parsing expert page HTML (%s)", source)
         output: dict[str, Any] = {}
+        self._duplicate_rows = []
         try:
             panels = html.fromstring(html_content).xpath(PANEL_XPATH)
         except LxmlError, ValueError:
@@ -773,12 +796,7 @@ class WemPortalScraper:
                 heading, panel_key, rows
             ):
                 if name in output:
-                    _report_duplicate_row(
-                        name,
-                        heading,
-                        raw_name,
-                        self._account_state.duplicate_rows_reported,
-                    )
+                    self._duplicate_rows.append((name, heading, raw_name))
                 output[name] = sensor
 
         # A page that parsed to nothing is not a successful scrape. The XPaths

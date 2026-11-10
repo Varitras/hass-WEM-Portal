@@ -6760,6 +6760,9 @@ def test_a_successful_scrape_clears_the_backoff():
         def scrape(self):
             return [{"cookie": {}, "Heating-Outside": Reading(value=11.0)}]
 
+        def report_duplicate_rows(self):
+            pass
+
         def close(self):
             pass
 
@@ -11548,6 +11551,9 @@ def _api_whose_web_login_answers(clock, monkeypatch, *outcomes, mode="both"):
             if isinstance(outcome, BaseException):
                 raise outcome
             return [outcome]
+
+        def report_duplicate_rows(self):
+            pass
 
         def close(self):
             pass

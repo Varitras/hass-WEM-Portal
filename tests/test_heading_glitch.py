@@ -21,7 +21,9 @@ import pytest
 
 from custom_components.wemportal.exceptions import WemPortalError
 from custom_components.wemportal.models import Reading
+from custom_components.wemportal.scraper import WemPortalScraper
 from custom_components.wemportal.wemportalapi import WemPortalApi
+from tests.test_scraper_parse import _page, _panel
 
 NORMAL = (
     "heizkreis_1-vorlauftemperatur",
@@ -51,6 +53,9 @@ class _Portal:
         keys = self.pages.pop(0)
         page = {key: Reading(value=21.5, unit="°C", platform="sensor") for key in keys}
         return [{"cookie": {}, **page}]
+
+    def report_duplicate_rows(self):
+        pass
 
     def close(self):
         pass
@@ -165,3 +170,74 @@ def test_a_real_change_of_the_page_is_still_taken(case, page):
 
     assert _cycle(api) is None, case
     assert set(page) <= _rows(api), case
+
+
+# --- the collision report and the refused page -------------------------
+#
+# Headed alike, the flow temperatures of two modules produce one key, and the
+# parser used to say so on the spot: a warning asking for a report, about a
+# page that was thrown away a moment later.
+
+FLOW = ("Vorlauftemperatur", "30,0 °C")
+MODULES = ("Heizkreis 1", "Wärmepumpe")
+
+
+def _html(*headings):
+    return _page(*(_panel(heading, [FLOW]) for heading in headings))
+
+
+def _api_parsing(*pages):
+    """An api whose scraper is the real one, fed pages instead of a portal."""
+    api = WemPortalApi("user@example.org", "secret")
+    scraper = WemPortalScraper("user@example.org", "secret")
+    waiting = list(pages)
+    scraper.scrape = lambda: scraper.parse_expert_page(waiting.pop(0))
+    api._scraper = scraper
+    return api
+
+
+def test_a_refused_page_does_not_ask_for_a_collision_report(caplog):
+    api = _api_parsing(_html(*MODULES), _html("Info", "Info"))
+    _cycle(api)
+
+    with caplog.at_level(logging.WARNING):
+        refused = _cycle(api)
+
+    assert refused is not None
+    assert "same sensor" not in caplog.text, (
+        "the page is not used, so nothing on it overwrote anything"
+    )
+
+
+def test_a_collision_on_a_page_that_is_used_is_still_reported(caplog):
+    api = _api_parsing(_html("Heizkreis", "Heizkreis"))
+
+    with caplog.at_level(logging.WARNING):
+        assert _cycle(api) is None
+
+    assert "same sensor" in caplog.text
+    assert "'Heizkreis'" in caplog.text
+    assert "Vorlauftemperatur" in caplog.text
+
+
+def test_a_collision_on_the_first_page_names_the_portal_fault(caplog):
+    """The first page of a session has nothing to be compared with, so one
+    with every panel headed alike is used - and the report is all there is."""
+    api = _api_parsing(_html("Info", "Info"))
+
+    with caplog.at_level(logging.WARNING):
+        _cycle(api)
+
+    assert "fault on the portal's side" in caplog.text
+
+
+def test_a_refused_page_leaves_no_report_for_the_next_one(caplog):
+    api = _api_parsing(_html(*MODULES), _html("Info", "Info"), _html(*MODULES))
+    _cycle(api)
+    _cycle(api)
+    caplog.clear()
+
+    with caplog.at_level(logging.WARNING):
+        assert _cycle(api) is None
+
+    assert "same sensor" not in caplog.text
