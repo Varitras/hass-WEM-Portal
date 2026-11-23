@@ -2904,10 +2904,12 @@ async def test_update_timeout_is_counted_and_reported(hass, monkeypatch):
     async def never_returns(*_args, **_kwargs):
         await _asyncio.sleep(5)
 
-    monkeypatch.setattr(hass, "async_add_executor_job", never_returns)
-
-    with pytest.raises(UpdateFailed, match="[Tt]imed out"):
-        await coordinator._async_update_data()
+    # Only for this one cycle: left in place, it also swallows what Home
+    # Assistant writes to disk when the test's instance stops.
+    with monkeypatch.context() as hanging:
+        hanging.setattr(hass, "async_add_executor_job", never_returns)
+        with pytest.raises(UpdateFailed, match="[Tt]imed out"):
+            await coordinator._async_update_data()
 
     assert coordinator.num_failed == before + 1, (
         "a timeout did not count as a failure, so the backoff never engages"
@@ -4776,24 +4778,23 @@ async def test_a_portal_that_keeps_timing_out_is_announced_once(
     entry = await _setup(hass, _entry(hass))
     coordinator = entry.runtime_data.coordinator
     monkeypatch.setattr(coord_mod, "DEFAULT_TIMEOUT", 0.05)
-    answering = hass.async_add_executor_job
 
     async def never_returns(*_args, **_kwargs):
         await _asyncio.sleep(5)
 
     async def time_out_once():
         coordinator.num_failed = 0  # past the backoff gate, which is not tested here
-        monkeypatch.setattr(hass, "async_add_executor_job", never_returns)
         caplog.clear()
-        with caplog.at_level(logging.DEBUG), pytest.raises(UpdateFailed):
-            await coordinator._async_update_data()
+        with monkeypatch.context() as hanging, caplog.at_level(logging.DEBUG):
+            hanging.setattr(hass, "async_add_executor_job", never_returns)
+            with pytest.raises(UpdateFailed):
+                await coordinator._async_update_data()
         return _coordinator_lines(caplog, logging.INFO)
 
     said = [await time_out_once() for _cycle in range(3)]
     assert len(said[0]) == 1, "the first timeout must be announced"
     assert not said[1] and not said[2], f"announced again: {said[1:]}"
 
-    monkeypatch.setattr(hass, "async_add_executor_job", answering)
     await coordinator._async_update_data()
     assert len(await time_out_once()) == 1, "a new outage after a good cycle is news"
 
