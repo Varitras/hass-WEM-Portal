@@ -1697,7 +1697,7 @@
   {
     "label": "collision: a report that does not name the portal's own fault must be noticed",
     "path": "custom_components/wemportal/scraper.py",
-    "old": "        \"the portal's side, and the next page is usually normal again.\",\n        key,",
+    "old": "        \"named 'info ...' that such a page left behind can be deleted.\",\n        key,",
     "new": "        \"\",\n        key,",
     "tests": "a_collision_on_the_first_page_names_the_portal_fault"
   },

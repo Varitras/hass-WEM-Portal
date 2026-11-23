@@ -226,9 +226,11 @@ def test_a_collision_on_the_first_page_names_the_portal_fault(caplog):
     api = _api_parsing(_html("Info", "Info"))
 
     with caplog.at_level(logging.WARNING):
-        _cycle(api)
+        assert _cycle(api) is None
 
+    assert "info-vorlauftemperatur" in _rows(api)
     assert "fault on the portal's side" in caplog.text
+    assert "can be deleted" in caplog.text
 
 
 def test_a_refused_page_leaves_no_report_for_the_next_one(caplog):
