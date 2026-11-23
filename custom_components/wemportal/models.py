@@ -14,6 +14,7 @@ framework answers rather than one this integration tracks by hand.
 
 from __future__ import annotations
 
+import math
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass, field, fields, replace
@@ -272,6 +273,10 @@ class Reading:
     module_type: int | None = None
     min_value: float | None = None
     max_value: float | None = None
+    # The bounds the portal describes for this parameter, kept where the
+    # range above is not them - see share_the_room_setpoint_range.
+    described_min: float | None = None
+    described_max: float | None = None
     step: float | None = None
     options: list[str] | None = None
     options_names: list[str] | None = None
@@ -306,35 +311,64 @@ class Reading:
 ROOM_SETPOINTS: Final = ("Absenk", "Normal", "Komfort")
 
 
+def _described_bounds(parameter: Any) -> tuple[float, float] | None:
+    """Both bounds of one parameter description, or None unless the portal
+    gave two finite numbers."""
+    if not isinstance(parameter, dict):
+        return None
+    try:
+        bounds = float(parameter["MinValue"]), float(parameter["MaxValue"])
+    except KeyError, TypeError, ValueError:
+        return None
+    return bounds if all(math.isfinite(bound) for bound in bounds) else None
+
+
 def share_the_room_setpoint_range(
-    api_data: dict[str, dict[str, Any]], device_id: str, names: Iterable[str]
+    api_data: dict[str, dict[str, Any]],
+    device_id: str,
+    names: Iterable[str],
+    module: dict[str, Any],
 ) -> None:
     """Give the room setpoints among one module's `names` one range.
 
     The portal describes each with bounds of its own, and they are not the
-    ones it holds to. Seen on two installations: 20-28 / 18-21 / 16-20 on one
-    and 21-28 / 16-22 / 16-21 on the other, a normal temperature of 23 above
-    its described 21, and the portal's own page offering 16 to 28 for each.
-    Home Assistant checks a value against the range before this integration
-    is asked, so the described bounds made values the portal takes unsettable.
+    ones it holds to. Seen on two installations, as reduced / normal /
+    comfort: 16-20 / 18-21 / 20-28 on one and 16-21 / 16-22 / 21-28 on the
+    other, a normal temperature of 23 above its described 21, and the
+    portal's own page offering 16 to 28 for each. Home Assistant checks a
+    value against the range before this integration is asked, so the
+    described bounds made values the portal takes unsettable.
 
     The lowest minimum to the highest maximum is the range the page showed on
-    the one installation it was compared on. What does hold between the three
-    is their order, which the write checks.
+    the one installation it was compared on. Taken from the descriptions
+    of `module`, not from the rows: an answer that leaves a
+    setpoint out would otherwise narrow the others for that cycle, and a
+    setpoint the portal gave no bounds for would spread a guessed range.
+    What does hold between the three is their order, which the write checks.
     """
-    setpoints = [
-        name
-        for name in names
-        if api_data[device_id][name].platform == "number"
-        and api_data[device_id][name].parameter_id in ROOM_SETPOINTS
-    ]
-    if len(setpoints) < 2:
+    parameters = module.get("parameters") or {}
+    described = {
+        parameter_id: bounds
+        for parameter_id in ROOM_SETPOINTS
+        if (bounds := _described_bounds(parameters.get(parameter_id))) is not None
+    }
+    if len(described) < 2:
         return
+    lowest = min(low for low, _high in described.values())
+    highest = max(high for _low, high in described.values())
     rows = api_data[device_id]
-    lowest = min(rows[name].min_value for name in setpoints)
-    highest = max(rows[name].max_value for name in setpoints)
-    for name in setpoints:
-        rows[name] = replace(rows[name], min_value=lowest, max_value=highest)
+    for name in names:
+        row = rows[name]
+        if row.platform != "number" or row.parameter_id not in ROOM_SETPOINTS:
+            continue
+        own_low, own_high = described.get(row.parameter_id, (None, None))
+        rows[name] = replace(
+            row,
+            min_value=lowest,
+            max_value=highest,
+            described_min=own_low,
+            described_max=own_high,
+        )
 
 
 def room_setpoint_neighbours(
@@ -342,28 +376,24 @@ def room_setpoint_neighbours(
     module_index: int | None,
     module_type: int | None,
     parameter_id: str,
-) -> dict[str, float]:
-    """The other room setpoints of the module `parameter_id` is one of, by
-    parameter id, each at its current value in `rows`.
+) -> list[str]:
+    """The other room setpoints of the module `parameter_id` is one of.
 
-    Empty for a parameter that is not a room setpoint. A neighbour without a
-    readable value is left out: there is nothing to compare with.
+    Empty for a parameter that is not a room setpoint. Asked of the rows'
+    existence, whatever they hold and whatever platform they are on: a
+    neighbour without a value just now, or one the portal lets nobody write,
+    is still there to be crossed.
     """
-    held: dict[str, float] = {}
     if parameter_id not in ROOM_SETPOINTS:
-        return held
-    for row in rows.values():
-        if not isinstance(row, Reading) or row.platform != "number":
-            continue
-        if row.parameter_id not in ROOM_SETPOINTS or row.parameter_id == parameter_id:
-            continue
-        if (row.module_index, row.module_type) != (module_index, module_type):
-            continue
-        try:
-            held[row.parameter_id] = float(row.value)
-        except TypeError, ValueError:
-            continue
-    return held
+        return []
+    return [
+        row.parameter_id
+        for row in rows.values()
+        if isinstance(row, Reading)
+        and row.parameter_id in ROOM_SETPOINTS
+        and row.parameter_id != parameter_id
+        and (row.module_index, row.module_type) == (module_index, module_type)
+    ]
 
 
 def crossed_room_setpoint(

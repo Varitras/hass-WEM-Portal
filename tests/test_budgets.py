@@ -110,11 +110,11 @@ LINE_BUDGETS = {
     # follow-up read inside the interval.
     # And by 25 for a companion read that has to carry the companions, and for
     # the wording it shares with the read-back.
-    # And by 52 for stopping a room setpoint that would cross its
+    # And by 56 for stopping a room setpoint that would cross its
     # neighbour: the check needs the write's lock, a read of its own and the
     # answer that read got, all of which live here. The rule itself is in
     # models.py.
-    "wemportalapi.py": 2345,
+    "wemportalapi.py": 2349,
     # Lowered from 2447: the expert number entity (the Home Assistant view
     # half) moved to expert_number.py, leaving the protocol client here.
     # And by 12 for keeping a reused session only once it reached the

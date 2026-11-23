@@ -20,6 +20,7 @@ with the caller.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from typing import Any, NamedTuple
 
@@ -173,21 +174,46 @@ def unanswered_parameters(
     set, because an id the portal sent as a list is unhashable and comparing
     is all this needs.
     """
-    answered: list[Any] = []
+    answered = [value.get("ParameterID") for value in _values_of(payload, module)]
+    return [
+        parameter_id for parameter_id in parameter_ids if parameter_id not in answered
+    ]
+
+
+def answered_numbers(
+    payload: Any, module: tuple[Any, Any], parameter_ids: Iterable[str]
+) -> dict[str, float]:
+    """The finite numbers a values answer carries for `parameter_ids` of
+    `module`. One it names without a number is left out, like one it does
+    not name: neither says what the portal holds."""
+    wanted = list(parameter_ids)
+    numbers: dict[str, float] = {}
+    for value in _values_of(payload, module):
+        if value.get("ParameterID") not in wanted:
+            continue
+        number = value.get("NumericValue")
+        if isinstance(number, bool) or not isinstance(number, (int, float)):
+            continue
+        if math.isfinite(number):
+            numbers[value["ParameterID"]] = float(number)
+    return numbers
+
+
+def _values_of(payload: Any, module: tuple[Any, Any]) -> list[dict[str, Any]]:
+    """The value entries a values answer carries for `module`."""
+    values: list[dict[str, Any]] = []
     for answered_module in _list_under(payload, "Modules"):
         if not isinstance(answered_module, dict):
             continue
         where = (answered_module.get("ModuleIndex"), answered_module.get("ModuleType"))
         if where != tuple(module):
             continue
-        answered.extend(
-            value.get("ParameterID")
+        values.extend(
+            value
             for value in _list_under(answered_module, "Values")
             if isinstance(value, dict)
         )
-    return [
-        parameter_id for parameter_id in parameter_ids if parameter_id not in answered
-    ]
+    return values
 
 
 def _list_under(payload: Any, key: str) -> list[Any]:

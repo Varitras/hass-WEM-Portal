@@ -6758,30 +6758,58 @@
   {
     "label": "setpoints: each keeping the bounds the portal describes for it",
     "path": "custom_components/wemportal/models.py",
-    "old": "    if len(setpoints) < 2:\n        return\n    rows = api_data[device_id]\n",
-    "new": "    return\n    rows = api_data[device_id]\n",
+    "old": "    if len(described) < 2:\n        return\n",
+    "new": "    return\n",
     "tests": "the_three_setpoints_share_one_range"
+  },
+  {
+    "label": "setpoints: one described setpoint taken as a range to share",
+    "path": "custom_components/wemportal/models.py",
+    "old": "    if len(described) < 2:\n",
+    "new": "    if len(described) < 1:\n",
+    "tests": "one_described_setpoint_is_not_a_range_to_share"
   },
   {
     "label": "setpoints: a shared range that starts at the highest minimum",
     "path": "custom_components/wemportal/models.py",
-    "old": "    lowest = min(rows[name].min_value for name in setpoints)\n",
-    "new": "    lowest = max(rows[name].min_value for name in setpoints)\n",
+    "old": "    lowest = min(low for low, _high in described.values())\n",
+    "new": "    lowest = max(low for low, _high in described.values())\n",
     "tests": "the_three_setpoints_share_one_range"
   },
   {
     "label": "setpoints: a shared range that ends at the lowest maximum",
     "path": "custom_components/wemportal/models.py",
-    "old": "    highest = max(rows[name].max_value for name in setpoints)\n",
-    "new": "    highest = min(rows[name].max_value for name in setpoints)\n",
+    "old": "    highest = max(high for _low, high in described.values())\n",
+    "new": "    highest = min(high for _low, high in described.values())\n",
     "tests": "the_three_setpoints_share_one_range"
+  },
+  {
+    "label": "setpoints: a bound that is no finite number taken as described",
+    "path": "custom_components/wemportal/models.py",
+    "old": "    return bounds if all(math.isfinite(bound) for bound in bounds) else None\n",
+    "new": "    return bounds\n",
+    "tests": "a_bound_that_is_no_number_is_not_described"
   },
   {
     "label": "setpoints: another number of the module drawn into the range",
     "path": "custom_components/wemportal/models.py",
-    "old": "        if api_data[device_id][name].platform == \"number\"\n        and api_data[device_id][name].parameter_id in ROOM_SETPOINTS\n",
-    "new": "        if api_data[device_id][name].platform == \"number\"\n",
+    "old": "        if row.platform != \"number\" or row.parameter_id not in ROOM_SETPOINTS:\n",
+    "new": "        if row.platform != \"number\":\n",
     "tests": "another_number_of_the_module_keeps_its_own_range"
+  },
+  {
+    "label": "setpoints: a setpoint that is no number given a range",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        if row.platform != \"number\" or row.parameter_id not in ROOM_SETPOINTS:\n",
+    "new": "        if row.parameter_id not in ROOM_SETPOINTS:\n",
+    "tests": "a_setpoint_that_is_no_number_gets_no_range"
+  },
+  {
+    "label": "setpoints: the bounds the portal described lost from the row",
+    "path": "custom_components/wemportal/models.py",
+    "old": "            described_min=own_low,\n",
+    "new": "            described_min=None,\n",
+    "tests": "the_bounds_the_portal_described_stay_on_the_row"
   },
   {
     "label": "setpoints: a write that crosses its neighbour going out",
@@ -6800,29 +6828,64 @@
   {
     "label": "setpoints: the order checked against the last poll's values",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        failure = self._reason_the_read_failed(device_id) or self._not_answered(\n            device_id, module, neighbours\n        )\n",
-    "new": "        failure = self._not_answered(device_id, module, neighbours)\n",
+    "old": "        failure = self._reason_the_read_failed(device_id)\n        answer = self._last_values_answer.get(str(device_id))\n",
+    "new": "        failure = None\n        answer = self._last_values_answer.get(str(device_id))\n",
     "tests": "since_the_last_poll_counts"
+  },
+  {
+    "label": "setpoints: a read that failed taken as a check",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        failure = self._reason_the_read_failed(device_id)\n        answer = self._last_values_answer.get(str(device_id))\n",
+    "new": "        self._reason_the_read_failed(device_id)\n        failure = None\n        answer = self._last_values_answer.get(str(device_id))\n",
+    "tests": "a_read_that_fails_stops_the_write"
   },
   {
     "label": "setpoints: a read that carried no neighbour taken as a check",
     "path": "custom_components/wemportal/wemportalapi.py",
-    "old": "        failure = self._reason_the_read_failed(device_id) or self._not_answered(\n            device_id, module, neighbours\n        )\n",
-    "new": "        failure = self._reason_the_read_failed(device_id)\n",
+    "old": "        if failure is None and unread:\n",
+    "new": "        if False:\n",
     "tests": "neighbours_that_cannot_be_read_stop_the_write"
   },
   {
-    "label": "setpoints: a read before the write of any other parameter",
+    "label": "setpoints: a neighbour named without a number taken as read",
+    "path": "custom_components/wemportal/mobile_protocol.py",
+    "old": "        if math.isfinite(number):\n            numbers[",
+    "new": "        if True:\n            numbers[",
+    "tests": "a_neighbour_answered_without_a_number_stops_the_write"
+  },
+  {
+    "label": "setpoints: a neighbour holding nothing just now left unchecked",
     "path": "custom_components/wemportal/models.py",
-    "old": "    if parameter_id not in ROOM_SETPOINTS:\n        return held\n",
+    "old": "        if isinstance(row, Reading)\n        and row.parameter_id in ROOM_SETPOINTS\n",
+    "new": "        if isinstance(row, Reading)\n        and row.parameter_id in ROOM_SETPOINTS\n        and row.value is not None\n",
+    "tests": "neighbours_holding_nothing_just_now_are_still_read_and_checked"
+  },
+  {
+    "label": "setpoints: a neighbour nobody may write left unchecked",
+    "path": "custom_components/wemportal/models.py",
+    "old": "        if isinstance(row, Reading)\n        and row.parameter_id in ROOM_SETPOINTS\n",
+    "new": "        if isinstance(row, Reading)\n        and row.parameter_id in ROOM_SETPOINTS\n        and row.platform == \"number\"\n",
+    "tests": "a_neighbour_nobody_may_write_is_still_a_neighbour"
+  },
+  {
+    "label": "setpoints: a device id given as a number left unchecked",
+    "path": "custom_components/wemportal/wemportalapi.py",
+    "old": "        rows = self.data.get(str(device_id), {})\n        neighbours = room_setpoint_neighbours(",
+    "new": "        rows = self.data.get(device_id, {})\n        neighbours = room_setpoint_neighbours(",
+    "tests": "a_device_id_given_as_a_number_is_checked_too"
+  },
+  {
+    "label": "setpoints: any other parameter given the setpoints as neighbours",
+    "path": "custom_components/wemportal/models.py",
+    "old": "    if parameter_id not in ROOM_SETPOINTS:\n        return []\n",
     "new": "",
-    "tests": "another_parameter_is_written_without_a_read"
+    "tests": "a_parameter_that_is_no_setpoint_has_no_neighbours"
   },
   {
     "label": "setpoints: another circuit's setpoints taken as neighbours",
     "path": "custom_components/wemportal/models.py",
-    "old": "        if row.parameter_id not in ROOM_SETPOINTS or row.parameter_id == parameter_id:\n            continue\n        if (row.module_index, row.module_type) != (module_index, module_type):\n            continue\n",
-    "new": "        if row.parameter_id not in ROOM_SETPOINTS or row.parameter_id == parameter_id:\n            continue\n",
+    "old": "        and (row.module_index, row.module_type) == (module_index, module_type)\n",
+    "new": "",
     "tests": "the_setpoints_of_another_circuit_are_no_neighbours"
   }
 ]

@@ -387,7 +387,7 @@ def _read_module_values(device_id, module, device_module, language, api_data) ->
             )
             continue
 
-    share_the_room_setpoint_range(api_data, device_id, controls)
+    share_the_room_setpoint_range(api_data, device_id, controls, device_module)
     return parsed_sensors, controls
 
 

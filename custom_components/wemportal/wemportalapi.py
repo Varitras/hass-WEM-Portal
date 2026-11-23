@@ -56,6 +56,7 @@ from .exceptions import (
 )
 from .mapper import WemPortalDataMapper
 from .mobile_protocol import (
+    answered_numbers,
     as_answer_dict,
     read_refresh_ticket,
     read_write_ack,
@@ -1463,24 +1464,27 @@ class WemPortalApi(
         The portal keeps reduced below normal below comfort. What it does
         with a write that breaks the order is not known, so none is sent.
 
-        Checked against values read just now, not the last poll's: those are
-        up to an API interval old, and a neighbour changed in the app since
-        then refused a write the portal would take, or let one through that
-        it would not. A read that fails or does not carry the neighbours
-        stops the write for the same reason.
+        Checked against a read made just now and against that answer alone:
+        the last poll's values are up to an API interval old, and a neighbour
+        changed in the app since then would refuse a write the portal takes,
+        or let one through that it does not. A read that fails, or carries a
+        neighbour without a number, stops the write - not checked is not the
+        same as in order.
         """
-        rows = self.data.get(device_id, {})
+        rows = self.data.get(str(device_id), {})
         neighbours = room_setpoint_neighbours(rows, *module, parameter_id)
         if not neighbours:
             return
-        failure = self._reason_the_read_failed(device_id) or self._not_answered(
-            device_id, module, neighbours
-        )
+        failure = self._reason_the_read_failed(device_id)
+        answer = self._last_values_answer.get(str(device_id))
+        held = answered_numbers(answer, module, neighbours)
+        unread = [neighbour for neighbour in neighbours if neighbour not in held]
+        if failure is None and unread:
+            failure = f"the answer carried no number for {', '.join(unread)}"
         if failure is not None:
             raise WemPortalError(
                 f"The other room setpoints could not be read first: {failure}"
             )
-        held = room_setpoint_neighbours(rows, *module, parameter_id)
         crossed = crossed_room_setpoint(parameter_id, float(value), held)
         if crossed is not None:
             raise WemPortalError(crossed)
