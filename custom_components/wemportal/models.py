@@ -15,7 +15,8 @@ framework answers rather than one this integration tracks by hand.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field, fields
+from collections.abc import Iterable
+from dataclasses import dataclass, field, fields, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
@@ -298,6 +299,95 @@ class Reading:
             if getattr(self, f.name) is not None
         }
         return {"value": self.value, **compact}
+
+
+# The room setpoints of a heating circuit by parameter id, lowest first:
+# reduced, normal, comfort. The portal keeps them in this order.
+ROOM_SETPOINTS: Final = ("Absenk", "Normal", "Komfort")
+
+
+def share_the_room_setpoint_range(
+    api_data: dict[str, dict[str, Any]], device_id: str, names: Iterable[str]
+) -> None:
+    """Give the room setpoints among one module's `names` one range.
+
+    The portal describes each with bounds of its own, and they are not the
+    ones it holds to. Seen on two installations: 20-28 / 18-21 / 16-20 on one
+    and 21-28 / 16-22 / 16-21 on the other, a normal temperature of 23 above
+    its described 21, and the portal's own page offering 16 to 28 for each.
+    Home Assistant checks a value against the range before this integration
+    is asked, so the described bounds made values the portal takes unsettable.
+
+    The lowest minimum to the highest maximum is the range the page showed on
+    the one installation it was compared on. What does hold between the three
+    is their order, which the write checks.
+    """
+    setpoints = [
+        name
+        for name in names
+        if api_data[device_id][name].platform == "number"
+        and api_data[device_id][name].parameter_id in ROOM_SETPOINTS
+    ]
+    if len(setpoints) < 2:
+        return
+    rows = api_data[device_id]
+    lowest = min(rows[name].min_value for name in setpoints)
+    highest = max(rows[name].max_value for name in setpoints)
+    for name in setpoints:
+        rows[name] = replace(rows[name], min_value=lowest, max_value=highest)
+
+
+def room_setpoint_neighbours(
+    rows: dict[str, Any],
+    module_index: int | None,
+    module_type: int | None,
+    parameter_id: str,
+) -> dict[str, float]:
+    """The other room setpoints of the module `parameter_id` is one of, by
+    parameter id, each at its current value in `rows`.
+
+    Empty for a parameter that is not a room setpoint. A neighbour without a
+    readable value is left out: there is nothing to compare with.
+    """
+    held: dict[str, float] = {}
+    if parameter_id not in ROOM_SETPOINTS:
+        return held
+    for row in rows.values():
+        if not isinstance(row, Reading) or row.platform != "number":
+            continue
+        if row.parameter_id not in ROOM_SETPOINTS or row.parameter_id == parameter_id:
+            continue
+        if (row.module_index, row.module_type) != (module_index, module_type):
+            continue
+        try:
+            held[row.parameter_id] = float(row.value)
+        except TypeError, ValueError:
+            continue
+    return held
+
+
+def crossed_room_setpoint(
+    parameter_id: str, value: float, held: dict[str, float]
+) -> str | None:
+    """Why `value` cannot be written to this room setpoint, or None.
+
+    `held` is what its neighbours hold now. The written one has to stay
+    above every setpoint before it in ROOM_SETPOINTS and below every one
+    after it; equal counts as crossed, as on the portal's own page.
+    """
+    place = ROOM_SETPOINTS.index(parameter_id)
+    for other_place, other in enumerate(ROOM_SETPOINTS):
+        if other not in held:
+            continue
+        must_stay_above = other_place < place
+        in_order = value > held[other] if must_stay_above else value < held[other]
+        if not in_order:
+            side = "above" if must_stay_above else "below"
+            return (
+                f"{value} does not stay {side} {other} ({held[other]}). The "
+                f"portal keeps {' < '.join(ROOM_SETPOINTS)}."
+            )
+    return None
 
 
 def date_companions(

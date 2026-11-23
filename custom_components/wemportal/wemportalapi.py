@@ -31,7 +31,14 @@ from .const import (
     MIN_SCAN_INTERVAL_SECONDS,
     WemDataType,
 )
-from .models import HeavyFetchTurns, ModuleRef, Reading, account_state
+from .models import (
+    HeavyFetchTurns,
+    ModuleRef,
+    Reading,
+    account_state,
+    crossed_room_setpoint,
+    room_setpoint_neighbours,
+)
 from .schedule import WemPortalSchedule
 from .discovery import PARAMETER_REDISCOVERY_RETRY_SECONDS, WemPortalDiscovery
 from .statistics import WemPortalStatistics, is_statistics_row
@@ -1421,6 +1428,9 @@ class WemPortalApi(
                 together_with = self._companions_read_again(
                     device_id, (module_index, module_type), together_with
                 )
+            self._refuse_a_crossed_room_setpoint(
+                device_id, (module_index, module_type), parameter_id, numeric_value
+            )
             self._change_value(
                 device_id,
                 parameter_id,
@@ -1440,6 +1450,40 @@ class WemPortalApi(
             )
         finally:
             self._api_lock.release()
+
+    def _refuse_a_crossed_room_setpoint(
+        self,
+        device_id: str,
+        module: tuple[int, int],
+        parameter_id: str,
+        value: float | str,
+    ) -> None:
+        """Stop a room setpoint that would cross one of its neighbours.
+
+        The portal keeps reduced below normal below comfort. What it does
+        with a write that breaks the order is not known, so none is sent.
+
+        Checked against values read just now, not the last poll's: those are
+        up to an API interval old, and a neighbour changed in the app since
+        then refused a write the portal would take, or let one through that
+        it would not. A read that fails or does not carry the neighbours
+        stops the write for the same reason.
+        """
+        rows = self.data.get(device_id, {})
+        neighbours = room_setpoint_neighbours(rows, *module, parameter_id)
+        if not neighbours:
+            return
+        failure = self._reason_the_read_failed(device_id) or self._not_answered(
+            device_id, module, neighbours
+        )
+        if failure is not None:
+            raise WemPortalError(
+                f"The other room setpoints could not be read first: {failure}"
+            )
+        held = room_setpoint_neighbours(rows, *module, parameter_id)
+        crossed = crossed_room_setpoint(parameter_id, float(value), held)
+        if crossed is not None:
+            raise WemPortalError(crossed)
 
     def _reason_the_read_failed(self, device_id: str) -> str | None:
         """The value read for somebody waiting on its result: None if it
@@ -1474,15 +1518,28 @@ class WemPortalApi(
                 f"The other values of this module could not be read first: {failure}"
             )
         values = companions()
-        missing = unanswered_parameters(
-            self._last_values_answer.get(str(device_id)), module, values
-        )
-        if missing:
+        not_answered = self._not_answered(device_id, module, values)
+        if not_answered is not None:
             raise WemPortalError(
-                "The other values of this module could not be read first: "
-                f"the answer did not carry {', '.join(missing)}"
+                f"The other values of this module could not be read first: {not_answered}"
             )
         return values
+
+    def _not_answered(
+        self,
+        device_id: str,
+        module: tuple[int | None, int | None],
+        parameter_ids: Iterable[str],
+    ) -> str | None:
+        """Which of `parameter_ids` the last values read left out, in words;
+        None if it carried them all. A read that worked says nothing about a
+        parameter it did not carry."""
+        missing = unanswered_parameters(
+            self._last_values_answer.get(str(device_id)), module, parameter_ids
+        )
+        if not missing:
+            return None
+        return f"the answer did not carry {', '.join(missing)}"
 
     def reread_device_values(
         self,
@@ -1532,12 +1589,7 @@ class WemPortalApi(
             failure = self._reason_the_read_failed(device_id)
             if failure is not None:
                 return failure
-            missing = unanswered_parameters(
-                self._last_values_answer.get(str(device_id)), module, parameter_ids
-            )
-            if missing:
-                return f"the answer did not carry {', '.join(missing)}"
-            return None
+            return self._not_answered(device_id, module, parameter_ids)
         except WemPortalError as exc:
             return str(exc)
         finally:

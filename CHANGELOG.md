@@ -6,6 +6,19 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The room setpoints of a heating circuit (reduced, normal, comfort) share
+  one range.** The portal describes a range of its own for each, which it
+  does not hold to, so some values it accepts could not be set from Home
+  Assistant. The three now go from the lowest minimum to the highest maximum
+  described for them, on one tested installation 16 to 28 °C.
+- **A room setpoint that would cross its neighbour is refused.** The portal
+  keeps reduced below normal below comfort. Before such a setpoint is
+  written, the other two are read again, and a value that breaks the order
+  fails with a message naming the neighbour. This costs one extra read per
+  write of these three.
+
 ### Fixed
 
 - **A skipped expert page no longer asks for a bug report.** A page with
