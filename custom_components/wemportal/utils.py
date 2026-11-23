@@ -165,12 +165,14 @@ def build_device_info(
     creates the hub - an entity property cannot look it up. Without one there
     is nothing to link by, so there is no link.
     """
-    info: DeviceInfo = {
-        "identifiers": {device_identifier(entry_id, device_id)},
-        "name": str(device_id),
-        "manufacturer": "Weishaupt",
-        "model": model or DEFAULT_DEVICE_MODEL,
-    }
+    # Built by its constructor: a dict up to 2026.10, a dataclass from 2026.11,
+    # where a plain dict is still taken but no longer what the type allows.
+    info = DeviceInfo(
+        identifiers={device_identifier(entry_id, device_id)},
+        name=str(device_id),
+        manufacturer="Weishaupt",
+        model=model or DEFAULT_DEVICE_MODEL,
+    )
     if sw_version:
         info["sw_version"] = sw_version
     if hub_device_id is not None:

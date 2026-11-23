@@ -661,8 +661,8 @@ class WemPortalExpertNumber(RestoreNumber):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._config_entry.title or ENTRY_TITLE,
-            "manufacturer": "Weishaupt",
-        }
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._config_entry.entry_id)},
+            name=self._config_entry.title or ENTRY_TITLE,
+            manufacturer="Weishaupt",
+        )
