@@ -7,7 +7,7 @@ from collections.abc import Callable, Collection
 from dataclasses import replace
 
 from .const import WemDataType
-from .models import ModuleRef, Reading
+from .models import ModuleRef, Reading, share_the_room_setpoint_range
 from .translations import friendly_name_mapper, known_unit, translate
 from .utils import (
     is_nothing_active,
@@ -387,6 +387,7 @@ def _read_module_values(device_id, module, device_module, language, api_data) ->
             )
             continue
 
+    share_the_room_setpoint_range(api_data, device_id, controls, device_module)
     return parsed_sensors, controls
 
 

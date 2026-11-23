@@ -163,8 +163,9 @@ def _report_duplicate_row(
 
     The one real log so far was neither: the portal's own fault of heading
     every panel alike (see refuse_folded_panels), reported from a page that
-    was then not used. Hence the last sentence, and why the parser only
-    notes a collision and leaves the saying to report_duplicate_rows.
+    was then not used. Hence the warning's closing sentences about 'Info',
+    and why the parser only notes a collision and leaves the saying to
+    report_duplicate_rows.
     """
     if key in reported:
         return
@@ -176,7 +177,8 @@ def _report_duplicate_row(
         "one panel lists a name twice, or when two panels carry the same "
         "heading. Please report it at %s with the panel headings you see. "
         "Not if every panel is headed alike, as in 'Info': that is a fault on "
-        "the portal's side, and the next page is usually normal again.",
+        "the portal's side, and the next page is usually normal again. Sensors "
+        "named 'info ...' that such a page left behind can be deleted.",
         key,
         panel,
         row_name,
@@ -206,8 +208,8 @@ class WemPortalScraper:
         # scrape has a user waiting on it and no coordinator timeout behind
         # it. See WemPortalApi.remaining_budget.
         self._budget = budget
-        # (key, panel heading, row name) of every row the last parsed page
-        # lost to a later one. See report_duplicate_rows.
+        # (key, panel heading, row name) of every row that overwrote an
+        # earlier one on the last parsed page. See report_duplicate_rows.
         self._duplicate_rows: list[tuple[str, str, str]] = []
 
     def report_duplicate_rows(self) -> None:

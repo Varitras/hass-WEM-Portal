@@ -1164,12 +1164,6 @@ def test_the_report_survives_unparseable_html(scraper, caplog):
 # heading now - but two ways to collide remain, and neither said anything.
 
 
-@pytest.fixture(autouse=True)
-def _forget_reported_duplicates():
-
-    yield
-
-
 def test_the_same_row_twice_in_one_panel_is_reported(scraper, caplog):
     import logging
 
