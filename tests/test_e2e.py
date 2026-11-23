@@ -1201,13 +1201,31 @@ async def test_an_entity_the_waiting_migration_gives_up_comes_back_under_the_old
     )
 
 
-async def test_an_entity_renamed_by_the_user_is_not_built_twice(hass, caplog):
+def _rename_by_taking_down(monkeypatch):
+    """Make a rename take the entity down and add the same object back.
+
+    What Home Assistant does before 2026.11, and from then until 2027.11 for
+    a class that does not opt in to an in-place rename. This integration's
+    classes opt in, so on a current Home Assistant the path is forced here.
+    """
+    from homeassistant.helpers import entity
+
+    monkeypatch.setattr(
+        entity, "_entity_class_requires_readd", lambda _cls: True, raising=False
+    )
+
+
+async def test_an_entity_renamed_by_the_user_is_not_built_twice(
+    hass, caplog, monkeypatch
+):
     """Home Assistant takes an entity down and adds the same object back when
-    its entity id is renamed. Marked as taken down for good, the builder made
-    a second one on the next cycle - refused as a duplicate, with the full
-    unique id in an error line - and then held the refused one in its memo."""
+    its entity id is renamed (see _rename_by_taking_down). Marked as taken
+    down for good, the builder made a second one on the next cycle - refused
+    as a duplicate, with the full unique id in an error line - and then held
+    the refused one in its memo."""
     from homeassistant.helpers import entity_registry
 
+    _rename_by_taking_down(monkeypatch)
     entry = await _setup(hass, _entry(hass))
     registry = entity_registry.async_get(hass)
     unique_id = f"{entry.entry_id}:1234:Outside temperature"
@@ -1589,12 +1607,13 @@ async def test_a_service_write_reaches_the_entity_that_shows_the_parameter(
 
 
 async def test_an_expert_number_renamed_by_the_user_still_writes(hass, monkeypatch):
-    """Home Assistant before 2026.11 takes a renamed entity down and adds the
-    same object back. Taking it down stops its writes for good, and nothing
-    took that back when it was added again - every write after the rename was
-    refused as stopped until the entry was reloaded."""
+    """Home Assistant takes a renamed entity down and adds the same object
+    back (see _rename_by_taking_down). Taking it down stops its writes for
+    good, and nothing took that back when it was added again - every write
+    after the rename was refused as stopped until the entry was reloaded."""
     from homeassistant.helpers import entity_registry
 
+    _rename_by_taking_down(monkeypatch)
     writes = []
 
     def written(self, entityvalue, value, **_kwargs):
