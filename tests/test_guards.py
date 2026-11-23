@@ -36,6 +36,7 @@ GUARD_FILES = {
     "test_comment_narration.py": "no comment merely restates the code it sits on",
     "test_diagnostics_register.py": "every config field in the diagnostics dump carries a redaction decision, tied to TO_REDACT",
     "test_durations.py": "no test quietly starts taking minutes",
+    "test_entity_base.py": "every entity class overriding a lifecycle hook takes an entity id rename in place",
     "test_mutation_harness.py": "the mutation run fails loudly instead of reporting success",
     "test_mypy_scope.py": "every module is type-checked or says why it is not yet",
     "test_platform_entities.py": "every platform adds entities as readings appear, and reads its rows through the shared lookup",

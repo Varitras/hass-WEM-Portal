@@ -187,6 +187,15 @@ class WemPortalExpertNumber(RestoreNumber):
         name = self.name
         return name if isinstance(name, str) else self._label
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Take an entity id rename in place - see WemPortalEntity's.
+
+        The controller holds this object, not its id, so a rename leaves the
+        poll untouched; taken down and re-added it would detach and attach
+        again, dropping the slot's failure streak and repair issue.
+        """
+
     async def async_added_to_hass(self):
         """Restore what the last run knew, and join the poll.
 

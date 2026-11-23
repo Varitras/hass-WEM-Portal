@@ -199,14 +199,24 @@ class WemPortalEntity(CoordinatorEntity[WemPortalDataUpdateCoordinator]):
         self._platform = entity_data.platform
 
     async def async_added_to_hass(self) -> None:
-        # Back, too: renaming an entity id takes the same object down and
-        # adds it again.
+        # Back, too: before Home Assistant 2026.11 renaming an entity id takes
+        # the same object down and adds it again.
         self.taken_down = False
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self) -> None:
         self.taken_down = True
         await super().async_will_remove_from_hass()
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Take an entity id rename in place - nothing here is keyed on it.
+
+        Defining it is the opt-in: without it Home Assistant (2026.11 to
+        2027.11) keeps removing and re-adding a class that overrides the add
+        or remove hooks. No super() call: Entity's own is empty, and Home
+        Assistant before 2026.11 does not have it.
+        """
 
     async def async_write_parameter(self, value, together_with=None) -> None:
         """The one way an entity changes a value on the portal.

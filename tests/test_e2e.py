@@ -1201,13 +1201,31 @@ async def test_an_entity_the_waiting_migration_gives_up_comes_back_under_the_old
     )
 
 
-async def test_an_entity_renamed_by_the_user_is_not_built_twice(hass, caplog):
+def _rename_by_taking_down(monkeypatch):
+    """Make a rename take the entity down and add the same object back.
+
+    What Home Assistant does before 2026.11, and from then until 2027.11 for
+    a class that does not opt in to an in-place rename. This integration's
+    classes opt in, so on a current Home Assistant the path is forced here.
+    """
+    from homeassistant.helpers import entity
+
+    monkeypatch.setattr(
+        entity, "_entity_class_requires_readd", lambda _cls: True, raising=False
+    )
+
+
+async def test_an_entity_renamed_by_the_user_is_not_built_twice(
+    hass, caplog, monkeypatch
+):
     """Home Assistant takes an entity down and adds the same object back when
-    its entity id is renamed. Marked as taken down for good, the builder made
-    a second one on the next cycle - refused as a duplicate, with the full
-    unique id in an error line - and then held the refused one in its memo."""
+    its entity id is renamed (see _rename_by_taking_down). Marked as taken
+    down for good, the builder made a second one on the next cycle - refused
+    as a duplicate, with the full unique id in an error line - and then held
+    the refused one in its memo."""
     from homeassistant.helpers import entity_registry
 
+    _rename_by_taking_down(monkeypatch)
     entry = await _setup(hass, _entry(hass))
     registry = entity_registry.async_get(hass)
     unique_id = f"{entry.entry_id}:1234:Outside temperature"
@@ -1222,6 +1240,90 @@ async def test_an_entity_renamed_by_the_user_is_not_built_twice(hass, caplog):
     assert "does not generate unique IDs" not in caplog.text
     state = hass.states.get("sensor.renamed_outside")
     assert state is not None and state.state == "12.5", state
+
+
+def _live_entity(hass, entity_id):
+    from homeassistant.helpers import entity_platform
+
+    for platform in entity_platform.async_get_platforms(hass, DOMAIN):
+        if entity_id in platform.entities:
+            return platform.entities[entity_id]
+    return None
+
+
+def _home_assistant_renames_in_place() -> bool:
+    from homeassistant.helpers.entity import Entity
+
+    return hasattr(Entity, "async_entity_id_changed")
+
+
+@pytest.mark.skipif(
+    not _home_assistant_renames_in_place(),
+    reason="Home Assistant before 2026.11 always takes a renamed entity down",
+)
+@pytest.mark.parametrize(
+    ("domain", "unique_id_suffix", "taken_down_by", "options"),
+    [
+        ("sensor", "1234:Outside temperature", "sensor.WemPortalSensor", {}),
+        ("number", "1234:Heat pump-Komfort", "entity.WemPortalEntity", {}),
+        (
+            "number",
+            f"expert:{expert_options.entityvalue_digest(EV_A)}",
+            "expert_number.WemPortalExpertNumber",
+            {CONF_EXPERT_WRITE: True, CONF_EXPERT_SLOT_ID_TEMPLATE % 1: EV_A},
+        ),
+    ],
+    ids=["sensor", "platform-entity", "expert-number"],
+)
+async def test_a_renamed_entity_is_renamed_in_place(
+    hass, monkeypatch, domain, unique_id_suffix, taken_down_by, options
+):
+    """Home Assistant renames an entity id in place for classes that say they
+    can take it, and takes all others down and adds them again until 2027.11.
+    Nothing here is keyed on the entity id, so every class that hooks the
+    add/remove lifecycle has to say so - or a rename keeps costing a restore
+    and an expert re-attach, and goes away for good in 2027.11."""
+    import importlib
+
+    from homeassistant.helpers import entity_registry
+
+    module_name, class_name = taken_down_by.split(".")
+    owner = getattr(
+        importlib.import_module(f"custom_components.wemportal.{module_name}"),
+        class_name,
+    )
+    taken_down = []
+    original = owner.async_will_remove_from_hass
+
+    async def _spy(self):
+        taken_down.append(self.entity_id)
+        await original(self)
+
+    monkeypatch.setattr(owner, "async_will_remove_from_hass", _spy)
+    monkeypatch.setattr(
+        WemPortalApi,
+        "fetch_data",
+        lambda self, *_args, **_kwargs: _writeable_rows(
+            number_row=_number_row(21.0, 0.0, 100.0, 1)
+        ),
+    )
+    entry = await _setup(hass, _entry(hass, options))
+    registry = entity_registry.async_get(hass)
+    old_id = registry.async_get_entity_id(
+        domain, DOMAIN, f"{entry.entry_id}:{unique_id_suffix}"
+    )
+    assert old_id is not None
+    before = _live_entity(hass, old_id)
+    assert isinstance(before, owner)
+
+    new_id = f"{domain}.renamed_in_place"
+    registry.async_update_entity(old_id, new_entity_id=new_id)
+    await hass.async_block_till_done()
+
+    assert taken_down == [], "the rename took the entity down and added it again"
+    assert _live_entity(hass, new_id) is before
+    assert hass.states.get(old_id) is None
+    assert hass.states.get(new_id) is not None
 
 
 async def test_a_disabled_entity_is_not_built_again_on_every_cycle(hass, monkeypatch):
@@ -1505,12 +1607,13 @@ async def test_a_service_write_reaches_the_entity_that_shows_the_parameter(
 
 
 async def test_an_expert_number_renamed_by_the_user_still_writes(hass, monkeypatch):
-    """Home Assistant before 2026.11 takes a renamed entity down and adds the
-    same object back. Taking it down stops its writes for good, and nothing
-    took that back when it was added again - every write after the rename was
-    refused as stopped until the entry was reloaded."""
+    """Home Assistant takes a renamed entity down and adds the same object
+    back (see _rename_by_taking_down). Taking it down stops its writes for
+    good, and nothing took that back when it was added again - every write
+    after the rename was refused as stopped until the entry was reloaded."""
     from homeassistant.helpers import entity_registry
 
+    _rename_by_taking_down(monkeypatch)
     writes = []
 
     def written(self, entityvalue, value, **_kwargs):

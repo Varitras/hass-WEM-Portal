@@ -520,6 +520,12 @@ class WemPortalSensor(WemPortalEntity, RestoreSensor):
             self._attr_native_unit_of_measurement,
         )
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Home Assistant counts the opt-in per class that overrides a
+        # lifecycle hook, so the base's does not cover the override below.
+        super().async_entity_id_changed(old_entity_id)
+
     async def async_added_to_hass(self) -> None:
         """Restore the unit of measurement from the last known state, if needed.
 
