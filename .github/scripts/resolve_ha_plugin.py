@@ -34,13 +34,18 @@ SENTINEL = "latest-stable-ha"
 
 # 2026.8.0b3 / 2026.8.0rc1 - anything that is not a plain X.Y.Z release.
 _PRERELEASE = re.compile(r"\d+(?:a|b|rc)\d*$")
+_EXACT_PIN = re.compile(r"==\s*[\d.]+(?:(?:a|b|rc)\d*)?$")
 
 
 def is_prerelease(pin: str | None) -> bool:
-    """Whether a `homeassistant==...` requirement names a prerelease."""
-    if not pin:
-        # No pin at all means we cannot tell what will be installed, which is
-        # exactly the uncertainty this script exists to remove.
+    """Whether a `homeassistant==...` requirement names a prerelease.
+
+    Anything but one exact version counts as one too: with no pin, or a range,
+    or the name alone - which four unrelated 2020 releases under the same
+    package name still carry - nothing says what would be installed, and
+    that uncertainty is what this script exists to remove.
+    """
+    if not pin or not _EXACT_PIN.search(pin.strip()):
         return True
     return bool(_PRERELEASE.search(pin.strip()))
 

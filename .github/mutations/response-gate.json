@@ -6887,5 +6887,12 @@
     "old": "        and (row.module_index, row.module_type) == (module_index, module_type)\n",
     "new": "",
     "tests": "the_setpoints_of_another_circuit_are_no_neighbours"
+  },
+  {
+    "label": "ci resolver: a requirement without one exact version taken as final",
+    "path": ".github/scripts/resolve_ha_plugin.py",
+    "old": "    if not pin or not _EXACT_PIN.search(pin.strip()):\n",
+    "new": "    if not pin:\n",
+    "tests": "a_prerelease_pin_is_recognised or todays_scheme"
   }
 ]

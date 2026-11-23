@@ -44,6 +44,10 @@ resolve_ha_plugin = _load()
         # No pin at all: we cannot tell what would be installed, and the whole
         # point of the script is not having to guess.
         (None, True),
+        # Named without a version - what an unrelated 2020 release under the
+        # same package name still says. Not a final release either.
+        ("homeassistant", True),
+        ("homeassistant>=2026.11", True),
     ],
 )
 def test_a_prerelease_pin_is_recognised(pin, expected):
@@ -62,6 +66,24 @@ def test_the_newest_final_release_wins_over_newer_betas():
     }
 
     assert resolve_ha_plugin.newest_stable(pins) == "0.13.348"
+
+
+def test_the_newest_final_home_assistant_wins_in_todays_scheme():
+    """Since 2026.11 the plugin's version is the Home Assistant version, its
+    betas included, and the package name also carries four releases from
+    2020 that ask for Home Assistant without a version."""
+    pins = {
+        "2026.11.2": "homeassistant==2026.11.2",
+        "2026.11.1": "homeassistant==2026.11.1",
+        "2026.11.0b6": "homeassistant==2026.11.0b6",
+        "2026.11.0": "homeassistant==2026.11.0",
+        "0.1.0": "homeassistant",
+    }
+
+    assert resolve_ha_plugin.newest_stable(pins) == "2026.11.2"
+    del pins["2026.11.2"], pins["2026.11.1"], pins["2026.11.0"]
+    with pytest.raises(SystemExit):
+        resolve_ha_plugin.newest_stable(pins)
 
 
 def test_versions_are_compared_numerically_not_as_text():
@@ -302,10 +324,10 @@ def test_the_type_check_runs_the_same_home_assistant_as_the_current_job():
     """A checker that vouches for another release vouches for nothing.
 
     requirements_test.txt is deliberately unpinned - a pin there once hid a
-    real incompatibility for months - so it resolves to whatever plugin
-    release is newest, including one that ships a Home Assistant BETA. The
-    test job goes through resolve_ha_plugin.py to stay on the last final release,
-    and mypy installing from the requirements file instead put the two jobs
+    real incompatibility for months. With the old plugin it resolved to a
+    release shipping a Home Assistant BETA; the test job goes through
+    resolve_ha_plugin.py, and mypy installing from the requirements file
+    instead put the two jobs
     on different type surfaces without either of them saying so.
     """
     workflow = WORKFLOW.read_text(encoding="utf-8")
