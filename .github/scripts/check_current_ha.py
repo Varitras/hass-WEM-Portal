@@ -23,7 +23,7 @@ from homeassistant.const import __version__
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from check_min_ha import feature_release  # noqa: E402
-from resolve_phcc import PACKAGE, newest_stable, recent_pins  # noqa: E402
+from resolve_ha_plugin import PACKAGE, newest_stable, recent_pins  # noqa: E402
 
 
 def pinned_home_assistant(pin: str) -> str:
@@ -56,7 +56,9 @@ def main() -> int:
             f"CI resolves Home Assistant {expected} as current, but this "
             f"environment holds {__version__}. A green run here says nothing "
             f'about CI - upgrade it: pip install "{PACKAGE}=={plugin}" '
-            "pytest-timeout -r requirements_runtime.txt",
+            "pytest-timeout -r requirements_runtime.txt (first pip uninstall "
+            "pytest-homeassistant-custom-component if this environment still "
+            "has it: the two plugins cannot be installed together)",
             file=sys.stderr,
         )
         return 1

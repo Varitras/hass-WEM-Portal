@@ -18,17 +18,19 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "resolve_phcc.py"
+SCRIPT = (
+    Path(__file__).resolve().parents[1] / ".github" / "scripts" / "resolve_ha_plugin.py"
+)
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("resolve_phcc", SCRIPT)
+    spec = importlib.util.spec_from_file_location("resolve_ha_plugin", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-resolve_phcc = _load()
+resolve_ha_plugin = _load()
 
 
 @pytest.mark.parametrize(
@@ -42,10 +44,14 @@ resolve_phcc = _load()
         # No pin at all: we cannot tell what would be installed, and the whole
         # point of the script is not having to guess.
         (None, True),
+        # Named without a version - what an unrelated 2020 release under the
+        # same package name still says. Not a final release either.
+        ("homeassistant", True),
+        ("homeassistant>=2026.11", True),
     ],
 )
 def test_a_prerelease_pin_is_recognised(pin, expected):
-    assert resolve_phcc.is_prerelease(pin) is expected
+    assert resolve_ha_plugin.is_prerelease(pin) is expected
 
 
 def test_the_newest_final_release_wins_over_newer_betas():
@@ -59,7 +65,25 @@ def test_the_newest_final_release_wins_over_newer_betas():
         "0.13.347": "homeassistant==2026.7.3",
     }
 
-    assert resolve_phcc.newest_stable(pins) == "0.13.348"
+    assert resolve_ha_plugin.newest_stable(pins) == "0.13.348"
+
+
+def test_the_newest_final_home_assistant_wins_in_todays_scheme():
+    """Since 2026.11 the plugin's version is the Home Assistant version, its
+    betas included, and the package name also carries four releases from
+    2020 that ask for Home Assistant without a version."""
+    pins = {
+        "2026.11.2": "homeassistant==2026.11.2",
+        "2026.11.1": "homeassistant==2026.11.1",
+        "2026.11.0b6": "homeassistant==2026.11.0b6",
+        "2026.11.0": "homeassistant==2026.11.0",
+        "0.1.0": "homeassistant",
+    }
+
+    assert resolve_ha_plugin.newest_stable(pins) == "2026.11.2"
+    del pins["2026.11.2"], pins["2026.11.1"], pins["2026.11.0"]
+    with pytest.raises(SystemExit):
+        resolve_ha_plugin.newest_stable(pins)
 
 
 def test_versions_are_compared_numerically_not_as_text():
@@ -69,24 +93,24 @@ def test_versions_are_compared_numerically_not_as_text():
         "0.13.348": "homeassistant==2026.7.4",
     }
 
-    assert resolve_phcc.newest_stable(pins) == "0.13.348"
+    assert resolve_ha_plugin.newest_stable(pins) == "0.13.348"
 
 
 def test_nothing_usable_fails_loudly():
     """Falling back to "install whatever" would put the beta straight back."""
     with pytest.raises(SystemExit):
-        resolve_phcc.newest_stable({"0.13.351": "homeassistant==2026.8.0b3"})
+        resolve_ha_plugin.newest_stable({"0.13.351": "homeassistant==2026.8.0b3"})
 
 
 def test_an_explicit_requirement_is_passed_through(capsys):
     """The pinned minimum-version entry must reach pip unchanged - and must
     not trigger a PyPI lookup."""
-    resolve_phcc.main(
-        ["resolve_phcc.py", "pytest-homeassistant-custom-component==0.13.190"]
+    resolve_ha_plugin.main(
+        ["resolve_ha_plugin.py", "pytest-homeassistant-custom-component==0.13.190"]
     )
 
     assert capsys.readouterr().out.strip() == (
-        "PHCC_SPEC=pytest-homeassistant-custom-component==0.13.190"
+        "PLUGIN_SPEC=pytest-homeassistant-custom-component==0.13.190"
     )
 
 
@@ -300,10 +324,10 @@ def test_the_type_check_runs_the_same_home_assistant_as_the_current_job():
     """A checker that vouches for another release vouches for nothing.
 
     requirements_test.txt is deliberately unpinned - a pin there once hid a
-    real incompatibility for months - so it resolves to whatever plugin
-    release is newest, including one that ships a Home Assistant BETA. The
-    test job goes through resolve_phcc.py to stay on the last final release,
-    and mypy installing from the requirements file instead put the two jobs
+    real incompatibility for months. With the old plugin it resolved to a
+    release shipping a Home Assistant BETA; the test job goes through
+    resolve_ha_plugin.py, and mypy installing from the requirements file
+    instead put the two jobs
     on different type surfaces without either of them saying so.
     """
     workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -315,7 +339,7 @@ def test_the_type_check_runs_the_same_home_assistant_as_the_current_job():
     # from the other side.
     steps = [line for line in mypy_job.splitlines() if not line.strip().startswith("#")]
 
-    assert any("resolve_phcc.py latest-stable-ha" in line for line in steps), (
+    assert any("resolve_ha_plugin.py latest-stable-ha" in line for line in steps), (
         "the type check resolves its Home Assistant some other way than the "
         "job whose type surface it is supposed to be checking"
     )
@@ -349,8 +373,8 @@ def _portal_answering(monkeypatch, *outcomes):
             raise outcome
         return _Answer()
 
-    monkeypatch.setattr(resolve_phcc.urllib.request, "urlopen", urlopen)
-    monkeypatch.setattr(resolve_phcc.time, "sleep", waits.append)
+    monkeypatch.setattr(resolve_ha_plugin.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(resolve_ha_plugin.time, "sleep", waits.append)
     return calls, waits
 
 
@@ -362,7 +386,7 @@ def test_one_dropped_connection_does_not_fail_the_whole_run(monkeypatch):
         monkeypatch, urllib.error.URLError("connection reset"), "ok"
     )
 
-    assert resolve_phcc._fetch("https://pypi.org/x") == {"ok": True}
+    assert resolve_ha_plugin._fetch("https://pypi.org/x") == {"ok": True}
     assert len(calls) == 2, "the failed request was not tried again"
     assert waits, "tried again without giving the network a moment"
 
@@ -374,9 +398,9 @@ def test_a_pypi_that_stays_down_still_refuses_to_guess(monkeypatch):
     calls, _waits = _portal_answering(monkeypatch, *([down] * 10))
 
     with pytest.raises(urllib.error.URLError):
-        resolve_phcc._fetch("https://pypi.org/x")
+        resolve_ha_plugin._fetch("https://pypi.org/x")
 
-    assert len(calls) == resolve_phcc.FETCH_ATTEMPTS
+    assert len(calls) == resolve_ha_plugin.FETCH_ATTEMPTS
 
 
 def test_an_answer_that_is_an_answer_is_not_retried(monkeypatch):
@@ -386,7 +410,7 @@ def test_an_answer_that_is_an_answer_is_not_retried(monkeypatch):
     calls, _waits = _portal_answering(monkeypatch, missing, "ok")
 
     with pytest.raises(urllib.error.HTTPError):
-        resolve_phcc._fetch("https://pypi.org/x")
+        resolve_ha_plugin._fetch("https://pypi.org/x")
 
     assert len(calls) == 1
 

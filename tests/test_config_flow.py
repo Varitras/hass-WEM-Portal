@@ -27,7 +27,7 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.data_entry_flow import FlowResultType
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from tests.ha_helpers import MockConfigEntry
 
 from custom_components.wemportal.const import (
     CONF_EXPERT_MODULE_ARG,

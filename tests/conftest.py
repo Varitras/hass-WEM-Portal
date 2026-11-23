@@ -1,7 +1,8 @@
 """Shared pytest configuration for the CI suite.
 
-Declares the Home Assistant custom-component test plugin (which provides the
-`hass` fixture and installs a matching Home Assistant), and centralises the
+The Home Assistant test plugin (which provides the `hass` fixture and
+installs a matching Home Assistant) registers itself; see ha_helpers.py for
+which one each environment has. This file centralises the
 `time.sleep` mock so the integration's real server-load pacing sleeps never
 run in tests. Importing the modules here also makes collection fail loudly
 if the integration cannot be imported against the installed HA version.
@@ -15,8 +16,6 @@ import pytest
 from custom_components.wemportal import expert_writer, wemportalapi
 
 from .durations import SLOW_TEST_SECONDS, over_budget
-
-pytest_plugins = ("pytest_homeassistant_custom_component",)
 
 # Summed per test across setup, call and teardown, and read at the end of
 # the session. A dict at module level because that is what a pytest hook
