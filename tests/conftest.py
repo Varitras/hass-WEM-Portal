@@ -10,13 +10,18 @@ Also holds the runtime budget per test - see durations.py for the accident
 that one exists for.
 """
 
+import importlib.util
+
 import pytest
 
 from custom_components.wemportal import expert_writer, wemportalapi
 
 from .durations import SLOW_TEST_SECONDS, over_budget
 
-pytest_plugins = ("pytest_homeassistant_custom_component",)
+# The official package registers its plugin itself. The community one it
+# replaced from Home Assistant 2026.11 has to be named - see ha_helpers.py.
+if importlib.util.find_spec("pytest_homeassistant") is None:
+    pytest_plugins = ("pytest_homeassistant_custom_component",)
 
 # Summed per test across setup, call and teardown, and read at the end of
 # the session. A dict at module level because that is what a pytest hook

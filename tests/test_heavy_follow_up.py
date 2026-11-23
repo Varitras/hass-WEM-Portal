@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from tests.ha_helpers import async_fire_time_changed
 
 from custom_components.wemportal import coordinator as coordinator_module
 from custom_components.wemportal.coordinator import HEAVY_FOLLOW_UP_DELAY_SECONDS

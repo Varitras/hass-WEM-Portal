@@ -23,7 +23,7 @@ from homeassistant.const import __version__
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from check_min_ha import feature_release  # noqa: E402
-from resolve_phcc import PACKAGE, newest_stable, recent_pins  # noqa: E402
+from resolve_ha_plugin import PACKAGE, newest_stable, recent_pins  # noqa: E402
 
 
 def pinned_home_assistant(pin: str) -> str:

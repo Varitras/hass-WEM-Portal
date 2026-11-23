@@ -80,7 +80,7 @@ def test_the_timeout_plugin_is_declared_where_each_run_installs_from():
     """A transitive dependency that everything relies on and nothing names.
 
     tests/test_e2e.py already carries `pytest.mark.timeout(120)`. If the
-    plugin stops arriving through pytest-homeassistant-custom-component, that
+    plugin stops arriving through the Home Assistant test plugin, that
     marker becomes a no-op that raises no error - the exact shape of failure
     this repository keeps getting caught by.
     """

@@ -1,7 +1,9 @@
 # Test dependencies for LOCAL use.
 #
-# pytest-homeassistant-custom-component pulls in a matching Home Assistant
-# release plus the pytest plugin/fixtures for custom integrations.
+# pytest-homeassistant, Home Assistant's own test plugin, pulls in the Home
+# Assistant release of the same version plus the fixtures for custom
+# integrations. It replaced pytest-homeassistant-custom-component, which
+# ended with Home Assistant 2026.10; never install the two together.
 #
 # Deliberately UNPINNED here: locally you want whatever is current, and only a
 # current Home Assistant surfaces deprecations and API removals - an old pin
@@ -9,11 +11,10 @@
 # pinning to 0.13.205 / HA 2025.1.4 hid the removal of the OptionsFlow
 # `_config_entry` compatibility shim, which only showed up against HA 2026.7.2.)
 #
-# The two TEST matrix jobs do NOT install this file. They install the plugin
-# directly, because unpinned is not good enough there: the plugin publishes a
-# normal release for every Home Assistant BETA too, so "newest" quietly became
-# a beta and nothing tested the release people run. See
-# .github/workflows/test.yaml and .github/scripts/resolve_phcc.py.
+# The two TEST matrix jobs do NOT install this file. They install a plugin
+# release by name, so the log says which Home Assistant ran, and the minimum
+# job needs the older plugin. See .github/workflows/test.yaml and
+# .github/scripts/resolve_ha_plugin.py.
 #
 # The mypy job does not install it either: it needs Home Assistant's own
 # type information from the same plugin release the current test job
@@ -22,7 +23,7 @@
 # The OPPOSITE mistake - using an API that does not exist yet on the declared
 # minimum - is caught by the "minimum" job of the test workflow, which pins
 # the plugin release matching hacs.json.
-pytest-homeassistant-custom-component
+pytest-homeassistant
 # Declared rather than inherited. It arrives through the plugin above today,
 # and tests/test_e2e.py already relies on it (`pytest.mark.timeout(120)`) - so
 # the day that transitive dependency changes, a marker nothing registers

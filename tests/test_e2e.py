@@ -26,7 +26,7 @@ from homeassistant.const import (
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from tests.ha_helpers import MockConfigEntry
 
 from custom_components.wemportal import expert_number, expert_options, expert_writer
 from custom_components.wemportal.models import ModuleRef, Reading

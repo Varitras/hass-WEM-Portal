@@ -1,23 +1,23 @@
-"""Pick the pytest-homeassistant-custom-component release to test against.
+"""Pick the Home Assistant test plugin release the current job installs.
 
-The test matrix wants "the newest Home Assistant our users can actually be
-running". Installing the plugin unpinned does NOT give that: the plugin
-publishes a normal, non-prerelease version for every Home Assistant BETA as
-well, so `pip install pytest-homeassistant-custom-component` resolves to a
-release pinning e.g. homeassistant==2026.8.0b3. pip's own prerelease
-exclusion cannot see that - the plugin version is stable, only what it
-depends on is not.
+The current job wants the newest Home Assistant users can actually be
+running. Since Home Assistant 2026.11 the plugin is `pytest-homeassistant`,
+which Home Assistant publishes itself: its version is the Home Assistant
+version it pins, and a beta is a prerelease pip leaves alone. The community
+plugin before it, `pytest-homeassistant-custom-component`, published a normal
+version for every Home Assistant beta too, so an unpinned install quietly
+tested a beta; the minimum job still uses it, pinned.
 
-The effect is quiet and bad: the job named "current HA" stops covering the
-release people run, and a regression against current stable ships green.
-
-So the newest release whose Home Assistant pin is a final version is chosen
-explicitly. A literal requirement (the pinned minimum-version entry of the
-matrix) is passed through untouched.
+The newest release whose Home Assistant pin is a final version is chosen
+here anyway, and printed: the workflow, its type-check job and
+check_current_ha.py then share one answer, and the log says which Home
+Assistant a run tested. A literal requirement (the pinned minimum entry of
+the matrix) is passed through untouched.
 
 Usage:
-    python resolve_phcc.py latest-stable-ha  ->  PHCC_SPEC=...==0.13.348
-    python resolve_phcc.py 'pkg==0.13.190'   ->  PHCC_SPEC=pkg==0.13.190
+    python resolve_ha_plugin.py latest-stable-ha
+        ->  PLUGIN_SPEC=pytest-homeassistant==2026.11.2
+    python resolve_ha_plugin.py 'pkg==0.13.363'  ->  PLUGIN_SPEC=pkg==0.13.363
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ import time
 import urllib.error
 import urllib.request
 
-PACKAGE = "pytest-homeassistant-custom-component"
+PACKAGE = "pytest-homeassistant"
 SENTINEL = "latest-stable-ha"
 
 # 2026.8.0b3 / 2026.8.0rc1 - anything that is not a plain X.Y.Z release.
@@ -62,7 +62,7 @@ def newest_stable(pins: dict[str, str | None]) -> str:
         if not is_prerelease(pins[version]):
             return version
     raise SystemExit(
-        "No pytest-homeassistant-custom-component release pins a final Home "
+        f"No {PACKAGE} release pins a final Home "
         "Assistant version. Refusing to guess - fix the matrix by hand."
     )
 
@@ -142,7 +142,7 @@ def main(argv: list[str]) -> int:
     # $GITHUB_ENV in one step. Also echoed to the log, since "which Home
     # Assistant did this run actually test?" is the first question when a
     # matrix job disagrees with a local run.
-    print(f"PHCC_SPEC={spec}")
+    print(f"PLUGIN_SPEC={spec}")
     return 0
 
 

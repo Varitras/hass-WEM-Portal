@@ -3566,7 +3566,7 @@
   {
     "label": "ci: the type check falling back to the unpinned requirements",
     "path": ".github/workflows/test.yaml",
-    "old": "          pip install \"$PHCC_SPEC\" -r requirements_runtime.txt\n          pip install \"mypy==2.3.0\"",
+    "old": "          pip install \"$PLUGIN_SPEC\" -r requirements_runtime.txt\n          pip install \"mypy==2.3.0\"",
     "new": "          pip install -r requirements_test.txt\n          pip install \"mypy==2.3.0\"",
     "tests": "type_check_runs_the_same_home_assistant_as_the_current_job"
   },
@@ -3747,28 +3747,28 @@
   },
   {
     "label": "ci resolver: one dropped connection failing the run again",
-    "path": ".github/scripts/resolve_phcc.py",
+    "path": ".github/scripts/resolve_ha_plugin.py",
     "old": "FETCH_ATTEMPTS = 3",
     "new": "FETCH_ATTEMPTS = 1",
     "tests": "one_dropped_connection_does_not_fail_the_whole_run"
   },
   {
     "label": "ci resolver: a 404 asked again as if it were the network",
-    "path": ".github/scripts/resolve_phcc.py",
+    "path": ".github/scripts/resolve_ha_plugin.py",
     "old": "        return error.code >= 500",
     "new": "        return True",
     "tests": "an_answer_that_is_an_answer_is_not_retried"
   },
   {
     "label": "ci resolver: retrying without a pause",
-    "path": ".github/scripts/resolve_phcc.py",
+    "path": ".github/scripts/resolve_ha_plugin.py",
     "old": "            time.sleep(FETCH_RETRY_SECONDS)\n",
     "new": "            pass\n",
     "tests": "one_dropped_connection_does_not_fail_the_whole_run"
   },
   {
     "label": "ci resolver: a PyPI that stays down swallowed instead of stopping",
-    "path": ".github/scripts/resolve_phcc.py",
+    "path": ".github/scripts/resolve_ha_plugin.py",
     "old": "            time.sleep(FETCH_RETRY_SECONDS)\n    return _read(url)\n",
     "new": "            time.sleep(FETCH_RETRY_SECONDS)\n    return {}\n",
     "tests": "a_pypi_that_stays_down_still_refuses_to_guess"
