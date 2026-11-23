@@ -83,6 +83,14 @@ mode.
 | **Switch** | A genuine on/off parameter. |
 | **Date** | Holiday start and end. The portal stores them only as a pair, so setting one sends both; [`set_holiday`](#wemportalset_holiday) sets a whole period at once. |
 
+**Room setpoints.** The reduced, normal and comfort temperature of a heating
+circuit share one range, and the portal keeps them in that order. A value
+that would reach or cross its neighbour is refused. Such a write reads the
+other two from the portal first and takes a few seconds; if they cannot be
+read, it fails. An automation or scene that moves several of them has to
+keep the order at every step: upwards the higher one first, downwards the
+lower one.
+
 ### Diagnostic entities
 
 Three per device, and they stay available when a device is offline or

@@ -6,6 +6,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.16.0b2] – 2026-11-23
+
+A second beta of 1.16.0. The room setpoints of a heating circuit share one
+range instead of the narrow one the portal describes for each, and a value
+that would cross its neighbour is refused. A warning about a faulty expert
+page no longer asks for a bug report.
+
 ### Changed
 
 - **The room setpoints of a heating circuit (reduced, normal, comfort) share
@@ -28,6 +35,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **A skipped expert page no longer asks for a bug report.** A page with
   every panel headed "Info" logged a warning about two rows producing the
   same sensor before it was skipped.
+  Where the warning still comes, it says that sensors named "info ..." left
+  by such a page can be deleted.
 
 ## [1.16.0b1] – 2026-11-08
 
