@@ -58,10 +58,10 @@ jobs:
       # Home Assistant has to be importable for the checked modules' own
       # imports - and it has to be the SAME release the "current HA" test job
       # runs, or this job vouches for a type surface nothing else touches.
-      # requirements_test.txt is unpinned, so it can resolve to a Home
-      # Assistant beta while the test job pins the last final one; both go
-      # through the same resolver now. Mypy is pinned for the reason Ruff is:
-      # an unpinned checker fails builds nobody changed.
+      # Both go through the same resolver, so the two jobs share one answer
+      # and the log shows it; the unpinned requirements file once put this
+      # job on a Home Assistant beta the tests never ran. Mypy is pinned for
+      # the reason Ruff is: an unpinned checker fails builds nobody changed.
       - name: Resolve the plugin version to install
         run: |
           python .github/scripts/resolve_ha_plugin.py latest-stable-ha \

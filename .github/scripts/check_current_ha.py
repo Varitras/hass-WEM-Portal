@@ -56,7 +56,9 @@ def main() -> int:
             f"CI resolves Home Assistant {expected} as current, but this "
             f"environment holds {__version__}. A green run here says nothing "
             f'about CI - upgrade it: pip install "{PACKAGE}=={plugin}" '
-            "pytest-timeout -r requirements_runtime.txt",
+            "pytest-timeout -r requirements_runtime.txt (first pip uninstall "
+            "pytest-homeassistant-custom-component if this environment still "
+            "has it: the two plugins cannot be installed together)",
             file=sys.stderr,
         )
         return 1

@@ -3,7 +3,8 @@
 # pytest-homeassistant, Home Assistant's own test plugin, pulls in the Home
 # Assistant release of the same version plus the fixtures for custom
 # integrations. It replaced pytest-homeassistant-custom-component, which
-# ended with Home Assistant 2026.10; never install the two together.
+# ended with Home Assistant 2026.10. The two cannot be installed together:
+# in an environment that still has the old one, uninstall it first.
 #
 # Deliberately UNPINNED here: locally you want whatever is current, and only a
 # current Home Assistant surfaces deprecations and API removals - an old pin
@@ -24,10 +25,10 @@
 # minimum - is caught by the "minimum" job of the test workflow, which pins
 # the plugin release matching hacs.json.
 pytest-homeassistant
-# Declared rather than inherited. It arrives through the plugin above today,
-# and tests/test_e2e.py already relies on it (`pytest.mark.timeout(120)`) - so
-# the day that transitive dependency changes, a marker nothing registers
-# becomes a silent no-op and the timeout is simply gone. The matrix jobs do
-# not install this file at all, which is why they name it themselves.
+# Declared rather than inherited. The old plugin brought it along and the
+# new one does not, and tests/test_e2e.py relies on it
+# (`pytest.mark.timeout(120)`): a marker nothing registers is a silent no-op.
+# The matrix jobs do not install this file at all, which is why they name it
+# themselves.
 pytest-timeout
 -r requirements_runtime.txt
